@@ -183,6 +183,8 @@ OriginTrackable::OriginTrackable(Value v) {
   case ArgConvention::Mut:
   case ArgConvention::MutRef:
   case ArgConvention::Ref:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
     isIndirect = true;
     startsUninit = false;
     endInitState = EndsInit;
@@ -195,6 +197,7 @@ OriginTrackable::OriginTrackable(Value v) {
     break;
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
+  case ArgConvention::PackOwnedMem:
     isIndirect = true;
     startsUninit = false;
     endInitState = EndsUninit;
@@ -214,10 +217,6 @@ OriginTrackable::OriginTrackable(Value v) {
     startsUninit = true;
     endInitState = InitOnError;
     break;
-  case ArgConvention::PackImmMem:
-  case ArgConvention::PackMut:
-  case ArgConvention::PackOwnedMem:
-    llvm_unreachable("pack conventions do not occur before LowerLIT");
   }
 
   name = signature.getArgName(argIdx);
@@ -312,10 +311,13 @@ void OperationEffects::analyzeCallOp(Operation &op) {
       return OperandEffect::regConsume;
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
+    case ArgConvention::PackOwnedMem:
       return OperandEffect::memConsume;
     case ArgConvention::ImmReg:
       return OperandEffect::regUse;
     case ArgConvention::ImmMem:
+    case ArgConvention::PackImmMem:
+    case ArgConvention::PackMut:
       return OperandEffect::memLoad;
     case ArgConvention::Mut:
     case ArgConvention::MutRef:
@@ -331,10 +333,6 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     case ArgConvention::ByRefError:
     case ArgConvention::ByRefResult:
       return OperandEffect::memStoreOwned;
-    case ArgConvention::PackImmMem:
-    case ArgConvention::PackMut:
-    case ArgConvention::PackOwnedMem:
-      llvm_unreachable("pack conventions do not occur before LowerLIT");
     }
     llvm_unreachable("invalid input convention");
   };

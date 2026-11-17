@@ -3149,8 +3149,11 @@ def KGEN_PogListAttr : KGEN_ExprAttr<"PogList", "pog_list"> {
     >
     ```
 
-    The `origVariadicConvention` indicates whether the original argument
-    convention of a VariadicList or VariadicPack, e.g. "mut *args: Int".
+    The `origVariadicConvention` denotes the argument convention of the
+    elements of a VariadicList, e.g. "mut *args: Int". A VariadicPack records
+    its elements' convention in the function's arg convention, so an argument
+    list with a VariadicPack must not set this field. Parameters have no
+    convention.
 
     Optional `bodyConstraints` holds constraints that are enforced by the body
     of the generator type that carries this list as metadata.

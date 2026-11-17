@@ -403,7 +403,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // go into it.
   if (collectIntoVariadic) {
     ArgConvention expectedConv =
-        expectedFnTp.getArgConvention(*expectedPackIndex);
+        expectedFnTp.getVariadicConvention(*expectedPackIndex);
 
     // Get the variadic pack's element trait.
     ASTType expectedArgVariadicPackType =
@@ -422,6 +422,13 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 
       if (!checkConventionsConvertible(expectedConv, actualConv))
+        return error(MatchFailure::Unclassified{});
+
+      // TODO(MOCO-5418): The elements of a `mut` pack have the same origin, so
+      // the conversion thunk cannot pass two of them to `mut` arguments
+      // without an exclusivity error. Reject `mut` arguments until the thunk
+      // can do this.
+      if (actualConv == ArgConvention::Mut)
         return error(MatchFailure::Unclassified{});
 
       // The pack passes its elements by position.

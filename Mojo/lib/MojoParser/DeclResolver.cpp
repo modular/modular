@@ -2341,10 +2341,11 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {
     case ArgConvention::OwnedReg:
+      llvm_unreachable("not used by the parser");
     case ArgConvention::PackImmMem:
     case ArgConvention::PackMut:
     case ArgConvention::PackOwnedMem:
-      llvm_unreachable("not used by the parser");
+      llvm_unreachable("pack arguments are mangled above");
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
       mangledName += '$';

@@ -787,22 +787,6 @@ replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
   return std::make_pair(result, WalkResult::skip());
 }
 
-/// Return the argument conventions of `sig` after LowerLIT. The argument list
-/// is dropped, so the convention of a variadic pack argument records that it
-/// is a pack and how its elements are passed.
-static SmallVector<ArgConvention> getLoweredArgConventions(FuncType sig) {
-  SmallVector<ArgConvention> conventions(sig.getArgConventions());
-  std::optional<size_t> packIndex = sig.findPackVarArgIndex();
-  if (!packIndex)
-    return conventions;
-  PogListAttr argList = sig.getArgListAttrs();
-  assert(argList.size() == conventions.size() &&
-         "a pack signature has one argument per source argument");
-  conventions[*packIndex] =
-      getPackConvention(argList.getOrigVariadicConvention());
-  return conventions;
-}
-
 /// Splits `ops` into interleaved chunks and runs `fn` on each chunk in
 /// parallel, so per-chunk state such as a replacer cache is reused across ops.
 static void forEachChunk(MLIRContext *ctx, ArrayRef<Operation *> ops,
@@ -856,7 +840,7 @@ static LogicalResult lowerAttributesAndTypes(
     replacer.addReplacement([&](FuncType sig) {
       return std::make_pair(
           FuncType::get(cast<FunctionType>(replacer.replace(sig.getValues())),
-                        getLoweredArgConventions(sig), sig.getFnEffects()),
+                        sig.getArgConventions(), sig.getFnEffects()),
           WalkResult::skip());
     });
 

@@ -213,6 +213,28 @@ def test_pack_then_keyword_only():
     # expected-error @+1 {{cannot implicitly convert 'def wrong_name(a: Int, b: Int, *, label: Int) thin -> None' value to 'def(*args: *IntPair, *, tag: Int) thin -> None'}}
     var fp4: def(*args: *IntPair, tag: Int) thin = wrong_name
 
+
+def test_pack_element_convention():
+    def two_mut(mut a: Int, mut b: Int):
+        pass
+
+    def mut_pack(mut *args: *IntPair):
+        pass
+
+    # A `mut` argument cannot get an element of a pack that is not `mut`.
+    # expected-error @+1 {{cannot implicitly convert 'def two_mut(mut a: Int, mut b: Int) thin -> None' value to 'def(*args: *IntPair) thin -> None'}}
+    var fp1: def(*args: *IntPair) thin = two_mut
+
+    # TODO(MOCO-5418): The conversion thunk cannot pass the elements of a `mut`
+    # pack to `mut` arguments yet, because they have the same origin.
+    # expected-error @+1 {{cannot implicitly convert 'def two_mut(mut a: Int, mut b: Int) thin -> None' value to 'def(mut *args: *IntPair) thin -> None'}}
+    var fp3: def(mut *args: *IntPair) thin = two_mut
+
+    # The element conventions of the two packs must be the same.
+    # expected-error @+2 {{cannot implicitly convert 'def mut_pack(mut *args: *IntPair) thin -> None' value to 'def(*args: *IntPair) thin -> None'}}
+    # expected-note @+1 {{of the first type is 'LITMutOrigin' but the second type is 'LITImmOrigin'}}
+    var fp2: def(*args: *IntPair) thin = mut_pack
+
 struct SimplePair(Copyable):
     var left: Int
     var right: Int

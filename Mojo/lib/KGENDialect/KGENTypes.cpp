@@ -715,12 +715,14 @@ bool FuncType::isPosVarArg(size_t index) {
   return getArgListAttrs().isPosVarArg(index);
 }
 
-/// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: def x(mut *args: Int) is declared 'mut'.
+/// For a PosVarArg/PackVarArg, return the declared ArgConvention of the
+/// elements. For example: def x(mut *args: Int) is declared 'mut'.
 ArgConvention FuncType::getVariadicConvention(size_t index) {
+  if (std::optional<ArgConvention> eltConvention =
+          getPackEltConvention(getArgConvention(index)))
+    return *eltConvention;
   PogListAttr pogs = getArgListAttrs();
-  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg ||
-      pogs.getVariadicKind(index) == VariadicKind::PackVarArg)
+  if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg)
     return pogs.getOrigVariadicConvention();
   return ArgConvention::ByRefError;
 }
@@ -729,18 +731,18 @@ bool FuncType::isKwVarArg(size_t index) {
   return getArgListAttrs().isKwVarArg(index);
 }
 
-bool FuncType::isPack(size_t index) { return getArgListAttrs().isPack(index); }
+bool FuncType::isPack(size_t index) {
+  return getPackEltConvention(getArgConvention(index)).has_value();
+}
 
 std::optional<size_t> FuncType::findPackVarArgIndex() {
-  PogListAttr argList = getArgListAttrs();
-  if (!argList)
+  ArrayRef<ArgConvention> conventions = getArgConventions();
+  const auto *it = llvm::find_if(conventions, [](ArgConvention conv) {
+    return getPackEltConvention(conv).has_value();
+  });
+  if (it == conventions.end())
     return std::nullopt;
-  ArrayRef<PogMetadataAttr> pogs = argList.getPogs();
-  const auto *it =
-      llvm::find_if(pogs, [](PogMetadataAttr pog) { return pog.isPack(); });
-  if (it == pogs.end())
-    return std::nullopt;
-  return it - pogs.begin();
+  return it - conventions.begin();
 }
 
 bool FuncType::hasKwVarArgs() { return getArgListAttrs().hasKwVarArg(); }
@@ -879,6 +881,31 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
     return emitError()
            << "number of arguments does not match number of argument names: "
            << values.getNumInputs() << " != " << numPogs;
+  }
+
+  // The convention of a pack argument holds its element convention, so the
+  // argument list does not.
+  std::optional<size_t> packIdx;
+  for (auto [i, conv] : llvm::enumerate(argConventions)) {
+    if (!getPackEltConvention(conv))
+      continue;
+    if (packIdx)
+      return emitError() << "func type cannot have more than one pack argument";
+    packIdx = i;
+  }
+  if (!argListAttrs.getPogs().empty()) {
+    for (auto [i, pog] : llvm::enumerate(argListAttrs.getPogs())) {
+      if (pog.isPack() != (packIdx == i)) {
+        return emitError() << "argument #" << i
+                           << " must have a pack convention if and only if it "
+                              "is a pack vararg";
+      }
+    }
+    if (packIdx &&
+        argListAttrs.getOrigVariadicConvention() != ArgConvention::ByRefError) {
+      return emitError() << "argument list with a pack vararg cannot have a "
+                            "variadic convention";
+    }
   }
 
   // If the FuncType has metadata, defer to it for further verification.

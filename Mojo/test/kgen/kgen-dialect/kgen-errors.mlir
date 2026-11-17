@@ -336,6 +336,13 @@ kgen.func @invalid(%arg0: !kgen.struct<(pointer<index>) isParamPack> pack_imm_me
 
 // -----
 
+// expected-error @below {{func type cannot have more than one pack argument}}
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_imm_mem, %arg1: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) {
+  hlcf.unreachable
+}
+
+// -----
+
 kgen.generator @kernel() {
   hlcf.return
 }

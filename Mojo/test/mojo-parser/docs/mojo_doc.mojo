@@ -555,6 +555,50 @@ def variadic_pack[*Ts: AnyType](*vals: *Ts):
     pass
 
 
+# CHECK: "name": "variadic_pack_mut",
+# CHECK: "overloads":
+# CHECK:     "args":
+# CHECK:         "convention": "mut",
+# CHECK-NEXT:    "description": "Variadic pack arguments.",
+# CHECK-NEXT:    "kind": "argument",
+# CHECK-NEXT:    "name": "*vals",
+# CHECK:     "signature": "def variadic_pack_mut[*Ts: AnyType](mut *vals: *Ts.values)",
+
+
+def variadic_pack_mut[*Ts: AnyType](mut *vals: *Ts):
+    """Test the convention of a mut variadic pack argument.
+
+    Parameters:
+        Ts: The list of types.
+
+    Args:
+        vals: Variadic pack arguments.
+    """
+    pass
+
+
+# CHECK: "name": "variadic_pack_var",
+# CHECK: "overloads":
+# CHECK:     "args":
+# CHECK:         "convention": "var",
+# CHECK-NEXT:    "description": "Variadic pack arguments.",
+# CHECK-NEXT:    "kind": "argument",
+# CHECK-NEXT:    "name": "*vals",
+# CHECK:     "signature": "def variadic_pack_var[*Ts: Movable](var *vals: *Ts.values)",
+
+
+def variadic_pack_var[*Ts: Movable](var *vals: *Ts):
+    """Test the convention of an owned variadic pack argument.
+
+    Parameters:
+        Ts: The list of types.
+
+    Args:
+        vals: Variadic pack arguments.
+    """
+    pass
+
+
 # CHECK: "name": "variadic_params_args",
 # CHECK: "overloads":
 # CHECK:     "args":

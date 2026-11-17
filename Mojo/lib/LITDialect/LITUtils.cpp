@@ -483,10 +483,10 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
     VariadicKind variadicness = argListAttr.getVariadicKind(i);
     if (variadicness == VariadicKind::PosVarArg ||
         variadicness == VariadicKind::PackVarArg) {
-      assert(argConv == ArgConvention::ImmMem ||
-             argConv == ArgConvention::Mut ||
-             argConv == ArgConvention::OwnedMem ||
-             argConv == ArgConvention::OwnedReg);
+      assert(
+          argConv == ArgConvention::ImmMem || argConv == ArgConvention::Mut ||
+          argConv == ArgConvention::OwnedMem ||
+          argConv == ArgConvention::OwnedReg || getPackEltConvention(argConv));
       argConv = signature.getVariadicConvention(i);
     }
     printConventionAndVariadicness(p, argConv, variadicness);

@@ -2563,7 +2563,9 @@ LogicalResult DefASTDecl::resolveBody(Lexer &lexer) {
     }
 
     CValue argValue;
-    if (convention == ArgConvention::ImmMem) {
+    if (convention == ArgConvention::ImmMem ||
+        convention == ArgConvention::PackImmMem ||
+        convention == ArgConvention::PackMut) {
       setDecl(MBValue(refinedArg)); // borrowed (possibly refined)
       continue;
     }

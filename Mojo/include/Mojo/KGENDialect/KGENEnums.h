@@ -52,11 +52,10 @@ static inline bool hasImplicitOrigin(ArgConvention conv) {
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
-    return true;
   case ArgConvention::PackImmMem:
   case ArgConvention::PackMut:
   case ArgConvention::PackOwnedMem:
-    llvm_unreachable("pack conventions do not occur before LowerLIT");
+    return true;
   }
   llvm_unreachable("invalid argument convention");
 }

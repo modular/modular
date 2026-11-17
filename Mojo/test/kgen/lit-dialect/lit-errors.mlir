@@ -151,6 +151,20 @@ lit.fn @incorrect_arg_conv_and_variadicness(%a: index stuff) {
 
 // -----
 
+// expected-error @+1 {{pack vararg must be 'imm_mem', 'mut' or 'owned_in_mem', got: ref}}
+lit.fn @incorrect_pack_element_convention(%a: index ref|pack_vararg) {
+  hlcf.return
+}
+
+// -----
+
+// expected-error @+1 {{argument #0 must have a pack convention if and only if it is a pack vararg}}
+lit.fn @pack_convention_without_pack_vararg(%a: !lit.ref<index, imm *[0,0]> pack_mut) {
+  hlcf.return
+}
+
+// -----
+
 // expected-error @+1 {{expected variadic kind, got: stuff}}
 lit.fn @incorrect_param_variadicness<a: dtype stuff>() {
   hlcf.return

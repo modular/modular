@@ -66,10 +66,12 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
   // passing convention, since those are trivially convertible.
   switch (expectedConv) {
   case ArgConvention::OwnedReg:
+    llvm_unreachable("not used by the mojo parser");
   case ArgConvention::PackImmMem:
   case ArgConvention::PackMut:
   case ArgConvention::PackOwnedMem:
-    llvm_unreachable("not used by the mojo parser");
+    // The thunk passes the pack to the function unchanged.
+    return actualConv == expectedConv;
   case ArgConvention::ByRefError:
     // We checked that the function effects line up, so if we see
     // `byref_error`, then the other function must have it as well.
@@ -352,9 +354,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     PogMetadataAttr &pog = pogs[*thunkPackIndex];
     pog = PogMetadataAttr::get(pog.getName(), pog.getPassingKind(),
                                VariadicKind::PackVarArg);
-    thunkArgList =
-        PogListAttr::get(ctx, pogs, /*bodyConstraints=*/{},
-                         thunkSignature.getVariadicConvention(*thunkPackIndex));
+    thunkArgList = PogListAttr::get(ctx, pogs);
   }
   auto [thunk, thunkDecl] = structEmitter.synthesizeFunction(
       moduleDecl, name, paramDecls, paramListAttrs, functionType.getInputs(),
@@ -467,9 +467,6 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     AnyValue value;
     switch (convForActual) {
     case ArgConvention::OwnedReg:
-    case ArgConvention::PackImmMem:
-    case ArgConvention::PackMut:
-    case ArgConvention::PackOwnedMem:
       llvm_unreachable("not used by the mojo parser");
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
@@ -481,12 +478,15 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       break;
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
+    case ArgConvention::PackOwnedMem:
       value = MRValue(argForActual);
       break;
     case ArgConvention::ImmReg:
       value = SRValue(argForActual);
       break;
     case ArgConvention::ImmMem:
+    case ArgConvention::PackImmMem:
+    case ArgConvention::PackMut:
       value = MBValue(argForActual);
       break;
     case ArgConvention::Ref:

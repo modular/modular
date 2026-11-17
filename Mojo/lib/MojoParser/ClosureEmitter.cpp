@@ -142,7 +142,8 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
         return SRValue(bbArg);
       // Forward the moved argument.
       if (convention == ArgConvention::OwnedMem ||
-          convention == ArgConvention::DeinitMem)
+          convention == ArgConvention::DeinitMem ||
+          convention == ArgConvention::PackOwnedMem)
         return MRValue(bbArg);
       return CValue::getMValueForRef(bbArg);
     }();

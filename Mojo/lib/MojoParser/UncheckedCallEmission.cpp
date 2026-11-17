@@ -311,10 +311,11 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
   switch (convention) {
   case ArgConvention::OwnedReg:
+    llvm_unreachable("not used by the mojo parser");
   case ArgConvention::PackImmMem:
   case ArgConvention::PackMut:
   case ArgConvention::PackOwnedMem:
-    llvm_unreachable("not used by the mojo parser");
+    llvm_unreachable("pack elements use the element convention");
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
@@ -1085,12 +1086,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
   switch (convention) {
   case ArgConvention::OwnedReg:
-  case ArgConvention::PackImmMem:
-  case ArgConvention::PackMut:
-  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
+  case ArgConvention::PackOwnedMem:
     // Promote PValue's if needed.
     return checkMValueAddrSpace(emitter.emitMRValue(argValAndExpr, ctx));
   case ArgConvention::ImmReg:
@@ -1101,7 +1100,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Otherwise, materialize or load the value.
     return emitter.emitSRValue(argValAndExpr, ctx);
 
-  case ArgConvention::ImmMem: {
+  case ArgConvention::ImmMem:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut: {
     // Promote PValue's if needed.
     Value result =
         checkMValueAddrSpace(emitter.emitMBValue(argValAndExpr, ctx));

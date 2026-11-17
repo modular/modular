@@ -2290,6 +2290,9 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
       arg.kgenConvention = ArgConvention::ImmMem;
       break;
     }
+    // The convention of a pack also holds the convention of its elements.
+    if (arg.variadicKind == VariadicKind::PackVarArg)
+      arg.kgenConvention = getPackConvention(arg.variadicArgConvention);
   }
 
   // Values passed by memory need an associated origin parameter, and need to
@@ -2297,7 +2300,9 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   Type fullType;
   if (hasImplicitOrigin(arg.kgenConvention) &&
       arg.variadicKind != VariadicKind::KwVarArg) {
-    bool isMutable = arg.kgenConvention != ArgConvention::ImmMem;
+    bool isMutable = arg.kgenConvention != ArgConvention::ImmMem &&
+                     arg.kgenConvention != ArgConvention::PackImmMem &&
+                     arg.kgenConvention != ArgConvention::PackMut;
     fullType =
         makeImplicitRefTypeForArg(arg, idx, type, isMutable, tcSignature);
   } else {
@@ -3194,10 +3199,11 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   [[maybe_unused]] int numVariadics = 0;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     if (arg.variadicKind == VariadicKind::PosVarArg ||
-        arg.variadicKind == VariadicKind::PackVarArg) {
-      argVariadicOrigConvention = arg.variadicArgConvention;
+        arg.variadicKind == VariadicKind::PackVarArg)
       ++numVariadics;
-    }
+    // The convention of a pack argument holds its element convention.
+    if (arg.variadicKind == VariadicKind::PosVarArg)
+      argVariadicOrigConvention = arg.variadicArgConvention;
 
     argPogs.emplace_back(
         PogMetadataAttr::get(arg.name, arg.getKWArgHandlingAsPassingKind(),

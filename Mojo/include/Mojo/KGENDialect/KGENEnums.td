@@ -261,14 +261,16 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// returning a potentially initialized error value if the function throws.
   I32EnumAttrCase<"ByRefError", 9, "byref_error">,
 
-  /// These are used for a variadic pack argument like `def x(*args: *Ts)`
-  /// after LowerLIT, which uses them in place of the pack's own convention.
-  /// The argument is a pointer to a parameter pack that is read but not
-  /// mutated. Each element of the pack is the address of an argument of the
-  /// caller, passed as `imm_mem`, `mut` or `owned_in_mem`. This is also true
-  /// when that argument is a pointer: the element is then a pointer to that
-  /// pointer. LowerArgConventions splits the pack into its elements, so these
-  /// conventions do not occur after it.
+  /// These are used for a variadic pack argument like `def x(*args: *Ts)`.
+  /// Each element of the pack is the address of an argument of the caller,
+  /// passed as `imm_mem`, `mut` or `owned_in_mem`, respectively.
+  ///
+  /// Before LowerLIT, the MLIR type is a LIT::RefType to a `VariadicPack`. The
+  /// pack is read but not mutated, except with `pack_owned_in_mem`: the callee
+  /// then owns the pack and destroys it, as with `owned_in_mem`. After
+  /// LowerLIT, the MLIR type is a pointer to a parameter pack that is read but
+  /// not mutated. LowerArgConventions splits the pack into its elements, so
+  /// these conventions do not occur after it.
   I32EnumAttrCase<"PackImmMem", 10, "pack_imm_mem">,
   I32EnumAttrCase<"PackMut", 11, "pack_mut">,
   I32EnumAttrCase<"PackOwnedMem", 12, "pack_owned_in_mem">,

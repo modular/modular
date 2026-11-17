@@ -103,7 +103,7 @@ ArgConvention ASTDecl::getArgConvention() const {
   assert(signature && "function argument must have a resolved signature");
   assert(static_cast<size_t>(argNumber) < signature.getNumArguments() &&
          "argument number is out of range");
-  if (signature.isPosVarArg(argNumber))
+  if (signature.isPosVarArg(argNumber) || signature.isPack(argNumber))
     return signature.getVariadicConvention(argNumber);
   return signature.getArgConventions()[argNumber];
 }
