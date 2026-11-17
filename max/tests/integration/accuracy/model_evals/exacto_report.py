@@ -785,7 +785,7 @@ def merge_endpoint_meta(
 
     A score is only evidence if you can say what produced it. Quantization, KV
     cache dtype and speculative decoding all move accuracy (see the
-    max-serve-evaluator eval-pitfalls notes), and none of them are visible in
+    mach-evaluator eval-pitfalls notes), and none of them are visible in
     the harness log, so the runner probes the endpoint and passes what it found
     through here. Stored under ``endpoint`` rather than merged flat so a field
     the server volunteers can never shadow a harness field.
