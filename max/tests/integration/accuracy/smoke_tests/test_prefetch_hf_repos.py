@@ -14,6 +14,8 @@
 import json
 from pathlib import Path
 
+import huggingface_hub
+import pytest
 from pytest import MonkeyPatch
 from smoke_tests import prefetch_hf_repos
 
@@ -189,6 +191,58 @@ def test_online_repair_downloads_the_pinned_revision(
     monkeypatch.setattr(prefetch_hf_repos, "HF_HUB_OFFLINE", False)
     prefetch_hf_repos._ensure("org/model", allow_canonicalize=False)
     assert revisions == [snap.name]
+
+
+def test_pinned_download_makes_main_resolvable_offline(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """Regression: a download by commit SHA writes no ``refs/main``, so the
+    Mach server's offline drafter lookup failed with LocalEntryNotFoundError
+    right after the prefetch had cached the drafter."""
+    revision = "b3b5921a900b9e0a1e27e50bdaeb480692a6d19b"
+    snap = tmp_path / "models--org--drafter" / "snapshots" / revision
+    snap.mkdir(parents=True)
+    (snap / "model.safetensors").write_bytes(b"x")
+    monkeypatch.setattr(
+        prefetch_hf_repos, "_locked_revision", lambda repo: revision
+    )
+    monkeypatch.setattr(
+        prefetch_hf_repos,
+        "_snapshot_download_with_retry",
+        lambda repo, rev: str(snap),
+    )
+    monkeypatch.setattr(prefetch_hf_repos, "_cache_path", lambda repo: None)
+    monkeypatch.setattr(prefetch_hf_repos, "HF_HUB_OFFLINE", False)
+
+    prefetch_hf_repos._ensure("org/drafter", allow_canonicalize=False)
+
+    ref = tmp_path / "models--org--drafter" / "refs" / "main"
+    assert ref.read_text() == revision
+    assert huggingface_hub.snapshot_download(
+        "org/drafter", cache_dir=tmp_path, local_files_only=True
+    ) == str(snap)
+
+
+def test_point_main_ref_replaces_a_ref_to_another_revision(
+    tmp_path: Path,
+) -> None:
+    snap = _snapshot(tmp_path, "model.safetensors")
+    ref = tmp_path / "refs" / "main"
+    ref.parent.mkdir()
+    ref.write_text("upstream-head")
+    prefetch_hf_repos._point_main_ref(snap)
+    assert ref.read_text() == snap.name
+
+
+def test_point_main_ref_rejects_a_non_snapshot_path(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        prefetch_hf_repos._point_main_ref(tmp_path / "models--org--x")
+
+
+def test_point_main_ref_leaves_no_temp_file(tmp_path: Path) -> None:
+    snap = _snapshot(tmp_path, "model.safetensors")
+    prefetch_hf_repos._point_main_ref(snap)
+    assert sorted(p.name for p in (tmp_path / "refs").iterdir()) == ["main"]
 
 
 def test_cache_path_treats_incomplete_snapshot_as_miss(

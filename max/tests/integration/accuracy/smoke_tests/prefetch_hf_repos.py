@@ -52,6 +52,7 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 import csv
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 import click
@@ -201,6 +202,33 @@ def _pinned_revision(repo: str) -> str | None:
         return None
 
 
+def _point_main_ref(snapshot: Path) -> None:
+    """Point the repo's ``refs/main`` at ``snapshot``'s revision.
+
+    A download by commit SHA writes no ref, so a later offline lookup of the
+    default revision (the servers' drafter lookups, ``_cache_path``) treats
+    the repo as missing until the cache populator writes the ref. Do the same
+    thing the populator does (``ensure_main_ref`` in
+    ``huggingface-cache-populator/main.py``): each repo is pinned to exactly
+    one revision, so on CI nodes ``main`` is that revision.
+    """
+    if snapshot.parent.name != "snapshots":
+        raise ValueError(f"{snapshot} is not a <repo>/snapshots/<rev> path")
+    ref = snapshot.parent.parent / "refs" / "main"
+    if ref.is_file() and ref.read_text() == snapshot.name:
+        return
+    ref.parent.mkdir(parents=True, exist_ok=True)
+    # Readers resolve ``main`` through this file at any time, so replace it
+    # whole. HF compares the contents verbatim: no trailing newline. Jobs in
+    # other pods share this cache and can reuse a PID, so the temp name must
+    # be unique on disk, and readable by them like the populator's refs.
+    fd, tmp = tempfile.mkstemp(dir=ref.parent, prefix=f"{ref.name}.")
+    with os.fdopen(fd, "w") as tmp_file:
+        tmp_file.write(snapshot.name)
+    os.chmod(tmp, 0o666)
+    os.replace(tmp, ref)
+
+
 def _cache_path(repo: str) -> str | None:
     """Return the snapshot path if fully cached locally, else None.
 
@@ -263,7 +291,10 @@ def _ensure(repo: str, *, allow_canonicalize: bool) -> str:
             _log("  Canonical name matches the input.")
 
     _log(f"  Downloading '{resolved}' from Hugging Face...")
-    path = _snapshot_download_with_retry(resolved, _pinned_revision(resolved))
+    revision = _pinned_revision(resolved)
+    path = _snapshot_download_with_retry(resolved, revision)
+    if revision is not None:
+        _point_main_ref(Path(path))
     _log(f"  Cached '{resolved}' to {path}")
     return resolved
 
