@@ -628,3 +628,6 @@ This version is still a work in progress.
   elements whose type names a mutable origin, such as
   `Pointer[Int, origin_of(x)]`, as `List.append()` already did. Inserting one
   was rejected as aliasing the collection.
+
+- `FileHandle` can now read and write more than 2 GiB at once on macOS,
+  instead of raising `Invalid argument` or aborting.

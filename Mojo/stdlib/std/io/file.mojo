@@ -36,7 +36,7 @@ from std.os import PathLike as stdPathLike, abort, makedirs
 from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
 from std.ffi import c_int, c_ssize_t, external_call
-from std.sys import size_of
+from std.sys import CompilationTarget, size_of
 from std.sys._libc_errno import get_errno
 from std.utils._nicheable import _FieldNicheable
 
@@ -77,6 +77,57 @@ comptime O_CLOEXEC = platform_map[
 # ===----------------------------------------------------------------------=== #
 # Helper functions
 # ===----------------------------------------------------------------------=== #
+
+
+def _platform_read[
+    dtype: DType
+](fd: RawFileDescriptor, buffer: MutSpan[Scalar[dtype], _]) -> c_ssize_t:
+    """Reads up to `len(buffer) * size_of[dtype]()` bytes from `fd` into
+    `buffer` with a single `read` call.
+
+    macOS fails a `read` of more than `c_int.MAX` bytes with `EINVAL` instead
+    of reading fewer, so on macOS this asks for at most `c_int.MAX` bytes.
+
+    Parameters:
+        dtype: The element type of the buffer.
+
+    Args:
+        fd: The file descriptor to read from.
+        buffer: The buffer to read into.
+
+    Returns:
+        The number of bytes read, 0 at end of file, or -1 on error with
+        `errno` set.
+    """
+    var count = len(buffer) * size_of[dtype]()
+    comptime if CompilationTarget.is_macos():
+        count = min(count, Int(c_int.MAX))
+    return external_call["read", c_ssize_t](
+        fd._value, buffer.unsafe_ptr(), count
+    )
+
+
+def _platform_write(
+    fd: RawFileDescriptor, bytes: ImmSpan[Byte, _, address_space=_]
+) -> c_ssize_t:
+    """Writes up to `len(bytes)` bytes to `fd` with a single `write` call.
+
+    macOS fails a `write` of more than `c_int.MAX` bytes with `EINVAL` instead
+    of writing fewer, so on macOS this writes at most `c_int.MAX` bytes.
+
+    Args:
+        fd: The file descriptor to write to.
+        bytes: The bytes to write.
+
+    Returns:
+        The number of bytes written, or -1 on error with `errno` set.
+    """
+    var count = len(bytes)
+    comptime if CompilationTarget.is_macos():
+        count = min(count, Int(c_int.MAX))
+    return external_call["write", c_ssize_t](
+        fd._value, bytes.unsafe_ptr(), count
+    )
 
 
 def _open_file(path: String, mode: String) raises -> RawFileDescriptor:
@@ -308,11 +359,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         """
 
         var fd = self._get_raw_fd()
-        var bytes_read = external_call["read", c_ssize_t](
-            fd._value,
-            buffer.unsafe_ptr(),
-            len(buffer) * size_of[dtype](),
-        )
+        var bytes_read = _platform_read(fd, buffer)
 
         if bytes_read < 0:
             var err = get_errno()
@@ -379,12 +426,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
             # Read bytes into the list buffer and get the number of bytes
             # successfully read. This may return with a partial read, and
             # signifies EOF with a result of zero bytes.
-            var chunk_bytes_to_read = len(result) - num_read
-            var chunk_bytes_read = external_call["read", c_ssize_t](
-                fd._value,
-                result.unsafe_ptr().unsafe_offset(num_read),
-                chunk_bytes_to_read,
-            )
+            var chunk_bytes_read = _platform_read(fd, Span(result)[num_read:])
 
             if chunk_bytes_read < 0:
                 var err = get_errno()
@@ -490,9 +532,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         """
 
         var fd = self._get_raw_fd()
-        var bytes_written = external_call["write", c_ssize_t](
-            fd._value, bytes.unsafe_ptr(), len(bytes)
-        )
+        var bytes_written = _platform_write(fd, bytes)
 
         if bytes_written < 0:
             var err = get_errno()
@@ -576,11 +616,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         var total_written = 0
         while total_written < len(bytes):
             var fd = self._get_raw_fd()
-            var bytes_written = external_call["write", c_ssize_t](
-                fd._value,
-                bytes.unsafe_ptr().unsafe_offset(total_written),
-                len(bytes) - total_written,
-            )
+            var bytes_written = _platform_write(fd, bytes[total_written:])
 
             if bytes_written < 0:
                 abort("write() syscall failed")
@@ -639,8 +675,8 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
         while total_written < len:
             var current_ptr = ptr.unsafe_offset(total_written)
-            var bytes_written = external_call["write", c_ssize_t](
-                fd._value, current_ptr, len - total_written
+            var bytes_written = _platform_write(
+                fd, Span(unsafe_ptr=current_ptr, length=len - total_written)
             )
 
             if bytes_written < 0:

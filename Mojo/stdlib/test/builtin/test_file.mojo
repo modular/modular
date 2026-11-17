@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.ffi import c_int
 from std.os import remove
 from std.pathlib import Path, _dir_of_current_file
 from std.subprocess import run
@@ -26,6 +27,7 @@ from std.testing import (
     assert_raises,
     assert_true,
 )
+from test_utils.mmap import ZeroedMmap
 
 comptime DUMMY_FILE_SIZE: Int = 954
 
@@ -280,6 +282,38 @@ def test_file_read_to_address() raises:
         var buffer_1000 = Array[UInt8, length=1000](fill=0)
         assert_equal(f.read(buffer_1000), DUMMY_FILE_SIZE)
         assert_equal(f.read(buffer_1000), 0)
+
+
+comptime OVER_INT_MAX = Int(c_int.MAX) + 1
+"""More bytes than macOS will read or write in a single call."""
+
+
+def test_file_read_over_int_max() raises:
+    """Test reading into a buffer of more than `c_int.MAX` bytes."""
+    var temp_file = Path(gettempdir().value()) / "test_file_read_over_int_max"
+    with open(temp_file, "w") as f:
+        f.write("hello")
+
+    var mapping = ZeroedMmap[mut=True](OVER_INT_MAX)
+    var buffer = mapping.as_bytes()
+    with open(temp_file, "r") as f:
+        assert_equal(f.read(buffer), 5)
+    assert_equal(String(from_utf8_lossy=buffer[:5]), "hello")
+
+
+def test_file_write_over_int_max() raises:
+    """Test writing more than `c_int.MAX` bytes."""
+    var mapping = ZeroedMmap(OVER_INT_MAX)
+    var bytes = mapping.as_bytes()
+    # TODO(https://github.com/modular/modular/issues/7618): "/dev/null" is not
+    # portable; use the platform's null device path once it exists.
+    with open("/dev/null", "w") as f:
+        var written = f.write_once(bytes)
+        assert_true(written > 0)
+        assert_true(written <= Int(c_int.MAX))
+        f.write_all(bytes)
+        f.write_bytes(bytes)
+        f._write(bytes.unsafe_ptr(), len(bytes))
 
 
 def test_file_seek() raises:
