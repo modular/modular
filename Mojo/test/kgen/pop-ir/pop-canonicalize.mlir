@@ -958,7 +958,7 @@ kgen.func @pointer_bitcast_array_reinterpret(%arg0: !kgen.pointer<array<4, si32>
 
 // Bitcast that also changes address space is a genuine reinterpret (the
 // resulting element pointer could not be expressed by `pop.array.gep`, whose
-// result is always the default address space), so it must stay a bitcast.
+// result keeps the array's address space), so it must stay a bitcast.
 // CHECK-LABEL: @pointer_bitcast_array_addrspace
 kgen.func @pointer_bitcast_array_addrspace(%arg0: !kgen.pointer<array<4, si32>>) -> !kgen.pointer<si32, 5> {
   // CHECK: pop.pointer.bitcast %arg0
@@ -967,16 +967,25 @@ kgen.func @pointer_bitcast_array_addrspace(%arg0: !kgen.pointer<array<4, si32>>)
   hlcf.return %0 : !kgen.pointer<si32, 5>
 }
 
-// A non-default address space *on the source array* still canonicalizes:
-// `pop.array.gep` always yields a default-address-space element pointer, which
-// is exactly the element-0 pointer type here, so the rewrite is valid.
+// A bitcast from an array in a non-default address space to the default
+// address space also changes address space, so it stays a bitcast.
 // CHECK-LABEL: @pointer_bitcast_array_src_addrspace
 kgen.func @pointer_bitcast_array_src_addrspace(%arg0: !kgen.pointer<array<4, si32>, 5>) -> !kgen.pointer<si32> {
+  // CHECK: pop.pointer.bitcast %arg0
+  // CHECK-NOT: pop.array.gep
+  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<array<4, si32>, 5> to !kgen.pointer<si32>
+  hlcf.return %0 : !kgen.pointer<si32>
+}
+
+// A bitcast that keeps the array's non-default address space is element 0,
+// in that address space.
+// CHECK-LABEL: @pointer_bitcast_array_same_addrspace
+kgen.func @pointer_bitcast_array_same_addrspace(%arg0: !kgen.pointer<array<4, si32>, 5>) -> !kgen.pointer<si32, 5> {
   // CHECK: %[[Z:.+]] = kgen.param.constant: scalar<index> = <0>
   // CHECK: %[[G:.+]] = pop.array.gep %arg0[%[[Z]]] : <array<4, si32>, 5>
   // CHECK: return %[[G]]
-  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<array<4, si32>, 5> to !kgen.pointer<si32>
-  hlcf.return %0 : !kgen.pointer<si32>
+  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<array<4, si32>, 5> to !kgen.pointer<si32, 5>
+  hlcf.return %0 : !kgen.pointer<si32, 5>
 }
 
 // Nested array: a bitcast to the (array-typed) element pointer is element 0 of

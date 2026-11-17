@@ -865,6 +865,21 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.param<T>)
   hlcf.return %2, %7 : !pop.array<2, T>, !kgen.pointer<T>
 }
 
+// An element pointer is in the address space of its array, including a
+// parametric one.
+// CHECK-LABEL: @array_gep_address_space
+kgen.generator @array_gep_address_space<AS: index>(
+    %shared: !kgen.pointer<array<4, scalar<f32>>, 3>,
+    %param: !kgen.pointer<array<4, scalar<f32>>, AS>,
+    %idx: !kgen.scalar<index>)
+    -> (!kgen.pointer<scalar<f32>, 3>, !kgen.pointer<scalar<f32>, AS>) {
+  // CHECK: pop.array.gep %arg0[%arg2] : <array<4, scalar<f32>>, 3>
+  %0 = pop.array.gep %shared[%idx] : <array<4, scalar<f32>>, 3>
+  // CHECK: pop.array.gep %arg1[%arg2] : <array<4, scalar<f32>>, AS>
+  %1 = pop.array.gep %param[%idx] : <array<4, scalar<f32>>, AS>
+  hlcf.return %0, %1 : !kgen.pointer<scalar<f32>, 3>, !kgen.pointer<scalar<f32>, AS>
+}
+
 // CHECK-LABEL: @call_intrinsic
 kgen.generator @call_intrinsic<intrin: string>(%arg0: !kgen.scalar<f32>) {
   // CHECK-NEXT: %{{.*}} = pop.call_llvm_intrinsic "llvm.round", (%arg0) : (!kgen.scalar<f32>) -> !kgen.scalar<f32>

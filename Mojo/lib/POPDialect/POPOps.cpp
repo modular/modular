@@ -404,7 +404,8 @@ static Type getPointerToArrayElementType(Type arrayPtr) {
   if (!ptr)
     return Type();
   auto array = dyn_cast<POP::ArrayType>(ptr.getElementType());
-  return array ? PointerType::get(array.getElementType()) : Type();
+  return array ? PointerType::get(array.getElementType(), ptr.getAddressSpace())
+               : Type();
 }
 
 //===----------------------------------------------------------------------===//

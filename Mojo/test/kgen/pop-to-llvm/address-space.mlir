@@ -51,3 +51,19 @@ kgen.func @memcpy(%p: !kgen.pointer<scalar<f32>>, %q: !kgen.pointer<scalar<f32>,
 }
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+
+// An element pointer stays in the address space of its array.
+// CHECK-LABEL: @array_gep
+kgen.func @array_gep(%p: !kgen.pointer<array<4, scalar<f32>>, 3>, %i: !kgen.scalar<index>) -> !kgen.scalar<f32> {
+  // CHECK: llvm.getelementptr inbounds %{{.*}}[0, %{{.*}}] : (!llvm.ptr<3>, i64) -> !llvm.ptr<3>, !llvm.array<4 x f32>
+  // CHECK: llvm.load %{{.*}} : !llvm.ptr<3> -> f32
+  %0 = pop.array.gep %p[%i] : <array<4, scalar<f32>>, 3>
+  %1 = pop.load %0 : !kgen.pointer<scalar<f32>, 3>
+  hlcf.return %1 : !kgen.scalar<f32>
+}
+
+}

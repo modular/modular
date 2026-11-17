@@ -931,10 +931,9 @@ LogicalResult PointerBitcastOp::canonicalize(PointerBitcastOp op,
   // cast.
   if (auto srcPtr = dyn_cast<PointerType>(op.getInput().getType())) {
     if (auto arrTy = dyn_cast<ArrayType>(srcPtr.getElementType())) {
-      // Skip if the bitcast also changes address space. The only allowed
-      // exception is if it changes it to zero, which is acceptable now, because
-      // !pop.array is always within address space 0.
-      if (op.getType() == PointerType::get(arrTy.getElementType())) {
+      // Skip if the bitcast also changes address space.
+      if (op.getType() ==
+          PointerType::get(arrTy.getElementType(), srcPtr.getAddressSpace())) {
         auto zero = ParamConstantOp::create(
             b, op.getLoc(),
             SIMDAttr::get(uint64_t(0),
@@ -2238,8 +2237,7 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
   if (!stride)
     return ErrorTree(getLoc(), "failed to get array element stride");
   int64_t addr = ptr.getAddr() + *index * *stride;
-  return state.mapResults(
-      PointerAttr::get(addr, PointerType::get(elementType)));
+  return state.mapResults(PointerAttr::get(addr, getType()));
 }
 
 ErrorTreeOrSuccess
@@ -2254,16 +2252,16 @@ ArrayGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (!ptr || !index)
     return ErrorTree(getLoc(), "non-constant inputs");
 
-  auto arrayType = cast<PointerType>(cast<TypedAttr>(operands[0]).getType())
-                       .getElementAs<POP::ArrayType>();
-  Type elementType = arrayType.getElementType();
+  auto arrayPtrType = cast<PointerType>(cast<TypedAttr>(operands[0]).getType());
+  Type elementType =
+      arrayPtrType.getElementAs<POP::ArrayType>().getElementType();
   std::optional<int64_t> stride =
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), elementType);
   if (!stride)
     return ErrorTree(getLoc(), "failed to get array element stride");
   int64_t addr = ptr.getAddr() + *index * *stride;
-  return state.mapResults(
-      PointerAttr::get(addr, PointerType::get(elementType)));
+  return state.mapResults(PointerAttr::get(
+      addr, PointerType::get(elementType, arrayPtrType.getAddressSpace())));
 }
 
 LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
