@@ -64,6 +64,13 @@ void initCrashpadForProgram(StringRef program, StringRef machineID,
                             StringRef machineIDSource, StringRef sessionID,
                             Config *settings = nullptr);
 
+/// Record the llvm::report_fatal_error diagnostic in a Crashpad annotation.
+///
+/// LLVM writes it to stderr only, so what the report needs to be actionable -
+/// the failing node, the function - never reaches the crash database.
+/// Idempotent, and independent of whether Crashpad started.
+void installLLVMFatalErrorHandler();
+
 /// Generate a crash dump with the current state of the process, without
 /// actually causing the current process to crash and terminate.
 /// initCrashpadForProgram must have been previously called.

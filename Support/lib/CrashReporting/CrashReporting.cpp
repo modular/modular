@@ -18,19 +18,24 @@
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <cstdio>
 #include <filesystem>
 #include <map>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <utility>
 
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "client/annotation.h"
 #include "client/crash_report_database.h"
 #include "client/crashpad_client.h"
 #include "client/settings.h"
@@ -136,6 +141,38 @@ void M::initCrashpadForProgram(StringRef program, StringRef machineID,
                     "Crash reporting will not be available.  "
                     "Cause: "
                  << error.getError() << "\n";
+}
+
+namespace {
+// Crashpad reads annotations out of the crashed process, so the storage has to
+// outlive every thread that can reach report_fatal_error.
+crashpad::StringAnnotation<4096> llvmFatalAnnotation{"llvm_fatal_message"};
+std::mutex llvmFatalMutex;
+} // namespace
+
+// Parallel compilation threads can race here; the last writer wins.
+static void llvmFatalErrorHandler(void *, const char *reason, bool) {
+  {
+    std::lock_guard<std::mutex> lock(llvmFatalMutex);
+    llvmFatalAnnotation.Set(reason);
+  }
+
+  // LLVM prints nothing itself once a handler is installed. One write, so a
+  // concurrent thread cannot split the line, and not through llvm::errs(),
+  // whose failure path calls report_fatal_error.
+  llvm::SmallString<512> message;
+  llvm::raw_svector_ostream(message) << "LLVM ERROR: " << reason << "\n";
+  std::fwrite(message.data(), 1, message.size(), stderr);
+
+  // report_fatal_error runs the interrupt handlers and aborts once this
+  // returns.
+}
+
+void M::installLLVMFatalErrorHandler() {
+  static std::once_flag installed;
+  std::call_once(installed, [] {
+    llvm::install_fatal_error_handler(llvmFatalErrorHandler);
+  });
 }
 
 void M::generateNonFatalDump() { CRASHPAD_SIMULATE_CRASH(); }
