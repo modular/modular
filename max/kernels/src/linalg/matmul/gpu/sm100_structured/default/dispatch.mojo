@@ -679,8 +679,10 @@ def _matmul_dispatch_sm100_impl[
     # (~ceildiv(M, tile_m) * N*K) at the cost of a larger per-thread
     # [tile_m, tile_n] accumulator and warp-reduce tail, so the optimum is
     # M-dependent and non-monotone (grid quantization). The bucket boundaries
-    # below are the swept winners on B200; crossover to the tile GEMM is M=64
-    # (its tensor-core weight reuse wins for larger M). KERN-3076.
+    # below are the swept winners on B200; crossover to the tile GEMM is
+    # max(64, min(256, 8192 // N)) rows: 64 at N=128 (its tensor-core weight
+    # reuse wins for larger M), later for a narrower N, which leaves the tile
+    # GEMM a CTA or two. KERN-3076.
     #
     # Gate is conservative so FP32 shapes the tile GEMM serves better are not
     # diverted: static_N<=256 (weight dominates; wider N favors MMA) and
@@ -707,6 +709,8 @@ def _matmul_dispatch_sm100_impl[
     )
 
     comptime if has_precise_f32_gemv:
+        comptime gemv_max_m = max(64, min(256, 8192 // static_N))
+
         # tile_m is a comptime kernel param, so each bucket instantiates a
         # distinct gemv_split_k; the runtime `m` selects the bucket.
         def _dispatch_split_k[tile_m: Int]() raises {imm}:
@@ -724,11 +728,11 @@ def _matmul_dispatch_sm100_impl[
         elif m <= 12:
             _dispatch_split_k[2]()
             return
-        # m > 64 normally crosses over to the UMMA tile GEMM, which truncates
-        # fp32 operands to TF32's 10-bit mantissa (accumulation stays fp32).
+        # Past gemv_max_m the UMMA tile GEMM takes over, which truncates fp32
+        # operands to TF32's 10-bit mantissa (accumulation stays fp32).
         # use_tf32=False keeps every M on this IEEE-fp32 GEMV instead
         # (KERN-3151), giving up tensor-core weight reuse at large M.
-        elif m <= 64 or not use_tf32:
+        elif m <= gemv_max_m or not use_tf32:
             _dispatch_split_k[4]()
             return
 

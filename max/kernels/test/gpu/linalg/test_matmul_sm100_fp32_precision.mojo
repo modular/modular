@@ -16,7 +16,8 @@ For fp32 `transpose_b` shapes with static N <= 256 and static K >= 2048 (the
 MoE router/gate GEMM class, e.g. N=128, K=6144), `matmul_dispatch_sm100`
 routes m <= 64 to the split-K GEMV (CUDA-core IEEE-fp32 FMA) and m > 64 to
 the UMMA tile GEMM, whose operands tcgen05 truncates to TF32's 10-bit
-mantissa (there is no fp32 UMMA kind; accumulation stays fp32). The comptime
+mantissa (there is no fp32 UMMA kind; accumulation stays fp32). A narrow N
+keeps the GEMV up to m = 256 while m * N <= 8192. The comptime
 `use_tf32` matmul parameter (default True) opts out of the truncation:
 with `use_tf32=False`, every M stays on the IEEE-fp32 GEMV.
 
@@ -35,6 +36,8 @@ reference computed from the same fp32 inputs:
    shared rows — the parameter does not perturb the m <= 64 path, and for
    m > 64 it selects the same GEMV instantiation with the same per-block
    reduction order, so M no longer changes results.
+4. Default, narrow N: fp32-exact up to the narrow-N bound (N=32: m=72 and
+   256; N=64: m=128), TF32-level one row past it.
 """
 
 from std.random import random_float64, seed
@@ -74,7 +77,9 @@ struct Stats(Copyable, Movable):
     var max_abs: Float64
 
 
-def _stats_vs_ref(
+def _stats_vs_ref[
+    n: Int = N
+](
     got: TileTensor[f32, ...],
     reference: TileTensor[f64, ...],
     rows: Int,
@@ -82,7 +87,7 @@ def _stats_vs_ref(
     var sum_rel = Float64(0.0)
     var max_abs = Float64(0.0)
     for mm in range(rows):
-        for nn in range(N):
+        for nn in range(n):
             var g = Float64(got.load[width=1]((mm, nn)))
             var r = reference.load[width=1]((mm, nn))
             var ad = abs(g - r)
@@ -92,11 +97,86 @@ def _stats_vs_ref(
             sum_rel += ad / denom
             if ad > max_abs:
                 max_abs = ad
-    return Stats(sum_rel / Float64(rows * N), max_abs)
+    return Stats(sum_rel / Float64(rows * n), max_abs)
+
+
+def _fill_random(
+    t: TileTensor[
+        mut=True,
+        f32,
+        address_space=.GENERIC,
+        ...,
+        Engine=DefaultEngine[element_width=1],
+    ],
+):
+    for i in range(t.num_elements()):
+        t[i // K, i % K] = Float32(random_float64(-1.0, 1.0))
+
+
+def _fp64_reference[
+    n: Int
+](
+    a_host: TileTensor[
+        f32,
+        address_space=.GENERIC,
+        ...,
+        Engine=DefaultEngine[element_width=1],
+    ],
+    b_host: TileTensor[
+        f32,
+        address_space=.GENERIC,
+        ...,
+        Engine=DefaultEngine[element_width=1],
+    ],
+    ref_host: TileTensor[
+        mut=True,
+        f64,
+        address_space=.GENERIC,
+        ...,
+        Engine=DefaultEngine[element_width=1],
+    ],
+):
+    """Computes the fp64 reference for the first REF_ROWS rows.
+
+    Uses the same fp32 inputs, with transpose_b:
+    C[mm, nn] = sum_k A[mm, k] * B[nn, k].
+    """
+    for mm in range(REF_ROWS):
+        for nn in range(n):
+            var acc = Float64(0.0)
+            for kk in range(K):
+                acc += Float64(a_host[mm, kk]) * Float64(b_host[nn, kk])
+            ref_host[mm, nn] = acc
+
+
+def _assert_fp32_exact(st: Stats, label: String) raises:
+    assert_true(
+        st.mean_rel < FP32_MEAN_REL_BOUND,
+        String(label, " mean_rel above the fp32-exact bound"),
+    )
+    assert_true(
+        st.max_abs < FP32_MAX_ABS_BOUND,
+        String(label, " max_abs above the fp32-exact bound"),
+    )
+
+
+def _assert_tf32_band(st: Stats, label: String) raises:
+    assert_true(
+        st.mean_rel > TF32_MEAN_REL_LOW,
+        String(
+            label,
+            " mean_rel below the TF32 band: the default path got more",
+            " precise — re-decide this contract and update the test",
+        ),
+    )
+    assert_true(
+        st.mean_rel < TF32_MEAN_REL_HIGH,
+        String(label, " mean_rel above the TF32 band"),
+    )
 
 
 def _run_matmul[
-    use_tf32: Bool = True
+    use_tf32: Bool = True, n: Int = N
 ](
     a_host: TileTensor[
         f32,
@@ -124,8 +204,8 @@ def _run_matmul[
     ctx.enqueue_copy(a_dev_buf, a_host._storage)
     var a_dev = TileTensor(a_dev_buf, row_major(m, Idx[K]))
 
-    var c_dev_buf = ctx.enqueue_create_buffer[f32](m * N)
-    var c_dev = TileTensor(c_dev_buf, row_major(m, Idx[N]))
+    var c_dev_buf = ctx.enqueue_create_buffer[f32](m * n)
+    var c_dev = TileTensor(c_dev_buf, row_major(m, Idx[n]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True, use_tf32=use_tf32](
         c_dev, a_dev, b_dev, ctx
@@ -137,6 +217,48 @@ def _run_matmul[
     _ = c_dev_buf^
 
 
+def _narrow_n_phase[
+    n: Int
+](
+    a_host: TileTensor[
+        f32,
+        address_space=.GENERIC,
+        ...,
+        Engine=DefaultEngine[element_width=1],
+    ],
+    exact_ms: List[Int],
+    tf32_m: Int,
+    ctx: DeviceContext,
+) raises:
+    """Checks that the default dispatch keeps an `n`-wide matmul on the
+    IEEE-fp32 GEMV at every m in `exact_ms`, and is TF32 again at `tf32_m`.
+    """
+    var b_host_buf = ctx.enqueue_create_host_buffer[f32](n * K)
+    var b_host = TileTensor(b_host_buf, row_major(Idx[n], Idx[K]))
+    _fill_random(b_host)
+    var b_dev_buf = ctx.enqueue_create_buffer[f32](n * K)
+    var b_dev = TileTensor(b_dev_buf, row_major(Idx[n], Idx[K]))
+    ctx.enqueue_copy(b_dev_buf, b_host._storage)
+    var ref_buf = ctx.enqueue_create_host_buffer[f64](REF_ROWS * n)
+    var ref_host = TileTensor(ref_buf, row_major(Idx[REF_ROWS], Idx[n]))
+    _fp64_reference[n](a_host, b_host, ref_host)
+    ctx.synchronize()
+    for idx in range(len(exact_ms) + 1):
+        var exact = idx < len(exact_ms)
+        var m = exact_ms[idx] if exact else tf32_m
+        var c_buf = ctx.enqueue_create_host_buffer[f32](m * n)
+        var c = TileTensor(c_buf, row_major(m, Idx[n]))
+        _run_matmul[n=n](a_host, b_dev, c, m, ctx)
+        var st = _stats_vs_ref[n](c, ref_host, REF_ROWS)
+        print(t"  n={n} m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
+        var label = String("n=", n, " m=", m)
+        if exact:
+            _assert_fp32_exact(st, label)
+        else:
+            _assert_tf32_band(st, label)
+    _ = b_dev_buf^
+
+
 def main() raises:
     with DeviceContext() as ctx:
         seed(0xC0FFEE)
@@ -144,26 +266,17 @@ def main() raises:
         var a_host = TileTensor(a_host_buf, row_major(Idx[MAX_M], Idx[K]))
         var b_host_buf = ctx.enqueue_create_host_buffer[f32](N * K)
         var b_host = TileTensor(b_host_buf, row_major(Idx[N], Idx[K]))
-        for i in range(a_host.num_elements()):
-            a_host[i // K, i % K] = Float32(random_float64(-1.0, 1.0))
-        for i in range(b_host.num_elements()):
-            b_host[i // K, i % K] = Float32(random_float64(-1.0, 1.0))
+        _fill_random(a_host)
+        _fill_random(b_host)
 
         var b_dev_buf = ctx.enqueue_create_buffer[f32](N * K)
         var b_dev = TileTensor(b_dev_buf, row_major(Idx[N], Idx[K]))
         ctx.enqueue_copy(b_dev_buf, b_host._storage)
         ctx.synchronize()
 
-        # fp64 reference for the first REF_ROWS rows, from the same fp32
-        # inputs. transpose_b: C[mm, nn] = sum_k A[mm, k] * B[nn, k].
         var ref_buf = ctx.enqueue_create_host_buffer[f64](REF_ROWS * N)
         var ref_host = TileTensor(ref_buf, row_major(Idx[REF_ROWS], Idx[N]))
-        for mm in range(REF_ROWS):
-            for nn in range(N):
-                var acc = Float64(0.0)
-                for kk in range(K):
-                    acc += Float64(a_host[mm, kk]) * Float64(b_host[nn, kk])
-                ref_host[mm, nn] = acc
+        _fp64_reference[N](a_host, b_host, ref_host)
 
         # Kept for the cross-m comparisons below.
         var c64_buf = ctx.enqueue_create_host_buffer[f32](REF_ROWS * N)
@@ -182,14 +295,7 @@ def main() raises:
             _run_matmul(a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, min(m, REF_ROWS))
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
-            assert_true(
-                st.mean_rel < FP32_MEAN_REL_BOUND,
-                String("m=", m, " mean_rel above the fp32-exact bound"),
-            )
-            assert_true(
-                st.max_abs < FP32_MAX_ABS_BOUND,
-                String("m=", m, " max_abs above the fp32-exact bound"),
-            )
+            _assert_fp32_exact(st, String("m=", m))
             if m == 64:
                 for mm in range(REF_ROWS):
                     for nn in range(N):
@@ -204,20 +310,7 @@ def main() raises:
             _run_matmul(a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, REF_ROWS)
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
-            assert_true(
-                st.mean_rel > TF32_MEAN_REL_LOW,
-                String(
-                    "m=",
-                    m,
-                    " mean_rel below the TF32 band: the default m>64 path",
-                    " got more precise — re-decide this contract and update",
-                    " the test",
-                ),
-            )
-            assert_true(
-                st.mean_rel < TF32_MEAN_REL_HIGH,
-                String("m=", m, " mean_rel above the TF32 band"),
-            )
+            _assert_tf32_band(st, String("m=", m))
             if m == 128:
                 for mm in range(REF_ROWS):
                     for nn in range(N):
@@ -252,24 +345,7 @@ def main() raises:
             _run_matmul[use_tf32=False](a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, min(m, REF_ROWS))
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
-            assert_true(
-                st.mean_rel < FP32_MEAN_REL_BOUND,
-                String(
-                    "m=",
-                    m,
-                    " mean_rel above the fp32-exact bound with",
-                    " use_tf32=False",
-                ),
-            )
-            assert_true(
-                st.max_abs < FP32_MAX_ABS_BOUND,
-                String(
-                    "m=",
-                    m,
-                    " max_abs above the fp32-exact bound with",
-                    " use_tf32=False",
-                ),
-            )
+            _assert_fp32_exact(st, String("m=", m, " with use_tf32=False"))
             # Dispatch-logic checks: use_tf32=False must leave the m<=64
             # bucket untouched (m=64 case) and must route m>64 to the same
             # GEMV instantiation (m=128 case) — both bit-identical to the
@@ -289,5 +365,9 @@ def main() raises:
                         " the shared rows",
                     ),
                 )
+
+        print("[phase 4] use_tf32=True, narrow N: GEMV while m * N <= 8192")
+        _narrow_n_phase[32](a_host, [72, 256], 257, ctx)
+        _narrow_n_phase[64](a_host, [128], 129, ctx)
 
         print("=== TEST PASSED ===")
