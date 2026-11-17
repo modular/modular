@@ -345,6 +345,7 @@ def run_vllm_model(
             tensor_parallel_size=vllm_pipeline.tensor_parallel_size,
             extra_kwargs=vllm_pipeline.extra_kwargs,
             mm_data_key=vllm_pipeline.mm_data_key,
+            env=vllm_pipeline.env,
         )
     else:
         raise NotImplementedError(

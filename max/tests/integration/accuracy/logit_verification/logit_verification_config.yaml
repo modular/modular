@@ -999,6 +999,29 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.3e-01
     kl_div_threshold: 4.0e-01
 
+  # ModuleV3 at TP=2 on the 2x B200 job (nvidia-multi, `gpu:0,1`) against a
+  # vLLM 0.33.0 golden. vLLM's KV cache is fp8_ds_mla, its only DeepSeek-V4
+  # path on B200; MAX keeps a BF16 KV cache.
+  # Goldens generated using vLLM 0.33.0.
+  # https://github.com/modularml/modular/actions/runs/43938913902
+  # --find-tolerances on a 2x B200 dev box against this golden measured max
+  # cosine distance 4.7e-04 and max KL 1.6e-01 (translate prompt, step 8).
+  # Widened ~2x like the Nemotron Lightning entry: a golden regenerated on
+  # another run flips near-tie tokens, so the margin also covers that.
+  # TODO(CENG-1503): tighten once a reference with a BF16 KV cache exists.
+  deepseek-ai/DeepSeek-V4-Flash-0731:
+    pre_submit_agents: []
+    pipeline: "deepseek-ai/DeepSeek-V4-Flash-0731"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-only, nvidia-multi, no-h100]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/deepseek-ai_DeepSeek-V4-Flash-0731_golden/1/687691562b5ec96b6fddc95c1132cc905dde89abe083b52809156b456ca4e69d/deepseek-ai_DeepSeek-V4-Flash-0731_golden.tar.gz"
+      json_file: "vllm_deepseek-ai_DeepSeek-V4-Flash-0731_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 1.0e-03
+    kl_div_threshold: 3.5e-01
+    timeout: 3600
+
   deepseek-ai/DeepSeek-V3.2-Exp:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []

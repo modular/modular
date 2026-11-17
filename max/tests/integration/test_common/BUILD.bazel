@@ -378,6 +378,7 @@ modular_py_library(
         ":storage",
         ":test_data",
         requirement("numpy"),
+        requirement("transformers"),
     ] + select({
         "//:nvidia_gpu": [
             requirement("ninja"),

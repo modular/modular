@@ -160,6 +160,8 @@ class VLLMPipeline:
     tensor_parallel_size: int = 1
     extra_kwargs: dict[str, Any] = field(default_factory=dict)
     mm_data_key: str = "image"
+    env: dict[str, str] = field(default_factory=dict)
+    """Environment overrides applied before the engine starts."""
 
 
 class PipelineOracle(ABC):
@@ -860,6 +862,8 @@ class GenericOracle(PipelineOracle):
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         batch_size: int | list[int] | None = None,
         add_bos_token: bool | None = None,
+        vllm_extra_kwargs: Mapping[str, Any] | None = None,
+        vllm_env: Mapping[str, str] | None = None,
     ) -> None:
         self.model_path = model_path
         # A quantized checkpoint transformers cannot load names its bf16 source
@@ -882,10 +886,25 @@ class GenericOracle(PipelineOracle):
         self.default_batch_size = batch_size
         self.add_bos_token = add_bos_token
         self.trust_remote_code = config_params.get("trust_remote_code", False)
+        self.vllm_extra_kwargs = dict(vllm_extra_kwargs or {})
+        self.vllm_env = dict(vllm_env or {})
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]] | None:
         return self._device_encoding_map
+
+    def create_vllm_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device_specs: list[driver.DeviceSpec],
+    ) -> VLLMPipeline:
+        vllm_pipeline = super().create_vllm_pipeline(
+            encoding=encoding, device_specs=device_specs
+        )
+        vllm_pipeline.extra_kwargs = dict(self.vllm_extra_kwargs)
+        vllm_pipeline.env = dict(self.vllm_env)
+        return vllm_pipeline
 
     def _local_model_path(self) -> str:
         """Return a local model directory, syncing from S3 once if needed.
@@ -2023,6 +2042,31 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
     ),
+    # The reference is a vLLM golden on the same fp8/fp4 checkpoint. MAX runs
+    # the ModuleV3 recipe (flash_0731_fp8_tp2_b200.yaml) at TP=2 from the
+    # 2x B200 job's device list, with its default BF16 KV cache.
+    # vLLM's only DeepSeek-V4 KV cache on B200 is fp8_ds_mla (`auto` maps to
+    # it), so that cache dtype is pinned here and the KV-dtype gap lands in the
+    # tolerances. `dtype` is reset to vLLM's default because the float8_e4m3fn
+    # encoding otherwise makes vllm_utils request float16.
+    "deepseek-ai/DeepSeek-V4-Flash-0731": GenericOracle(
+        model_path="deepseek-ai/DeepSeek-V4-Flash-0731",
+        config_params={
+            "max_length": 4096,
+            "max_batch_input_tokens": 4096,
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+        vllm_extra_kwargs={
+            "dtype": "auto",
+            "kv_cache_dtype": "fp8",
+            "tokenizer_mode": "deepseek_v4",
+            "max_model_len": 4096,
+        },
+        # vLLM's DeepSeek-V4 o_proj calls DeepGEMM's fp8_einsum
+        # unconditionally, so it needs DeepGEMM's weight layout.
+        vllm_env={"VLLM_USE_DEEP_GEMM": "1"},
+    ),
     "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.2-Exp",
         config_params={
@@ -2052,10 +2096,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     # (TP-sharded routed experts), the layout Mach serves by default
     # (mach/docs/models/mistral-large-4.md).
     # TODO(CENG-1443): that golden also needs the Mistral-format load arguments
-    # (`config_format`, `load_format` and `tokenizer_mode` set to "mistral") and
-    # a tokenizer from the base repo. `GenericOracle.create_vllm_pipeline` does
-    # not pass `extra_kwargs`; `_KimiK2_5BaseOracle.create_vllm_pipeline` shows
-    # the pattern.
+    # (`config_format`, `load_format` and `tokenizer_mode` set to "mistral",
+    # passed as `vllm_extra_kwargs`) and a tokenizer from the base repo.
     "mistralai/Mistral-Large-4-1T-A52B-NVFP4": GenericOracle(
         model_path="mistralai/Mistral-Large-4-1T-A52B-NVFP4",
         config_params={
