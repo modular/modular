@@ -564,6 +564,9 @@ This version is still a work in progress.
 
 ## Fixed
 
+- A bare `raise` in an `except` block no longer crashes the compiler when
+  building with debug info.
+
 - `std.ffi.c_pid_t` is now `c_int` instead of `Int`, matching the 32-bit C
   `pid_t` on Linux and macOS. As an `Int`, a `-1` returned by a function such
   as `waitpid()` read back as a large positive number, so checks for `-1` or a

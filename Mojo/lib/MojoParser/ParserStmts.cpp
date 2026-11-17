@@ -1613,7 +1613,7 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   if (shared.options.debugLevel !=
       CompilationOptions::DebugInfoLevel::kNoDebug) {
     if (failed(injectDebuggerRaiseHookCall(shared, emitter, getParentDecl(),
-                                           loc.Start, errorExpr)))
+                                           loc.Start, sourceExpr)))
       return failure();
   }
 
