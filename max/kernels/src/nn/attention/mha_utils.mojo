@@ -834,8 +834,8 @@ def dispatch_mask[
     Args:
         mask_operands: The mask's graph operands: none for the masks that
             read none, the ids and row offsets for `"segment"`, the mask for
-            `"additive"`, the bias, cache lengths and row offsets for
-            `"relative_logits"`.
+            `"additive"`, the bias, cache lengths and row offsets, and
+            optionally per-token sink logits, for `"relative_logits"`.
         callback_fn: Parametric callback invoked with the resolved mask.
 
     Raises:

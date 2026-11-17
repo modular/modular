@@ -508,6 +508,7 @@ struct RelativeLogitsMask[
     Bias: Loadable & TrivialRegisterPassable = NoView,
     CacheLengths: Loadable & TrivialRegisterPassable = NoView,
     RowOffsets: Loadable & TrivialRegisterPassable = NoView,
+    Sink: Loadable & TrivialRegisterPassable = NoView,
 ](MHAMask, TrivialRegisterPassable):
     """Causal (or sliding-window causal when `window_size > 0`) visibility,
     plus an additive bias by relative distance.
@@ -518,7 +519,9 @@ struct RelativeLogitsMask[
     `MASK_VALUE`.
 
     Operands: the bias, the uint32 cache lengths `[batch]` (tokens cached
-    before this call's), and the uint32 input row offsets `[batch + 1]`.
+    before this call's), and the uint32 input row offsets `[batch + 1]`, and
+    optionally a `(tokens, heads)` table of per-token sink logits: an extra
+    softmax key with a zero value, in the bias's ragged row convention.
     """
 
     comptime _causal = CausalMask()
@@ -528,10 +531,12 @@ struct RelativeLogitsMask[
     comptime mask_out_of_bound: Bool = is_nvidia_gpu()
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
+    comptime has_token_sink: Bool = not (Self.Sink == NoView)
 
     var bias: Self.Bias
     var cache_lengths: Self.CacheLengths
     var row_offsets: Self.RowOffsets
+    var sink: Self.Sink
 
     comptime MaskType[*Ts: Input & Fused & LoadAccess]: MHAMask = (
         RelativeLogitsMask[
@@ -539,6 +544,7 @@ struct RelativeLogitsMask[
             LoadView[Ts[0]],
             LoadView[Ts[1]],
             LoadView[Ts[2]],
+            LoadView[Ts[3]] if len(Ts) == 4 else NoView,
         ]
     )
 
@@ -546,21 +552,24 @@ struct RelativeLogitsMask[
     def make[
         *Ts: Input & Fused & LoadAccess
     ](operands: TensorTuple[*Ts]) -> Self.MaskType[*Ts]:
-        """Builds the mask from the bias, cache lengths and row offsets.
+        """Builds the mask from the bias, cache lengths, row offsets and
+        optionally the per-token sink logits.
 
         Parameters:
-            Ts: The operand types: the bias, the cache lengths and the row
-                offsets.
+            Ts: The operand types: the bias, the cache lengths, the row offsets
+                and optionally the sink logits.
 
         Args:
-            operands: The bias, the cache lengths and the row offsets.
+            operands: The bias, the cache lengths, the row offsets and
+                optionally the sink logits.
 
         Returns:
             The mask.
         """
-        comptime assert (
-            len(Ts) == 3
-        ), "RelativeLogitsMask takes three mask operands"
+        comptime assert len(Ts) in (3, 4), (
+            "RelativeLogitsMask takes three mask operands, and a fourth for"
+            " sink logits"
+        )
         comptime assert (
             LoadView[Ts[0]].rank == 3
         ), "the bias must be (tokens, heads, extent)"
@@ -570,11 +579,23 @@ struct RelativeLogitsMask[
         comptime assert (
             LoadView[Ts[2]].dtype == .uint32
         ), "row offsets must be uint32"
-        return {
-            load_view(operands[0]),
-            load_view(operands[1]),
-            load_view(operands[2]),
-        }
+        comptime if len(Ts) == 4:
+            comptime assert (
+                LoadView[Ts[3]].rank == 2
+            ), "the sink must be (tokens, heads)"
+            return {
+                load_view(operands[0]),
+                load_view(operands[1]),
+                load_view(operands[2]),
+                load_view(operands[3]),
+            }
+        else:
+            return {
+                load_view(operands[0]),
+                load_view(operands[1]),
+                load_view(operands[2]),
+                NoView(),
+            }
 
     comptime device_type: AnyType = Self
 
@@ -659,6 +680,19 @@ struct RelativeLogitsMask[
         # Add the bias before the visibility select so masked lanes come out
         # as exactly `MASK_VALUE`, never `MASK_VALUE + bias`.
         return self.visibility_mask(coord, score_vec + bias_vec)
+
+    @inline(.always)
+    def token_sink(
+        self, seq_id: UInt32, head: UInt32, q_idx: UInt32
+    ) -> Float32:
+        comptime if Self.has_token_sink:
+            var flat_row = self._flat_row(Int(seq_id), Int(q_idx))
+            # Rows past the ragged total are tile padding, never stored.
+            if 0 <= flat_row < Int(self.sink.shape()[0].value()):
+                return self.sink.load[1]((flat_row, Int(head)))[0].cast[
+                    .float32
+                ]()
+        return Float32(0)
 
     comptime has_row_bias: Bool = True
 

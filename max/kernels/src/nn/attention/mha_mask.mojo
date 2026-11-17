@@ -290,6 +290,11 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
     """Whether `add_row_bias` adds this mask's additive bias, leaving
     `visibility_mask` the rest of `mask`."""
 
+    comptime has_token_sink: Bool = False
+    """Whether `token_sink` supplies a per-token, per-head attention sink
+    logit, an extra softmax key with a zero value. Only the SM100 FA4 route
+    reads it."""
+
     comptime supports_decode_token_fold: Bool = False
     """Whether AMD decode may fold several query tokens into one tile under
     this mask, and start its split-K key range at `start_column`: both `status`
@@ -321,6 +326,24 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
             k_start: The key position of `srow[0]`.
         """
         pass
+
+    @inline(.always)
+    def token_sink(
+        self, seq_id: UInt32, head: UInt32, q_idx: UInt32
+    ) -> Float32:
+        """Returns the attention sink logit of one query row and head.
+
+        Called only when `has_token_sink` is set.
+
+        Args:
+            seq_id: The sequence index.
+            head: The query head index.
+            q_idx: The query's absolute position in its sequence.
+
+        Returns:
+            The sink logit before the softmax scale, which does not apply to it.
+        """
+        return Float32(0)
 
     @inline(.always)
     def visibility_mask[

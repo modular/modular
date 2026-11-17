@@ -6148,6 +6148,7 @@ def flash_attention_ragged(
     sink_weights: TensorValue | None = None,
     rel_logits: TensorValue | None = None,
     output_dtype: DType | None = None,
+    token_sink: TensorValue | None = None,
 ) -> TensorValue:
     """Computes flash (self) attention provided the ``!mo.opaque`` KV Cache.
 
@@ -6168,7 +6169,8 @@ def flash_attention_ragged(
     supports ``mask_variant`` values ``CAUSAL_MASK`` (with
     ``local_window_size == -1``) and ``SLIDING_WINDOW_CAUSAL_MASK`` (with a
     positive ``local_window_size``); ``sink_weights`` and ``rel_logits`` are
-    mutually exclusive.
+    mutually exclusive. ``token_sink`` adds a per-token, per-head sink logit
+    to the ``rel_logits`` path instead.
 
     For a cache whose key and value head dims differ, ``input`` is
     ``head_dim`` wide and the output is ``v_head_dim`` wide.
@@ -6199,6 +6201,12 @@ def flash_attention_ragged(
             ``input``'s own ragged-flat row convention.
         output_dtype: Dtype for the attention output. Defaults to
             ``input.dtype``.
+        token_sink: Optional attention sink logits with shape
+            ``[total_seq_len, num_heads]``, in ``input``'s ragged-flat row
+            convention and dtype. Requires ``rel_logits`` and the SM100
+            kernel. Each logit is an extra softmax key, scaled by neither
+            ``scale`` nor ``rel_logits``, with a zero value, so the output is
+            ``softmax([scores, sink]) @ [V, 0]``.
     """
     input_rank_expected = 3
     if input.rank != input_rank_expected:
@@ -6248,6 +6256,14 @@ def flash_attention_ragged(
             "sink_weights and rel_logits are mutually exclusive; pass at most one"
         )
 
+    if token_sink is not None and rel_logits is None:
+        raise ValueError("token_sink requires rel_logits")
+    if token_sink is not None and input.device.is_cpu():
+        raise ValueError(
+            "token_sink is read only by the SM100 GPU kernel; the CPU kernel"
+            " would drop it"
+        )
+
     dispatch_metadata = kv_collection.attention_dispatch_metadata
     if dispatch_metadata is None:
         raise ValueError(
@@ -6294,6 +6310,15 @@ def flash_attention_ragged(
                 f"expected rel_logits to hold {input.shape[1]} heads, matching "
                 f"input's, but got {rel_logits.shape[1]}"
             )
+        if token_sink is not None:
+            _check_rank(2, token_sink=token_sink)
+            _check_same_dtype(input=input, token_sink=token_sink)
+            if token_sink.shape != input.shape[:2]:
+                raise ValueError(
+                    f"expected token_sink of shape {list(input.shape[:2])}, "
+                    f"matching input's rows and heads, but got "
+                    f"{list(token_sink.shape)}"
+                )
 
         parameters: dict[str, int | str | DType] = {
             "mask_str": "relative_logits",
@@ -6325,6 +6350,8 @@ def flash_attention_ragged(
     if rel_logits is not None:
         # The relative-logits mask's operands trail the op's own.
         values += [rel_logits, kv_collection.cache_lengths, input_row_offsets]
+        if token_sink is not None:
+            values.append(token_sink)
 
     return ops.inplace_custom(
         op_name,

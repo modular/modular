@@ -196,3 +196,96 @@ def test_relative_logits(models: dict[int, Model], name: str) -> None:
     np.testing.assert_allclose(
         out.to(CPU()).to_numpy(), expected.numpy(), rtol=2e-2, atol=2e-2
     )
+
+
+def _build_with_sink(
+    *,
+    sink_type: TensorType | None,
+    with_bias: bool = True,
+    device: DeviceRef | None = None,
+) -> Graph:
+    """Builds a graph that passes `token_sink`, so its validation runs."""
+    device = device or DeviceRef.GPU()
+    kv_params = _kv_params()
+    input_types = [
+        TensorType(DType.bfloat16, ["tokens", HEADS, HEAD_DIM], device),
+        TensorType(DType.uint32, ["batch_plus_1"], device),
+        TensorType(DType.bfloat16, ["tokens", HEADS, "extent"], device),
+        *kv_params.flattened_kv_inputs(),
+    ]
+    if sink_type is not None:
+        input_types.append(sink_type)
+    with Graph("relative_logits_token_sink", input_types=input_types) as g:
+        q, offsets, bias = (x.tensor for x in g.inputs[:3])
+        num_kv = len(kv_params.flattened_kv_inputs())
+        kv_collection = kv_params.unflatten_kv_inputs(
+            iter(g.inputs[3 : 3 + num_kv])
+        )[0]
+        sink = g.inputs[-1].tensor if sink_type is not None else None
+        out = flash_attention_ragged(
+            kv_params,
+            input=q,
+            input_row_offsets=offsets,
+            kv_collection=kv_collection,
+            layer_idx=ops.constant(0, DType.uint32, DeviceRef.CPU()),
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=SCALE,
+            rel_logits=bias if with_bias else None,
+            token_sink=sink,
+        )
+        g.output(out.cast(DType.float32))
+    return g
+
+
+def test_token_sink_is_the_fourth_mask_operand() -> None:
+    sink = TensorType(DType.bfloat16, ["tokens", HEADS], DeviceRef.GPU())
+    g = _build_with_sink(sink_type=sink)
+    text = str(g)
+    bias_arg = "%arg2"
+    sink_arg = f"%arg{len(g.inputs) - 1}"
+    # The attention op reads the bias, the two lengths, then the sink.
+    uses = [line for line in text.splitlines() if bias_arg + "," in line]
+    assert uses, text
+    assert any(
+        line.index(sink_arg) > line.index(bias_arg)
+        for line in uses
+        if sink_arg in line
+    ), text
+
+
+@pytest.mark.parametrize(
+    ("sink_type", "with_bias", "message"),
+    [
+        (
+            TensorType(DType.bfloat16, ["tokens", HEADS], DeviceRef.GPU()),
+            False,
+            "token_sink requires rel_logits",
+        ),
+        (
+            TensorType(DType.bfloat16, ["tokens", HEADS, 1], DeviceRef.GPU()),
+            True,
+            "rank",
+        ),
+        (
+            TensorType(DType.float32, ["tokens", HEADS], DeviceRef.GPU()),
+            True,
+            "dtype",
+        ),
+        (
+            TensorType(DType.bfloat16, ["tokens", HEADS + 1], DeviceRef.GPU()),
+            True,
+            "expected token_sink of shape",
+        ),
+    ],
+)
+def test_token_sink_rejects(
+    sink_type: TensorType, with_bias: bool, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _build_with_sink(sink_type=sink_type, with_bias=with_bias)
+
+
+def test_token_sink_rejects_cpu() -> None:
+    sink = TensorType(DType.bfloat16, ["tokens", HEADS], DeviceRef.CPU())
+    with pytest.raises(ValueError, match="CPU kernel would drop it"):
+        _build_with_sink(sink_type=sink, device=DeviceRef.CPU())

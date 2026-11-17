@@ -1091,6 +1091,12 @@ def flash_attention_dispatch[
     var q_device = q.to_device_buffer(ctx)
     var output_device = output.to_device_buffer(ctx)
 
+    # Only the flash attention route reads a per-token mask sink; the naive
+    # kernel would drop it silently.
+    comptime assert (
+        not mask_t.has_token_sink or _is_flash_attention_applicable
+    ), "a per-token mask sink needs the flash attention route"
+
     comptime if _is_flash_attention_applicable:
         comptime is_sm90 = ctx.default_device_info == H100
         comptime is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
@@ -1103,6 +1109,12 @@ def flash_attention_dispatch[
         comptime fa4_route = is_sm100 and mask_t.mask_safe_out_of_bounds and (
             dtype.is_float8()
             or (q_half_float and (ragged or not _use_valid_length))
+        )
+        comptime assert not mask_t.has_token_sink or (
+            fa4_route and depth != 256 and depth != 512
+        ), (
+            "a per-token mask sink is read only by the SM100 FA4 route at a"
+            " depth other than 256 or 512"
         )
         comptime if fa4_route:
             # Decode callers supply a graph-computed cache length; prefill does

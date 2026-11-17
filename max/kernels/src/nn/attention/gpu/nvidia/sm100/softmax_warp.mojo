@@ -2830,12 +2830,16 @@ def fa4_softmax[
     # Fuse scale*log2e multiplication and row_max subtraction into a
     # single FMA in store_exp. Only valid on the default scaling path
     # where apply_log2e_after_mask is off.
-    # Disabled when sink weights are used because the sink logit lives
-    # in a different domain (scaled by log2e only, not scale*log2e).
+    # Disabled when sink weights or a per-token mask sink are used because
+    # the sink logit lives in a different domain (scaled by log2e only, not
+    # scale*log2e).
     # To disable for NaN debugging, set use_fma = False.
     comptime use_fma = (
-        not MaskType.apply_log2e_after_mask
-    ) and SinkType.is_null and QScaleType.is_null
+        (not MaskType.apply_log2e_after_mask)
+        and SinkType.is_null
+        and not MaskType.has_token_sink
+        and QScaleType.is_null
+    )
 
     # Fixed P scale for FP8-QKV only. The un-normalized softmax
     # probabilities P = exp2(score - row_max) sit in the e4m3 subnormal floor;
@@ -2882,6 +2886,12 @@ def fa4_softmax[
         get_defined_int["BLASST_LOG_THRESHOLD_MAG", 1_000_000_000]()
     ) * Float32(0.001)
 
+    var q_row: UInt32 = (
+        score_row
+        + cta_q_offset
+        + (thread_tile_row // UInt32(group) if fuse_gqa else thread_tile_row)
+    )
+
     @inline(.always)
     def mask_row[
         BN: Int, //, mask_strategy: MaskStrategy
@@ -2898,14 +2908,7 @@ def fa4_softmax[
             kv_tile_start_row=Int32(kv_row),
             max_seq_len=max_seq_len,
             num_keys=Int32(num_keys),
-            score_row=Int32(
-                score_row
-                + cta_q_offset
-                + (
-                    thread_tile_row
-                    // UInt32(group) if fuse_gqa else thread_tile_row
-                )
-            ),
+            score_row=Int32(q_row),
         )
 
     # while waiting, offset output
@@ -4033,17 +4036,24 @@ def fa4_softmax[
         else:
             return m
 
-    comptime if not SinkType.is_null:
-        var sink_weights_ptr = rebind[
-            ImmPointer[Scalar[qkv_type], ImmutAnyOrigin]
-        ](sink_weights.value())
+    comptime if MaskType.has_token_sink or not SinkType.is_null:
+        var sink_logit: Scalar[accum_dtype]
+        # The graph op also instantiates the per-head-weight variant, which
+        # never runs with a per-token mask sink.
+        comptime if MaskType.has_token_sink:
+            sink_logit = mask.token_sink(
+                seq_info.prompt_idx, q_head_idx, q_row
+            ).cast[accum_dtype]()
+        else:
+            var sink_weights_ptr = rebind[
+                ImmPointer[Scalar[qkv_type], ImmutAnyOrigin]
+            ](sink_weights.value())
+            sink_logit = sink_weights_ptr[q_head_idx].cast[accum_dtype]()
 
         comptime if use_fma:
-            sink_weight = sink_weights_ptr[q_head_idx].cast[accum_dtype]()
+            sink_weight = sink_logit
         else:
-            sink_weight = (
-                sink_weights_ptr[q_head_idx].cast[accum_dtype]() * log2e
-            )
+            sink_weight = sink_logit * log2e
         if fold_sink:
             row_max = max(row_max, sink_weight)
     else:
@@ -4164,7 +4174,7 @@ def fa4_softmax[
 
     var o_phase: UInt32 = 0  # initial wait is phase 0
 
-    comptime if not SinkType.is_null:
+    comptime if MaskType.has_token_sink or not SinkType.is_null:
         # The sink mass must land in `global_sum` exactly once per Q row.
         #
         # 2Q: each WG owns a disjoint set of Q rows, so adding the sink to
