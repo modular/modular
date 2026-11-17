@@ -325,7 +325,7 @@ index 20ec8dc..289592f 100644
      deps = [
          ":Support",
          ":llvm_driver_tools_def_lib",
-@@ -4621,6 +4639,138 @@ cc_library(
+@@ -4621,6 +4639,142 @@ cc_library(
      ],
  )
  
@@ -336,6 +336,7 @@ index 20ec8dc..289592f 100644
 +# transitively.
 +cc_shared_library(
 +    name = "LLVM",
++    additional_linker_inputs = ["@@//bazel/internal:libLLVM.map"],
 +    # Modular-specific and temporary: Support, TargetParser and their
 +    # dependencies live in a separate shared library that the runtime
 +    # libraries also link against, so a process loading both has one copy of
@@ -351,7 +352,10 @@ index 20ec8dc..289592f 100644
 +    tags = ["manual"],
 +    user_link_flags = select({
 +        # llvm/tools/llvm-shlib/CMakeLists.txt sets this if the linker supports it, matching here.
-+        "@platforms//os:linux": ["-Wl,-Bsymbolic-functions"],
++        "@platforms//os:linux": [
++            "-Wl,-Bsymbolic-functions",
++            "-Wl,--version-script,$(location @@//bazel/internal:libLLVM.map)",
++        ],
 +        "//conditions:default": [],
 +    }) + select({
 +        # //third-party:libxml2 links the system libxml2 with a linkopt alone,
