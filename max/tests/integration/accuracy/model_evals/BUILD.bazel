@@ -346,6 +346,27 @@ modular_py_test(
     ],
 )
 
+# Writes a TerminalBench run as exacto score.json, config.json and verdict
+# trajectory rows. Stdlib-only: the Buildkite step runs it with a bare python3.
+modular_py_binary(
+    name = "terminalbench_exacto",
+    testonly = True,
+    srcs = ["terminalbench_exacto.py"],
+    imports = ["."],
+    main = "terminalbench_exacto.py",
+    deps = [":terminalbench_score"],
+)
+
+modular_py_test(
+    name = "test_terminalbench_exacto",
+    size = "small",
+    srcs = ["test_terminalbench_exacto.py"],
+    deps = [
+        ":terminalbench_exacto",
+        ":terminalbench_score",
+    ],
+)
+
 # Job-summary renderer for the AutoExacto gate. Stdlib-only: the CI summary
 # step runs it with a bare python3, no bazel.
 modular_py_binary(

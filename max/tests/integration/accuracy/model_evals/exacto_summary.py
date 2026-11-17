@@ -32,6 +32,12 @@ DATASETS = [
     ("gpqa_diamond", "GPQA-Diamond", "accuracy (MCQ)", "gpqa"),
     ("taubench_airline", "tau2-bench airline", "mean reward", "taubench"),
     ("vgi_bench", "VGI-Bench", "accuracy (MCQ, video)", "vgi"),
+    (
+        "terminalbench_2_1",
+        "TerminalBench 2.1",
+        "pass rate (mean over tasks)",
+        "terminalbench",
+    ),
 ]
 
 
@@ -92,6 +98,14 @@ def notes(score: dict[str, Any], dataset: str) -> str:
                 f"OpenRouter's `{reference_sim}`: compare only with runs on "
                 "the same simulator"
             )
+    if dataset == "terminalbench_2_1":
+        if score.get("complete") is False:
+            flags.append(
+                f"incomplete: {score.get('tasks_short_of_k')} tasks short "
+                "of k, not a measurement"
+            )
+        if score.get("task_subset"):
+            flags.append("partial (task subset)")
     counts = score.get("target_letter_counts")
     if isinstance(counts, dict) and counts:
         total = sum(counts.values())
@@ -178,7 +192,8 @@ def _render_provenance(
     gpqa = scores.get("gpqa")
     tau = scores.get("taubench")
     vgi = scores.get("vgi")
-    if not gpqa and not tau and not vgi:
+    tb = scores.get("terminalbench")
+    if not gpqa and not tau and not vgi and not tb:
         return
     out.write("### Comparability\n\n")
     if gpqa:
@@ -212,6 +227,17 @@ def _render_provenance(
             f"reasoning effort {vgi.get('reasoning_effort')}, "
             f"stop_ratio {vgi.get('stop_ratio')}\n"
         )
+    if tb:
+        subset = tb.get("task_subset")
+        tasks = f"{len(subset)}-task subset" if subset else "all tasks"
+        out.write(
+            f"- TerminalBench: `{tb.get('dataset_name')}`, {tasks}, "
+            f"{tb.get('num_trials')} trials each, {tb.get('agent')}, "
+            f"Harbor {tb.get('harbor')}, temperature {tb.get('temperature')}, "
+            f"top_p {tb.get('top_p')}, thinking {tb.get('thinking')}, "
+            f"max_tokens {tb.get('output_cap')}, "
+            f"{tb.get('tasks_short_of_k')} tasks short of k\n"
+        )
     out.write("\n")
 
 
@@ -221,12 +247,16 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--gpqa", help="Path to the GPQA score.json.")
     parser.add_argument("--taubench", help="Path to the tau2 score.json.")
     parser.add_argument("--vgi", help="Path to the VGI-Bench score.json.")
+    parser.add_argument(
+        "--terminalbench", help="Path to the TerminalBench score.json."
+    )
     args = parser.parse_args(argv)
 
     scores = {
         "gpqa": load(args.gpqa),
         "taubench": load(args.taubench),
         "vgi": load(args.vgi),
+        "terminalbench": load(args.terminalbench),
     }
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:

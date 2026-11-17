@@ -41,11 +41,17 @@
 #   -k N                 Valid trials per task (default: 2). 2 is the release
 #                         candidate setting; use 3 or more for a baseline.
 #   -n N                 Concurrent trials (default: 24).
-#   --output-cap N       Max output tokens per response (default: 32768). A
-#                         response that reaches it counts as capped.
+#   --output-cap N       Sent as max_tokens on every request (default: 32768).
+#                         A response that reaches it counts as capped.
 #   --context N          Context limit given to opencode (default: 1048576).
 #   --reasoning-effort E Sent as reasoning_effort on every request (default:
 #                         unset, the chat template's default).
+#   --temperature T      Sent as temperature on every request (default: unset,
+#                         the endpoint's default).
+#   --top-p P            Sent as top_p on every request (default: unset).
+#   --thinking on|off    Sent as chat_template_kwargs.thinking on every
+#                         request (default: unset, the chat template's
+#                         default).
 #   --exclude TASK       Exclude a task (repeatable). Default: qemu-alpine-ssh
 #                         and qemu-startup, which need nested virtualization
 #                         and never produce a valid trial on our hosts. Passing
@@ -97,6 +103,9 @@ n=24
 output_cap=32768
 context=1048576
 reasoning_effort=""
+temperature=""
+top_p=""
+thinking=""
 excludes=()
 includes=()
 runtime="podman"
@@ -117,6 +126,9 @@ while [[ $# -gt 0 ]]; do
     --output-cap) output_cap="$2"; shift 2 ;;
     --context) context="$2"; shift 2 ;;
     --reasoning-effort) reasoning_effort="$2"; shift 2 ;;
+    --temperature) temperature="$2"; shift 2 ;;
+    --top-p) top_p="$2"; shift 2 ;;
+    --thinking) thinking="$2"; shift 2 ;;
     --exclude) excludes+=("$2"); shift 2 ;;
     --task) includes+=("$2"); shift 2 ;;
     --runtime) runtime="$2"; shift 2 ;;
@@ -132,6 +144,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ ${#excludes[@]} -eq 0 ]] && excludes=(qemu-alpine-ssh qemu-startup)
+[[ -z "$thinking" || "$thinking" == on || "$thinking" == off ]] \
+  || { echo "ERROR: --thinking takes on or off, not $thinking" >&2; exit 2; }
 # Fail before the hours of trials, not after them when compare cannot read it.
 [[ -z "$baseline" || -f "$baseline" ]] \
   || { echo "ERROR: --baseline file not found: $baseline" >&2; exit 2; }
@@ -246,12 +260,26 @@ cleanup() {
   return 0
 }
 # Keep the script's own exit status; cleanup must never override it.
+# Harbor runs in its own session (see watched), so a signal to this script
+# does not reach it; without this, a cancelled run keeps its trials, task
+# containers and endpoint requests going.
+harbor_pid=""
+stop_harbor() {
+  [[ -n "$harbor_pid" ]] && kill -0 "$harbor_pid" 2>/dev/null || return 0
+  log "stopping Harbor (pid $harbor_pid)"
+  kill -- "-$harbor_pid" 2>/dev/null || true
+  wait "$harbor_pid" 2>/dev/null || true
+  harbor_pid=""
+}
 on_exit() {
   local rc=$?
+  stop_harbor
   cleanup
   exit "$rc"
 }
 trap on_exit EXIT
+# Exiting is what runs on_exit.
+trap 'exit 143' TERM INT HUP
 cleanup
 
 base="${url%/}"; base="${base%/v1}"
@@ -271,15 +299,33 @@ if [[ "$base" =~ ^(https?://)(localhost|127\.0\.0\.1|0\.0\.0\.0)(:[0-9]+)?$ ]]; 
   agent_base="${BASH_REMATCH[1]}$host_ip${BASH_REMATCH[3]}"
 fi
 
-OC_CONFIG="$(python3 - "$agent_base/v1" "$API_KEY" "$model" "$context" "$output_cap" "$reasoning_effort" <<'PY'
+# The config names the key by environment variable, so neither Harbor's
+# command line nor the saved config holds it; --ae below has Harbor copy the
+# variable into the task container.
+export TB_ENDPOINT_API_KEY="$API_KEY"
+# opencode 1.19.5 sends max_tokens 32000 whatever limit.output says, and only
+# sends temperature for models it knows support it. The provider passes
+# unknown model options into the request body as given, so every sampling
+# setting goes there.
+OC_CONFIG="$(python3 - "$agent_base/v1" "$model" "$context" "$output_cap" \
+  "$reasoning_effort" "$temperature" "$top_p" "$thinking" <<'PY'
 import json, sys
-url, key, model, context, output, effort = sys.argv[1:]
-entry = {"name": model, "tool_call": True, "limit": {"context": int(context), "output": int(output)}}
+url, model, context, output, effort, temperature, top_p, thinking = sys.argv[1:]
+options = {"max_tokens": int(output)}
 if effort:
-    entry["options"] = {"reasoningEffort": effort}
+    options["reasoningEffort"] = effort
+if temperature:
+    options["temperature"] = float(temperature)
+if top_p:
+    options["top_p"] = float(top_p)
+if thinking:
+    options["chat_template_kwargs"] = {"thinking": thinking == "on"}
+entry = {"name": model, "tool_call": True,
+         "limit": {"context": int(context), "output": int(output)},
+         "options": options}
 print(json.dumps({"provider": {"gate": {
     "npm": "@ai-sdk/openai-compatible", "name": "gate",
-    "options": {"baseURL": url, "apiKey": key},
+    "options": {"baseURL": url, "apiKey": "{env:TB_ENDPOINT_API_KEY}"},
     "models": {model: entry}}}}))
 PY
 )"
@@ -291,9 +337,13 @@ exclude_args=()
 for t in "${excludes[@]}"; do exclude_args+=(-x "$t"); done
 task_args=()
 for t in "${includes[@]}"; do task_args+=(-i "$t"); done
-# An array, not a function: setsid can only execute a program.
+# An array, not a function: setsid can only execute a program. The --ae value
+# is a template that Harbor resolves from this environment, so it records only
+# the variable's name.
+# shellcheck disable=SC2016 # Harbor expands the template, not the shell.
 harbor_cmd=(harbor run -p "$TASKS" -e "$runtime" -a opencode -m "gate/$model"
   --ak "opencode_config=$OC_CONFIG" --ak "version=$OPENCODE_VERSION"
+  --ae 'TB_ENDPOINT_API_KEY=${TB_ENDPOINT_API_KEY}'
   -o "$JOBS" --yes)
 [[ -n "$agent_timeout_mult" ]] && harbor_cmd+=(--agent-timeout-multiplier "$agent_timeout_mult")
 harbor_cmd+=(--environment-build-timeout-multiplier "$build_timeout_mult")
@@ -304,6 +354,7 @@ watched() {
   local log_file="$1"; shift
   setsid "$@" > "$log_file" 2>&1 &
   local pid=$! misses=0
+  harbor_pid=$pid
   while kill -0 "$pid" 2>/dev/null; do
     if health; then misses=0; else misses=$((misses + 1)); fi
     if [[ $((misses * 15)) -ge $endpoint_grace ]]; then
@@ -311,11 +362,15 @@ watched() {
       kill -- "-$pid" 2>/dev/null || true
       date -u +%FT%TZ > "$out_dir/ENDPOINT_DOWN"
       wait "$pid" 2>/dev/null || true
+      harbor_pid=""
       return 2
     fi
-    sleep 15
+    # In the background, so a signal interrupts the wait instead of waiting
+    # out the sleep.
+    sleep 15 & wait $!
   done
   wait "$pid" || log "harbor exited non-zero (see $log_file); scoring decides validity"
+  harbor_pid=""
   return 0
 }
 
@@ -349,15 +404,29 @@ done
 
 python3 - "$out_dir/meta.json" "$base" "$model" "$serve_config" \
   "$DATASET_REPO@$DATASET_COMMIT" "$HARBOR_VERSION" "opencode@$OPENCODE_VERSION" \
-  "$k" "$n" "$output_cap" "$context" "$reasoning_effort" "$pass" "${excludes[@]}" <<'PY'
+  "$k" "$n" "$output_cap" "$context" "$reasoning_effort" "$temperature" "$top_p" \
+  "$thinking" "$(IFS=,; echo "${includes[*]}")" "$pass" "$TASKS" "${excludes[@]}" <<'PY'
 import json, sys
+from pathlib import Path
 (out, endpoint, model, serve_config, dataset, harbor, agent, k, n, cap, context,
- effort, fill_passes, *excluded) = sys.argv[1:]
+ effort, temperature, top_p, thinking, subset, fill_passes, tasks_dir,
+ *excluded) = sys.argv[1:]
+# The tasks the run set out to score, so a report can count one that never
+# produced a valid trial.
+planned = {p.parent.name for p in Path(tasks_dir).glob("*/task.toml")}
+planned -= set(excluded)
+if subset:
+    planned &= set(subset.split(","))
 json.dump({
     "endpoint": endpoint, "model": model, "serve_config": serve_config,
     "dataset": dataset, "harbor": harbor, "agent": agent, "k": int(k),
     "n_concurrent": int(n), "output_cap": int(cap), "context": int(context),
-    "reasoning_effort": effort or None, "excluded_tasks": excluded,
+    "reasoning_effort": effort or None,
+    "temperature": float(temperature) if temperature else None,
+    "top_p": float(top_p) if top_p else None,
+    "thinking": thinking or None, "excluded_tasks": excluded,
+    "task_subset": subset.split(",") if subset else None,
+    "planned_tasks": sorted(planned),
     "fill_passes": int(fill_passes),
 }, open(out, "w"), indent=2)
 PY
@@ -381,7 +450,11 @@ if [[ "$scored" -eq 0 || "$remaining" -gt 0 ]]; then
 fi
 
 if [[ -n "$baseline" ]]; then
+  # A task this run excluded may still be in the baseline; compare gives no
+  # verdict for a task in one arm only unless it is named.
+  compare_excludes=()
+  for t in "${excludes[@]}"; do compare_excludes+=(--exclude "$t"); done
   python3 "$SCORER" compare --baseline "$baseline" --candidate "$out_dir/results.jsonl" \
-    --out "$out_dir/verdict.json" | tee "$out_dir/verdict.md"
+    "${compare_excludes[@]}" --out "$out_dir/verdict.json" | tee "$out_dir/verdict.md"
   exit "${PIPESTATUS[0]}"
 fi

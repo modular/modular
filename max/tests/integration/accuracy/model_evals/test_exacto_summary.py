@@ -280,6 +280,51 @@ def test_render_treats_a_task_subset_as_partial() -> None:
     assert "partial" in out.getvalue()
 
 
+def test_render_shows_terminalbench_and_its_settings() -> None:
+    out = io.StringIO()
+    exacto_summary.render(
+        {
+            "terminalbench": {
+                "accuracy": 0.42,
+                "stderr": 0.05,
+                "total": 9,
+                "num_trials": 1,
+                "dataset_name": "terminal-bench-2-1@7131e43",
+                "task_subset": ["a", "b", "c"],
+                "agent": "opencode@1.19.5",
+                "harbor": "0.25.0",
+                "temperature": 1.0,
+                "top_p": 1.0,
+                "thinking": "on",
+                "output_cap": 65536,
+                "tasks_short_of_k": 0,
+            }
+        },
+        out,
+    )
+    text = out.getvalue()
+    assert "| TerminalBench 2.1 |" in text
+    assert "0.4200" in text
+    assert "3-task subset" in text
+    assert "max_tokens 65536" in text
+
+
+def test_notes_flag_an_incomplete_terminalbench_run() -> None:
+    note = exacto_summary.notes(
+        {"complete": False, "tasks_short_of_k": 2, "task_subset": None},
+        "terminalbench_2_1",
+    )
+    assert "incomplete: 2 tasks short of k" in note
+    assert "partial" not in note
+
+
+def test_notes_flag_a_terminalbench_task_subset() -> None:
+    note = exacto_summary.notes(
+        {"complete": True, "task_subset": ["a"]}, "terminalbench_2_1"
+    )
+    assert note == "partial (task subset)"
+
+
 def test_render_with_no_scores_still_produces_a_table() -> None:
     out = io.StringIO()
     exacto_summary.render({"gpqa": None, "taubench": None}, out)
