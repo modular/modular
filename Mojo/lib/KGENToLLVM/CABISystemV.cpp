@@ -112,12 +112,14 @@ CoercionInfo SystemVABIInfo::classifyStructType(mlir::Type type,
 
   // One eightbyte: one register. For two floats this is f64 where clang uses
   // <2 x float>: the bytes are copied through memory, not converted, and both
-  // types use the same SSE register.
-  if (size <= 8) {
+  // types use the same SSE register. An upper eightbyte that holds only
+  // padding, as in an `@align(16)` struct with 8 bytes of members, is not
+  // passed.
+  if (size <= 8 || hi == EightbyteClass::NoClass) {
     CoercionInfo info;
     info.argClass =
         lo == EightbyteClass::SSE ? ABIArgClass::SSE : ABIArgClass::Integer;
-    info.coercedType = getEightbyteType(lo, size);
+    info.coercedType = getEightbyteType(lo, std::min<int64_t>(size, 8));
     return info;
   }
 

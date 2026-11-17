@@ -66,6 +66,23 @@ kgen.func @x86_ret_union(%u: !pop.union<scalar<f64>, scalar<si32>>) cabi -> !pop
   hlcf.return %u : !pop.union<scalar<f64>, scalar<si32>>
 }
 
+// The upper eightbyte holds only padding, so it is NO_CLASS and is not passed.
+// The pair after it then needs two registers but only one is free, so it goes
+// in memory and the last i64 takes the register.
+// clang: struct __attribute__((aligned(16))) { long; } is (i64).
+// CHECK-LABEL: llvm.func internal @x86_align16_int
+// CHECK-SAME:    (%{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: !llvm.ptr {llvm.byval = !llvm.struct<(i64, i64)>{{.*}}}, %{{.*}}: i64 {llvm.noundef}) -> i64
+kgen.func @x86_align16_int(%a: i64, %s: !kgen.struct<(scalar<si64>) align(16)>, %b: i64, %c: i64, %d: i64, %p: !kgen.struct<(scalar<si64>, scalar<si64>)>, %t: i64) cabi -> i64 {
+  hlcf.return %t : i64
+}
+
+// clang: struct __attribute__((aligned(16))) { double; } is (double).
+// CHECK-LABEL: llvm.func internal @x86_align16_float
+// CHECK-SAME:    (%{{.*}}: f64) -> f64
+kgen.func @x86_align16_float(%s: !kgen.struct<(scalar<f64>) align(16)>) cabi -> !kgen.struct<(scalar<f64>) align(16)> {
+  hlcf.return %s : !kgen.struct<(scalar<f64>) align(16)>
+}
+
 }
 
 // -----
