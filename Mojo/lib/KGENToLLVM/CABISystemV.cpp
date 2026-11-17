@@ -215,9 +215,8 @@ SystemVABIInfo::classifyMember(mlir::Type type, int64_t offset) const {
   } else if (isa<mlir::FloatType>(type)) {
     memberClass = EightbyteClass::SSE;
   } else {
-    // Integers and pointers. This includes the explicit [N x i8] padding Mojo
-    // inserts before an aligned field: after KGEN→LLVM conversion it cannot
-    // be told apart from an i8 array holding data.
+    // Integers and pointers. Padding is not a member, so it does not get a
+    // class.
     memberClass = EightbyteClass::Integer;
   }
 

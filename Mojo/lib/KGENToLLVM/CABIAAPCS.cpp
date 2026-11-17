@@ -332,14 +332,3 @@ AAPCSABIInfo::classifySignature(mlir::TypeRange argTypes, mlir::Type retType,
   }
   return result;
 }
-
-//===----------------------------------------------------------------------===//
-// Phase 3: HFA Classification (TODO - future work)
-//===----------------------------------------------------------------------===//
-
-// TODO: Implement HFA (Homogeneous Float Aggregate) detection and
-// classification HFA rules:
-// - All fields must be the same float type (f16, f32, or f64)
-// - Maximum 4 fields
-// - Passed in V0-V3 (SIMD registers)
-// - Example: struct { float x, y, z; } is HFA with 3 fields
