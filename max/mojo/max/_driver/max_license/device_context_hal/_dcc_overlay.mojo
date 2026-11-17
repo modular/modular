@@ -13,13 +13,9 @@
 """Selects the HAL `DeviceContext` backend behind `max.gpu.host`.
 
 Replaces `max/gpu/host/_overlay.mojo` under --config=hal-device-context (see
-`:dcc_overlay` in this package's BUILD.bazel) and holds the same two names: the
-backend constant and the `DeviceGraphInput` trait.
+`:dcc_overlay` in this package's BUILD.bazel) and holds the same name: the
+backend constant.
 """
 
 comptime HAL_DEVICE_CONTEXT = True
 """Whether `max.gpu.host` is the HAL `DeviceContext`."""
-
-from max._driver.max_license.device_context_hal.device_graph_hal import (
-    HALDeviceGraphInput as DeviceGraphInput,
-)

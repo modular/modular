@@ -81,11 +81,11 @@ from ._legacy.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
-from ._overlay import DeviceGraphInput
 from max._driver.max_license.device_context_dispatch.graph_names import (
     DeviceGraph,
     DeviceGraphBuilder,
     DeviceGraphCache,
+    DeviceGraphInput,
     DeviceGraphInputKind,
     DeviceGraphNode,
     StableAddr,

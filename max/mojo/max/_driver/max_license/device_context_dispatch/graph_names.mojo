@@ -10,25 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The device graph names that `max.gpu.host` exports, selected by backend.
+"""The device graph names that `max.gpu.host` exports.
 
-Only the legacy backend implements device graphs. The HAL backend has stubs
-that let the graph-compiler primitives compile, so under the HAL backend these
-names are the stubs.
+Both backends use the legacy device graph types, except `DeviceGraph`: the HAL
+backend has no device graphs, so its `DeviceGraph` is a stand-in that raises
+from `create` and `replay` instead of failing to compile.
 """
 
 from max._driver.max_license.device_context_hal.device_graph_hal import (
     HALDeviceGraph,
-    HALDeviceGraphBuilder,
-    HALDeviceGraphCache,
-    HALDeviceGraphInputKind,
-    HALDeviceGraphNode,
-    HALStableAddr,
 )
 from max.gpu.host._legacy.device_graph import (
     LegacyDeviceGraph,
     LegacyDeviceGraphBuilder,
     LegacyDeviceGraphCache,
+    LegacyDeviceGraphInput,
     LegacyDeviceGraphInputKind,
     LegacyDeviceGraphNode,
     LegacyStableAddr,
@@ -40,29 +36,24 @@ comptime DeviceGraph = (
 )
 """A captured sequence of device operations that can be replayed."""
 
-comptime DeviceGraphBuilder[arena_origin: ImmOrigin] = (
-    LegacyDeviceGraphBuilder[
-        arena_origin
-    ] if not HAL_DEVICE_CONTEXT else HALDeviceGraphBuilder
-)
+comptime DeviceGraphBuilder[arena_origin: ImmOrigin] = LegacyDeviceGraphBuilder[
+    arena_origin
+]
 """Records operations into a device graph."""
 
-comptime DeviceGraphCache = (
-    LegacyDeviceGraphCache if not HAL_DEVICE_CONTEXT else HALDeviceGraphCache
-)
+comptime DeviceGraphCache = LegacyDeviceGraphCache
 """Reuses instantiated graphs across calls."""
 
-comptime DeviceGraphInputKind = (
-    LegacyDeviceGraphInputKind if not HAL_DEVICE_CONTEXT else HALDeviceGraphInputKind
-)
+comptime DeviceGraphInput = LegacyDeviceGraphInput
+"""A device graph input that contributes to the graph's cache key."""
+
+comptime DeviceGraphInputKind = LegacyDeviceGraphInputKind
 """How a graph input is stored and keyed."""
 
-comptime DeviceGraphNode[arena_origin: ImmOrigin] = (
-    LegacyDeviceGraphNode[
-        arena_origin
-    ] if not HAL_DEVICE_CONTEXT else HALDeviceGraphNode
-)
+comptime DeviceGraphNode[arena_origin: ImmOrigin] = LegacyDeviceGraphNode[
+    arena_origin
+]
 """A node of a device graph under construction."""
 
-comptime StableAddr = LegacyStableAddr if not HAL_DEVICE_CONTEXT else HALStableAddr
+comptime StableAddr = LegacyStableAddr
 """A graph-lifetime slot that holds one device address."""

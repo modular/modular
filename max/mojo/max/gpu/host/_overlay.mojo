@@ -14,12 +14,9 @@
 
 The build system picks the backend by replacing this file with
 `max/_driver/max_license/device_context_hal/_dcc_overlay.mojo` under
---config=hal-device-context. What differs between the two builds is the
-constant below and the `DeviceGraphInput` trait, which names a different trait
-per backend and so cannot be selected by a conditional alias.
+--config=hal-device-context. The constant below is all that differs between
+the two builds.
 """
 
 comptime HAL_DEVICE_CONTEXT = False
 """Whether `max.gpu.host` is the HAL `DeviceContext`."""
-
-from ._legacy.device_graph import LegacyDeviceGraphInput as DeviceGraphInput
