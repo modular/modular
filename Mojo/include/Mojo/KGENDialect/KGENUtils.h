@@ -229,15 +229,15 @@ std::optional<ArrayRef<TypedAttr>> getIdentityClass(TypedAttr prop);
 std::optional<std::pair<TypedAttr, TypedAttr>>
 getIdentityProposition(TypedAttr prop);
 
-/// Folds the scalar-bool conjunction of `conjuncts`, which need not be
-/// canonical and may contain nested ANDs. Returns True, False, the single
-/// surviving clause (e.g. a merged `identical` class), or a sorted AND of the
-/// surviving clauses.
+/// Folds the scalar-bool conjunction of `conjuncts`, which must be non-empty,
+/// need not be canonical, and may contain nested ANDs. Returns True, False,
+/// the single surviving clause (e.g. a merged `identical` class), or a sorted
+/// AND of the surviving clauses typed as a plain scalar bool.
 ///
 /// Ordinary code builds a conjunction with `ParamOperatorAttr::get(POC::And,
 /// ...)`, which already folds through this; the direct callers are attribute
 /// construction and the proposition fold.
-TypedAttr foldBoolConjunction(ArrayRef<TypedAttr> conjuncts, Type boolType);
+TypedAttr foldBoolConjunction(ArrayRef<TypedAttr> conjuncts);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given compilation context. This includes things like

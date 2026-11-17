@@ -184,7 +184,7 @@ static TypedAttr residualNotInner(TypedAttr inner, ArrayRef<TypedAttr> facts) {
   // This runs for every stored NOT on every insert.
   if (remaining.size() == conjuncts.size())
     return inner;
-  return foldBoolConjunction(remaining, inner.getType());
+  return foldBoolConjunction(remaining);
 }
 
 static void eraseIndices(SmallVectorImpl<TypedAttr> &clauses,

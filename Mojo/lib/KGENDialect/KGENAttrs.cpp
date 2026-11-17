@@ -3214,7 +3214,7 @@ static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands,
   // The fold covers the flatten, dedup, sort and True/False handling below for
   // a scalar-bool AND, and also merges identity classes.
   if (isScalarOf<KGENDType::kBool>(resultType))
-    return foldBoolConjunction(operands, resultType);
+    return foldBoolConjunction(operands);
   return simplifyAssocOp(
       POC::And, operands, true,
       std::make_tuple(
@@ -4445,23 +4445,37 @@ constexpr POC migratedPOCs[] = {
     POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod,      POC::EQ,
     POC::LT,        POC::LE};
 
-TypedAttr KGEN::foldBoolConjunction(ArrayRef<TypedAttr> conjuncts,
-                                    Type boolType) {
+TypedAttr KGEN::foldBoolConjunction(ArrayRef<TypedAttr> conjuncts) {
+  assert(!conjuncts.empty() && "conjunction has no conjuncts");
+  MLIRContext *ctx = conjuncts.front().getContext();
+
+  // A scalar-bool AND only exists in folded form, so conjoining onto an
+  // assumption set only costs the new clauses' inserts, not a refold of the
+  // whole set.
+  // TODO: Seed from the largest scalar-bool AND once the fold is
+  // order-independent. Today `conforms_to` slots on one type value that jointly
+  // prove a packed bound keep whichever form was inserted first.
   SmallVector<TypedAttr> clauses;
+  auto seed = dyn_cast<ParamOperatorAttr>(getCanonicalAttr(conjuncts.front()));
+  if (seed && seed.getOpcode() == POC::And &&
+      isScalarOf<KGENDType::kBool>(seed.getType())) {
+    llvm::append_range(clauses, seed.getOperands());
+    conjuncts = conjuncts.drop_front();
+  }
   for (TypedAttr conjunct : conjuncts) {
     if (insertClause(clauses, getCanonicalAttr(conjunct)) ==
         ClauseInsertResult::Contradiction)
-      return SIMDAttr::getScalarBool(boolType.getContext(), false);
+      return SIMDAttr::getScalarBool(ctx, false);
   }
   if (clauses.empty())
-    return SIMDAttr::getScalarBool(boolType.getContext(), true);
+    return SIMDAttr::getScalarBool(ctx, true);
   if (clauses.size() == 1)
     return clauses[0];
   llvm::stable_sort(clauses, ParameterAttr::compare);
   // `Base::get`, not `get`: the latter folds through `simplifyAnd`, which
   // calls back here on the same clauses.
-  return ParamOperatorAttr::Base::get(boolType.getContext(), POC::And, clauses,
-                                      boolType);
+  return ParamOperatorAttr::Base::get(ctx, POC::And, clauses,
+                                      SIMDType::getScalarBoolType(ctx));
 }
 
 /// Construct a arithmetic parameter operator attribute, folding it (in the form
