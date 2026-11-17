@@ -311,7 +311,7 @@ class CacheHit(Enum):
     """How much of a follow-up turn's prompt the server reused."""
 
     FULL = "full"
-    """At least the previous turn's whole prompt, to the page boundary."""
+    """At least every page of the previous prompt that recurs in this one."""
     PARTIAL = "partial"
     """Something was reused, but less than the previous prompt."""
     MISS = "miss"
@@ -323,14 +323,16 @@ class CacheHit(Enum):
 def expected_cached_tokens(prev_prompt_tokens: int, block_size: int) -> int:
     """The least a follow-up turn should report as cached.
 
-    The previous turn's prompt is a prefix of this one, and the server commits
-    a KV page once it is full, so every page the previous prompt filled is
-    reusable. The trailing partial page is not, which is why the bound rounds
-    down rather than demanding the whole previous prompt.
+    The previous turn's prompt is a prefix of this one except for its final
+    token: a thinking model's generation prompt ends with the think opener,
+    which the same turn rendered as history replaces (DeepSeek-V4 renders
+    `</think>` there). The server commits a KV page once it is full, so only
+    the pages filled by the first `prev_prompt_tokens - 1` tokens are
+    guaranteed reusable; the bound rounds that down to a page.
     """
     if block_size < 1:
         raise ValueError(f"block_size must be >= 1, got {block_size}")
-    return (prev_prompt_tokens // block_size) * block_size
+    return (max(prev_prompt_tokens - 1, 0) // block_size) * block_size
 
 
 def classify_cache_hit(

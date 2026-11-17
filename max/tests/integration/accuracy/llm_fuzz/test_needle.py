@@ -201,8 +201,16 @@ def test_empty_answer_is_not_scorable() -> None:
 
 def test_expected_cached_tokens_rounds_down_to_a_page() -> None:
     assert expected_cached_tokens(1500, 128) == 1408
-    assert expected_cached_tokens(128, 128) == 128
+    assert expected_cached_tokens(129, 128) == 128
     assert expected_cached_tokens(100, 128) == 0
+    assert expected_cached_tokens(0, 128) == 0
+
+
+def test_expected_cached_tokens_excludes_the_final_prompt_token() -> None:
+    # The generation prompt's last token (a think opener) is not in the next
+    # turn's history, so a page-aligned prompt cannot share its last page.
+    assert expected_cached_tokens(1280, 128) == 1152
+    assert expected_cached_tokens(128, 128) == 0
     with pytest.raises(ValueError):
         expected_cached_tokens(100, 0)
 
@@ -214,6 +222,8 @@ def test_classify_cache_hit() -> None:
     assert classify_cache_hit(reply(1408), 1500, 128) is CacheHit.FULL
     assert classify_cache_hit(reply(1536), 1500, 128) is CacheHit.FULL
     assert classify_cache_hit(reply(1280), 1500, 128) is CacheHit.PARTIAL
+    assert classify_cache_hit(reply(1152), 1280, 128) is CacheHit.FULL
+    assert classify_cache_hit(reply(1024), 1280, 128) is CacheHit.PARTIAL
     assert classify_cache_hit(reply(0), 1500, 128) is CacheHit.MISS
     assert classify_cache_hit(reply(1408), None, 128) is CacheHit.UNKNOWN
     unreported = TurnReply(200, prompt_tokens=1600, cached_tokens=None)
