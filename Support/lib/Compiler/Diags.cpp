@@ -689,6 +689,8 @@ llvm::SMDiagnostic InflightDiag::getAsSMDiagnostic(
     // Walk the location structure and return the first FileLineColLoc we see.
     std::function<std::optional<FileLineColLoc>(Location)> visit =
         [&](Location l) -> std::optional<FileLineColLoc> {
+      if (!LocationAttr(l))
+        return std::nullopt;
       if (auto fileLoc = mlir::dyn_cast<FileLineColLoc>(l))
         return fileLoc;
 

@@ -485,6 +485,9 @@ public:
 
     if (!decl.getIfOperation())
       return;
+    // Precompilation strips doc string locations after validating them.
+    if (docStr && !docStr->getLoc())
+      return;
     auto validateOperation = [&](auto op, bool requiresDoc) {
       ValidationKind validation =
           requiresDoc ? ValidationKind::Strict : ValidationKind::Normal;
