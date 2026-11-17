@@ -337,6 +337,35 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
     oneSplitModule->setModuleIdentifier(moduleName);
   }
 
+  // Codegen creates a libcall symbol (for example `memset`) in the MCContext
+  // of each split that references it, and holds it in the call's
+  // MachineOperand. ORC JITLink rejects duplicate external symbols in the
+  // merged object, so point every split at the first MCSymbol created for
+  // each undefined name.
+  if (llvm::Triple(options.targetTriple).isOSDarwin()) {
+    llvm::StringMap<llvm::MCSymbolTableValue> firstValue;
+    for (MCInfo *mcInfo : mcInfos) {
+      llvm::MCContext &ctx = *mcInfo->mcContext;
+      for (auto &[name, value] : ctx.getSymbols()) {
+        if (!value.Symbol || !value.Symbol->isUndefined())
+          continue;
+        auto [it, inserted] = firstValue.try_emplace(name, value);
+        if (!inserted)
+          M::KGEN::getMCContextSymbolTableEntry(name, ctx).second = it->second;
+      }
+    }
+    for (auto &[fn, mf] :
+         getMachineFunctionsFromMachineModuleInfo(machineModInfoPass->getMMI()))
+      for (auto &bb : *mf)
+        for (auto &mi : bb)
+          for (auto &mo : mi.operands())
+            if (mo.isMCSymbol() && mo.getMCSymbol()->isUndefined())
+              if (auto it = firstValue.find(mo.getMCSymbol()->getName());
+                  it != firstValue.end() &&
+                  it->second.Symbol != mo.getMCSymbol())
+                mo.ChangeToMCSymbol(it->second.Symbol, mo.getTargetFlags());
+  }
+
   // Prepare AsmPrint pipeline.
   WriteableBufferRef linkedObj = WriteableBuffer::get();
 
