@@ -12,10 +12,9 @@ description: >
      parseMatchStmt(), parseForStmt(), parseTryStmt(), parseWithStmt(),
      parseComptimeCompoundStmt(), parseComptimeIf(), parseComptimeFor(),
      parseSuite(); ExprPatterns.h; Signatures.cpp parseCaptureList()
-     Compiler verified: 2026-10-15, Mojo 1.2.0.dev2026101405 (48ec2d26)
-       (match, if case, while case, comptime match sections only)
-     Last updated: 2026-10-15 (adds match, if case, while case,
-       comptime match) -->
+     Compiler verified: 2026-11-17, Mojo 1.3.0.dev2026111105 (d00b2893)
+       (match and comptime match exhaustiveness, match evaluation order)
+     Last updated: 2026-11-17 (exhaustiveness warnings, no-match behavior) -->
 
 A *compound statement* has a header and a body. The header ends
 with `:` and is followed by an indented block with the body.
@@ -89,9 +88,11 @@ match status_code:
         print("other")
 ```
 
-The subject is evaluated once. Cases are checked top to bottom, and only the
-first match runs. Execution doesn't fall through to the next case. If no case
-matches, no body runs.
+Mojo evaluates the subject once, then checks the cases from top to bottom and
+runs only the first case that matches. Execution doesn't fall through to the
+next case. If no case matches, no body runs, and execution continues after the
+`match`. The compiler warns about a `match` that can miss. See
+[Exhaustiveness](#exhaustiveness).
 
 Each `case` can be indented under `match` or aligned with it.
 
@@ -180,11 +181,18 @@ pattern bound. If the guard is false, matching continues with the next case.
 
 ### Exhaustiveness
 
-When the subject's type has a fixed set of values, such as `Bool`, `Optional`,
-or another `EnumLike` type, the compiler warns if the cases don't cover every
-value. Literal cases on open-ended subjects, such as `Int` and `String`, also
-need a `case _` catch-all. Use `case _: pass` when unmatched values should do
-nothing.
+The compiler issues a warning, not an error, when a `match` might not cover
+every value of its subject:
+
+- For a subject with a fixed set of values, such as `Bool`, `Optional`, or
+  another `EnumLike` type, the warning names the missing case.
+- For an open-ended subject, such as `Int` or `String`, the compiler can't
+  list every value, so a `match` without a `case _` catch-all produces the
+  warning, even when its cases use guards.
+
+Use `case _: pass` when unmatched values should do nothing. A build that treats
+warnings as errors, such as one with `-Werror`, fails on a `match` that isn't
+exhaustive.
 
 The compiler also warns about unreachable cases, such as a repeated literal or
 a case that follows one that matches everything.
@@ -511,6 +519,8 @@ compile-time sequences.
 `comptime match` selects a case at compile time. The subject must be a
 compile-time value, and only the selected case is compiled. Names a pattern
 binds are compile-time parameters, so `var` and `ref` bindings aren't allowed.
+The [exhaustiveness](#exhaustiveness) warning applies too, so end a
+`comptime match` with `case _` unless its cases cover every value.
 
 Comparing with `==` lets `comptime match` act as a type switch:
 

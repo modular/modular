@@ -12,6 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # test_compound_statements.mojo
 # Tests for compound-statements.mdx code examples.
+#
+# Not tested: a `match` in which no case matches, and the exhaustiveness
+# warning itself. Bazel builds this file with `-Werror`, so a `match` without
+# a `case _` catch-all doesn't build. The tests below end each runtime
+# `match` with `case _` and check that `case _: pass` runs nothing.
 from std.sys import size_of
 from std.testing import assert_equal, assert_false, assert_true
 
@@ -128,8 +133,10 @@ def _single_case_hits(code: Int) -> Int:
     return hits
 
 
-def test_match_no_case_runs_nothing() raises:
+def test_match_catch_all_pass_runs_nothing() raises:
+    # `case _: pass` catches 9 and does nothing, as Exhaustiveness advises.
     assert_equal(_single_case_hits(9), 0)
+    assert_equal(_single_case_hits(1), 1)
 
 
 # fmt: off
@@ -638,7 +645,7 @@ def main() raises:
     test_match_basic()
     test_match_subject_evaluated_once()
     test_match_first_case_wins()
-    test_match_no_case_runs_nothing()
+    test_match_catch_all_pass_runs_nothing()
     test_match_case_alignment()
     test_value_pattern()
     test_tuple_patterns()
