@@ -31,6 +31,11 @@
 using namespace M;
 using namespace KGEN;
 
+std::optional<ErrorTree> *&IREvaluatorContext::pendingUnfoldedError() {
+  static thread_local std::optional<ErrorTree> *pending = nullptr;
+  return pending;
+}
+
 //===----------------------------------------------------------------------===//
 // Utils
 //===----------------------------------------------------------------------===//

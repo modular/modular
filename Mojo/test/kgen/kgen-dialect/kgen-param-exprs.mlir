@@ -1305,7 +1305,7 @@ kgen.generator @param_identical_nested_index() {
 // COM: An unknown nested inside an aggregate is undecidable for the same reason
 // COM: a top-level one is: it carries no value, so the representations differing
 // COM: proves nothing. Unlike the index-width case, no target settles it -- it
-// COM: stays symbolic through elaboration and reaches `validateForElaborator`.
+// COM: stays symbolic through elaboration and is diagnosed there.
 // COM: `eq` decides the same operands from representation alone.
 // CHECK-LABEL: @param_identical_nested_unknown
 kgen.generator @param_identical_nested_unknown() {

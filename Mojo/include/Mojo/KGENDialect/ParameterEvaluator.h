@@ -61,6 +61,16 @@ MODULAR_CXX_EXPORT void collectParameterReferences(
 /// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
 bool isParameterizedType(Type type);
 
+/// How a materialization error affects the expression being materialized.
+enum class MaterializationErrorKind {
+  /// The expression produced a value that is illegal. Reported immediately.
+  Illegal,
+  /// The expression did not fold to a value. Reported only if the materialized
+  /// result does not fold, so a parent that folds without this expression's
+  /// value drops the error.
+  Unfolded,
+};
+
 class ParameterEvaluationContext;
 class ParameterEvaluator;
 
@@ -211,7 +221,11 @@ public:
   /// Emit an error for an ill-formed expression during materialization.
   /// This is a no-op in non-materialization contexts, but callers can
   /// always call this method regardless of context.
-  virtual void emitMaterializationError(const Twine &message);
+  // Overrides must not redeclare the default argument: callers go through this
+  // base class, so the default here is the one that applies.
+  virtual void emitMaterializationError(
+      const Twine &message,
+      MaterializationErrorKind kind = MaterializationErrorKind::Illegal);
 
   /// Returns the target info for the context, which may not be available in all
   /// contexts. If target info is not available, returns null.

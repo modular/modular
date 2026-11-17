@@ -480,9 +480,14 @@ void IREvaluator::withEvaluator(
   callback(nestedEvaluator);
 }
 
-void IREvaluator::emitMaterializationError(const Twine &message) {
-  // Use the ErrorTree-based emitError from IREvaluatorContext.
-  IREvaluatorContext::emitError({*errorLoc, message.str()});
+void IREvaluator::emitMaterializationError(const Twine &message,
+                                           MaterializationErrorKind kind) {
+  ErrorTree error(*errorLoc, message.str());
+  std::optional<ErrorTree> *pending = pendingUnfoldedError();
+  if (kind == MaterializationErrorKind::Illegal || !pending)
+    return IREvaluatorContext::emitError(std::move(error));
+  if (!*pending)
+    *pending = std::move(error);
 }
 
 TargetInfoAttr IREvaluator::getTargetInfo() const {
@@ -634,54 +639,16 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(ImplNode *parent,
   errorLoc = loc;
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
+  std::optional<ErrorTree> pending;
+  auto *outerPending = std::exchange(pendingUnfoldedError(), &pending);
+  auto restorePending = llvm::scope_exit(
+      [outerPending] { pendingUnfoldedError() = outerPending; });
 
   Attribute result = evaluator.getReboundAttribute(expr);
   if (error)
     return std::move(*error);
-
-  if (!result)
-    return Attribute();
-
-  // If we can fold this to a simple constant result, do.
-  if (ParameterAttr::isSimpleConstant(result))
-    return result;
-
-  // Otherwise we had an error folding the expression tree or we just have a
-  // some foreign attribute that doesn't participate in the parameter system.
-  // Walk the attribute tree postorder - if we see any attribute that has
-  // all-simple-constant leaves, then we check to see if it is erroneous so we
-  // can report the error.  We do this in postorder because you could have:
-  //    add(4, div(8000000000, 4))
-  // and the problem is that div isn't target invariant.  The problem isn't the
-  // add outside it.
-  result.walk<mlir::WalkOrder::PostOrder>(
-      [&](Attribute attr) -> mlir::WalkResult {
-        bool allSimple = true;
-        attr.walkImmediateSubElements(
-            [&](Attribute sub) {
-              if (allSimple)
-                allSimple = ParameterAttr::isSimpleConstant(sub);
-            },
-            [&](Type T) {});
-
-        // If this is an attribute with simple operands that refused to fold,
-        // see if we're able to get a custom error message from it to explain
-        // what is going on.
-        if (allSimple) {
-          if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-            auto errorMessage = itf.validateForElaborator(getTargetInfo());
-            if (errorMessage.isError()) {
-              emitError(ErrorTree(loc, errorMessage.takeError()));
-              return WalkResult::interrupt();
-            }
-          }
-        }
-        return WalkResult::advance();
-      });
-
-  if (error)
-    return std::move(*error);
-
+  if (pending && result && !ParameterAttr::isSimpleConstant(result))
+    return std::move(*pending);
   return result;
 }
 
@@ -693,9 +660,15 @@ ErrorTreeOr<Type> IREvaluator::concretizeParameterExpr(ImplNode *parent,
   errorLoc = loc;
   std::optional<ErrorTree> error;
   emitError = [&](ErrorTree err) { error = std::move(err); };
+  std::optional<ErrorTree> pending;
+  auto *outerPending = std::exchange(pendingUnfoldedError(), &pending);
+  auto restorePending = llvm::scope_exit(
+      [outerPending] { pendingUnfoldedError() = outerPending; });
 
   Type result = evaluator.getReboundType(expr);
   if (error)
     return std::move(*error);
+  if (pending && result && isParameterizedType(result))
+    return std::move(*pending);
   return result;
 }

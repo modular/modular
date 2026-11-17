@@ -280,6 +280,15 @@ protected:
   /// The contextual location of an error.
   std::optional<Location> errorLoc;
 
+  /// While set, unfolded materialization errors are held here instead of
+  /// emitted, and count only if the expression being concretized does not fold.
+  /// Thread-local rather than a member: the evaluator can be freed before
+  /// concretization returns.
+  // TODO(MOCO-4110): Return errors up the evaluator stack instead, so that a
+  // parent that folds without an operand's value drops only that operand's
+  // error. Holding the first error can blame an operand a parent dropped.
+  static std::optional<ErrorTree> *&pendingUnfoldedError();
+
   EnvAttr env;
 
   InterpreterState *state = nullptr;

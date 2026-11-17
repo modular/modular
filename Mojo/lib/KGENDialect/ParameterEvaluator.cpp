@@ -186,7 +186,7 @@ FailureOr<TypedAttr> ParameterEvaluationContext::evaluateContextSpecific(
 }
 
 void ParameterEvaluationContext::emitMaterializationError(
-    const Twine & /*message*/) {
+    const Twine & /*message*/, MaterializationErrorKind /*kind*/) {
   // Base class does nothing - derived classes can override to emit diagnostics.
   // This is only meaningful in materialization contexts where the expression
   // will persist and be used. In non-materialization contexts (e.g.,

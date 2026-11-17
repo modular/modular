@@ -282,11 +282,16 @@ TypedAttr IntLiteralConvertAttr::get(MLIRContext *ctx, Type type,
 
 bool IntLiteralConvertAttr::isConstant() const { return false; }
 
-ErrorOrSuccess
-IntLiteralConvertAttr::validateForElaborator(TargetInfoAttr target) const {
+FailureOr<TypedAttr> IntLiteralConvertAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  if (!ParameterAttr::isSimpleConstant(getInput()))
+    return failure();
   auto result = foldIntLiteralConvert(getInput(), getType());
-  assert(result.isError() && "Should be folded if present");
-  return result.takeError();
+  if (!result.isError())
+    return result.get();
+  context.emitMaterializationError(result.takeError().get(),
+                                   MaterializationErrorKind::Unfolded);
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
@@ -709,11 +714,16 @@ TypedAttr FloatLiteralConvertAttr::get(MLIRContext *ctx, Type type,
 
 bool FloatLiteralConvertAttr::isConstant() const { return false; }
 
-ErrorOrSuccess
-FloatLiteralConvertAttr::validateForElaborator(TargetInfoAttr target) const {
+FailureOr<TypedAttr> FloatLiteralConvertAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  if (!ParameterAttr::isSimpleConstant(getInput()))
+    return failure();
   auto result = foldFloatLiteralConvert(getInput(), getType());
-  assert(result.isError() && "Should be folded if present");
-  return result.takeError();
+  if (!result.isError())
+    return result.get();
+  context.emitMaterializationError(result.takeError().get(),
+                                   MaterializationErrorKind::Unfolded);
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//

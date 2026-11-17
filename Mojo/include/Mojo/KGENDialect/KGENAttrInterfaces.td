@@ -43,18 +43,6 @@ def ParameterAttrInterface : AttrInterface<"ParameterAttr"> {
     }]>,
 
     InterfaceMethod<[{
-      Returns a custom error message for this parameter attribute, or success if
-      there are no errors. This allows parameter attributes to implement their
-      own validation logic and error reporting, producing better elaborator
-      error messages when they cannot be simplified then. The target is provided
-      so diagnostics can be target-aware (e.g. using the target's index bit
-      width).
-    }], "ErrorOrSuccess", "validateForElaborator",
-      (ins "TargetInfoAttr":$target), [{}], [{
-      return success();
-    }]>,
-
-    InterfaceMethod<[{
       Print this attribute as a display-only parameter value, forwarding
       `printer` to nested parameter values. Return failure to fall back to the
       attribute's assembly format, which cannot carry the dedup state.

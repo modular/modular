@@ -1568,16 +1568,6 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     return helper.materializeLLVMUnion(contentType, value);
   }
 
-  // Otherwise we have a failure, try to report a useful error message.
-
-  // If this is an param attribute that refused to fold, see if we're able to
-  // get a custom error message from it to explain what is going on.
-  if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-    auto errorMessage = itf.validateForElaborator(tc.getTarget());
-    if (errorMessage.isError())
-      return errorMessage.takeError();
-  }
-
   // Unknown attribute to convert.
   return Error("cannot lower unknown attribute to LLVM: " +
                getParamAsString(attr));

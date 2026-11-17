@@ -71,8 +71,10 @@ protected:
   /// Returns true since elaboration is a materialization context.
   bool isMaterializationContext() const override { return true; }
 
-  /// Emit an error using the elaborator's error infrastructure.
-  void emitMaterializationError(const Twine &message) override;
+  /// Emit an error using the elaborator's error infrastructure. An unfolded
+  /// error is held until the concretized result is known not to fold.
+  void emitMaterializationError(const Twine &message,
+                                MaterializationErrorKind kind) override;
 
   TargetInfoAttr getTargetInfo() const override;
 

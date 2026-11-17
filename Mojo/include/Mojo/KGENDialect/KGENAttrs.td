@@ -2416,8 +2416,7 @@ def KGEN_EnvAttr : KGENAttr<"Env", "env"> {
 def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                ["evaluateWithContext"]>,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface,
-                                ["isLessThan", "validateForElaborator"]>
+    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
   ]> {
   let summary = "Parameter expression";
   let parameters = (ins "POC":$opcode,
@@ -2513,9 +2512,7 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
 def KGEN_ParamIdenticalAttr
     : KGEN_ExprAttr<"ParamIdentical", "param.identical", [
     DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
-                                ["evaluateWithContext"]>,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface,
-                                ["validateForElaborator"]>
+                                ["evaluateWithContext"]>
   ]> {
   let summary = "Parameter identity proposition";
   let description = [{

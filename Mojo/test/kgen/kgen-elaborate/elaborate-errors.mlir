@@ -559,10 +559,9 @@ kgen.generator export @nary_identical_unknown_with_target() -> !kgen.scalar<bool
 // -----
 
 // Test that a constant shift-right amount outside the operand's bit width gets
-// a clear diagnostic from validateForElaborator instead of the generic
-// "could not simplify operator" note.
+// a clear diagnostic instead of the generic "could not simplify operator" note.
 //
-// `shl` with matching types folds to zero before reaching validateForElaborator,
+// `shl` with matching types folds to zero before reaching evaluateWithContext,
 // so it cannot produce this diagnostic and is not tested here.
 
 // expected-error @below {{function instantiation failed}}
