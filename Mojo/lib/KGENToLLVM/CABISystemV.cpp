@@ -294,21 +294,20 @@ SystemVABIInfo::classifySignature(mlir::TypeRange argTypes, mlir::Type retType,
     bool isVariadicArg = idx >= numFixedArgs;
     CoercionInfo info = classifyArgumentType(type, loc, isVariadicArg);
 
-    // Only fixed args take part in register accounting; variadic args keep
-    // their classification.
-    if (!isVariadicArg) {
-      auto [needInt, needSSE] = argRegisterUsage(info, convertType(type));
-      if (needInt <= freeInt && needSSE <= freeSSE) {
-        freeInt -= needInt;
-        freeSSE -= needSSE;
-      } else if (!info.isIdentity() && !info.useIndirect) {
-        // An in-register aggregate that does not fit rolls back to memory
-        // rather than being split across registers and stack.
-        info = CoercionInfo::indirectArgument(/*useByval=*/true);
-      }
-      // A scalar that does not fit stays direct; the backend places it on the
-      // stack.
+    // Variadic args use the same registers as fixed args, so they take part in
+    // the register accounting. va_arg reads an aggregate from registers only
+    // when all of it fits, and from memory otherwise.
+    auto [needInt, needSSE] = argRegisterUsage(info, convertType(type));
+    if (needInt <= freeInt && needSSE <= freeSSE) {
+      freeInt -= needInt;
+      freeSSE -= needSSE;
+    } else if (!info.isIdentity() && !info.useIndirect) {
+      // An in-register aggregate that does not fit rolls back to memory
+      // rather than being split across registers and stack.
+      info = CoercionInfo::indirectArgument(/*useByval=*/true);
     }
+    // A scalar that does not fit stays direct; the backend places it on the
+    // stack.
     result.args.push_back(info);
   }
   return result;

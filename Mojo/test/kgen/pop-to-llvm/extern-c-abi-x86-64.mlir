@@ -908,6 +908,37 @@ llvm.func @arg_sse_rollback(%a: f64, %b: f64, %c: f64, %d: f64, %e: f64, %f: f64
 // CHECK: llvm.func @c_r6(f64, f64, f64, f64, f64, f64, f64, !llvm.ptr {llvm.byval = !llvm.struct<(f64, f64)>})
 }
 
+// -----
+
+// R7: variadic args use the same registers as fixed args. One fixed and four
+// variadic i64 leave one integer register, so the variadic {i64,i64} rolls
+// back to memory (byval), as in clang.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_rollback
+llvm.func @variadic_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %s: !llvm.struct<(i64, i64)>) {
+  // CHECK: llvm.call @c_r7(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) vararg(!llvm.func<void (i64, ...)>) : (i64, i64, i64, i64, i64, !llvm.ptr {llvm.byval = !llvm.struct<(i64, i64)>}) -> ()
+  pop.external_call @c_r7(%a, %b, %c, %d, %e, %s)
+    : (i64, i64, i64, i64, i64, !llvm.struct<(i64, i64)>) -> () <numFixedArgs = 1 : index>
+  llvm.return
+}
+// CHECK: llvm.func @c_r7(i64, ...)
+}
+
+// -----
+
+// R8: control - one fixed and three variadic i64 leave two integer registers,
+// so the variadic {i64,i64} stays in registers.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_no_rollback
+llvm.func @variadic_no_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %s: !llvm.struct<(i64, i64)>) {
+  // CHECK: llvm.call @c_r8(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) vararg(!llvm.func<void (i64, ...)>) : (i64, i64, i64, i64, i64, i64) -> ()
+  pop.external_call @c_r8(%a, %b, %c, %d, %s)
+    : (i64, i64, i64, i64, !llvm.struct<(i64, i64)>) -> () <numFixedArgs = 1 : index>
+  llvm.return
+}
+// CHECK: llvm.func @c_r8(i64, ...)
+}
+
 //===----------------------------------------------------------------------===//
 // Group I: Narrow integer extension
 //
