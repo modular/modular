@@ -10,45 +10,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Config for Qwen3VL models."""
+"""Config for Qwen3-VL and Qwen3-VL-MoE."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import ClassVar, Literal
+from types import MappingProxyType
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.outputs import ReturnLogits
-from max.pipelines.architectures.llama3.model_config import Llama3Config
-from max.pipelines.lib import MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
+from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import select_quantization_encoding
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
-    ArchVLConfigWithTextSubconfig,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithVisionCache,
+    ModelOutputConfig,
 )
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.registration_runtime import DeploymentConfig
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.pipelines.weights import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+from .data_processing import QWEN3VL_MAX_PIXELS
+
+__all__ = ["Qwen3VLConfig", "VisionConfig"]
 
 
 @dataclass
 class VisionConfig:
-    """Base configuration for Qwen3VL models with required fields."""
-
-    dtype: DType
-    """DType of the Qwen3VL vision model weights."""
-
-    llm_dtype: DType
-    """DType of the Qwen3VL language model weights."""
-
-    devices: list[DeviceRef]
-    """Devices that the Qwen3VL vision encoder model is parallelized over."""
+    """The vision tower's geometry."""
 
     patch_size: int
     """Vision transformer patch size."""
@@ -72,13 +76,10 @@ class VisionConfig:
     """Intermediate size in the vision encoder's feed-forward layers."""
 
     out_hidden_size: int
-    """Output hidden size of the vision encoder. Also the hidden size of the language model."""
+    """Output hidden size of the vision encoder, the language model's."""
 
     deepstack_visual_indexes: list[int]
-    """Indexes of the full attention blocks in the vision encoder."""
-
-    rms_norm_eps: float
-    """Epsilon for layer normalization."""
+    """The blocks whose outputs the decoder also adds to its early layers."""
 
     spatial_merge_size: int
     """Spatial merge size for the vision encoder."""
@@ -88,25 +89,10 @@ class VisionConfig:
 
     @classmethod
     def initialize_from_config(
-        cls,
-        pipeline_config: PipelineConfig,
-        hf_vision_config: AutoConfig,
+        cls, hf_vision_config: AutoConfig
     ) -> VisionConfig:
-        """Initialize VisionConfig from HuggingFace vision config.
-
-        Note: dtype fields will be set to defaults and should be updated
-        via finalize() once state_dict is available.
-        """
-        from max.dtype import DType as MaxDType
-
+        """Initializes the tower's geometry from its Hugging Face config."""
         return cls(
-            # Defaults that will be overridden in finalize
-            dtype=MaxDType.bfloat16,
-            llm_dtype=MaxDType.bfloat16,
-            devices=[
-                DeviceRef(spec.device_type, spec.id)
-                for spec in pipeline_config.model.device_specs
-            ],
             patch_size=hf_vision_config.patch_size,
             temporal_patch_size=hf_vision_config.temporal_patch_size,
             in_channels=hf_vision_config.in_channels,
@@ -115,25 +101,51 @@ class VisionConfig:
             depth=hf_vision_config.depth,
             intermediate_size=hf_vision_config.intermediate_size,
             out_hidden_size=hf_vision_config.out_hidden_size,
-            deepstack_visual_indexes=hf_vision_config.deepstack_visual_indexes,
-            rms_norm_eps=1e-06,
+            deepstack_visual_indexes=list(
+                hf_vision_config.deepstack_visual_indexes
+            ),
             spatial_merge_size=hf_vision_config.spatial_merge_size,
             num_position_embeddings=hf_vision_config.num_position_embeddings,
         )
 
-    def finalize(
-        self,
-        vision_dtype: DType,
-        llm_dtype: DType,
-    ) -> None:
-        """Finalize VisionConfig with state_dict dependent fields."""
-        self.dtype = vision_dtype
-        self.llm_dtype = llm_dtype
+    @property
+    def embedding_width(self) -> int:
+        """The width of a row the tower hands the decoder.
+
+        A row holds the merged patch's embedding, then each deepstack
+        layer's, side by side.
+        """
+        return self.out_hidden_size * (1 + len(self.deepstack_visual_indexes))
+
+
+def _declared_dtype(text_config: AutoConfig) -> DType:
+    """The dtype the checkpoint declares for its unquantized tensors.
+
+    ``PretrainedConfig`` turns the JSON string into a ``torch.dtype``, so
+    this reads the name off either form.
+    """
+    for attr in ("dtype", "torch_dtype"):
+        declared = getattr(text_config, attr, None)
+        if declared is None:
+            continue
+        name = (
+            declared
+            if isinstance(declared, str)
+            else str(declared).removeprefix("torch.")
+        )
+        if name in ("bfloat16", "float16", "float32"):
+            return DType[name]
+    return DType.bfloat16
 
 
 @dataclass(kw_only=True)
-class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
-    """Configuration for Qwen3VL models."""
+class Qwen3VLConfig(
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
+    DeploymentConfig,
+):
+    """Configuration for the Qwen3-VL decoder and its vision tower."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
@@ -142,30 +154,33 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         "float8_e4m3fn",
     }
 
+    # The decoder binds its own names out of the whole checkpoint; the tower
+    # takes the weights under its prefix.
+    weight_prefixes: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {GraphRole.VISION: "vision_encoder."}
+    )
+
     devices: list[DeviceRef]
-    """Devices that the Qwen3VL model is parallelized over."""
+    """Devices the decoder is parallelized over."""
 
     dtype: DType
-    """DType of the Qwen3VL model weights."""
+    """The dtype the encoding stores the decoder's weights in."""
 
-    # Multimodal parameters
-    image_token_id: int
-    """Token ID used for image placeholders in the input sequence."""
-
-    video_token_id: int
-    """Token ID used for video placeholders in the input sequence."""
-
-    vision_start_token_id: int
-    """Token ID that marks the start of vision content."""
-
-    spatial_merge_size: int
-    """Size parameter for spatial merging of vision features."""
+    hidden_size: int
+    num_attention_heads: int
+    num_key_value_heads: int
+    num_hidden_layers: int
+    intermediate_size: int
+    vocab_size: int
+    rope_theta: float
+    max_seq_len: int
+    kv_params: KVCacheParamInterface
 
     mrope_section: list[int]
-    """List of indices for the mrope section."""
+    """Rotary frequencies per temporal, height and width axis."""
 
     num_experts: int
-    """Number of experts in the MoE layer."""
+    """Number of experts in each MoE layer, 0 for a dense model."""
 
     num_experts_per_tok: int
     """Number of experts per token in the MoE layer."""
@@ -174,36 +189,125 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
     """Intermediate size in the MoE layer."""
 
     mlp_only_layers: list[int]
-    """List of indices for the MLP only layers."""
-
-    norm_topk_prob: bool
-    """Whether to use top-k probability normalization in the MoE layer."""
+    """Layers that keep a dense MLP in an MoE model."""
 
     decoder_sparse_step: int
-    """Sparse step for the decoder."""
+    """Every this many layers is an MoE layer."""
 
-    # Vision encoder configuration.
     vision_config: VisionConfig
     """Vision encoder configuration."""
 
-    # Composed language model configuration.
-    llm_config: Llama3Config
-    """Language model configuration using Llama3 architecture."""
+    declared_dtype: DType
+    """The dtype of the checkpoint's unquantized tensors and the vision rows."""
 
     quantization_encoding: SupportedEncoding | None = None
 
-    def get_kv_params(self) -> KVCacheParamInterface:
-        """Returns the KV cache parameters from the embedded LLM config."""
-        return self.llm_config.get_kv_params()
+    # Set by `finalize`.
+    rms_norm_eps: float = 1e-6
+    norm_dtype: DType | None = None
+    tie_word_embeddings: bool = False
+    quant_config: QuantConfig | None = None
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+
+    @property
+    def compute_dtype(self) -> DType:
+        """The dtype of activations and every unquantized weight.
+
+        An FP8 encoding stores only the projections in FP8.
+        """
+        if self.dtype == DType.float8_e4m3fn:
+            return DType.bfloat16
+        return self.dtype
+
+    @property
+    def head_dim(self) -> int:
+        """The attention head width."""
+        params = self.kv_params
+        assert hasattr(params, "head_dim")
+        return int(params.head_dim)
+
+    def is_moe_layer(self, layer_idx: int) -> bool:
+        """Returns whether layer ``layer_idx`` routes to experts."""
+        return (
+            layer_idx not in self.mlp_only_layers
+            and self.num_experts > 0
+            and (layer_idx + 1) % self.decoder_sparse_step == 0
+        )
+
+    @staticmethod
+    def _text_config(huggingface_config: AutoConfig) -> AutoConfig:
+        return getattr(huggingface_config, "text_config", huggingface_config)
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """The language model's hidden layer count."""
-        # Delegate to Llama3Config for language model parameters.
-        llm_config = getattr(
-            huggingface_config, "text_config", huggingface_config
+        return int(
+            Qwen3VLConfig._text_config(huggingface_config).num_hidden_layers
         )
-        return Llama3Config.get_num_layers(llm_config)
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> KVCacheParamInterface:
+        """Grouped-attention KV params from the text config."""
+        return super().construct_kv_params(
+            cls._text_config(huggingface_config),
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
+        )
+
+    @override
+    @classmethod
+    def calculate_max_seq_len(
+        cls, huggingface_config: AutoConfig, model_config: MAXModelConfig
+    ) -> int:
+        """Bounds against the text config's ``max_position_embeddings``."""
+        return super().calculate_max_seq_len(
+            cls._text_config(huggingface_config), model_config
+        )
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Bounds one cached image by the image processor's pixel ceiling.
+
+        Every image is resized under :data:`QWEN3VL_MAX_PIXELS`, so its rows
+        are at most that over the patch area and the spatial merge.
+        """
+        vision_config = huggingface_config.vision_config
+        merge = vision_config.spatial_merge_size
+        max_tokens = QWEN3VL_MAX_PIXELS // (
+            vision_config.patch_size**2 * merge**2
+        )
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        assert spec is not None
+        width, dtype = spec
+        return max_tokens * width * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """One row per merged vision token, with its deepstack embeddings."""
+        vision = VisionConfig.initialize_from_config(
+            huggingface_config.vision_config
+        )
+        return (
+            vision.embedding_width,
+            _declared_dtype(cls._text_config(huggingface_config)),
+        )
 
     @override
     @classmethod
@@ -214,182 +318,91 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
-        """Initializes a Qwen3VLConfig instance from pipeline configuration.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            model_config: The MAX model configuration to read the HuggingFace
-                config from. Defaults to ``pipeline_config.model``.
-            max_seq_len: The maximum sequence length the config allows.
-
-        Returns:
-            A Qwen3VLConfig instance with fields initialized from config.
-        """
+        """Initializes the config from the pipeline's Hugging Face config."""
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{model_config.model_path}', "
-                "but config could not be loaded. "
-                "Please ensure the model repository contains a valid config.json file."
+                f"HuggingFace config is required for "
+                f"'{model_config.model_path}', but config could not be loaded."
             )
-        return cls.initialize_from_config(
-            pipeline_config, huggingface_config, max_seq_len=max_seq_len
-        )
-
-    @classmethod
-    def initialize_from_config(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        *,
-        max_seq_len: int,
-    ) -> Self:
-        """Initializes a Qwen3VLConfig from pipeline and HuggingFace configs.
-
-        This method creates a config instance with all fields that can be
-        determined from the pipeline and HuggingFace configurations, without
-        needing the state_dict. Fields that depend on the state_dict should
-        be set via the `finalize()` method.
-
-        Args:
-            pipeline_config: The MAX Engine pipeline configuration.
-            huggingface_config: HuggingFace model configuration.
-            max_seq_len: The maximum sequence length the config allows.
-
-        Returns:
-            A Qwen3VLConfig instance ready for finalization.
-        """
-        hf_vision_config = getattr(huggingface_config, "vision_config", None)
-        if hf_vision_config is None:
-            raise ValueError("vision_config not found in huggingface_config")
-
-        text_config = huggingface_config.text_config
-
-        # Get quantization encoding for dtype
-        quantization_encoding = _select_quantization_encoding(
+        text_config = cls._text_config(huggingface_config)
+        quantization_encoding = select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING
         )
-        dtype = supported_encoding_dtype(quantization_encoding)
-
-        # Create VisionConfig from the vision config
-
-        # Propagate quantization_config to vision_config if present on main
-        # config but not vision_config
-        if hasattr(huggingface_config, "quantization_config") and not hasattr(
-            hf_vision_config, "quantization_config"
-        ):
-            hf_vision_config.quantization_config = (
-                huggingface_config.quantization_config
-            )
-
-        vision_config = VisionConfig.initialize_from_config(
-            pipeline_config, hf_vision_config
+        devices = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in model_config.device_specs
+        ]
+        kv_params = cls.construct_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            model_config.kv_cache,
+            cache_dtype_for_encoding(
+                quantization_encoding, model_config.kv_cache.kv_cache_format
+            ),
         )
-
-        # Create Llama3Config for the language model
-
-        # Propagate quantization_config to text_config if present on main config
-        # but not text_config
-        if hasattr(huggingface_config, "quantization_config") and not hasattr(
-            huggingface_config.text_config, "quantization_config"
-        ):
-            huggingface_config.text_config.quantization_config = (
-                huggingface_config.quantization_config
-            )
-
-        # For VLM models, tie_word_embeddings on the top-level config determines
-        # whether lm_head.weight exists in the checkpoint. The text_config may
-        # have a different value (e.g., Qwen3-VL-4B-FP8 has top-level=false but
-        # text_config=true). Use top-level value to match actual checkpoint.
-        if hasattr(huggingface_config, "tie_word_embeddings"):
-            huggingface_config.text_config.tie_word_embeddings = (
-                huggingface_config.tie_word_embeddings
-            )
-
-        llm_config = Llama3Config.initialize_from_config(
-            pipeline_config, text_config, max_seq_len=max_seq_len
-        )
-
-        # Handle both MoE (e.g., 30B) and dense (e.g., VL 2B 4B etc) variants.
-        # For dense models, num_experts=0 ensures the decoder always uses MLP layers
-        num_experts = getattr(text_config, "num_experts", 0)
-        num_experts_per_tok = getattr(text_config, "num_experts_per_tok", 1)
-        moe_intermediate_size = getattr(
-            text_config, "moe_intermediate_size", text_config.intermediate_size
-        )
-        mlp_only_layers = getattr(text_config, "mlp_only_layers", [])
-        norm_topk_prob = getattr(text_config, "norm_topk_prob", False)
-        decoder_sparse_step = getattr(text_config, "decoder_sparse_step", 1)
-
+        rope_scaling = getattr(text_config, "rope_scaling", None) or {}
         return cls(
-            dtype=dtype,
-            devices=[
-                DeviceRef(spec.device_type, spec.id)
-                for spec in pipeline_config.model.device_specs
-            ],
-            # Multimodal parameters
-            image_token_id=huggingface_config.image_token_id,
-            video_token_id=huggingface_config.video_token_id,
-            vision_start_token_id=huggingface_config.vision_start_token_id,
-            spatial_merge_size=hf_vision_config.spatial_merge_size,
-            mrope_section=text_config.rope_scaling["mrope_section"],
-            # MoE parameters
-            num_experts=num_experts,
-            num_experts_per_tok=num_experts_per_tok,
-            moe_intermediate_size=moe_intermediate_size,
-            mlp_only_layers=mlp_only_layers,
-            norm_topk_prob=norm_topk_prob,
-            decoder_sparse_step=decoder_sparse_step,
-            # Vision configuration
-            vision_config=vision_config,
-            # Composed language model configuration
-            llm_config=llm_config,
+            devices=devices,
+            dtype=supported_encoding_dtype(quantization_encoding),
+            hidden_size=text_config.hidden_size,
+            num_attention_heads=text_config.num_attention_heads,
+            num_key_value_heads=text_config.num_key_value_heads,
+            num_hidden_layers=text_config.num_hidden_layers,
+            intermediate_size=text_config.intermediate_size,
+            vocab_size=text_config.vocab_size,
+            rope_theta=get_rope_theta(text_config),
+            max_seq_len=max_seq_len,
+            kv_params=kv_params,
+            mrope_section=list(rope_scaling["mrope_section"]),
+            # A dense checkpoint has no experts, so every layer is an MLP.
+            num_experts=getattr(text_config, "num_experts", 0),
+            num_experts_per_tok=getattr(text_config, "num_experts_per_tok", 1),
+            moe_intermediate_size=getattr(
+                text_config,
+                "moe_intermediate_size",
+                text_config.intermediate_size,
+            ),
+            mlp_only_layers=list(getattr(text_config, "mlp_only_layers", [])),
+            decoder_sparse_step=getattr(text_config, "decoder_sparse_step", 1),
+            vision_config=VisionConfig.initialize_from_config(
+                huggingface_config.vision_config
+            ),
+            declared_dtype=_declared_dtype(text_config),
             quantization_encoding=quantization_encoding,
         )
 
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        llm_state_dict: dict[str, WeightData],
-        vision_state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
-    ) -> None:
-        """Finalize the Qwen3VLConfig instance with state_dict dependent fields.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-            llm_state_dict: Language model weights dictionary.
-            vision_state_dict: Vision encoder weights dictionary.
-            return_logits: Return logits configuration.
-            norm_method: Normalization method.
-        """
-        # Determine dtypes from state_dict
-        vision_dtype = vision_state_dict[
-            "vision_encoder.patch_embed.proj.weight"
-        ].dtype
-        llm_dtype = llm_state_dict["language_model.embed_tokens.weight"].dtype
-
-        # Finalize vision config
-        self.vision_config.finalize(
-            vision_dtype=vision_dtype,
-            llm_dtype=llm_dtype,
-        )
-
-        # quantization_config lives at the top level of the HF config, not
-        # under text_config. Propagate it so parse_quant_config() finds it.
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Sets the fields that need the checkpoint's weights."""
+        text_config = self._text_config(huggingface_config)
+        # The checkpoint keeps its quantization config at the top level.
         if hasattr(huggingface_config, "quantization_config"):
-            huggingface_config.text_config.quantization_config = (
+            text_config.quantization_config = (
                 huggingface_config.quantization_config
             )
-
-        # Finalize llm config (with Qwen2 attention_bias=True)
-        self.llm_config.finalize(
-            huggingface_config=huggingface_config.text_config,
-            state_dict=llm_state_dict,
-            return_logits=return_logits,
-            norm_method=norm_method,
-            attention_bias=True,  # Qwen3VL uses Qwen2 which has attention_bias=True
+        decoder_weights = {
+            name: weight
+            for name, weight in state_dict.items()
+            if not name.startswith("vision_encoder.")
+        }
+        self.quant_config = parse_quant_config(
+            text_config, decoder_weights, self.dtype
         )
-        self.llm_config.interleaved_rope_weights = False
+        norm = decoder_weights.get("layers.0.input_layernorm.weight")
+        self.norm_dtype = norm.dtype if norm is not None else None
+        self.rms_norm_eps = text_config.rms_norm_eps
+        # The top-level value says whether the checkpoint has an lm_head;
+        # the text config's can disagree.
+        self.tie_word_embeddings = getattr(
+            huggingface_config, "tie_word_embeddings", False
+        )
+        self.return_logits = outputs.return_logits
+        self.return_hidden_states = outputs.return_hidden_states
+        return self

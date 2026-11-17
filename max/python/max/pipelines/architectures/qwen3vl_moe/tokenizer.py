@@ -28,24 +28,6 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import requests
-from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
-    mrope_pos_ids_3d,
-)
-from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import smart_resize
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    QWEN3VL_MAX_PIXELS,
-    get_bilinear_interpolation_weights_and_indices,
-    get_rope_index,
-    get_seqlens,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
-    QWEN3VL_VIDEO_FPS,
-    QWEN3VL_VIDEO_MAX_FRAMES,
-    QWEN3VL_VIDEO_MAX_PIXELS,
-    QWEN3VL_VIDEO_MIN_FRAMES,
-    QWEN3VL_VIDEO_MIN_PIXELS,
-    preprocess_clip,
-)
 from max.pipelines.context import (
     GrammarEnforcementState,
     ImageMetadata,
@@ -79,6 +61,22 @@ from PIL import Image
 from transformers import AutoTokenizer
 
 from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
+from .data_processing import (
+    QWEN3VL_MAX_PIXELS,
+    get_bilinear_interpolation_weights_and_indices,
+    get_rope_index,
+    get_seqlens,
+    mrope_pos_ids_3d,
+    smart_resize,
+)
+from .video_processing import (
+    QWEN3VL_VIDEO_FPS,
+    QWEN3VL_VIDEO_MAX_FRAMES,
+    QWEN3VL_VIDEO_MAX_PIXELS,
+    QWEN3VL_VIDEO_MIN_FRAMES,
+    QWEN3VL_VIDEO_MIN_PIXELS,
+    preprocess_clip,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -394,7 +392,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
     - image_processor is a custom image processor that handles image preprocessing without PyTorch dependencies.
     - tokenizer uses transformers' tokenizer directly instead of AutoProcessor to avoid dependency on PyTorch.
-    - clips go through :mod:`~.nn.video_processing`, which is a separate path
+    - clips go through :mod:`~.video_processing`, which is a separate path
       rather than a per-frame reuse of the image one: a clip's resize depends
       on its frame count, and each of its patch rows spans two distinct
       consecutive frames.

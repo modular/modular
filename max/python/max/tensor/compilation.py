@@ -657,7 +657,13 @@ class CompiledCallable(Generic[_P, _R]):
         Returns:
             One buffer per graph output, in graph order.
         """
-        results = list(self.engine_model(*self.engine_inputs(buffers)))
+        inputs = self.engine_inputs(buffers)
+        # Binding a fresh signature costs tens of microseconds per decode
+        # step, so only a wrong input count goes through it, for its message.
+        if len(inputs) != len(self.engine_model.input_metadata):
+            results = list(self.engine_model(*inputs))
+        else:
+            results = list(self.engine_model.execute(*inputs))
         _validation_hooks.compiled_call(self.engine_model, buffers, results)
         return results
 

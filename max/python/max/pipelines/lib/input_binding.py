@@ -14,9 +14,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 
 from max import tree
+from max.driver import Buffer
+
+
+def _physical_leaves(values: Sequence[object]) -> list[object]:
+    """Returns ``tree.leaves(values)``.
+
+    Buffers and flat tuples of per-device buffers skip the full tree walk,
+    which costs several microseconds per input on every decode step.
+    """
+    leaves: list[object] = []
+    for value in values:
+        if isinstance(value, Buffer):
+            leaves.append(value)
+        elif (type(value) is tuple or type(value) is list) and all(
+            isinstance(item, Buffer) for item in value
+        ):
+            leaves.extend(value)
+        else:
+            leaves.extend(tree.leaves(value))
+    return leaves
 
 
 def _flatten_role_inputs(
@@ -60,7 +80,7 @@ def _flatten_role_inputs(
             if name in flat_fields
             else structure.flatten_up_to(fields[name], name)
         )
-        physical = tree.leaves(field_inputs)
+        physical = _physical_leaves(field_inputs)
         if strict and len(physical) != structure.num_leaves:
             raise ValueError(
                 f"{name}: the role takes {structure.num_leaves} input leaves, "

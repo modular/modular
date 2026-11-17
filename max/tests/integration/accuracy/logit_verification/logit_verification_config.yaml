@@ -502,7 +502,6 @@ logit_verification_pipelines:
     timeout: 900
 
   Qwen/Qwen3-VL-30B-A3B-Instruct:
-    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-VL-30B-A3B-Instruct"
     compatible_with: [gpu]
@@ -515,7 +514,6 @@ logit_verification_pipelines:
     kl_div_threshold: 1.5e-01
 
   Qwen/Qwen3-VL-4B-Instruct-FP8:
-    config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-VL-4B-Instruct-FP8"
     compatible_with: [gpu]

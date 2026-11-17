@@ -52,12 +52,8 @@ from PIL import Image
 from transformers import AutoTokenizer
 from transformers.utils import cached_file
 
-from ..qwen3vl_moe.nn.data_processing import QWEN3VL_MAX_PIXELS
-from ..qwen3vl_moe.nn.video_processing import (
-    QWEN3VL_VIDEO_MAX_FRAMES,
-    preprocess_clip,
-)
-from ..qwen3vl_moe.tokenizer import qwen3vl_image_preprocessing
+from .image_processing import QWEN3VL_MAX_PIXELS, qwen3vl_image_preprocessing
+from .video_processing import QWEN3VL_VIDEO_MAX_FRAMES, preprocess_clip
 
 IMAGE_TOKEN = "<|image|>"
 VIDEO_TOKEN = "<|video|>"
