@@ -198,11 +198,11 @@ def test_conv_transposed[
 
     var packed_filter_shape = pack_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
-        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
+        length=Int(packed_filter_shape.product()), fill=Scalar[dtype](0)
     )
     var packed_filter = TileTensor(
         packed_filter_ptr,
-        row_major(Coord(rebind[IndexList[rank + 3]](packed_filter_shape))),
+        row_major(packed_filter_shape),
     )
 
     var output_shape = extend_shape(Coord(output_dims), N, F)
@@ -224,11 +224,11 @@ def test_conv_transposed[
         output_ref,
         input_ref,
         filter_ref,
-        extend_shape_3d[rank](stride),
-        extend_shape_3d[rank](dilation),
-        pad_d,
-        pad_h,
-        pad_w,
+        Coord(extend_shape_3d[rank](stride)),
+        Coord(extend_shape_3d[rank](dilation)),
+        Coord(pad_d),
+        Coord(pad_h),
+        Coord(pad_w),
     )
 
     # Add bias and activatiion separately.

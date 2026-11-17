@@ -1085,11 +1085,11 @@ def _conv_transpose_cpu[
         output,
         input,
         filter,
-        _index_list[spatial_rank](strides),
-        _index_list[spatial_rank](dilation),
-        pad_d,
-        pad_h,
-        pad_w,
+        Coord(_index_list[spatial_rank](strides)),
+        Coord(_index_list[spatial_rank](dilation)),
+        Coord(pad_d),
+        Coord(pad_h),
+        Coord(pad_w),
         epilogue_fn,
         Optional(ctx.assert_cpu_target()),
     )
@@ -1299,9 +1299,9 @@ struct ConvTransposeGPU:
             row_major(output.shape()),
             input_tt,
             filter_tt,
-            attrs[0],
-            attrs[1],
-            attrs[2],
+            Coord(attrs[0]),
+            Coord(attrs[1]),
+            Coord(attrs[2]),
             output_fn,
             ctx,
         )
@@ -1345,9 +1345,9 @@ struct ConvTransposeGPU:
             output.to_tile_tensor(),
             input_tt,
             filter_tt,
-            attrs[0],
-            attrs[1],
-            attrs[2],
+            Coord(attrs[0]),
+            Coord(attrs[1]),
+            Coord(attrs[2]),
             ctx,
         )
 
@@ -1372,13 +1372,15 @@ def mo_conv_transpose_shape(
         type_of(filter).dtype == type_of(input).dtype
     ), "filter dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
-        conv_transpose_shape(
-            input.to_tile_tensor(),
-            filter.to_tile_tensor().bitcast[type_of(input).dtype](),
-            strides.to_tile_tensor(),
-            dilations.to_tile_tensor(),
-            paddings.to_tile_tensor(),
-            output_paddings.to_tile_tensor(),
+        coord_to_index_list(
+            conv_transpose_shape(
+                input.to_tile_tensor(),
+                filter.to_tile_tensor().bitcast[type_of(input).dtype](),
+                strides.to_tile_tensor(),
+                dilations.to_tile_tensor(),
+                paddings.to_tile_tensor(),
+                output_paddings.to_tile_tensor(),
+            )
         )
     )
 

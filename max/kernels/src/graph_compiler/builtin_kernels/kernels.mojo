@@ -3643,7 +3643,9 @@ def pack_conv_transpose_filter_shape_shape(
             output shape is computed.
     """
     return rebind[IndexList[type_of(filter_buf).rank + 1]](
-        pack_filter_shape_conv_transpose(filter_buf.to_tile_tensor(), 1)
+        coord_to_index_list(
+            pack_filter_shape_conv_transpose(filter_buf.to_tile_tensor(), 1)
+        )
     )
 
 

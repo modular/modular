@@ -268,11 +268,11 @@ def test_conv_transposed_cpu_fused() raises:
         plain_tt,
         input_tt,
         filter_tt,
-        stride,
-        dilation,
-        Index(0, 0),
-        Index(0, 0),
-        Index(0, 0),
+        Coord(stride),
+        Coord(dilation),
+        Coord(0, 0),
+        Coord(0, 0),
+        Coord(0, 0),
         null_epilogue,
     )
 
@@ -280,11 +280,11 @@ def test_conv_transposed_cpu_fused() raises:
         fused_tt,
         input_tt,
         filter_tt,
-        stride,
-        dilation,
-        Index(0, 0),
-        Index(0, 0),
-        Index(0, 0),
+        Coord(stride),
+        Coord(dilation),
+        Coord(0, 0),
+        Coord(0, 0),
+        Coord(0, 0),
         scale_epilogue,
     )
 

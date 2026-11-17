@@ -69,11 +69,11 @@ def test_convtranspose_pads():
         output.reshape(row_major(Coord(IndexList[5](1, 1, 7, 3, 2)))),
         input.reshape(row_major(Coord(IndexList[5](1, 1, 3, 3, 1)))),
         filter.reshape(row_major(Coord(IndexList[5](1, 3, 3, 2, 1)))),
-        stride,
-        dilation,
-        pad_d,
-        pad_h,
-        pad_w,
+        Coord(stride),
+        Coord(dilation),
+        Coord(pad_d),
+        Coord(pad_h),
+        Coord(pad_w),
     )
 
     print()
@@ -134,11 +134,11 @@ def test_convtranspose():
         output.reshape(row_major(Coord(IndexList[5](1, 1, 5, 5, 2)))),
         input.reshape(row_major(Coord(IndexList[5](1, 1, 3, 3, 1)))),
         filter.reshape(row_major(Coord(IndexList[5](1, 3, 3, 2, 1)))),
-        stride,
-        dilation,
-        pad_d,
-        pad_h,
-        pad_w,
+        Coord(stride),
+        Coord(dilation),
+        Coord(pad_d),
+        Coord(pad_h),
+        Coord(pad_w),
     )
 
     print()
@@ -206,11 +206,11 @@ def test_convtranspose_dilation():
         output.reshape(row_major(Coord(IndexList[5](1, 1, 5, 5, 1)))),
         input.reshape(row_major(Coord(IndexList[5](1, 1, 3, 3, 1)))),
         filter.reshape(row_major(Coord(IndexList[5](1, 2, 2, 1, 1)))),
-        stride,
-        dilation,
-        pad_d,
-        pad_h,
-        pad_w,
+        Coord(stride),
+        Coord(dilation),
+        Coord(pad_d),
+        Coord(pad_h),
+        Coord(pad_w),
     )
 
     print()
@@ -281,11 +281,11 @@ def test_convtranspose_attributes():
         output.reshape(row_major(Coord(IndexList[5](1, 1, 10, 8, 2)))),
         input.reshape(row_major(Coord(IndexList[5](1, 1, 3, 3, 1)))),
         filter.reshape(row_major(Coord(IndexList[5](1, 3, 3, 2, 1)))),
-        stride,
-        dilation,
-        pad_d,
-        pad_h,
-        pad_w,
+        Coord(stride),
+        Coord(dilation),
+        Coord(pad_d),
+        Coord(pad_h),
+        Coord(pad_w),
     )
 
     print()

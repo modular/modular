@@ -62,14 +62,13 @@ from nn.conv.conv import _get_cudnn_meta, check_cudnn_error
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import Index, IndexList
-
 from .conv_utils import (
     ConvEpilogueFn,
     ConvInfoStatic,
     ConvPartition,
     ConvShape,
     ConvSimdEpilogueFn,
+    _int_coord,
     align_down_residual,
     get_conv_num_tasks,
     get_conv_shape,
@@ -102,11 +101,11 @@ def conv_transpose_naive[
     output: TileTensor[mut=True, dtype, ...],
     input: TileTensor[mut=False, dtype, ...],
     filter: TileTensor[mut=False, dtype, ...],
-    stride: IndexList[3],
-    dilation: IndexList[3],
-    pad_d: IndexList[2],
-    pad_h: IndexList[2],
-    pad_w: IndexList[2],
+    stride: Coord,
+    dilation: Coord,
+    pad_d: Coord,
+    pad_h: Coord,
+    pad_w: Coord,
 ):
     """
     Implements the ConvTranspose operator from the MO spec.
@@ -134,6 +133,11 @@ def conv_transpose_naive[
     comptime assert output.element_size == 1
     comptime assert input.element_size == 1
     comptime assert filter.element_size == 1
+    comptime assert stride.rank == 3
+    comptime assert dilation.rank == 3
+    comptime assert pad_d.rank == 2
+    comptime assert pad_h.rank == 2
+    comptime assert pad_w.rank == 2
 
     var N = Int(input.dim[0]())  # Number of images (num. batches)
 
@@ -162,22 +166,22 @@ def conv_transpose_naive[
                 for d in range(D):
                     for h in range(H):
                         for w in range(W):
-                            var do = d * stride[0] - pad_d[0]
-                            var ho = h * stride[1] - pad_h[0]
-                            var wo = w * stride[2] - pad_w[0]
+                            var do = d * Int(stride[0]) - Int(pad_d[0])
+                            var ho = h * Int(stride[1]) - Int(pad_h[0])
+                            var wo = w * Int(stride[2]) - Int(pad_w[0])
 
                             for q in range(Q):
-                                var do_nbr = do + q * dilation[0]
+                                var do_nbr = do + q * Int(dilation[0])
                                 if do_nbr < 0 or do_nbr >= DO:
                                     continue
 
                                 for r in range(R):
-                                    var ho_nbr = ho + r * dilation[1]
+                                    var ho_nbr = ho + r * Int(dilation[1])
                                     if ho_nbr < 0 or ho_nbr >= HO:
                                         continue
 
                                     for s in range(S):
-                                        var wo_nbr = wo + s * dilation[2]
+                                        var wo_nbr = wo + s * Int(dilation[2])
                                         if wo_nbr < 0 or wo_nbr >= WO:
                                             continue
 
@@ -208,7 +212,7 @@ def conv_transpose_shape[
     dilations: TileTensor[mut=False, dilations_type, ...],
     pads: TileTensor[mut=False, pads_type, ...],
     output_pads: TileTensor[mut=False, output_pads_type, ...],
-) raises -> IndexList[input.rank]:
+) raises -> DynamicCoord[DType.int, input.rank]:
     """
     Compute the output shape of a `conv-transpose` operation, and assert the
     inputs are compatible.
@@ -254,7 +258,7 @@ def conv_transpose_shape[
 
     # Assume input has channel last layout, NHWC or NDHWC.
     var batch_size = Int(input.dim(0))
-    var output_shape = IndexList[input.rank]()
+    var output_shape = DynamicCoord[DType.int, input.rank]()
     # Assume kernel has layout RSFC or QRSFC. The output channel is F because
     # this is a convolution transpose shape function (inverse of regular
     # convolution).
@@ -268,8 +272,8 @@ def conv_transpose_shape[
         )
 
     # Compute output shape
-    output_shape[0] = batch_size
-    output_shape[input.rank - 1] = output_channels
+    output_shape.replace_dynamic[0](batch_size)
+    output_shape.replace_dynamic[input.rank - 1](output_channels)
 
     @inline(.always)
     def compute_output_spatial_dim(
@@ -309,7 +313,7 @@ def conv_transpose_shape[
         )
         if output_spatial_dim <= 0:
             raise Error("[conv_transpose] output spatial dim must be positive")
-        output_shape[i + 1] = output_spatial_dim
+        output_shape.replace_dynamic[i + 1](output_spatial_dim)
 
     return output_shape
 
@@ -321,7 +325,7 @@ def conv_transpose_shape[
 
 def get_num_partitions[
     micro_kernel_height: Int, micro_kernel_f_size: Int
-](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
+](num_threads: Int, conv_shape: ConvShape) -> DynamicCoord[DType.int, 4]:
     """Partition the workload in (batch&group, C, F, H) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
@@ -343,17 +347,14 @@ def get_num_partitions[
 
     var max_f_tasks = ceildiv(conv_shape.f, micro_kernel_f_size)
 
-    var num_partitions = IndexList[4](1)
-
-    num_partitions[0] = min(max_num_tasks, num_batches_and_groups)
-    num_partitions[2] = min(max_f_tasks, max_num_tasks // num_partitions[0])
-
-    return num_partitions
+    var ng_partitions = min(max_num_tasks, num_batches_and_groups)
+    var f_partitions = min(max_f_tasks, max_num_tasks // ng_partitions)
+    return Coord(ng_partitions, 1, f_partitions, 1)
 
 
 def get_partition(
     task_id: Int,
-    num_partitions: IndexList[4],
+    num_partitions: DynamicCoord[DType.int, 4],
     conv_shape: ConvShape,
     micro_kernel_height: Int,
     micro_kernel_f_size: Int,
@@ -377,8 +378,6 @@ def get_partition(
         task_id_ng, num_partitions[0], conv_shape.n * conv_shape.num_groups, 1
     )
 
-    var c_range = Index(0, conv_shape.c)
-
     var f_range = partition_work(
         task_id_f,
         num_partitions[2],
@@ -397,8 +396,8 @@ def get_partition(
         f_size=f_range[1],
         ho_or_howo_offset=howo_range[0],
         ho_or_howo_size=howo_range[1],
-        c_offset=c_range[0],
-        c_size=c_range[1],
+        c_offset=0,
+        c_size=conv_shape.c,
     )
 
 
@@ -489,7 +488,7 @@ struct ConvTransposedPacked[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: DynamicCoord[.int64, 2]
+    var cf_tile_size: Coord[Int, Int]
 
     var epilogue_fn: Self.EpilogueFnType
 
@@ -559,7 +558,7 @@ struct ConvTransposedPacked[
         var num_partitions = get_num_partitions[
             micro_kernel_height, micro_kernel_f_size
         ](num_threads, conv_shape)
-        var num_tasks = num_partitions.flattened_length()
+        var num_tasks = Int(num_partitions.product())
 
         def task_func(task_id: Int) {var num_partitions, var cf_tile_size, imm}:
             var partition = get_partition(
@@ -573,7 +572,7 @@ struct ConvTransposedPacked[
             if partition.empty():
                 return
 
-            var task_tile_size = Index(
+            var task_tile_size = Coord(
                 min(cf_tile_size[0], partition.c_size), cf_tile_size[1]
             )
 
@@ -593,7 +592,7 @@ struct ConvTransposedPacked[
                 filter,
                 conv_shape,
                 partition,
-                Coord(task_tile_size),
+                task_tile_size,
                 epilogue_fn,
             )
             instance._batch_group_loop()
@@ -904,7 +903,7 @@ struct ConvTransposedPacked[
                     f_tile_size,
                     rebind[ConvShape[2]](self.conv_shape),
                     n,
-                    Index(h, w),
+                    Coord(h, w),
                 )
 
                 input_base = input_base.unsafe_offset(
@@ -1005,7 +1004,7 @@ struct ConvTransposedPacked[
                         f_tile_size,
                         rebind[ConvShape[3]](self.conv_shape),
                         n,
-                        Index(d, h, w),
+                        Coord(d, h, w),
                     )
 
                     input_base = input_base.unsafe_offset(
@@ -1092,7 +1091,7 @@ def update_w_tile_2d[
     f_tile_size: Int,
     conv_shape: ConvShape[2],
     n: Int,
-    hw: IndexList[2],
+    hw: Coord[Int, Int],
 ):
     """Updates one output tile of a 2D transposed convolution using register tiling.
 
@@ -1140,7 +1139,7 @@ def update_w_tile_2d[
     var filter_stride = micro_kernel_f_size
 
     # Output coordinates
-    var howo = Index(
+    var howo = Coord(
         hw[0] * conv_shape.stride_at[0]() - conv_shape.pad_h_lower(),
         hw[1] * conv_shape.stride_at[1]() - conv_shape.pad_w_lower(),
     )
@@ -1208,7 +1207,7 @@ def update_w_tile_3d[
     f_tile_size: Int,
     conv_shape: ConvShape[3],
     n: Int,
-    hw: IndexList[3],
+    hw: Coord[Int, Int, Int],
 ):
     """Updates one output tile of a 3D transposed convolution using register tiling.
 
@@ -1257,7 +1256,7 @@ def update_w_tile_3d[
     var filter_stride = micro_kernel_f_size
 
     # Output coordinates
-    var howo = Index(
+    var howo = Coord(
         hw[0] * conv_shape.stride_at[0]() - conv_shape.pad_d_lower(),
         hw[1] * conv_shape.stride_at[1]() - conv_shape.pad_h_lower(),
         hw[2] * conv_shape.stride_at[2]() - conv_shape.pad_w_lower(),
@@ -1401,7 +1400,7 @@ def _get_group_filter_base(
 @inline(.always)
 def pack_filter_shape(
     filter: TileTensor[mut=False, ...], num_groups: Int
-) -> IndexList[filter.rank + 1]:
+) -> DynamicCoord[DType.int, filter.rank + 1]:
     """
     Compute the output shape of transposed convolution filter packing.
 
@@ -1426,14 +1425,18 @@ def pack_filter_shape(
     var F_per_group = F // num_groups
 
     # FRSCf layout.
-    var packed_shape = IndexList[filter.rank + 1]()
-    packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
-    packed_shape[filter.rank] = micro_kernel_f_size
+    var packed_shape = DynamicCoord[DType.int, filter.rank + 1]()
+    packed_shape.replace_dynamic[0](
+        num_groups * ceildiv(F_per_group, micro_kernel_f_size)
+    )
+    packed_shape.replace_dynamic[filter.rank](micro_kernel_f_size)
     # Input channel
-    packed_shape[filter.rank - 1] = Int(filter.dim[filter.rank - 1]())
+    packed_shape.replace_dynamic[filter.rank - 1](
+        Int(filter.dim[filter.rank - 1]())
+    )
 
     comptime for i in range(filter.rank - 2):
-        packed_shape[i + 1] = Int(filter.dim[i]())
+        packed_shape.replace_dynamic[i + 1](Int(filter.dim[i]()))
 
     return packed_shape
 
@@ -1571,11 +1574,11 @@ def conv_transposed_cpu[
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, address_space=.GENERIC, ...],
     filter: TileTensor[address_space=.GENERIC, ...],
-    stride: IndexList[input.rank - 2],
-    dilation: IndexList[input.rank - 2],
-    pad_d: IndexList[2],
-    pad_h: IndexList[2],
-    pad_w: IndexList[2],
+    stride: Coord,
+    dilation: Coord,
+    pad_d: Coord,
+    pad_h: Coord,
+    pad_w: Coord,
     elementwise_lambda: EpilogueFnType,
     ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
@@ -1614,7 +1617,7 @@ def conv_transposed_cpu[
             ";", trace_arg("output", output.layout.shape_coord()),
             ";group=1",
             ";stride=", stride,
-            ";padding_d=", Index(0, 0),
+            ";padding_d=", pad_d,
             ";padding_h=", pad_h,
             ";padding_w=", pad_w,
         )
@@ -1631,29 +1634,29 @@ def conv_transposed_cpu[
         var packed_filter_ptr = filter.ptr.unsafe_mut_cast[
             True
         ]().unsafe_origin_cast[MutUntrackedOrigin]()
-        var packed_filter_shape: IndexList[packed_filter_rank]
+        var packed_filter_shape: DynamicCoord[DType.int, packed_filter_rank]
 
         # If filter is not packed, we have to pack it before the kernel.
         comptime if not filter_packed:
             # Only support single group.
-            packed_filter_shape = rebind[IndexList[packed_filter_rank]](
-                pack_filter_shape(filter, 1)
-            )
+            packed_filter_shape = rebind[
+                DynamicCoord[DType.int, packed_filter_rank]
+            ](pack_filter_shape(filter, 1))
         else:
-            packed_filter_shape = IndexList[packed_filter_rank]()
+            packed_filter_shape = DynamicCoord[DType.int, packed_filter_rank]()
 
             comptime for i in range(packed_filter_rank):
-                packed_filter_shape[i] = Int(filter.dim[i]())
+                packed_filter_shape.replace_dynamic[i](Int(filter.dim[i]()))
 
         var packed_filter_alloc_layout = AllocLayout[Scalar[filter.dtype]](
-            length=packed_filter_shape.flattened_length()
+            length=Int(packed_filter_shape.product())
         )
         comptime if not filter_packed:
             packed_filter_ptr = alloc(packed_filter_alloc_layout).unsafe_leak()
 
         var packed_filter = TileTensor(
             packed_filter_ptr,
-            row_major(Coord(packed_filter_shape)),
+            row_major(packed_filter_shape),
         )
 
         comptime if not filter_packed:
@@ -1665,11 +1668,11 @@ def conv_transposed_cpu[
             output,
             input,
             packed_filter,
-            Coord(stride),
-            Coord(dilation),
-            Coord(pad_d),
-            Coord(pad_h),
-            Coord(pad_w),
+            _int_coord[input.rank - 2, DType.int64](stride),
+            _int_coord[input.rank - 2, DType.int64](dilation),
+            _int_coord[2, DType.int64](pad_d),
+            _int_coord[2, DType.int64](pad_h),
+            _int_coord[2, DType.int64](pad_w),
             1,
         )
 
@@ -1730,9 +1733,9 @@ def conv_transposed_gpu[
     output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
-    stride: IndexList[input.rank - 2],
-    dilation: IndexList[input.rank - 2],
-    padding: IndexList[input.rank - 2],
+    stride: Coord,
+    dilation: Coord,
+    padding: Coord,
     ctx: DeviceContext,
 ) raises:
     """Runs a transposed convolution on the GPU via the cuDNN backward-data path.
@@ -1755,9 +1758,9 @@ def conv_transposed_gpu[
         input,
         filter,
         output,
-        rebind[IndexList[2]](stride),
-        rebind[IndexList[2]](dilation),
-        rebind[IndexList[2]](padding),
+        _int_coord[2](stride),
+        _int_coord[2](dilation),
+        _int_coord[2](padding),
         ctx,
     )
 
@@ -1773,9 +1776,9 @@ def conv_transposed_gpu[
     output_layout: OutputLayoutType,
     input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
-    stride: IndexList[input.rank - 2],
-    dilation: IndexList[input.rank - 2],
-    padding: IndexList[input.rank - 2],
+    stride: Coord,
+    dilation: Coord,
+    padding: Coord,
     elementwise_epilogue: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
@@ -1820,9 +1823,9 @@ def conv_transposed_gpu[
         input,
         filter,
         output_tmp,
-        rebind[IndexList[2]](stride),
-        rebind[IndexList[2]](dilation),
-        rebind[IndexList[2]](padding),
+        _int_coord[2](stride),
+        _int_coord[2](dilation),
+        _int_coord[2](padding),
         ctx,
     )
 
@@ -1847,9 +1850,9 @@ def _conv_transposed_cudnn[
     input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
     output: TileTensor[output_type, address_space=.GENERIC, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    padding: Coord[Int, Int],
     ctx: DeviceContext,
 ) raises:
     var cudnn_handle = _get_cudnn_meta(ctx)
@@ -1965,9 +1968,9 @@ def conv_transposed_cudnn[
     input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
     output: TileTensor[output_type, address_space=.GENERIC, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    padding: Coord[Int, Int],
     ctx: DeviceContext,
 ) raises:
     """Runs a 2D transposed convolution on the GPU using cuDNN backward-data.
