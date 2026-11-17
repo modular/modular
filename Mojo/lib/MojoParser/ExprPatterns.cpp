@@ -700,15 +700,32 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
 //===----------------------------------------------------------------------===//
 
 /// Read `SubjectType._enum_case_names` as a concrete ParamListAttr value list.
-static std::optional<ArrayRef<TypedAttr>>
+/// Returns failure when the emission fails (an error was already reported),
+/// success with nullopt when the names are not a concrete list (a parametric
+/// enum).
+static FailureOr<std::optional<ArrayRef<TypedAttr>>>
 getEnumCaseNames(IREmitter &emitter, ASTType subjectType, SMLoc loc) {
   SyntheticNode typeNode(loc, PValue(subjectType));
   AttributeRefNode namesRef(&typeNode, loc, "_enum_case_names");
   TypedAttr namesAttr = emitter.emitExprPValue(&namesRef, EC_AttributeRefBase);
-  if (auto namesList =
-          dyn_cast_or_null<ParamListAttr>(getCanonicalAttr(namesAttr)))
-    return namesList.getValues();
-  return std::nullopt;
+  if (!namesAttr)
+    return failure();
+  if (auto namesList = dyn_cast<ParamListAttr>(getCanonicalAttr(namesAttr)))
+    return std::optional<ArrayRef<TypedAttr>>(namesList.getValues());
+  return std::optional<ArrayRef<TypedAttr>>();
+}
+
+LogicalResult LIT::checkEnumCaseNamesReadable(PatternMatchBuilder &builder,
+                                              const PatternPath *rootPath,
+                                              SMLoc loc) {
+  ASTType subjectType = rootPath->type;
+  if (!subjectType.provenConformsToBuiltinTrait(
+          "EnumLike", loc, builder.shared,
+          ASTDecl::getAssumptionsFromScope(&builder.declScope)))
+    return success();
+  IREmitter emitter = builder.getParamEmitter();
+  // A failed reading already reported its error.
+  return getEnumCaseNames(emitter, subjectType, loc);
 }
 
 /// Read `SubjectType._enum_is_exhaustive` when it is statically known.
@@ -748,20 +765,24 @@ static LogicalResult checkEnumCaseTypeBase(IREmitter &emitter, CValue subject,
 }
 
 /// Look up `caseName` in `SubjectType._enum_case_names`. Returns nullopt after
-/// emitting an error when the name is not a case.
+/// emitting an error when the name is not a case or the names are not a
+/// concrete list, and nullopt without one when reading the names failed (the
+/// failed emission already reported an error).
 static std::optional<size_t> lookupEnumCaseIndex(IREmitter &emitter,
                                                  ASTType subjectType,
                                                  StringRef caseName,
                                                  const ExprNode *expr) {
-  std::optional<ArrayRef<TypedAttr>> caseNames =
+  FailureOr<std::optional<ArrayRef<TypedAttr>>> caseNames =
       getEnumCaseNames(emitter, subjectType, expr->getLoc());
-  if (!caseNames) {
+  if (failed(caseNames))
+    return std::nullopt; // The failed emission already reported an error.
+  if (!*caseNames) {
     emitter.emitError(expr->getLoc(), "cannot match on a parametric enum type")
         << expr->getRange();
     return std::nullopt;
   }
 
-  for (auto [idx, nameAttr] : llvm::enumerate(*caseNames)) {
+  for (auto [idx, nameAttr] : llvm::enumerate(**caseNames)) {
     auto nameStr = dyn_cast<StringAttr>(nameAttr);
     if (nameStr && nameStr.getValue() == caseName)
       return idx;
@@ -808,7 +829,9 @@ static ASTType getEnumCasePayloadType(IREmitter &emitter, ASTType subjectType,
       !bindings.empty() && isa<ParamListType>(bindings.front().getType()))
     return payloadType;
   auto names = getEnumCaseNames(emitter, subjectType, expr->getLoc());
-  auto name = names ? dyn_cast<StringAttr>((*names)[caseIndex]) : StringAttr();
+  auto name = succeeded(names) && *names
+                  ? dyn_cast<StringAttr>((**names)[caseIndex])
+                  : StringAttr();
   emitter.emitError(expr->getLoc(), "payload type for case '")
       << (name ? name.getValue() : StringRef()) << "' must be a 'Tuple', found "
       << payloadType << expr->getRange();
@@ -2134,9 +2157,9 @@ static bool collectFiniteDims(PatternMatchBuilder &builder,
           "EnumLike type");
       return false;
     }
-    if (!names || names->empty() || isExhaustive.isFalse())
+    if (failed(names) || !*names || (*names)->empty() || isExhaustive.isFalse())
       return false;
-    dims.push_back({path, names->size(), *names});
+    dims.push_back({path, (*names)->size(), **names});
     return true;
   }
 
@@ -2191,7 +2214,7 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
     IREmitter emitter = builder.getParamEmitter();
     auto names = getEnumCaseNames(emitter, subjectType, matchLoc);
     auto isExhaustive = getEnumIsExhaustive(emitter, subjectType, matchLoc);
-    if (!names || names->empty())
+    if (failed(names) || !*names || (*names)->empty())
       return space; // Opaque — incomplete reflection metadata
     if (isExhaustive.isUnknown()) {
       builder.emitError(
@@ -2203,8 +2226,8 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
 
     space->kind = isExhaustive.isTrue() ? MatchCoveringSpace::Kind::FiniteCtors
                                         : MatchCoveringSpace::Kind::OpenCtors;
-    space->numCtors = names->size();
-    space->caseNames = *names;
+    space->numCtors = (*names)->size();
+    space->caseNames = **names;
     space->remaining = builder.allocator.allocate<bool>(space->numCtors);
     std::fill(space->remaining, space->remaining + space->numCtors, true);
     return space;

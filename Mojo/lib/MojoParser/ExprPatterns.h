@@ -436,6 +436,14 @@ private:
   PatternDeclKind patternKind = PatternDeclKind::kBind;
 };
 
+/// Check that an EnumLike subject's `_enum_case_names` can be read before
+/// matching it, so a construct that cannot match reports the reading's error
+/// once and abandons before any case lookup or exhaustiveness check. Returns
+/// failure when the reading fails (the error was already reported).
+LogicalResult checkEnumCaseNamesReadable(PatternMatchBuilder &builder,
+                                         const PatternPath *rootPath,
+                                         SMLoc loc);
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_EXPRPATTERNS_H

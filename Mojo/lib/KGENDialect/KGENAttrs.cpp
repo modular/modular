@@ -5660,6 +5660,11 @@ bool SugarAttr::hasTopLevelSugar(Type type) {
 }
 
 static Attribute getLocalCanonical(Attribute attr) {
+  // A failed expression emission is a null attribute; there is nothing to
+  // canonicalize.
+  if (!attr)
+    return {};
+
   // SugarAttr maintains its canonical form directly so we don't need to walk.
   if (auto sugar = dyn_cast<SugarAttr>(attr))
     return sugar.getCanonical();

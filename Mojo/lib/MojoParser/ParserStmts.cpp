@@ -1814,6 +1814,9 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
     PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
     const PatternPath *rootPath =
         matchBuilder.getRootPath(subject.getRValueType());
+    if (failed(checkEnumCaseNamesReadable(matchBuilder, rootPath,
+                                          clause.conditionExpr->getLoc())))
+      return failure();
     SmallVector<const PatternCommand *, 8> commands;
     if (failed(clause.patternExpr->buildCheckList(matchBuilder, subject,
                                                   rootPath, commands)))
@@ -1891,6 +1894,9 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
   PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
   const PatternPath *rootPath =
       matchBuilder.getRootPath(subject.getRValueType());
+  if (failed(checkEnumCaseNamesReadable(matchBuilder, rootPath,
+                                        clause.conditionExpr->getLoc())))
+    return failure();
   SmallVector<const PatternCommand *, 8> commands;
   if (failed(clause.patternExpr->buildCheckList(matchBuilder, subject, rootPath,
                                                 commands)))
@@ -2080,6 +2086,9 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
     PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
     const PatternPath *rootPath =
         matchBuilder.getRootPath(subject.getRValueType());
+    if (failed(checkEnumCaseNamesReadable(matchBuilder, rootPath,
+                                          condExp->getLoc())))
+      return failure();
     SmallVector<const PatternCommand *, 8> commands;
     if (failed(patternExpr->buildCheckList(matchBuilder, subject, rootPath,
                                            commands)))
@@ -2262,6 +2271,9 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
   PatternMatchBuilder checkListBuilder(*curDeclScope, EC_Type);
   const PatternPath *rootPath =
       checkListBuilder.getRootPath(subject.getRValueType());
+  if (failed(checkEnumCaseNamesReadable(checkListBuilder, rootPath,
+                                        subjectExpr->getLoc())))
+    return failure();
 
   // Parse one or more case blocks. Cases may share the match indent (Mojo
   // style) or be indented beneath it (Python style).  We parse each of the
@@ -4443,6 +4455,9 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
         PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
         const PatternPath *rootPath =
             matchBuilder.getRootPath(subject.getRValueType());
+        if (failed(checkEnumCaseNamesReadable(
+                matchBuilder, rootPath, arm.clause.conditionExpr->getLoc())))
+          return failure();
         SmallVector<const PatternCommand *, 8> commands;
         if (failed(arm.clause.patternExpr->buildCheckList(matchBuilder, subject,
                                                           rootPath, commands)))
@@ -4629,6 +4644,9 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
       PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
       const PatternPath *rootPath =
           matchBuilder.getRootPath(subject.getRValueType());
+      if (failed(checkEnumCaseNamesReadable(
+              matchBuilder, rootPath, arm.clause.conditionExpr->getLoc())))
+        return failure();
       SmallVector<const PatternCommand *, 8> commands;
       if (failed(arm.clause.patternExpr->buildCheckList(matchBuilder, subject,
                                                         rootPath, commands)))

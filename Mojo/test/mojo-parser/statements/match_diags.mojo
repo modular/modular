@@ -325,6 +325,31 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
         pass
 
 
+# A conformer whose `_enum_case_names` fails to evaluate reports that failure
+# and nothing else; the case pattern adds no second error.
+struct ErroredCaseNames(EnumLike):
+    # expected-error @+1 {{use of unknown declaration 'no_such_name'}}
+    comptime _enum_case_names = ParameterList.of[no_such_name.value].values
+    comptime _enum_case_types = TypeList.of[Tuple[]].values
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        while True:
+            pass
+
+
+def match_errored_case_names(value: ErroredCaseNames):
+    match value:
+    case .number:
+        pass
+    case _:
+        pass
+
+
 __enum Payloads:
     case three(Int, String, Bool)
     case pairi(Int, Int)
