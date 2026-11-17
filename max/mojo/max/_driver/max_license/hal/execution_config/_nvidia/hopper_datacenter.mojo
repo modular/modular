@@ -13,8 +13,8 @@
 """Execution config placeholder for NVIDIA Hopper datacenter GPUs (H100, H200)."""
 
 from max.gpu.host import ConstantMemoryMapping, Dim, LaunchAttribute
+from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from . import (
-    LaunchAttributeHolderExecutionConfig,
     _CudaExecutionConfigDelegator,
     _BaseCudaExecutionConfig,
     _BaseCudaExecutionConfiguration,

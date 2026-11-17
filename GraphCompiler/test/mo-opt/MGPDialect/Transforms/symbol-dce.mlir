@@ -21,7 +21,7 @@ mogg.func @caller()
 // CHECK-NOT: mogg.func @caller
 // CHECK: mogg.call @callee_1
 // CHECK-NOT: mogg.call
-mgp.model @post_abi_fusion : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @post_abi_fusion devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %3 = mgp.runtime.create %0, %1[1]

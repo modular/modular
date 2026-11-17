@@ -21,14 +21,17 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.identity import Identity
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.pipelines.speculative import block_driver
 from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockBatch,
     BlockDriver,
     DraftSampler,
+    _block_kv_dispatch_metadata,
     block_dispatch_metadata,
+    block_mla_dispatch_metadata,
 )
 from max.pipelines.speculative.config import (
     MAGIC_DRAFT_TOKEN_ID,
@@ -64,6 +67,44 @@ def test_block_dispatch_metadata_is_rebuilt_at_block_width() -> None:
     )
     assert isinstance(out, Buffer)
     np.testing.assert_array_equal(out.to_numpy(), [3, 8, 0, 4321])
+
+
+def test_block_mla_dispatch_metadata_zeroes_the_decode_view() -> None:
+    """A 6-int MLA record keeps its batch size and split-K count, takes the
+    block width, and zeroes the decode view, since a draft block never
+    splits; a 3-int record keeps its width.
+    """
+    for width, values, expected in (
+        (3, [3, 129, 5], [3, 8, 5]),
+        (6, [3, 129, 5, 2, 4, 7], [3, 8, 5, 0, 0, 0]),
+    ):
+        with Graph(
+            f"block_mla_dispatch_metadata_{width}",
+            input_types=(TensorType(DType.int64, [width], DeviceRef.CPU()),),
+        ) as graph:
+            (meta,) = graph.inputs
+            graph.output(block_mla_dispatch_metadata(meta.tensor, 8))
+
+        compiled = InferenceSession(devices=[CPU()]).load(graph)
+        (out,) = compiled.execute(
+            Buffer.from_numpy(np.array(values, dtype=np.int64))
+        )
+        assert isinstance(out, Buffer)
+        np.testing.assert_array_equal(out.to_numpy(), expected)
+
+
+def test_block_kv_dispatch_metadata_routes_records_by_width() -> None:
+    """The router picks the builder from the record's width."""
+    for width in (3, 6, 4):
+        with Graph(
+            f"block_kv_dispatch_metadata_{width}",
+            input_types=(TensorType(DType.int64, [width], DeviceRef.CPU()),),
+        ) as graph:
+            (meta,) = graph.inputs
+            out = _block_kv_dispatch_metadata(meta.tensor, 8)
+            assert out.shape == [width]
+            assert out.dtype == DType.int64
+            graph.output(out)
 
 
 class _AcceptOnlyProposer:
@@ -110,16 +151,26 @@ def _unused_verify(batch: BlockBatch) -> Verified[None]:
     raise NotImplementedError
 
 
-@pytest.fixture(scope="module")
-def accept() -> Model:
-    """Compiles the driver's greedy accept phase on its own, once.
+@pytest.fixture(scope="module", params=[False, True], ids=["default", "amd"])
+def accept(request: pytest.FixtureRequest) -> Model:
+    """Compiles the driver's greedy accept phase on its own, once per branch.
 
     Returns ``(num_accepted, next_tokens, commit_lengths)`` for a batch of
     tokens, row offsets, drafts ``[batch, num_steps]`` and target logits
     ``[batch * (num_steps + 1), vocab]``. ``num_steps`` stays symbolic, as
     in the fused graphs, so prefill (zero drafts) and decode run the same
     compiled graph.
+
+    The ``amd`` case builds the AMD gather that drops the prefill select,
+    which CI's CPU workers never reach on their own, so both branches have
+    to produce the same results here.
     """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(block_driver, "_is_amd_gpu", lambda: request.param)
+        return _compile_accept()
+
+
+def _compile_accept() -> Model:
     cpu = DeviceRef.CPU()
     driver: BlockDriver[None, None] = BlockDriver(
         _unused_verify,

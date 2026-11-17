@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import multiprocessing
 import os
@@ -49,6 +50,7 @@ from max.pipelines.lib import (
     PipelineModel,
     PipelineRole,
     ProfilingConfig,
+    memory_ledger,
 )
 from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
@@ -502,6 +504,7 @@ class ModelWorker:
                     warmup_start_s = time.monotonic()
                     pipeline.warmup_graph_capture()
                     warmup_duration_s = time.monotonic() - warmup_start_s
+                    memory_ledger.check_capture(pipeline)
                     logger.info(
                         "Device graph capture warmup completed in %.2fs "
                         "(model=%s, max_batch_size=%d).",
@@ -567,6 +570,15 @@ class ModelWorker:
             worker_queues = await exit_stack.enter_async_context(
                 model_worker_interface.model_worker_queues()
             )
+
+            # The pipeline sized its KV cache once loaded, and may have
+            # lowered the max length and batch size the API process planned.
+            memory_plan = getattr(pipeline, "memory_plan", None) or memory_plan
+            if memory_plan is not None:
+                liveness.report_plan(
+                    memory_plan.planned_max_length,
+                    memory_plan.planned_max_batch_size,
+                )
 
             # Retrieve Scheduler.
             scheduler = load_scheduler(
@@ -779,6 +791,38 @@ def _enable_driver_staging_for_worker(pipeline_config: PipelineConfig) -> None:
         os.environ["HSA_USERPTR_FOR_PAGED_MEM"] = "0"
 
 
+def _served_plan(
+    memory_plan: MemoryPlan | None, liveness: Liveness
+) -> MemoryPlan | None:
+    """The plan with the bounds the worker reported it sized its cache for."""
+    if memory_plan is None:
+        return None
+    max_length, max_batch_size = liveness.reported_plan()
+    if max_length is None or max_batch_size is None:
+        return memory_plan
+    if (
+        max_length != memory_plan.planned_max_length
+        or max_batch_size != memory_plan.planned_max_batch_size
+    ):
+        logger.info(
+            "Model worker sized its KV cache for max_length=%d, "
+            "max_batch_size=%d",
+            max_length,
+            max_batch_size,
+        )
+    return dataclasses.replace(
+        memory_plan,
+        planned_max_length=max_length,
+        planned_max_batch_size=max_batch_size,
+        planned_max_batch_total_tokens=(
+            max_length
+            if memory_plan.planned_max_batch_total_tokens
+            == memory_plan.planned_max_length
+            else memory_plan.planned_max_batch_total_tokens
+        ),
+    )
+
+
 @asynccontextmanager
 async def start_model_worker(
     model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
@@ -837,6 +881,7 @@ async def start_model_worker(
         logger.info("Waiting for model worker readiness")
         await proc.ready(liveness, timeout=settings.mw_timeout_s)
         logger.info("Model worker ready")
+        served_plan = _served_plan(memory_plan, liveness)
 
         if settings.use_heartbeat:
             proc.watch_heartbeat(liveness, timeout=settings.mw_health_fail_s)
@@ -849,4 +894,5 @@ async def start_model_worker(
             # from "queue full." Reuses the model-worker readiness budget.
             await model_worker.wait_until_connected(settings.mw_timeout_s)
             logger.debug("Model worker channel connected")
+            model_worker.memory_plan = served_plan
             yield model_worker

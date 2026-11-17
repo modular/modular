@@ -18,7 +18,7 @@ import logging
 from enum import Enum
 from typing import Annotated, Any
 
-from max.config import ConfigFileModel
+from max.config import ConfigModel
 from max.dtype import DType
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from pydantic import BeforeValidator, ConfigDict, Field, PrivateAttr
@@ -141,7 +141,7 @@ class ToolCallPolicy(str, Enum):
         )
 
 
-class SamplingConfig(ConfigFileModel):
+class SamplingConfig(ConfigModel):
     """Configuration for the sampling stage of token generation."""
 
     model_config = ConfigDict(frozen=True)

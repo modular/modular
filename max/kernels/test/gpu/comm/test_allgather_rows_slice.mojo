@@ -47,7 +47,7 @@ def _fill_random_bits[
 def rows_slice_test[
     dtype: DType, ngpus: Int
 ](
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     rows: Int,
     cols: Int,
     iterations: Int = 0,
@@ -230,7 +230,7 @@ def rows_slice_test[
 
 def rows_slice_rejects_bad_shapes[
     dtype: DType, ngpus: Int
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     """Shapes the collective cannot serve raise before any launch."""
     var total = 6 * 8
     var in_buf = list_of_ctx[0].create_buffer_sync[dtype](total)
@@ -278,7 +278,7 @@ def main() raises -> None:
         comptime ngpus = 1 << ngpus_log2
         if DeviceContext.number_of_devices() < ngpus:
             continue
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(ngpus):
             ctx.append(DeviceContext(device_id=i))
         print("Testing", ngpus, "GPUs")
@@ -293,7 +293,7 @@ def main() raises -> None:
     # The production shape: the DP8 M3.1 lm_head shard, 64 rows per replica
     # times 8 verify positions, over the 25008-wide vocabulary shard.
     if DeviceContext.number_of_devices() == 8:
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(8):
             ctx.append(DeviceContext(device_id=i))
         print("Testing the M3.1 verify shape on 8 GPUs")

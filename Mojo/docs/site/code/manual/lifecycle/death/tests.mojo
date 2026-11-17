@@ -454,7 +454,7 @@ def test_string_pointer_origin_keeps_string_alive() raises:
     # `bar` carries `foo` through the reads below, which would otherwise be
     # reading freed memory.
     var foo = String("some text")
-    var bar = foo.unsafe_ptr()  # Pointer[Byte, origin_of(foo)]
+    var bar = foo.unsafe_ptr()  # origin derives from foo
     assert_equal(bar[], 115)  # 's'
     assert_equal(bar.unsafe_offset(1)[], 111)  # 'o'
 

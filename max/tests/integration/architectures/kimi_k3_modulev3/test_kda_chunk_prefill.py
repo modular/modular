@@ -52,7 +52,7 @@ from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import kda_chunk, kda_decode
+from max.nn._graph_ops.state_space import kda_chunk, kda_decode
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
@@ -901,19 +901,24 @@ def _layer(weights: dict[str, np.ndarray]) -> KimiK3KDAAttention:
         conv_kernel_size=CONV_KERNEL,
         gate_lower_bound=GATE_LOWER_BOUND,
     )
-    # The merged q/k/v projection holds bf16 weights, as production's
+    # The merged q/k/v/g projection holds bf16 weights, as production's
     # does, so it emits the bf16 q/k/v the op's chunk contract takes.
-    layer.qkv_proj.weight = Tensor(
+    layer.qkvg_proj.weight = Tensor(
         interleave_for_tp(
-            [weights["q_proj"], weights["k_proj"], weights["v_proj"]], 1
+            [
+                weights["q_proj"],
+                weights["k_proj"],
+                weights["v_proj"],
+                weights["g_proj"],
+                weights["b_proj"],
+            ],
+            1,
         ),
         dtype=DType.float32,
     ).cast(DType.bfloat16)
     for name in (
         "f_a_proj",
         "f_b_proj",
-        "b_proj",
-        "g_proj",
         "o_proj",
         "o_norm",
     ):

@@ -23,6 +23,7 @@
 #include "GraphCompiler/MODialect/MODevices.h"
 #include "GraphCompiler/MODialect/MOTypes.h"
 #include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
+#include "GraphCompiler/MOGGDialect/Analysis/LegacyTileTraits.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
@@ -31,6 +32,8 @@
 #include "Support/AssertStream.h"
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "llvm/ADT/SetVector.h"
+
+#include <type_traits>
 
 using namespace mlir;
 
@@ -114,8 +117,7 @@ Value buildTensor(Location loc, Value ptr, Type tensorType, MO::IOKind io,
       state.builder, loc, resultType, ptr, shape, shapeAttr,
       state.builder.getStringAttr(state.device.getLabel()),
       TypeAttr::get(tensorTy.getElementType()),
-      state.builder.getBoolAttr(isMut), MO::IOKindAttr::get(ctx, io),
-      state.builder.getBoolAttr(tensorTy.isStable()));
+      state.builder.getBoolAttr(isMut), MO::IOKindAttr::get(ctx, io));
 }
 
 } // namespace
@@ -219,6 +221,14 @@ LogicalResult ConstantScalarOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
+// map.constant.scalar -> mogg.constant.scalar, a plain literal.
+LogicalResult ConstantScalarOp::lowerToMOGGTile(MAPToMOGGState &state) {
+  auto constant = MOGG::ConstantScalarOp::create(
+      state.builder, getLoc(), getResult().getType(), getValue());
+  state.mapping.map(getResult(), constant.getResult());
+  return success();
+}
+
 // map.load -> mogg.tensor.load.
 LogicalResult LoadOp::lowerToMOGG(MAPToMOGGState &state) {
   Value result = MOGG::TensorLoadOp::create(
@@ -228,9 +238,26 @@ LogicalResult LoadOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
+// map.load -> mogg.tile.load.
+LogicalResult LoadOp::lowerToMOGGTile(MAPToMOGGState &state) {
+  Value result = MOGG::TileLoadOp::create(
+      state.builder, getLoc(), MOGG::TileType::get(getResult().getType()),
+      state.mapping.lookup(getTensor()), state.mapping.lookup(getIndex()));
+  state.mapping.map(getResult(), result);
+  return success();
+}
+
 // map.store -> mogg.tensor.store.
 LogicalResult StoreOp::lowerToMOGG(MAPToMOGGState &state) {
   MOGG::TensorStoreOp::create(
+      state.builder, getLoc(), state.mapping.lookup(getTensor()),
+      state.mapping.lookup(getIndex()), state.mapping.lookup(getValue()));
+  return success();
+}
+
+// map.store -> mogg.tile.store.
+LogicalResult StoreOp::lowerToMOGGTile(MAPToMOGGState &state) {
+  MOGG::TileStoreOp::create(
       state.builder, getLoc(), state.mapping.lookup(getTensor()),
       state.mapping.lookup(getIndex()), state.mapping.lookup(getValue()));
   return success();
@@ -266,31 +293,113 @@ LogicalResult SliceSelectOp::lowerToMOGG(MAPToMOGGState &state) {
   return state.lowerRegionBody(getBody().front());
 }
 
-// map.call.elementwise -> mogg.call.elementwise. `$moOpName` comes from the
-// kernel decl, which `verifySymbolUses` guarantees has an `elementwise`
-// function.
-LogicalResult CallElementwiseOp::lowerToMOGG(MAPToMOGGState &state) {
-  StringRef kernelSymName = getCallee();
-  MOGG::KernelDeclOp decl = state.registry.lookupKernelBySymName(kernelSymName);
-  MOGG::KernelDeclAdaptor adaptor(decl);
+// map.index.concat.select -> mogg.index.concat.select, lowered in place
+// inside the foreach closure and wired to the runtime shapes it threaded in
+// when a leading input's axis extent is dynamic. Each region lowers into the
+// new op's own, its `map.yield` becoming a `mogg.yield`.
+LogicalResult ConcatSelectOp::lowerToMOGG(MAPToMOGGState &state) {
+  ConcatSpecAttr spec = getSpec();
+  int64_t axis = spec.getAxis();
+  ValueRange dynamicShapes;
+  if (!getDynamicShapes().empty()) {
+    auto it = state.indexShapeArgs.find(getOperation());
+    if (it == state.indexShapeArgs.end())
+      return emitOpError("MAPToMOGG: a dynamic concat select has no shape "
+                         "captures; its kernel did not thread them in");
+    dynamicShapes = ValueRange(it->second);
+  }
+
+  // Every input's extent on the axis: the select reads all but the last's,
+  // and the kernel launch checks them all against the vector width.
+  SmallVector<TypedAttr> sizes;
+  for (MOSH::ShapeAttr in : spec.getInputShapes())
+    sizes.push_back(in[axis]);
+  auto sizesAttr = MOSH::ShapeAttr::get(sizes, spec.getResultShape().getType());
+
+  auto select = MOGG::IndexConcatSelectOp::create(
+      state.builder, getLoc(), MOGG::SimdType::get(getResult().getType()),
+      state.mapping.lookup(getIndex()), axis, sizesAttr, dynamicShapes,
+      getInputs().size());
+
+  for (auto [region, moggRegion] :
+       llvm::zip_equal(getInputs(), select.getInputs())) {
+    OpBuilder::InsertionGuard guard(state.builder);
+    Block &block = region.front();
+    BlockArgument inIdx = block.getArgument(0);
+    Block *body = state.builder.createBlock(
+        &moggRegion, moggRegion.end(), {inIdx.getType()}, {inIdx.getLoc()});
+    state.mapping.map(inIdx, body->getArgument(0));
+    if (failed(state.lowerRegionBody(
+            block, [](Operation *op) { return !isa<YieldOp>(op); })))
+      return failure();
+    auto yield = cast<YieldOp>(block.getTerminator());
+    SmallVector<Value> yielded;
+    for (Value v : yield.getOperands())
+      yielded.push_back(state.mapping.lookup(v));
+    MOGG::YieldOp::create(state.builder, yield.getLoc(), yielded);
+  }
+
+  state.mapping.map(getResult(), select.getResult());
+  return success();
+}
+
+namespace {
+// The operands both lowerings of a `map.call.elementwise` pass.
+struct ElementwiseCallOperands {
+  MOGG::KernelDeclAdaptor adaptor;
   SmallVector<Value> inputs;
-  for (Value arg : getArgs())
-    inputs.push_back(state.mapping.lookup(arg));
-  // Only if the `elementwise` function declares a trailing index-list
+  // Set only if the `elementwise` function declares a trailing index-list
   // parameter.
   Value index;
-  const MOGG::KernelDeclFunctionAdaptor &fn = *adaptor.elementwiseFunction;
-  if (!fn.inputArguments.empty() &&
-      fn.inputArguments.back().isOpaqueWithTypeName(
-          MOGG::kMojoInternalDpsIndexListTypeQualifiedName))
-    index = state.mapping.lookup(getIndex());
-  // `kernelSymName` is a plain name; the builder wraps it into the op's
+};
+} // namespace
+
+// `$moOpName` comes from the kernel decl, which `verifySymbolUses` guarantees
+// has an `elementwise` function.
+static ElementwiseCallOperands resolveElementwiseCall(CallElementwiseOp op,
+                                                      MAPToMOGGState &state) {
+  ElementwiseCallOperands call{
+      MOGG::KernelDeclAdaptor(
+          state.registry.lookupKernelBySymName(op.getCallee())),
+      {},
+      Value()};
+  for (Value arg : op.getArgs())
+    call.inputs.push_back(state.mapping.lookup(arg));
+  if (call.adaptor.elementwiseFunction->takesIndexList())
+    call.index = state.mapping.lookup(op.getIndex());
+  return call;
+}
+
+static void createElementwiseCall(CallElementwiseOp op, MAPToMOGGState &state,
+                                  const ElementwiseCallOperands &call,
+                                  Type resultType) {
+  // `getCallee()` is a plain name; the builder wraps it into the op's
   // `$callee` `FlatSymbolRefAttr`.
   auto moggCall = MOGG::CallElementwiseOp::create(
-      state.builder, getLoc(), MOGG::SimdType::get(getResult().getType()),
-      kernelSymName, adaptor.registeredOpName.strref(), inputs, index,
-      getParamsAttr());
-  state.mapping.map(getResult(), moggCall.getOutputs()[0]);
+      state.builder, op.getLoc(), resultType, op.getCallee(),
+      call.adaptor.registeredOpName.strref(), call.inputs, call.index,
+      op.getParamsAttr());
+  state.mapping.map(op.getResult(), moggCall.getOutputs()[0]);
+}
+
+// map.call.elementwise -> mogg.call.elementwise.
+LogicalResult CallElementwiseOp::lowerToMOGG(MAPToMOGGState &state) {
+  createElementwiseCall(*this, state, resolveElementwiseCall(*this, state),
+                        MOGG::SimdType::get(getResult().getType()));
+  return success();
+}
+
+// map.call.elementwise -> mogg.call.elementwise on whole tiles, through the
+// kernel's TileTensor overload.
+LogicalResult CallElementwiseOp::lowerToMOGGTile(MAPToMOGGState &state) {
+  ElementwiseCallOperands call = resolveElementwiseCall(*this, state);
+  if (!call.adaptor.isTileElementwise())
+    return emitOpError("the kernel has no TileTensor elementwise overload");
+  if (call.index)
+    return emitOpError("a tile fusion cannot call an elementwise kernel "
+                       "that takes an index");
+  createElementwiseCall(*this, state, call,
+                        MOGG::TileType::get(getResult().getType()));
   return success();
 }
 
@@ -339,6 +448,17 @@ consumingKernelArg(Value mapResult, bool isOutput, MAPToMOGGState &state) {
   return arg->second;
 }
 
+// Whether `device` opted into tile-based fusion, in which case every
+// elementwise kernel a standalone body calls needs a TileTensor overload, with
+// no SIMD fallback.
+static bool isTileBasedFusionEnabledForDevice(Operation *op,
+                                              DeviceRefAttr device) {
+  return device.getLabel() != M::kCPULabel &&
+         MO::DeviceInfoMapping(op->getParentOfType<ModuleOp>())
+             .get(device)
+             .getTileBasedFusion();
+}
+
 // Which fusion-lambda kind the kernel consuming `epilogueOp` wants. Resolved
 // at MAP level, where the epilogue -> `map.call.opaque` edge is still explicit.
 static ErrorOr<MOGG::KernelOutputFusionLambdaType>
@@ -357,21 +477,20 @@ classifyEpilogueLambdaKind(IterEpilogueOp epilogueOp, MAPToMOGGState &state) {
   if (!tensorArg)
     return Kind::Output;
 
-  // `EpilogueFuser` only builds the SIMD body shape.
-  if (tensorArg->ioSpec == MOGG::IOSpec::FusedComputeOutputTileTensor ||
-      tensorArg->ioSpec == MOGG::IOSpec::FusedOutputTileTensor)
-    return Error("MAP-driven epilogue fusion into a tile fused-output kernel "
-                 "argument is not yet supported");
+  // TODO(GEX-4340): the legacy tile trait form of the same two lanes; remove
+  // with GEX-4467.
+  if (tensorArg->traitContract)
+    if (std::optional<MOGG::LegacyTileLane> lane =
+            MOGG::legacyTileLane(*tensorArg->traitContract))
+      return *lane == MOGG::LegacyTileLane::compute ? Kind::ComputeTile
+                                                    : Kind::OutputTile;
 
-  // A trait-lane `_LegacyComputeOutput` slot (contract access `transform`)
-  // follows the same rules as a legacy `FusedComputeOutputTensor`. Its
-  // `ioSpec` is the plain `OutputTensor` the contract maps to, so check the
-  // contract.
+  // Only a `_LegacyComputeOutput` slot (contract access `transform`) may take
+  // a compute lambda.
   bool isComputeOutputSlot =
       tensorArg->traitContract &&
       tensorArg->traitContract->hasAccess(MOGG::TensorArgAccess::transform);
-  if (tensorArg->ioSpec != MOGG::IOSpec::FusedComputeOutputTensor &&
-      !isComputeOutputSlot)
+  if (!isComputeOutputSlot)
     return Kind::Output;
 
   // A compute lambda returns one value the kernel stores at one destination,
@@ -400,11 +519,9 @@ classifyEpilogueLambdaKind(IterEpilogueOp epilogueOp, MAPToMOGGState &state) {
 }
 
 // The trait contract the consuming `map.call.opaque` declares for the fused
-// operand `mapResult` feeds. Present only for a trait-ABI fused argument
-// (`Fused & ... & Access`), whose functor emit wraps in a conforming trait
-// tensor; null for the legacy `FusedInput/OutputTensor` (MTS-API) lane, which
-// binds the functor onto a `ManagedTensorSlice`. Resolved at MAP level,
-// like `classifyEpilogueLambdaKind`.
+// operand `mapResult` feeds (`Fused & ... & Access`), whose functor emit wraps
+// in a conforming trait tensor. Resolved at MAP level, like
+// `classifyEpilogueLambdaKind`.
 static MOGG::TensorArgContractAttr
 consumingFusedContract(Value mapResult, bool isOutput, MAPToMOGGState &state) {
   std::optional<MOGG::KernelDeclOperandAdaptor> arg =
@@ -468,8 +585,86 @@ struct IndexShapeCaptures {
 };
 } // namespace
 
+// Whether `body` still transforms an index. `LoopInvariantViewMotion` hoists
+// every load-side transform, so what is left transforms a store index, which a
+// tile body cannot do: it stores at the kernel's own tile coordinates.
+static bool transformsStoreIndex(Block &body) {
+  return llvm::any_of(body, [](Operation &op) {
+    return isa<IndexTransformOpInterface, SliceSelectOp>(op);
+  });
+}
+
+// The tile half of `IterEpilogueOp::lowerToMOGG`.
+static LogicalResult
+lowerTileEpilogue(IterEpilogueOp epilogue, MAPToMOGGState &state,
+                  MOGG::KernelOutputFusionLambdaType kind, Value outShape,
+                  ArrayRef<Value> moggCaptures, Value outputPtr,
+                  MOGG::TensorArgContractAttr contractAttr) {
+  MLIRContext *ctx = epilogue.getContext();
+  Location loc = epilogue.getLoc();
+  Block &epiBody = epilogue.getBody().front();
+  Block::BlockArgListType epiArgs = epiBody.getArguments();
+  size_t numCaptures = moggCaptures.size();
+  size_t numParams = epiArgs.size() - numCaptures;
+  bool isCompute = kind == MOGG::KernelOutputFusionLambdaType::ComputeTile;
+  Type outElemType =
+      cast<MO::TensorType>(epilogue.getResult().getType()).getElementType();
+
+  auto tileOp = MOGG::TileCreateEpilogueOp::create(
+      state.builder, loc, MOGG::TensorType::get(ctx), outShape, moggCaptures,
+      outputPtr,
+      MOGG::TileFusionLaneAttr::get(ctx, isCompute
+                                             ? MOGG::TileFusionLane::Compute
+                                             : MOGG::TileFusionLane::Store),
+      state.builder.getStringAttr(state.device.getLabel()),
+      TypeAttr::get(outElemType), state.builder.getBoolAttr(true),
+      MO::IOKindAttr::get(ctx, MO::IOKind::Output),
+      /*contract=*/contractAttr);
+
+  Block *body = state.builder.createBlock(&tileOp.getBody());
+  for (size_t i = 0; i < numParams; ++i) {
+    Type type = epiArgs[i].getType();
+    if (i == 0)
+      type = MOGG::TileType::get(type);
+    else if (i == 1)
+      type =
+          MOGG::TileCoordType::get(ctx, cast<MAP::IndexType>(type).getRank());
+    state.mapping.map(epiArgs[i], body->addArgument(type, epiArgs[i].getLoc()));
+  }
+  for (size_t j = 0; j < numCaptures; ++j)
+    state.mapping.map(epiArgs[numParams + j],
+                      body->addArgument(moggCaptures[j].getType(),
+                                        epiArgs[numParams + j].getLoc()));
+
+  state.builder.setInsertionPointToEnd(body);
+  Value yielded;
+  Value storeTarget = isCompute ? epiBody.getArgument(numParams) : Value();
+  auto shouldLower = [&](Operation *op) {
+    auto storeOp = dyn_cast<StoreOp>(op);
+    if (!storeOp || storeOp.getTensor() != storeTarget)
+      return true;
+    ASSERT_STREAM(!yielded, "a MAP epilogue body must store to its "
+                            "store-target capture exactly once");
+    yielded = state.mapping.lookup(storeOp.getValue());
+    return false;
+  };
+  if (failed(state.withTileBody(
+          [&] { return state.lowerRegionBody(epiBody, shouldLower); })))
+    return failure();
+  if (isCompute) {
+    ASSERT_STREAM(yielded, "expected a MAP epilogue body to store to its "
+                           "store-target capture");
+    MOGG::YieldOp::create(state.builder, loc, yielded);
+  }
+
+  state.builder.setInsertionPointAfter(tileOp);
+  state.mapping.map(epilogue.getResult(), tileOp.getTensor());
+  return success();
+}
+
 // map.iter.epilogue -> mogg.tensor.create.epilogue, mapped under the
 // epilogue's result so `CallOpaqueOp` resolves it like a plain kernel output.
+// An epilogue into a tile output lowers to mogg.tile.create.epilogue instead.
 LogicalResult IterEpilogueOp::lowerToMOGG(MAPToMOGGState &state) {
   MLIRContext *ctx = getContext();
   Location loc = getLoc();
@@ -505,11 +700,19 @@ LogicalResult IterEpilogueOp::lowerToMOGG(MAPToMOGGState &state) {
   if (kindOr.isError())
     return emitOpError() << kindOr.getError();
   MOGG::KernelOutputFusionLambdaType kind = *kindOr;
-  // A downgraded `_LegacyComputeOutput` slot (`OutputLegacyForCompute`) keeps
-  // a store body, which emit wraps as a store fusion.
-  bool isCompute = kind == MOGG::KernelOutputFusionLambdaType::Compute;
+  bool isTile = MOGG::isTileFusionLambda(kind);
+  if (isTile) {
+    if (!shapeCaptures.uses.empty() || transformsStoreIndex(epiBody))
+      return emitOpError("a tile fused-output epilogue cannot transform its "
+                         "store index");
+    if (epiBody.getArgument(0).getType() != outElemType)
+      return emitOpError("a tile fused-output epilogue cannot change dtype");
+    if (kind == MOGG::KernelOutputFusionLambdaType::ComputeTile &&
+        getOutputStores(epiBody).size() != 1)
+      return emitOpError("a compute tile epilogue must store exactly once");
+  }
 
-  // A trait-ABI fused output's contract (null for the legacy MTS API).
+  // The consuming kernel argument's trait contract.
   MOGG::TensorArgContractAttr contractAttr =
       consumingFusedContract(getResult(), /*isOutput=*/true, state);
   bool computeOutputArg = kind != MOGG::KernelOutputFusionLambdaType::Output;
@@ -521,6 +724,14 @@ LogicalResult IterEpilogueOp::lowerToMOGG(MAPToMOGGState &state) {
   Value outputPtr = MOGG::TensorGetPtrOp::create(
       state.builder, loc, MOGG::PointerType::get(ctx),
       state.mapping.lookup(intermediateTensor));
+
+  if (isTile)
+    return lowerTileEpilogue(*this, state, kind, outShape, moggCaptures,
+                             outputPtr, contractAttr);
+
+  // A downgraded `_LegacyComputeOutput` slot (`OutputLegacyForCompute`) keeps
+  // a store body, which emit wraps as a store fusion.
+  bool isCompute = kind == MOGG::KernelOutputFusionLambdaType::Compute;
 
   auto epilogueOp = MOGG::TensorCreateEpilogueOp::create(
       state.builder, loc, MOGG::TensorType::get(ctx), outShape, moggCaptures,
@@ -717,37 +928,33 @@ LogicalResult SliceStrideOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
-// map.index.broadcast.stride -> mogg.tensor.create.broadcast.
-LogicalResult BroadcastStrideOp::lowerToMOGG(MAPToMOGGState &state) {
-  MLIRContext *ctx = getContext();
-  MAP::ViewSignatureAttr signature = getSpec().getSignature();
+// A view whose layout reads its output shape at runtime gets a real
+// `!mogg.shape` (via `buildShape`, so CSE can fold duplicates): a reshape
+// de-linearizes its strides from it, and a slice composed on a broadcast
+// clamps against it.
+template <typename CreateOpT, typename StrideOpT>
+static LogicalResult lowerShapedView(StrideOpT op, MAPToMOGGState &state) {
+  MAP::ViewSignatureAttr signature = op.getSpec().getSignature();
   Type elementType =
-      MO::castFromTensorLike(getInput().getType()).getElementType();
-  auto createBroadcast = MOGG::TensorCreateBroadcastOp::create(
-      state.builder, getLoc(), MOGG::TensorType::get(ctx), signature.getOut(),
-      TypeAttr::get(elementType),
-      state.builder.getBoolAttr(viewsMutableStorage(getInput())),
-      state.mapping.lookup(getInput()));
-  state.mapping.map(getResult(), createBroadcast.getResult());
+      MO::castFromTensorLike(op.getInput().getType()).getElementType();
+  Value shape = buildShape(op.getLoc(), signature.getOut(), state);
+  auto create = CreateOpT::create(
+      state.builder, op.getLoc(), MOGG::TensorType::get(op.getContext()),
+      signature.getOut(), TypeAttr::get(elementType),
+      state.builder.getBoolAttr(viewsMutableStorage(op.getInput())),
+      state.mapping.lookup(op.getInput()), shape);
+  state.mapping.map(op.getResult(), create.getResult());
   return success();
 }
 
-// map.index.reshape.stride -> mogg.tensor.create.reshape. Row-major
-// de-linearization needs the output shape's runtime values, so it gets a real
-// `!mogg.shape` (via `buildShape`, so CSE can fold duplicates).
+// map.index.broadcast.stride -> mogg.tensor.create.broadcast.
+LogicalResult BroadcastStrideOp::lowerToMOGG(MAPToMOGGState &state) {
+  return lowerShapedView<MOGG::TensorCreateBroadcastOp>(*this, state);
+}
+
+// map.index.reshape.stride -> mogg.tensor.create.reshape.
 LogicalResult ReshapeStrideOp::lowerToMOGG(MAPToMOGGState &state) {
-  MLIRContext *ctx = getContext();
-  MAP::ViewSignatureAttr signature = getSpec().getSignature();
-  Type elementType =
-      MO::castFromTensorLike(getInput().getType()).getElementType();
-  Value shape = buildShape(getLoc(), signature.getOut(), state);
-  auto createReshape = MOGG::TensorCreateReshapeOp::create(
-      state.builder, getLoc(), MOGG::TensorType::get(ctx), signature.getOut(),
-      TypeAttr::get(elementType),
-      state.builder.getBoolAttr(viewsMutableStorage(getInput())),
-      state.mapping.lookup(getInput()), shape);
-  state.mapping.map(getResult(), createReshape.getResult());
-  return success();
+  return lowerShapedView<MOGG::TensorCreateReshapeOp>(*this, state);
 }
 
 // map.index.reshape -> mogg.index.reshape, lowered in place since a
@@ -789,45 +996,52 @@ LogicalResult TransposeStrideOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
-// map.iter.elementwise.body -> mogg.call.foreach.
-LogicalResult IterElementwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
-  MLIRContext *ctx = getContext();
-  Location loc = getLoc();
-  // From `$shape`, not an I/O tensor: they can differ (e.g. a broadcast).
-  Value loopShape = buildShape(loc, getShape(), state);
+// Checks a standalone body against what the tile foreach driver supports.
+// TODO(GEX-4488): delete once `foreach_fusion_tile` supports any rank and mixed
+// dtypes.
+static LogicalResult verifyIterElementwiseBody(IterElementwiseBodyOp foreach,
+                                               Value output,
+                                               ArrayRef<Value> inputs) {
+  if (inputs.empty())
+    return foreach.emitOpError("a tile foreach needs a tensor input");
+  auto outTy = MO::dynCastFromTensorLike(output.getType());
+  auto inTy = MO::dynCastFromTensorLike(inputs.front().getType());
+  if (!outTy || !inTy)
+    return foreach.emitOpError("a tile foreach reads and writes tensors");
+  if (outTy.getRank() != 2)
+    return foreach.emitOpError("a tile foreach supports rank-2 outputs only");
+  if (inTy.getElementType() != outTy.getElementType())
+    return foreach.emitOpError("a tile foreach cannot change dtype");
+  return success();
+}
 
-  MOGG::PrimitiveDeclOp foreachPrim =
-      state.registry.lookupPrimitive(MOGG::CallForeachOp::getOperationName());
-
-  // A dynamic index op (a select) reads its runtime shapes, built here in the
-  // kernel scope, which the foreach's closure captures.
-  IndexShapeCaptures::build(getBody(), loc, state).bindInScope(state);
-
-  // Every capture (kernel I/O or hoisted view) is defined, and so lowered,
-  // earlier in the block.
-  Block &body = getBody().front();
-  Value oldIndexArg = body.getArgument(0);
-  ValueRange captures = getCaptures();
-  Block::BlockArgListType captureBlockArgs =
-      body.getArguments().take_back(captures.size());
-
+// `foreach`'s captures, lowered: each (kernel I/O or hoisted view) is defined,
+// and so lowered, earlier in the block.
+static SmallVector<Value> lowerCaptures(IterElementwiseBodyOp foreach,
+                                        MAPToMOGGState &state) {
   SmallVector<Value> capturing;
-  for (Value v : captures)
+  for (Value v : foreach.getCaptures())
     capturing.push_back(state.mapping.lookup(v));
+  return capturing;
+}
 
-  // A foreach kernel is single-device, so it has exactly one context.
-  auto callForeach = MOGG::CallForeachOp::create(
-      state.builder, loc, FlatSymbolRefAttr::get(ctx, foreachPrim.getSymName()),
-      loopShape, state.contextArgs.front(), capturing,
-      state.builder.getStringAttr(state.device.getLabel()));
-
-  // One arg per capture, then the index.
-  Block *foreachBlock = state.builder.createBlock(&callForeach.getBody());
+// Lowers `foreach`'s body into `callForeach`'s region, whose block takes one
+// argument per capture, then the index.
+static LogicalResult lowerForeachBody(IterElementwiseBodyOp foreach,
+                                      Operation *callForeach,
+                                      MAPToMOGGState &state,
+                                      ArrayRef<Value> capturing,
+                                      Type indexType) {
+  Location loc = foreach.getLoc();
+  Block &body = foreach.getBody().front();
+  Block::BlockArgListType captureBlockArgs =
+      body.getArguments().take_back(capturing.size());
+  Block *foreachBlock = state.builder.createBlock(&callForeach->getRegion(0));
   for (auto [i, v] : llvm::enumerate(captureBlockArgs))
     state.mapping.map(v,
                       foreachBlock->addArgument(capturing[i].getType(), loc));
-  state.mapping.map(oldIndexArg,
-                    foreachBlock->addArgument(oldIndexArg.getType(), loc));
+  state.mapping.map(body.getArgument(0),
+                    foreachBlock->addArgument(indexType, loc));
 
   state.builder.setInsertionPointToStart(foreachBlock);
   if (failed(state.lowerRegionBody(body)))
@@ -835,6 +1049,124 @@ LogicalResult IterElementwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
 
   state.builder.setInsertionPointAfter(callForeach);
   return success();
+}
+
+// The callee and device of a foreach kernel, which is single-device, so it has
+// exactly one context.
+template <typename ForeachOpT>
+static std::pair<FlatSymbolRefAttr, StringAttr>
+foreachCallee(IterElementwiseBodyOp foreach, MAPToMOGGState &state) {
+  MOGG::PrimitiveDeclOp prim =
+      state.registry.lookupPrimitive(ForeachOpT::getOperationName());
+  return {FlatSymbolRefAttr::get(foreach.getContext(), prim.getSymName()),
+          state.builder.getStringAttr(state.device.getLabel())};
+}
+
+// A body's width limit as a launch takes it: a static limit as a number, one
+// with run-time dims as a shape whose dims' GCD the launch takes, which gives
+// each dim its `!mogg.dim` value. Neither for no limit.
+static std::pair<IntegerAttr, Value> lowerWidthLimit(TypedAttr limit,
+                                                     MOSH::ShapeType shapeType,
+                                                     Location loc,
+                                                     MAPToMOGGState &state) {
+  TypedAttr widthLimit = MAP::simplifyWidthLimit(limit);
+  if (!widthLimit)
+    return {};
+  if (std::optional<int64_t> constant =
+          MOSH::ShapeAttr::getStaticDim(widthLimit))
+    return {*constant ? state.builder.getI64IntegerAttr(*constant)
+                      : IntegerAttr(),
+            Value()};
+  SmallVector<TypedAttr> dims;
+  MAP::collectWidthLimitDims(widthLimit, dims);
+  return {IntegerAttr(),
+          buildShape(loc, MOSH::ShapeAttr::get(dims, shapeType), state)};
+}
+
+// Lowers `foreach` into a `mogg.call.foreach`, passing on its width limit.
+static LogicalResult buildSimdForeach(IterElementwiseBodyOp foreach,
+                                      MAPToMOGGState &state, Value loopShape,
+                                      Type indexType) {
+  Location loc = foreach.getLoc();
+  SmallVector<Value> capturing = lowerCaptures(foreach, state);
+  auto [maxSimdWidth, dynamicMaxSimdWidth] = lowerWidthLimit(
+      foreach.getMaxSimdWidthAttr(), foreach.getShape().getType(), loc, state);
+  auto [callee, device] = foreachCallee<MOGG::CallForeachOp>(foreach, state);
+  auto callForeach = MOGG::CallForeachOp::create(
+      state.builder, loc, callee, loopShape, state.contextArgs.front(),
+      capturing, dynamicMaxSimdWidth, device, maxSimdWidth);
+  return lowerForeachBody(foreach, callForeach, state, capturing, indexType);
+}
+
+// Lowers `foreach` into a `mogg.call.foreach.tile`, which has no width limit
+// to pass on: running such a loop at its tile width could cross the
+// boundaries a limit stands for.
+static LogicalResult buildTileForeach(IterElementwiseBodyOp foreach,
+                                      MAPToMOGGState &state, Value loopShape,
+                                      Type indexType) {
+  if (MAP::simplifyWidthLimit(foreach.getMaxSimdWidthAttr()))
+    return foreach.emitOpError("a tile foreach cannot take a SIMD width limit");
+  SmallVector<Value> capturing = lowerCaptures(foreach, state);
+  auto [callee, device] =
+      foreachCallee<MOGG::CallForeachTileOp>(foreach, state);
+  auto callForeach = MOGG::CallForeachTileOp::create(
+      state.builder, foreach.getLoc(), callee, loopShape,
+      state.contextArgs.front(), capturing, device);
+  return lowerForeachBody(foreach, callForeach, state, capturing, indexType);
+}
+
+// The tile half of `IterElementwiseBodyOp::lowerToMOGG`.
+static LogicalResult lowerTileForeach(IterElementwiseBodyOp foreach,
+                                      MAPToMOGGState &state, Value loopShape) {
+  Block &body = foreach.getBody().front();
+  ValueRange captures = foreach.getCaptures();
+  Block::BlockArgListType captureBlockArgs =
+      body.getArguments().take_back(captures.size());
+
+  if (transformsStoreIndex(body))
+    return foreach.emitOpError(
+        "a tile foreach cannot transform its store index");
+
+  // TODO(GEX-4488): drop once `foreach_fusion_tile` supports multiple outputs.
+  auto stores = body.getOps<StoreOp>();
+  if (!llvm::hasSingleElement(stores))
+    return foreach.emitOpError("a tile foreach body must store exactly once");
+  auto storeArg = dyn_cast<BlockArgument>((*stores.begin()).getTensor());
+  auto storeIt = storeArg ? llvm::find(captureBlockArgs, storeArg)
+                          : captureBlockArgs.end();
+  if (storeIt == captureBlockArgs.end())
+    return foreach.emitOpError("a tile foreach body must store to a capture");
+  size_t outIdx = storeIt - captureBlockArgs.begin();
+  SmallVector<Value> inputs;
+  for (auto [i, cap] : llvm::enumerate(captures))
+    if (i != outIdx)
+      inputs.push_back(cap);
+  if (failed(verifyIterElementwiseBody(foreach, captures[outIdx], inputs)))
+    return failure();
+
+  auto index = cast<MAP::IndexType>(body.getArgument(0).getType());
+  return state.withTileBody([&] {
+    return buildTileForeach(
+        foreach, state, loopShape,
+        MOGG::TileCoordType::get(foreach.getContext(), index.getRank()));
+  });
+}
+
+// map.iter.elementwise.body -> mogg.call.foreach, or mogg.call.foreach.tile on
+// a device with tile-based fusion.
+LogicalResult IterElementwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
+  Location loc = getLoc();
+  // From `$shape`, not an I/O tensor: they can differ (e.g. a broadcast).
+  Value loopShape = buildShape(loc, getShape(), state);
+
+  // A dynamic index op (a select) reads its runtime shapes, built here in the
+  // kernel scope, which the foreach's closure captures.
+  IndexShapeCaptures::build(getBody(), loc, state).bindInScope(state);
+
+  if (state.tileBasedFusionEnabled)
+    return lowerTileForeach(*this, state, loopShape);
+  return buildSimdForeach(*this, state, loopShape,
+                          getBody().front().getArgument(0).getType());
 }
 
 // map.iter.rowwise.body -> mogg.call.rowwise.
@@ -852,13 +1184,18 @@ LogicalResult IterRowwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
   for (Value v : captures)
     capturing.push_back(state.mapping.lookup(v));
 
+  // A width limit, as for a foreach.
+  auto [maxSimdWidth, dynamicMaxSimdWidth] =
+      lowerWidthLimit(getMaxSimdWidthAttr(), getShape().getType(), loc, state);
+
   auto callRowwise = MOGG::CallRowwiseOp::create(
       state.builder, loc, rowShape, getAxisAttr(), state.contextArgs.front(),
-      capturing, state.builder.getStringAttr(state.device.getLabel()),
-      /*primary=*/nullptr, /*dtype=*/nullptr, /*accum=*/nullptr,
-      /*is_cached=*/nullptr, /*cols=*/nullptr, /*num_phases=*/nullptr,
+      capturing, dynamicMaxSimdWidth,
+      state.builder.getStringAttr(state.device.getLabel()),
+      /*accum=*/nullptr, /*keep_tile=*/nullptr, /*cols=*/nullptr,
+      /*num_phases=*/nullptr,
       /*dtype_size=*/nullptr, /*computationally_expensive=*/nullptr,
-      /*simd_monoid=*/nullptr);
+      /*simd_monoid=*/nullptr, maxSimdWidth);
 
   // One arg per capture, then the row index.
   Block *rowwiseBlock = state.builder.createBlock(&callRowwise.getBody());
@@ -903,6 +1240,54 @@ LogicalResult IterReduceOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
+// map.iter.tile -> mogg.rowwise.tile.
+LogicalResult IterTileOp::lowerToMOGG(MAPToMOGGState &state) {
+  Location loc = getLoc();
+  auto tile = MOGG::RowwiseTileOp::create(state.builder, loc,
+                                          MOGG::SimdType::get(getType()));
+  Block *tileBlock = state.builder.createBlock(&tile.getBody());
+  state.mapping.map(getIndexArg(),
+                    tileBlock->addArgument(getIndexArg().getType(), loc));
+
+  state.builder.setInsertionPointToStart(tileBlock);
+  Block &body = getBody().front();
+  for (Operation &op : body.without_terminator())
+    if (failed(state.lowerOp(&op)))
+      return failure();
+  auto yield = cast<YieldOp>(body.getTerminator());
+  MOGG::YieldOp::create(state.builder, yield.getLoc(),
+                        state.mapping.lookup(yield.getOperand(0)));
+
+  state.builder.setInsertionPointAfter(tile);
+  state.mapping.map(getResult(), tile.getResult());
+  return success();
+}
+
+// map.iter.tile.load -> mogg.rowwise.tile.load.
+LogicalResult IterTileLoadOp::lowerToMOGG(MAPToMOGGState &state) {
+  state.mapping.map(getResult(),
+                    MOGG::RowwiseTileLoadOp::create(
+                        state.builder, getLoc(), MOGG::SimdType::get(getType()))
+                        .getResult());
+  return success();
+}
+
+// map.iter.map -> mogg.rowwise.map.
+LogicalResult IterMapOp::lowerToMOGG(MAPToMOGGState &state) {
+  Location loc = getLoc();
+  auto map = MOGG::RowwiseMapOp::create(state.builder, loc);
+  Block *mapBlock = state.builder.createBlock(&map.getBody());
+  state.mapping.map(getIndexArg(),
+                    mapBlock->addArgument(getIndexArg().getType(), loc));
+
+  state.builder.setInsertionPointToStart(mapBlock);
+  if (failed(state.lowerRegionBody(getBody().front())))
+    return failure();
+
+  state.builder.setInsertionPointAfter(map);
+  return success();
+}
+
 // map.iter.opaque -> mogg.kernel.
 LogicalResult IterOpaqueOp::lowerToMOGG(MAPToMOGGState &state) {
   MLIRContext *ctx = getContext();
@@ -916,6 +1301,8 @@ LogicalResult IterOpaqueOp::lowerToMOGG(MAPToMOGGState &state) {
   // Reconstructed tensors record only the device label; the full ref stays on
   // the `mogg.routine` for device-context resolution.
   state.device = MO::getDeviceOrDefault(*this);
+  state.tileBasedFusionEnabled =
+      isTileBasedFusionEnabledForDevice(*this, state.device);
 
   // A fresh leaf only when absent (e.g. hand-written test IR).
   Attribute rawFusionInfo = getFusionInfoAttr();

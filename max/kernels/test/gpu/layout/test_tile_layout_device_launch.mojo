@@ -14,12 +14,11 @@
 
 Each kernel writes the decoded shape, the decoded strides, and a trailing
 argument back to device memory. The trailing argument catches a launch whose
-argument count or order is wrong, which a multi-dynamic-leaf `Coord` passed
-bare causes (MOCO-4307).
+argument count or order is wrong.
 """
 
 from layout import Idx
-from layout.tile_layout import Layout, TensorLayout, row_major
+from layout.layout import Layout, TensorLayout, row_major
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 

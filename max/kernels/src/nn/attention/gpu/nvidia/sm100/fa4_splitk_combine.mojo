@@ -104,6 +104,7 @@ from std.math import ceildiv, exp2, log2, max, min
 from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -500,14 +501,16 @@ def fa4_splitk_combine[
             output_type, ov_depth, intermediate_type, P_STATIC=P_STATIC
         ]
         ctx.enqueue_function[kernel](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=(Int(rows_heads), 1, 1),
+                block_dim=(nthreads, 1, 1),
+                attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
+            ),
             output_ptr,
             o_partial_ptr,
             lse_partial_ptr,
             num_partitions,
             rows_heads,
-            grid_dim=(Int(rows_heads), 1, 1),
-            block_dim=(nthreads, 1, 1),
-            attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
         )
 
     comptime _COMBINE_P_LADDER = splitk_p_ladder[sm_count]()

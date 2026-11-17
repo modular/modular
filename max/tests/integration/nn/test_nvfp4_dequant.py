@@ -22,7 +22,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import nvfp4_dequant
+from max.nn._graph_ops import nvfp4_dequant
 
 
 # --------------------------------------------------------------------------- #

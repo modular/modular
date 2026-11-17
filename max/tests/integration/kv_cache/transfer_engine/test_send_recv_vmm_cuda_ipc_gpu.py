@@ -35,9 +35,12 @@ from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
 
 # 1.5 MiB pages do not divide the 2 MiB granules, so some pages straddle a
-# granule boundary on each side, at different offsets.
+# granule boundary on each side, at different offsets. The offsets repeat
+# every 4 pages, so 32 pages (24 granules) cover them. Keep the host buffers
+# small: when a host runs out of free memory, every page fault of a fresh
+# buffer waits on reclaim, and filling a few hundred MiB took minutes.
 BYTES_PER_PAGE = 3 * 512 * 1024
-TOTAL_NUM_PAGES = 256
+TOTAL_NUM_PAGES = 32
 SRC_IDXS = list(range(TOTAL_NUM_PAGES))
 DST_IDXS = list(reversed(SRC_IDXS))
 

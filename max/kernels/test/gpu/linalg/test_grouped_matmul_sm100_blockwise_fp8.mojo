@@ -42,6 +42,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     use_epilogue: Bool = False,
     scales_type: DType = .float32,
     persistent: Bool = True,
+    swap_ab: Bool = False,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -72,6 +73,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         t" shape: ( {total_num_tokens} x {N} x {K} ) block_tile_shape: ("
         t" {block_tile_shape[0]} x {block_tile_shape[1]} x"
         t" {block_tile_shape[2]} ) transpose_b: {transpose_b}"
+        t" swap_ab: {swap_ab}"
     )
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
@@ -234,7 +236,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     comptime if persistent:
-        grouped_matmul_sm100_blockwise_scaled_fp8_persistent[config=config](
+        grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+            config=config, swap_ab=swap_ab
+        ](
             c_device_tt,
             a_device_tt,
             b_device_tt,
@@ -381,6 +385,49 @@ def main() raises:
             num_experts=1,
             expert_shape=(512, 1024),
         ](1, [256], [0], ctx)
+
+        # Swapped AB: the 128 weight rows of a tile on the MMA's M side and
+        # its 32 token rows on N. 36 and 64 rows take two token tiles each.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=4,
+            expert_shape=(512, 1024),
+            umma_shape=(Int(32), Int(128), Int(32)),
+            swap_ab=True,
+        ](4, [4, 8, 36, 64], [2, 0, 3, 1], ctx)
+
+        # Swapped AB, 16 token rows a tile, at the GLM-5.3-Flash expert width;
+        # the second group's last tile runs past the buffer's 32 rows.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=3,
+            expert_shape=(4096, 2048),
+            umma_shape=(Int(16), Int(128), Int(32)),
+            swap_ab=True,
+        ](3, [4, 20, 8], [1, 2, 0], ctx)
+
+        # Swapped AB with a misaligned group start (row 5): the partial-tile
+        # A copy fills the token tile. With bf16 scales a 32-row strip is 64
+        # bytes in a 128-byte SMEM stage.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=2,
+            expert_shape=(256, 256),
+            umma_shape=(Int(32), Int(128), Int(32)),
+            swap_ab=True,
+        ](2, [5, 11], [0, 1], ctx)
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=2,
+            expert_shape=(256, 256),
+            umma_shape=(Int(32), Int(128), Int(32)),
+            scales_type=.bfloat16,
+            swap_ab=True,
+        ](2, [40, 24], [1, 0], ctx)
 
         # Simple expert routing
         test_grouped_matmul_sm100_blockwise_scaled_fp8[

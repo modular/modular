@@ -25,7 +25,7 @@ from std.math.math import (
 )
 from std.memory.stack_allocation import _StackAllocationPluginHookFnType
 from std.simd import _CastPluginHookFnType
-from std.memory.unsafe_pointer import _UnsafeDanglingPluginHookFnType
+from std.memory.pointer import _UnsafeDanglingPluginHookFnType
 from std.sys.intrinsics import PrefetchOptions, _PrefetchPluginHookFnType
 from std._gpu.primitives.id import _GPUIdPluginHookFnType
 from std.io.io import _PrintEmitPluginHookFnType, _PrintfEmitPluginHookFnType
@@ -480,7 +480,7 @@ struct DefaultPlugin(StdPlugin):
     """
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
-    comptime HookFor[target: CompilationTarget] = DefaultPluginHooks[target]
+    comptime HookFor = DefaultPluginHooks[_]
 
 
 struct DefaultPluginHooks[target: CompilationTarget](PluginHooks):

@@ -1,7 +1,7 @@
 // RUN: kgen-opt -elaborate-generators="use-parametric-interpret=false" %s | FileCheck %s
 // RUN: kgen-opt -elaborate-generators="use-parametric-interpret=true" %s | FileCheck %s
 
-kgen.generator @generic_offset_load_store<ty: type>(%i: index, %p: !kgen.pointer<ty>) {
+kgen.generator @generic_offset_load_store<ty: type>(%i: !kgen.scalar<index>, %p: !kgen.pointer<ty>) {
   %0 = pop.offset %p[%i] : !kgen.pointer<ty>
   %1 = pop.load %0 : !kgen.pointer<ty>
   pop.store %1, %p : !kgen.pointer<ty>

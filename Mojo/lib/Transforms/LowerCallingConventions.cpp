@@ -177,7 +177,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op,
 
   b.setInsertionPoint(op);
   b.replaceOpWithNewOp<CreateFuncPtrOp>(
-      op, FuncSymbolGenerator::get(wrapper.getSymNameAttr(), resSigGen));
+      op, FuncSymbolGenerator::getUnbound(wrapper.getSymNameAttr(), resSigGen));
 }
 
 /// We need to roll our own walk function because we are converting types and
@@ -266,6 +266,20 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer,
       elements.push_back(POP::LoadOp::create(b, op->getLoc(), ptr));
     }
     b.replaceOpWithNewOp<StructCreateOp>(load, load->getResultTypes(),
+                                         elements);
+    return;
+  }
+  if (auto concat = dyn_cast<StructConcatOp>(op)) {
+    SmallVector<Value> elements;
+    for (Value operand : concat.getStructs()) {
+      size_t numElements =
+          *cast<StructType>(operand.getType()).getNumElements();
+      for (size_t i = 0; i != numElements; ++i) {
+        elements.push_back(StructExtractOp::create(b, op->getLoc(), operand,
+                                                   b.getIndexAttr(i)));
+      }
+    }
+    b.replaceOpWithNewOp<StructCreateOp>(concat, concat->getResultTypes(),
                                          elements);
     return;
   }

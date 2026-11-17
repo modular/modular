@@ -24,21 +24,20 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn import Module
-from max.nn.common_layers.mlp import MLP
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.comm.ep.ep_kernels import fused_silu
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
     moe_sink_gate_router,
 )
-from max.nn.legacy.moe.quant_strategy import Nvfp4Scales, NvMxf4f8Strategy
-from max.nn.legacy.quant_config import QuantConfig, fp4_packed_k
+from max.nn._graph_ops.ep import fused_silu
+from max.nn._graph_ops.moe_quant import Nvfp4Scales, NvMxf4f8Strategy
+from max.nn.activation import GatedActivation
+from max.nn.quant_config import QuantConfig, fp4_packed_k
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context
 
-from ...inkling.layers.moe import padded_router_rows
+from ...inkling.layers.moe import nvfp4_input_scale, padded_router_rows
 from .placement import as_partial, as_replicated, shard_axis
 
 _moe_sink_gate_router = F.functional(moe_sink_gate_router)
@@ -49,27 +48,44 @@ def _scale_value(out: TensorValue, scale: TensorValue) -> TensorValue:
     return ops.cast(ops.cast(out, DType.float32) * scale, out.dtype)
 
 
-_scale = F.functional(_scale_value)
+def _dense_mlp(
+    x: TensorValue, w13: TensorValue, w2: TensorValue, scale: TensorValue
+) -> TensorValue:
+    gate_up = ops.concat((w13[0::2], w13[1::2]))
+    width = w13.shape[0] // 2
+    gate, up = ops.split(x @ gate_up.T, [width, width], axis=-1)
+    return _scale_value((ops.silu(gate) * up) @ w2.T, scale.cast(DType.float32))
 
 
-class InklingDenseMLP(MLP):
+_dense = F.functional(_dense_mlp)
+
+
+class InklingDenseMLP(Module[[Tensor], Tensor]):
     """The dense layers' gated MLP, scaled by a learned scalar."""
 
     def __init__(self, hidden_dim: int, feed_forward_length: int) -> None:
         """Builds the gated MLP and allocates a zero output scale."""
-        super().__init__(hidden_dim, feed_forward_length)
-        self.global_scale = Tensor.zeros([1], dtype=DType.float32)
+        self.w13_dn = _Projection(
+            shard_axis(Tensor.zeros([2 * feed_forward_length, hidden_dim]), 0)
+        )
+        self.w2_md = _Projection(
+            shard_axis(Tensor.zeros([hidden_dim, feed_forward_length]), 1)
+        )
+        self.global_scale = Tensor.zeros([1], dtype=DType.bfloat16)
 
     def forward(self, x: Tensor) -> Tensor:
         """Returns each device's partial sum of the output."""
         # The scale applies before the ranks are reduced.
-        return as_partial(_scale(super().forward(x), self.global_scale), x.mesh)
+        return as_partial(
+            _dense(x, self.w13_dn.weight, self.w2_md.weight, self.global_scale),
+            x.mesh,
+        )
 
 
 class InklingGate(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
     """Sigmoid gate with a selection bias, sink lanes, and a global scale.
 
-    ``weight`` covers ``router_dim`` rows, ``bias`` the routed range alone.
+    ``weight`` covers the routed and sink rows, ``bias`` the routed range alone.
     Every device routes its own replica of the tokens.
     """
 
@@ -84,16 +100,16 @@ class InklingGate(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
     ) -> None:
         """Stores the routing shape and allocates the router parameters.
 
-        ``weight`` covers the padded router rows for the routed and sink
-        experts, while ``bias`` covers the routed experts alone. Both the bias
-        and the global scale are float32 for the router kernel.
+        The graph pads the stored router rows for the projection. Both the
+        bias and the global scale are float32 for the router kernel.
         """
         self.n_routed_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
         self.n_shared_experts = n_shared_experts
         self.route_scale = route_scale
         router_dim = padded_router_rows(num_experts + n_shared_experts)
-        self.weight = Tensor.zeros([router_dim, hidden_dim])
+        self.router_dim = router_dim
+        self.weight = Tensor.zeros([num_experts + n_shared_experts, hidden_dim])
         # The router scores in float32 and reads both of these directly.
         self.bias = Tensor.zeros([num_experts], dtype=DType.float32)
         self.global_scale = Tensor.zeros([1], dtype=DType.float32)
@@ -102,7 +118,20 @@ class InklingGate(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         """Returns the expert ids, expert weights and sink weights."""
         # The router reads only the routed and sink columns, so the padded
         # tail needs no slice to trim it.
-        logits = x @ self.weight.T
+        padding = self.router_dim - int(self.weight.shape[0])
+        weight = self.weight
+        if padding:
+            weight = F.concat(
+                (
+                    weight,
+                    Tensor.zeros(
+                        [padding, int(weight.shape[1])],
+                        dtype=weight.dtype,
+                        device=weight.mesh,
+                    ),
+                )
+            )
+        logits = x @ weight.T
         routing = _moe_sink_gate_router(
             logits,
             self.bias,
@@ -134,6 +163,7 @@ class _RoutedExperts(Module[[], None]):
         moe_dim: int,
         quant_config: QuantConfig | None,
     ) -> None:
+        self.quant_config = quant_config
         weight_dtype = DType.uint8 if quant_config is not None else None
         self.w13_weight = shard_axis(
             Tensor.zeros(
@@ -186,16 +216,22 @@ class _RoutedExperts(Module[[], None]):
         self.w2_weight_scale_2 = Tensor.zeros([num_experts], dtype=global_dtype)
         # One activation scale per stacked tensor: the checkpoint records a
         # single absmax for all experts.
-        self.w13_input_scale = Tensor.zeros([1], dtype=global_dtype)
-        self.w2_input_scale = Tensor.zeros([1], dtype=global_dtype)
+        self.w13_input_amax = Tensor.zeros([1], dtype=DType.bfloat16)
+        self.w2_input_amax = Tensor.zeros([1], dtype=DType.bfloat16)
 
     def on_device(self, device: int) -> dict[str, TensorValue]:
         """Returns one device's share of each tensor, by name."""
-        return {
+        weights = {
             name: TensorValue(t.local_shards[device])
             for name, t in vars(self).items()
             if isinstance(t, Tensor)
         }
+        if self.quant_config is not None:
+            for proj in ("w13", "w2"):
+                weights[f"{proj}_input_scale"] = nvfp4_input_scale(
+                    weights.pop(f"{proj}_input_amax")
+                )
+        return weights
 
 
 class _Projection(Module[[], None]):
@@ -208,15 +244,33 @@ class _Projection(Module[[], None]):
 class _SinkExperts(Module[[], None]):
     """The sink experts' MLP, intermediate split across devices."""
 
-    def __init__(self, *, hidden_dim: int, width: int) -> None:
-        self.gate_proj = _Projection(
-            shard_axis(Tensor.zeros([width, hidden_dim]), 0)
+    def __init__(
+        self, *, hidden_dim: int, width: int, n_shared_experts: int
+    ) -> None:
+        self.hidden_dim = hidden_dim
+        self.width = width
+        self.shared_w13_weight = Tensor.zeros(
+            [n_shared_experts, 2 * width // n_shared_experts, hidden_dim]
         )
-        self.up_proj = _Projection(
-            shard_axis(Tensor.zeros([width, hidden_dim]), 0)
+        self.shared_w2_weight = Tensor.zeros(
+            [n_shared_experts, hidden_dim, width // n_shared_experts]
         )
-        self.down_proj = _Projection(
-            shard_axis(Tensor.zeros([hidden_dim, width]), 1)
+
+    def on_device(
+        self, device: int, num_devices: int
+    ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Folds the stored sink tensors and selects this device's columns."""
+        w13 = TensorValue(self.shared_w13_weight.local_shards[device])
+        w2 = TensorValue(self.shared_w2_weight.local_shards[device])
+        gate = w13[:, 0::2, :].reshape([self.width, self.hidden_dim])
+        up = w13[:, 1::2, :].reshape([self.width, self.hidden_dim])
+        down = ops.permute(w2, [1, 0, 2]).reshape([self.hidden_dim, self.width])
+        width = self.width // num_devices
+        start = device * width
+        return (
+            gate[start : start + width],
+            up[start : start + width],
+            down[:, start : start + width],
         )
 
 
@@ -480,7 +534,9 @@ class InklingMoE(Module[[Tensor], Tensor]):
             quant_config=quant_config,
         )
         self.shared_experts = _SinkExperts(
-            hidden_dim=hidden_dim, width=self.shared_experts_dim
+            hidden_dim=hidden_dim,
+            width=self.shared_experts_dim,
+            n_shared_experts=n_shared_experts,
         )
 
     def _sinks_on_device(self, device: int) -> range:
@@ -508,11 +564,7 @@ class InklingMoE(Module[[Tensor], Tensor]):
                     TensorValue(expert_weights.local_shards[d]),
                     TensorValue(sink_weights.local_shards[d]),
                     self.experts.on_device(d),
-                    (
-                        TensorValue(sink.gate_proj.weight.local_shards[d]),
-                        TensorValue(sink.up_proj.weight.local_shards[d]),
-                        TensorValue(sink.down_proj.weight.local_shards[d]),
-                    ),
+                    sink.on_device(d, self.num_devices),
                     _DeviceMoE(
                         num_experts=self.num_experts,
                         num_experts_per_token=self.num_experts_per_token,

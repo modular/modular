@@ -54,6 +54,7 @@ class JSONSchemaFormat(BaseModel):
         "minimax_xml",
         "deepseek_xml",
         "deepseek_v41_xml",
+        "deepseek_v4_xml",
         "glm_xml",
         "minimax_m3_xml",
         "hy_v4_xml",
@@ -70,6 +71,8 @@ class JSONSchemaFormat(BaseModel):
       ``<{dsml_token}parameter name="key" string="true|false">value</{dsml_token}parameter>``.
     - ``"deepseek_v41_xml"`` — DeepSeek-V4.1 XML:
       ``<{dsml_token} parameter name="key" string="true|false">value</{dsml_token} parameter>``.
+    - ``"deepseek_v4_xml"`` — DeepSeek-V4-Flash-0731 XML: ``"deepseek_v41_xml"`` with
+      unspaced tags, ``<{dsml_token}parameter name="key" ...>``.
     - ``"glm_xml"`` — GLM 5 / 5.1 / 5.2 XML:
       ``<arg_key>key</arg_key><arg_value>value</arg_value>``.
     - ``"minimax_m3_xml"`` — MiniMax M3 tag-prefixed XML:

@@ -41,6 +41,9 @@ modular_py_test(
         "//max/python/max:tree",
         "//max/python/max/_artifact",
         "//max/python/max/mlir",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         requirement("torch"),
     ],
 )
@@ -78,6 +81,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = _COMMON_DEPS + [
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/sampling",
         "//max/python/max/support",
     ],

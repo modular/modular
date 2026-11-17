@@ -109,3 +109,23 @@ def convert_idefics3_vision_model_state_dict(
             vision_model_state_dict[vision_model_name] = weight.data()
 
     return vision_model_state_dict
+
+
+def convert_registered_state_dict(
+    state_dict: dict[str, Weights], **unused_kwargs
+) -> dict[str, WeightData]:
+    """Maps both towers into disjoint role namespaces."""
+    return {
+        **{
+            f"decoder.{name}": value
+            for name, value in convert_idefics3_language_model_state_dict(
+                state_dict
+            ).items()
+        },
+        **{
+            f"vision.{name}": value
+            for name, value in convert_idefics3_vision_model_state_dict(
+                state_dict
+            ).items()
+        },
+    }

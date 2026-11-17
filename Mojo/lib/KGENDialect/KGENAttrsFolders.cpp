@@ -97,8 +97,8 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
   // Returns nullopt when `handle` has no matching conformance.
   auto simplifyFrom =
       [&](ResolvedStructHandle handle) -> std::optional<FailureOr<TypedAttr>> {
-    Operation *conformanceOp =
-        context.resolveConformanceForStruct(handle, getTraitSymbol());
+    Operation *conformanceOp = context.resolveConformanceForStruct(
+        handle, getTraitSymbol(), getWitnessName());
     if (!conformanceOp)
       return std::nullopt;
 
@@ -269,6 +269,32 @@ FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
                         [&](ParameterEvaluator &evaluator) {
                           result = simplify(resolved.decl, evaluator);
                         });
+  auto doesConforms = [](FailureOr<TypedAttr> result) {
+    return succeeded(result) && KGEN::isTriviallyTrueProposition(*result);
+  };
+
+  if (doesConforms(result))
+    return result;
+
+  if (auto extension =
+          sugarDynCast<ExtensionAttr>(SugarAttr::strip(getTypeValue()))) {
+    for (TypedAttr ext : extension.getExtensions()) {
+      FailureOr<ResolvedStructHandle> extResolvedOr =
+          context.resolveStructOp(ext, /*acceptAsync=*/false);
+      if (failed(extResolvedOr))
+        continue;
+      FailureOr<TypedAttr> extResult = failure();
+      context.withEvaluator(resolved.decl.getInputParams(),
+                            resolved.paramValues,
+                            [&](ParameterEvaluator &evaluator) {
+                              extResult = simplify(resolved.decl, evaluator);
+                            });
+      // We just need one extension that provides the conformance (this should
+      // mirror how GetWitnessAttr is folded).
+      if (doesConforms(extResult))
+        return extResult;
+    }
+  }
   return result;
 }
 
@@ -295,7 +321,7 @@ computeStructFieldOffset(ArrayRef<Type> fieldTypes, int64_t fieldIndex,
     std::optional<int64_t> curFieldAlign =
         DataLayoutInterface::getTypeABIAlign(target, fieldTypes[i]);
     std::optional<int64_t> curFieldSize =
-        DataLayoutInterface::getTypeAllocSize(target, fieldTypes[i]);
+        getStructFieldSize(target, fieldTypes[i]);
     if (!curFieldAlign || !curFieldSize) {
       emitError("could not determine size or alignment for field type");
       return failure();

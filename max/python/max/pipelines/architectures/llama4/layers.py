@@ -16,14 +16,14 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged,
     rope_split_store_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.moe import MoEGate

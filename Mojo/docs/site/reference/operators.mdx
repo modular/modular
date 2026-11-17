@@ -23,6 +23,15 @@ description: >-
 
      Dunder existence:
        grep stdlib for "def __<opname>__"
+
+     pow() vs ** (numeric match, PythonObject, three-argument pow):
+       Mojo/stdlib/std/math/math.mojo (pow overloads call __pow__)
+       Mojo/stdlib/std/simd.mojo (SIMD __pow__ overloads)
+       Mojo/stdlib/std/python/python_object.mojo (__pow__, no pow)
+
+     Compiler verified: 2026-11-09, repo build at 0d196cf5
+       (pow() vs ** paragraphs only)
+     Last updated: 2026-11-09 (pow() vs ** wording)
 -->
 
 Operator precedence and associativity. Higher-precedence operators bind
@@ -84,8 +93,11 @@ groups as
 2 ** (3 ** 4)
 ```
 
-Equivalent to `pow(2, 81)`. In Mojo `pow(a, b)` and `a ** b` are
-interchangeable.
+For numeric types (`Int`, `Float64`, and other SIMD types), `pow(a, b)` and
+`a ** b` give the same result.
+
+`PythonObject` supports `**` but not `pow()`, and the three-argument
+`pow(base, exp, mod)` has no operator form.
 
 ### Ternary (`if`-`else`)
 

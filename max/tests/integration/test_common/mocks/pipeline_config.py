@@ -38,8 +38,6 @@ from max.pipelines.weights.hf_utils import (
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import ParamSpec
 
-from .memory_estimation import mock_plan_from_sizes
-
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -331,13 +329,10 @@ def mock_pipeline_config_hf_dependencies(
     - mock_huggingface_hub_repo_exists_with_retry
     - mock_huggingface_hub_file_exists
     - mock_huggingface_config
-    - mock_plan_from_sizes
     """
     return mock_generate_local_model_path(
         mock_huggingface_hub_repo_exists_with_retry(
-            mock_huggingface_hub_file_exists(
-                mock_huggingface_config(mock_plan_from_sizes(func))
-            )
+            mock_huggingface_hub_file_exists(mock_huggingface_config(func))
         )
     )
 
@@ -390,9 +385,6 @@ def mock_hf_repo_access(func: Callable[_P, _R]) -> Callable[_P, _R]:
     """Decorator form of :func:`patched_hf_construction`.
 
     Lets a test construct a config against a fake/uncached repo offline.
-    Unlike :func:`mock_pipeline_config_resolve`, this does not touch
-    ``resolve``/memory planning, so tests that exercise real resolution
-    behavior against a fake repo can still use it.
     """
 
     @wraps(func)
@@ -403,26 +395,5 @@ def mock_hf_repo_access(func: Callable[_P, _R]) -> Callable[_P, _R]:
     return wrapper
 
 
-# Helper decorator that mocks the registry's resolution phase (memory
-# planning) and HF repo access, so tests can exercise config construction
-# and field wiring without touching the network or estimating memory.
-def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    @wraps(func)
-    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        from max.pipelines.lib.memory_estimation import MemoryPlan
-
-        with (
-            patch(
-                "max.pipelines.lib.memory_estimation.MemoryEstimator.plan",
-                side_effect=lambda config, *a, **kw: MemoryPlan(
-                    planned_max_batch_size=1,
-                    footprint=0,
-                    planned_max_length=config.model.max_length,
-                    device_specs=tuple(config.model.device_specs),
-                ),
-            ),
-            patched_hf_construction(),
-        ):
-            return func(*args, **kwargs)
-
-    return wrapper
+# Resolution no longer plans memory, so only HF repo access needs mocking.
+mock_pipeline_config_resolve = mock_hf_repo_access

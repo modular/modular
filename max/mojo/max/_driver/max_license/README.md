@@ -254,11 +254,11 @@ comptime if conforms_to(ctx.ExecutionConfigType, GridBlockExecutionConfig):
     var config = GridBlockLaunchConfig(
         grid_dim=(4, 1, 1), block_dim=(1024, 1, 1)
     )
-    queue.execute[vec_add](config, dev_a, dev_b, dev_c, size)
+    queue.execute[vec_add](dev_a, dev_b, dev_c, size, execution_config=config)
 # Asking only for cores covers CPUs and NPUs.
 elif conforms_to(ctx.ExecutionConfigType, CoresExecutionConfig):
     var config = ctx.ExecutionConfigType(num_cores=num_cores)
-    queue.execute[vec_add](config^, dev_a, dev_b, dev_c, size)
+    queue.execute[vec_add](dev_a, dev_b, dev_c, size, execution_config=config^)
 else:
     comptime assert False, "no launch configuration for this device"
 ```
@@ -328,15 +328,34 @@ compile-time evaluation folds away any overhead. This generalizes the technique
 behind unified kernel launch to other domains.
 
 A capability is a versioned `Supports<Name>V<N>` trait. Each device holds its
-backend's extension set as `extensions`, and you branch on a capability with
-`conforms_to()`. Inside the branch the type is refined, so the capability's
-methods are only visible where they're supported, and you can't call them by
-accident. For example, peer access between devices:
+backend's extension set behind `extensions()`, and you branch on a capability
+with `conforms_to()`. Inside the branch the type is refined, so the
+capability's methods are only visible where they're supported, and you can't
+call them by accident. For example, peer access between devices:
 
 ```mojo
-comptime Ext = type_of(device.extensions)
+comptime Ext = type_of(device.extensions())
 comptime if conforms_to(Ext, SupportsPeerAccessV1):
-    var peer_access = device.extensions.peer_access()
+    var ok = device.extensions().can_access_peer(
+        device.raw_driver()[], device.handle(), peer.handle()
+    )
+```
+
+A capability can come in tiers, each a trait that refines the one below it.
+Completion flags (`M_driver_flag.h`) are one example: `SupportsCompletionFlagV1`
+creates, signals and waits on a flag, `SupportsCompletionFlagResetV1` adds an
+in-place reset, and `SupportsCompletionFlagAddressV1` (CUDA and HIP) adds the
+flag's device address. A wait takes its condition at run time, and the plugin
+rejects one it doesn't support. To fail at compile time instead, assert the
+condition against the comptime `FlagConditions` set. Here `flag` came from
+`create_flag` and `stream` is a `Stream` on the same device, which resolves the
+flag group from its own plugin:
+
+```mojo
+comptime Ext = type_of(device.extensions())
+comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+    comptime assert FlagCondition.eq in Ext.FlagConditions
+    stream.wait_flag(flag, 5, FlagCondition.eq)
 ```
 
 Declaring an extension doesn't require changing the core driver. A backend

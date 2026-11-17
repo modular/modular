@@ -36,3 +36,5 @@ defm o : CommandOption<["-"], "o", OutputOptionGroup,
     "generated in the current working directory, with a name based on the name "
     "of the input directory."
   >>;
+
+include "Common/NamespaceOptions.td"

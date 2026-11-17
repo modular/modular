@@ -10,33 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-"""Map Gemma 3 checkpoint weight names onto MAX names."""
+"""Maps Gemma 3 checkpoints onto the ModuleV3 module tree."""
 
 from __future__ import annotations
 
-from max.graph.weights import WeightData, Weights
+from collections.abc import Sequence
 
-# Maps from Safetensor to MAX weight names.
-GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
-    "model.embed_tokens.": "language_model.embed_tokens.",
-    "model.norm.": "language_model.norm.",
-    "lm_head.": "language_model.lm_head.",
-    "model.layers.": "language_model.layers.",
-}
+from max.pipelines.lib import WeightRenaming, WeightRule
+from transformers import PretrainedConfig
 
 
-def convert_safetensor_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
-) -> dict[str, WeightData]:
-    """Rename safetensor weights to the MAX names the model reads."""
-    new_state_dict: dict[str, WeightData] = {}
+def gemma3_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the rules that map a Gemma 3 checkpoint onto the decoder.
 
-    # Remap HuggingFace -> MAX-style names
-    for weight_name, value in state_dict.items():
-        max_name = weight_name
-        for before, after in GEMMA3_SAFETENSOR_MAP.items():
-            max_name = max_name.replace(before, after)
-        new_state_dict[max_name] = value.data()
-
-    return new_state_dict
+    Args:
+        huggingface_config: The checkpoint's config.
+    """
+    del huggingface_config
+    return (
+        WeightRenaming(r"^model\.", "language_model."),
+        WeightRenaming(r"^lm_head\.", "language_model.lm_head."),
+    )

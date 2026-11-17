@@ -10,20 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-#
-# A runtime integer exponent's sign is not known until it is evaluated, so the
-# guard is a trap rather than a compile error. It aborts, so verify it with
-# FileCheck rather than a regular unit test.
-#
-# ===----------------------------------------------------------------------=== #
+
+from std.testing import _assert_aborts, TestSuite
 
 
-# CHECK-LABEL: test_pow_negative_exponent_aborts
-def main():
-    print("== test_pow_negative_exponent_aborts")
+def test_pow_negative_exponent_aborts() raises:
+    # A runtime integer exponent's sign is not known until it is evaluated, so
+    # the guard is a trap rather than a compile error.
     var a: Int = 2
     var b: Int = -1
-    # CHECK: an integer cannot be raised to a negative power
-    var n = a**b
-    # CHECK-NOT: is never reached
-    print("is never reached", n)
+
+    def trigger() raises {a, b} -> None:
+        _ = a**b
+
+    _assert_aborts(
+        trigger, contains="an integer cannot be raised to a negative power"
+    )
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

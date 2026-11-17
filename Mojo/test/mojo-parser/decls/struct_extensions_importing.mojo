@@ -18,10 +18,10 @@ from struct_package import PlainStruct
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:PlainStruct"
-# CHECK-SAME: targetStruct = @struct_package::@plain_struct::@PlainStruct
 __extension PlainStruct:
     # CHECK-LABEL: lit.fn @"sparklebark
     # CHECK-SAME: %self: !lit.ref<!PlainStruct, imm *"{{.*}}">
+    # CHECK: } <{{.*}}targetStruct = @struct_package::@plain_struct::@PlainStruct
     def sparklebark(self: PlainStruct):
         pass
 
@@ -36,10 +36,10 @@ from struct_package import PlainStruct
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:PlainStruct"
-# CHECK-SAME: targetStruct = @struct_package::@plain_struct::@PlainStruct
 __extension PlainStruct:
     # CHECK-LABEL: lit.fn @"sparklebark
     # CHECK-SAME: %self: !lit.ref<!PlainStruct, imm *"{{.*}}">
+    # CHECK: } <{{.*}}targetStruct = @struct_package::@plain_struct::@PlainStruct
     def sparklebark(self: PlainStruct):
         pass
 
@@ -55,8 +55,6 @@ trait Flying:
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:PlainStruct"
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@struct_extensions_importing::@Flying>]>
-# CHECK-SAME: targetStruct = @struct_package::@plain_struct::@PlainStruct
 __extension PlainStruct(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!PlainStruct, mut *"{{.*}}">
@@ -65,6 +63,7 @@ __extension PlainStruct(Flying):
         self.set_location(new_location)
 
     # CHECK: kgen.conformance @struct_extensions_importing::@Flying {
+    # CHECK: } <{{.*}}targetStruct = @struct_package::@plain_struct::@PlainStruct{{.*}}immediateParents = [<@struct_extensions_importing::@Flying>]
 
 
 def launch_flying[F: Flying](mut flying: F):
@@ -95,8 +94,6 @@ struct Spaceship(Movable where False):
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@trait_package::@plain_trait::@Flying>]>
-# CHECK-SAME: targetStruct = @struct_extensions_importing::@Spaceship
 __extension Spaceship(ImportedFlying):
     # CHECK-LABEL: lit.fn @"fly_to
     # CHECK-SAME: %self: !lit.ref<!Spaceship, mut *"{{.*}}">
@@ -105,6 +102,7 @@ __extension Spaceship(ImportedFlying):
         self.set_location(new_location)
 
     # CHECK: kgen.conformance @trait_package::@plain_trait::@Flying {
+    # CHECK: } <{{.*}}targetStruct = @struct_extensions_importing::@Spaceship{{.*}}immediateParents = [<@trait_package::@plain_trait::@Flying>]
 
 
 def launch_flying2[F: ImportedFlying](mut flying: F):

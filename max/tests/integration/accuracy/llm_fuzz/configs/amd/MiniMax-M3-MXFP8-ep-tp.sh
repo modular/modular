@@ -23,6 +23,7 @@ max_length=131072
 export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=0
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --ep-size 8
   --data-parallel-degree 2
   --device-graph-capture

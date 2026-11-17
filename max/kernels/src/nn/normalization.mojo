@@ -13,7 +13,7 @@
 
 from std.math import align_down, align_up, ceildiv, clamp, rsqrt
 from std.math.uutils import umod, ufloordiv, uceildiv
-from std.sys.info import align_of, simd_width_of, size_of
+from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 
 import max.gpu.primitives.warp as warp
 from std.algorithm import vectorize
@@ -35,7 +35,6 @@ from max.gpu.sync import (
     barrier,
 )
 from max.gpu.host import DeviceContext, FuncAttribute
-from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.memory import external_memory
 from std.sys.info import is_apple_gpu
 from max.gpu.primitives import block
@@ -54,14 +53,12 @@ from layout import (
     row_major,
 )
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.reflection import reflect
 from std.utils.coord import ComptimeInt, CoordLike
 from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
@@ -569,46 +566,6 @@ def rms_norm_gpu_warp_per_row[
                     col += stride
 
 
-# The warp-tiling kernel wants the row geometry as a typed `Coord` — its
-# `ComptimeInt` dims are what strength-reduce the per-thread row translation —
-# but it takes the shape as an explicit kernel argument, and a *bare* `Coord`
-# argument corrupts the launch: the param pack lowers to one scalar device
-# `.param` per dynamic leaf while the host packs the whole coord as a single
-# aggregate slot, and that arity mismatch makes the driver read undefined
-# parameter slots (MOCO-4307). Nesting the coord in a `DevicePassable` struct
-# keeps both sides at one aggregate slot, which is how `TileTensor` already
-# carries its `Layout`'s coords to a kernel;
-# `max/mojo/test/gpu/host/test_coord_device_launch.mojo` covers this path.
-#
-# `num_cols` rides along deliberately: a *single*-field struct is transparently
-# unwrapped to its field, which puts the bare param pack straight back on the
-# kernel boundary and reintroduces the mismatch. Two fields keep the struct a
-# struct, and the kernel needs both values anyway.
-# TODO(MOCO-4307): Remove this type and use a regular Coord
-@fieldwise_init
-struct _RowSpec[element_types: TypeList[Trait=CoordLike, ...]](
-    DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
-):
-    var shape: Coord[*Self.element_types]
-    var num_cols: Int32
-
-    comptime device_type = Self
-
-    def _to_device_type(
-        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
-    ):
-        comptime assert (
-            reflect[Self].field_count() >= 2
-        ), "_RowSpec must keep >= 2 fields or it is unwrapped to a bare Coord"
-        encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return String(
-            "_RowSpec[", Coord[*Self.element_types].get_type_name(), "]"
-        )
-
-
 # SM100 (B200) primary target; portable (only uses `block_reduce`, warp
 # shuffle, and a per-thread grid-stride column loop — no arch intrinsics).
 #
@@ -659,7 +616,8 @@ def rms_norm_gpu_warp_tiling[
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
-    row_spec: _RowSpec[shape_types],
+    shape: Coord[*shape_types],
+    num_cols: Int32,
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
     input_fn: InputFnType,
     output_fn: OutputFnType,
@@ -667,7 +625,7 @@ def rms_norm_gpu_warp_tiling[
     comptime assert (
         shape_types.length == rank
     ), "shape_types.length must be the same as rank"
-    var _num_cols = Int(row_spec.num_cols)
+    var _num_cols = Int(num_cols)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert gamma.flat_rank >= 1
 
@@ -682,7 +640,7 @@ def rms_norm_gpu_warp_tiling[
     var bdim = block_dim.x
 
     # Hoist the rank-N row translation ONCE; reuse the base for load and store.
-    var base = _get_start_indices_of_nth_subvolume_static(row, row_spec.shape)
+    var base = _get_start_indices_of_nth_subvolume_static(row, shape)
 
     # Per-chunk register-cached input (in accum precision) and gamma weights,
     # carried across the reduction so the normalize pass needs no re-read.
@@ -722,7 +680,7 @@ def rms_norm_gpu_warp_tiling[
             thread_m2
         )
         var norm_factor = rsqrt(
-            (row_m2 / row_spec.num_cols.cast[accum_type]()) + eps_accum
+            (row_m2 / num_cols.cast[accum_type]()) + eps_accum
         )
 
         comptime for c in range(chunks_per_thread):
@@ -892,6 +850,7 @@ def rms_norm_gpu[
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
     ctx: DeviceContext,
+    dispatch_rows: Optional[Int] = None,
 ) raises:
     # `shape` arrives as a `Coord`, with statically-known outer dims encoded in
     # its type, and the lambdas are `Coord`-form all the way down to the
@@ -923,42 +882,28 @@ def rms_norm_gpu[
     # runtime leaf, so this path is behavior-identical to the pre-migration
     # `_get_start_indices_of_nth_subvolume` form for non-static shapes.
     #
-    # The wrappers copy-capture (`{var}`) `shape_layout` and the callbacks:
-    # they reach the GPU kernels by value through `host_args`, and a captured
-    # *local* `var` held by reference would be a host-stack pointer on device.
+    # The wrappers copy-capture (`{var}`) `shape` and the callbacks: they
+    # reach the GPU kernels by value through `host_args`, and a captured
+    # argument held by reference would be a host-stack pointer on device.
     # Without the copy the rank-N divmod reads garbage outer dims on device
     # (rank-2 is unaffected since its outer translation is trivial; rank>=3
     # produces wrong results / launch failures).
-    #
-    # The carrier is a `Layout`, not the `Coord` itself: a captured `Coord`
-    # lowers to one scalar device `.param` per dynamic leaf while the host packs
-    # it as a single capture slot, and that arity mismatch corrupts the launch
-    # (MOCO-4307). A `row_major` `Layout` is the one carrier that keeps the
-    # capture a single aggregate `.param`, so the typed `Coord` — static dims
-    # and all — arrives intact via `shape_coord()`.
-    var shape_layout = row_major(shape)
 
     @inline(.always)
     def output_fn_2d[
         simd_width: SIMDLength, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) {
-        var shape_layout, var output_fn
+        var shape, var output_fn
     } -> None:
-        var indices = _get_start_indices_of_nth_subvolume_static(
-            row, shape_layout.shape_coord()
-        )
+        var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
         indices[rank - 1] = col
         output_fn[simd_width, alignment](Coord(indices), val)
 
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) {var shape_layout, var input_fn} -> SIMD[
-        dtype, simd_width
-    ]:
-        var indices = _get_start_indices_of_nth_subvolume_static(
-            row, shape_layout.shape_coord()
-        )
+    ](row: Int, col: Int) {var shape, var input_fn} -> SIMD[dtype, simd_width]:
+        var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](Coord(indices))
 
@@ -971,13 +916,15 @@ def rms_norm_gpu[
     comptime sm_count = ctx.default_device_info.sm_count
     comptime warp_per_row_rows_per_block = 8
     var warp_per_row_min_grid = 3 * sm_count
+    var select_rows = dispatch_rows.or_else(rows)
     var warp_per_row_region = (
-        ceildiv(rows, warp_per_row_rows_per_block) >= warp_per_row_min_grid
+        ceildiv(select_rows, warp_per_row_rows_per_block)
+        >= warp_per_row_min_grid
     )
     # Conservative floor: below one block per SM, chunking can't raise
     # occupancy and only reassociates the mean-of-squares reduction (the real
     # crossover is higher and width-dependent; this sits safely below it).
-    var enough_rows_to_chunk = rows >= sm_count
+    var enough_rows_to_chunk = select_rows >= sm_count
 
     var grid_dim = rows
     var block_dim = min(
@@ -1074,7 +1021,8 @@ def rms_norm_gpu[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
-                _RowSpec[type_of(shape).element_types](shape, Int32(cols)),
+                shape,
+                Int32(cols),
                 gamma,
                 host_args=(input_fn, output_fn),
                 grid_dim=rows,
@@ -1209,7 +1157,7 @@ def rms_norm_gpu[
             # below ~8x the CU count).
             comptime sw_wide = simd_width * 2
             comptime widen_ok = sm_version == "CDNA4"
-            var enough_rows = rows >= 8 * sm_count
+            var enough_rows = select_rows >= 8 * sm_count
             if widen_ok and enough_rows and cols % sw_wide == 0:
                 _launch_warp_tiling[sw_wide, 1]()
             elif not enough_rows_to_chunk:
@@ -1438,7 +1386,7 @@ def rms_norm_cpu[
 
 @inline(.always)
 def _rms_norm_input_alignment[
-    dtype: DType, width: Int, target: StaticString
+    dtype: DType, width: Int, target: CompilationTarget
 ]() -> Int:
     """The alignment an rms_norm input_fn can claim for a load of `width`.
 
@@ -1446,7 +1394,7 @@ def _rms_norm_input_alignment[
     requesting `width > 1`. CPU always claims 1: its vectorized loop runs
     regardless of `num_cols % simd_width`.
     """
-    comptime if is_cpu[target]():
+    comptime if target.is_cpu():
         return 1
     else:
         return align_of[SIMD[dtype, width]]()
@@ -1468,7 +1416,6 @@ def _rms_norm_impl[
     /,
     epsilon: Float32,
     weight_offset: Float32,
-    target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
 ](
     input_0_fn: Input0FnType,
@@ -1495,6 +1442,8 @@ def _rms_norm_impl[
         # Nothing to do.
         return
 
+    comptime target = ctx.target
+
     @inline(.always)
     def input_fn_target[
         width: Int
@@ -1502,7 +1451,7 @@ def _rms_norm_impl[
         comptime align = _rms_norm_input_alignment[dtype, width, target]()
         return input_0_fn[width, align](coords)
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         rms_norm_cpu[
             epsilon=epsilon,
             weight_offset=weight_offset,
@@ -1514,7 +1463,7 @@ def _rms_norm_impl[
             gamma,
             Optional(ctx.assert_cpu_target()),
         )
-    elif is_gpu[target]():
+    elif ctx.target.is_gpu():
         rms_norm_gpu[
             rank,
             epsilon=epsilon,
@@ -1528,7 +1477,7 @@ def _rms_norm_impl[
             ctx,
         )
     else:
-        comptime assert False, "unsupported target " + target
+        comptime assert False, "unsupported target"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1869,7 +1818,6 @@ def apply_qk_rms_norm[
     in_dtype: DType,
     out_dtype: DType,
     //,
-    target: StaticString = "cpu",
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
@@ -1905,7 +1853,6 @@ def apply_qk_rms_norm[
         in_dtype: Element type of both activation inputs (`bfloat16` or
             `float32`).
         out_dtype: Element type of the outputs (typically equal to `in_dtype`).
-        target: `"cpu"` or a GPU target string.
 
     Args:
         q_out: Scaled Q output, shape `[M, Nq]`.
@@ -1927,7 +1874,7 @@ def apply_qk_rms_norm[
     def description_fn() {imm} -> String:
         return trace_arg("qk", Coord(rows, q_cols + k_cols), in_dtype)
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "apply_qk_rms_norm",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
@@ -1935,7 +1882,7 @@ def apply_qk_rms_norm[
         if rows == 0:
             return
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             apply_qk_rms_norm_cpu(
                 q_out,
                 k_out,
@@ -1949,7 +1896,7 @@ def apply_qk_rms_norm[
                 q_cols,
                 k_cols,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             apply_qk_rms_norm_gpu(
                 q_out,
                 k_out,
@@ -1965,7 +1912,7 @@ def apply_qk_rms_norm[
                 ctx,
             )
         else:
-            comptime assert False, "unsupported target " + target
+            comptime assert False, "unsupported target"
 
 
 def group_norm_reshape[
@@ -2849,8 +2796,6 @@ def group_norm[
     BetaFn: ImplicitlyCopyable
     & RegisterPassable
     & (def[width: Int](Coord) -> SIMD[dtype, width]),
-    /,
-    target: StaticString = "cpu",
 ](
     input_fn: InputFn,
     gamma_fn: GammaFn,
@@ -2885,12 +2830,12 @@ def group_norm[
     def description_fn() {imm} -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "group_norm",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             group_norm_cpu[dtype=dtype, rank=rank](
                 input_fn,
                 gamma_fn,
@@ -2901,7 +2846,7 @@ def group_norm[
                 num_groups,
                 Optional(ctx.assert_cpu_target()),
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             group_norm_gpu[dtype=dtype, rank=rank](
                 input_fn,
                 gamma_fn,
@@ -2913,7 +2858,7 @@ def group_norm[
                 ctx=ctx,
             )
         else:
-            comptime assert False, "unsupported target " + target
+            comptime assert False, "unsupported target"
 
 
 # ===----------------------------------------------------------------------=== #

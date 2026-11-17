@@ -66,6 +66,7 @@ from state_space.mamba2_ssd_scan import (
     _use_initial_state,
     _write_final_state,
 )
+from state_space.row_rule import commit_len, is_prefill_row
 
 comptime CHUNK = 256
 """Tokens per chunk."""
@@ -104,6 +105,14 @@ comptime GROUPED_CB_OFF = 1
 """Disables grouped score precomputation."""
 comptime GROUPED_CB_ON = 2
 """Forces grouped score precomputation for explicit comparisons."""
+comptime SLAB_ALIGN = 256
+"""Bytes between the regions of the scratch slab, the alignment of a fresh
+allocation."""
+
+
+def _slab_region(bytes: Int) -> Int:
+    """Returns `bytes` rounded up to `SLAB_ALIGN`."""
+    return ceildiv(bytes, SLAB_ALIGN) * SLAB_ALIGN
 
 
 def chunked_slots(total_len: Int, batch: Int) -> Int:
@@ -156,9 +165,11 @@ def ssd_chunk_map[
     SEngine: TensorEngine,
     QLT: TensorLayout,
     QEngine: TensorEngine,
+    ROW_RULE: Bool = False,
 ](
     slots_i: Int32,
     batch_i: Int32,
+    num_draft_tokens: Int32,
     info: TileTensor[.int32, SLT, MutUntrackedOrigin, Engine=SEngine],
     query_start_loc: TileTensor[
         .int32, QLT, ImmUntrackedOrigin, Engine=QEngine
@@ -168,27 +179,34 @@ def ssd_chunk_map[
 
     `info` holds, in order: `slots` chunk start tokens, `slots` chunk
     lengths (0 for an unused slot), `slots` owning sequences, then `batch`
-    first-chunk slots and `batch` chunk counts.
+    first-chunk slots and `batch` chunk counts. Under `ROW_RULE` a
+    prefill row maps only its real tokens and a short row gets no chunk:
+    a serial launch beside this one scans it.
     """
     var slots = Int(slots_i)
     var batch = Int(batch_i)
     if thread_idx.x != 0:
         return
+    var k = Int(num_draft_tokens)
     var next = 0
     for b in range(batch):
         var s = Int(query_start_loc[b])
         var e = Int(query_start_loc[b + 1])
-        var n = ceildiv(max(e - s, 0), CHUNK)
+        var row_len = e - s
+        var real = (
+            commit_len(row_len, k) if is_prefill_row(row_len, k) else 0
+        ) if ROW_RULE else row_len
+        var n = ceildiv(max(real, 0), CHUNK)
         info.store((3 * slots + b,), Int32(next))
         info.store((3 * slots + batch + b,), Int32(n))
         for c in range(n):
             var start = s + c * CHUNK
             info.store((next,), Int32(start))
-            info.store((slots + next,), Int32(min(CHUNK, e - start)))
+            info.store((slots + next,), Int32(min(CHUNK, s + real - start)))
             info.store((2 * slots + next,), Int32(b))
             next += 1
-    for k in range(next, slots):
-        info.store((slots + k,), Int32(0))
+    for slot in range(next, slots):
+        info.store((slots + slot,), Int32(0))
 
 
 def ssd_chunk_cumsum[
@@ -415,6 +433,7 @@ def ssd_state_passing[
     DSTATE: Int,
     VPT: Int = 1,
     entry_bf16: Bool = False,
+    ROW_RULE: Bool = False,
 ](
     slots_i: Int32,
     batch_i: Int32,
@@ -520,7 +539,10 @@ def ssd_state_passing[
                                 states.store[alignment=16]((off + e,), state[v])
                             state[v] = fma(state[v], d, s_c[u * VPT + v])
         barrier()
-    if _write_final_state(update_state, b):
+    # Under ROW_RULE only a prefill row has chunks, and its last chunk
+    # ends at the commit point, so the state lands there whatever the flag.
+    var write_state = _write_final_state(update_state, b) or ROW_RULE
+    if write_state:
         comptime for v in range(VPT):
             var e = e0 + v * VS
             if e < pn:
@@ -1010,6 +1032,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
     DSTATE: Int,
     dt_softplus: Bool,
     grouped_cb_mode: Int = GROUPED_CB_AUTO,
+    ROW_RULE: Bool = False,
 ](
     ctx: DeviceContext,
     total_len: Int,
@@ -1033,6 +1056,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
     b_addr: Int = 0,
     c_addr: Int = 0,
     bc_ld: Int = 0,
+    num_draft_tokens: Int = 0,
 ) raises:
     """Runs the chunked SSD scan over a varlen batch.
 
@@ -1054,6 +1078,9 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         grouped_cb_mode: `GROUPED_CB_OFF`, `GROUPED_CB_ON`, or
             `GROUPED_CB_AUTO`. AUTO selects only the validated B200 bf16
             kernel, fp32 state, dimension-128 amortization regime.
+        ROW_RULE: Whether a prefill row (longer than one real token plus
+            its drafts) maps only its real tokens and commits its state
+            after them, whatever its `update_state` flag.
 
     Args:
         ctx: Device context.
@@ -1067,7 +1094,9 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         ssm_pool: State pool, read and written in place.
         query_start_loc: Cumulative sequence offsets of shape `(batch + 1,)`.
         has_initial_state: Per-sequence flag, or empty.
-        update_state: Per-sequence write-back flag, or empty.
+        update_state: Per-sequence write-back flag, or empty. Under
+            `ROW_RULE` a prefill row writes its state at its last real
+            token whatever this flag.
         x_fn: Reads `x`.
         dt_fn: Reads `dt`.
         b_fn: Reads `B`.
@@ -1085,6 +1114,8 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         b_addr: B's first element, or 0.
         c_addr: C's first element, or 0.
         bc_ld: Row stride of B and C in elements.
+        num_draft_tokens: Draft tokens per row; a row longer than this
+            plus one is a prefill row under `ROW_RULE`.
     """
     comptime assert DSTATE % 64 == 0, "the chunked scan needs DSTATE % 64 == 0"
     comptime assert grouped_cb_mode in (
@@ -1096,28 +1127,97 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
     var head_dim = Int(y.dim[2]())
     var slots = chunked_slots(total_len, batch)
 
-    var states_d = ctx.enqueue_create_buffer[.float32](
-        slots * nheads * head_dim * DSTATE
+    # The five scratch tensors of the launch share one slab. Five stream-ordered
+    # allocation round trips cost 10.5 us of host time a layer on their own and
+    # one allocation of the summed size costs 2.0 us, and the host enqueue of a
+    # layer is a large enough share of a served prefill step to be worth that.
+    # Each region starts on a `SLAB_ALIGN` boundary, the alignment a fresh
+    # allocation has, so every kernel sees the alignment it saw with its own
+    # buffer. The regions are disjoint and the slab outlives every launch, so
+    # sharing it changes no value the kernels read or write; the origin cast
+    # tells the alias checker what the offsets make true, since it would
+    # otherwise see one buffer passed both mutably and immutably.
+    #
+    # Only the sm100 and MI355 state passing takes the `entry` buffer; the
+    # generic path passes `state_pass[False]` and never reads it, so the region
+    # is sized only where it is used. It is half the `states` region, and
+    # allocating it on every generic launch would grow those launches by half
+    # for nothing.
+    var uses_entry = False
+    comptime if ctx.target.is_amd_gpu["gfx950"]():
+        uses_entry = True
+    else:
+        comptime if (
+            kernel_dtype == .bfloat16
+            and state_dtype == .float32
+            and DSTATE == 128
+            and (
+                ctx.target.is_nvidia_gpu["sm_100"]()
+                or ctx.target.is_nvidia_gpu["sm_100a"]()
+            )
+        ):
+            uses_entry = _use_sm100(
+                ctx,
+                nheads,
+                ngroups,
+                head_dim,
+                y,
+                D,
+                x_addr,
+                x_ld,
+                b_addr,
+                c_addr,
+                bc_ld,
+            )
+    var states_n = slots * nheads * head_dim * DSTATE
+    var chunked_n = nheads * slots * CHUNK
+    var info_n = 3 * slots + 2 * batch
+    var slab_states = 0
+    var slab_cs = slab_states + _slab_region(states_n * 4)
+    var slab_delta = slab_cs + _slab_region(chunked_n * 4)
+    var slab_info = slab_delta + _slab_region(chunked_n * 4)
+    var slab_entry = slab_info + _slab_region(info_n * 4)
+    var slab_bytes = slab_entry + (
+        _slab_region(states_n * 2) if uses_entry else 0
     )
-    var cs_d = ctx.enqueue_create_buffer[.float32](nheads * slots * CHUNK)
-    var delta_d = ctx.enqueue_create_buffer[.float32](nheads * slots * CHUNK)
-    var info_d = ctx.enqueue_create_buffer[.int32](3 * slots + 2 * batch)
+    var slab_d = ctx.enqueue_create_buffer[.uint8](slab_bytes)
+    var slab_base = Int(slab_d.unsafe_ptr())
     var states = TileTensor(
-        states_d, row_major(slots * nheads * head_dim * DSTATE)
-    )
-    var cs = TileTensor(cs_d, row_major(nheads * slots * CHUNK))
-    var delta = TileTensor(delta_d, row_major(nheads * slots * CHUNK))
-    var info = TileTensor(info_d, row_major(3 * slots + 2 * batch))
+        ptr=slab_d.unsafe_ptr()
+        .unsafe_offset(slab_states)
+        .unsafe_bitcast[Scalar[.float32]](),
+        layout=row_major(states_n),
+    ).as_unsafe_any_origin()
+    var cs = TileTensor(
+        ptr=slab_d.unsafe_ptr()
+        .unsafe_offset(slab_cs)
+        .unsafe_bitcast[Scalar[.float32]](),
+        layout=row_major(chunked_n),
+    ).as_unsafe_any_origin()
+    var delta = TileTensor(
+        ptr=slab_d.unsafe_ptr()
+        .unsafe_offset(slab_delta)
+        .unsafe_bitcast[Scalar[.float32]](),
+        layout=row_major(chunked_n),
+    ).as_unsafe_any_origin()
+    var info = TileTensor(
+        ptr=slab_d.unsafe_ptr()
+        .unsafe_offset(slab_info)
+        .unsafe_bitcast[Scalar[.int32]](),
+        layout=row_major(info_n),
+    ).as_unsafe_any_origin()
 
     comptime map_kernel = ssd_chunk_map[
         info.LayoutType,
         info.Engine,
         query_start_loc.LayoutType,
         query_start_loc.Engine,
+        ROW_RULE=ROW_RULE,
     ]
     ctx.enqueue_function[map_kernel](
         Int32(slots),
         Int32(batch),
+        Int32(num_draft_tokens),
         info,
         query_start_loc,
         grid_dim=(1, 1, 1),
@@ -1162,6 +1262,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
             DSTATE,
             VPT,
             entry_bf16,
+            ROW_RULE=ROW_RULE,
         ]
         ctx.enqueue_function[pass_kernel](
             Int32(slots),
@@ -1226,15 +1327,17 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
             b_addr,
             x_ld,
             bc_ld,
-            Int(delta_d.unsafe_ptr()),
-            Int(cs_d.unsafe_ptr()),
-            Int(states_d.unsafe_ptr()),
-            Int(info_d.unsafe_ptr()),
+            slab_base + slab_delta,
+            slab_base + slab_cs,
+            slab_base + slab_states,
+            slab_base + slab_info,
         )
-        var entry_d = ctx.enqueue_create_buffer[.bfloat16](
-            slots * nheads * head_dim * DSTATE
+        debug_assert(
+            slab_bytes >= slab_entry + _slab_region(states_n * 2),
+            "the MI355 state passing needs the entry region",
         )
-        state_pass[True](Int(entry_d.unsafe_ptr()))
+        var entry_addr = slab_base + slab_entry
+        state_pass[True](entry_addr)
         ssd_out_mi355(
             ctx,
             batch,
@@ -1247,17 +1350,13 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
             x_ld,
             bc_ld,
             Int(D.ptr) if Int(D.dim[0]()) > 0 else 0,
-            Int(delta_d.unsafe_ptr()),
-            Int(cs_d.unsafe_ptr()),
-            Int(entry_d.unsafe_ptr()),
+            slab_base + slab_delta,
+            slab_base + slab_cs,
+            entry_addr,
             Int(y.ptr),
-            Int(info_d.unsafe_ptr()),
+            slab_base + slab_info,
         )
-        _ = entry_d^
-        _ = states_d^
-        _ = cs_d^
-        _ = delta_d^
-        _ = info_d^
+        _ = slab_d^
     else:
         comptime if (
             kernel_dtype == .bfloat16
@@ -1268,19 +1367,11 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                 or ctx.target.is_nvidia_gpu["sm_100a"]()
             )
         ):
-            if _use_sm100(
-                ctx,
-                nheads,
-                ngroups,
-                head_dim,
-                y,
-                D,
-                x_addr,
-                x_ld,
-                b_addr,
-                c_addr,
-                bc_ld,
-            ):
+            if uses_entry:
+                debug_assert(
+                    slab_bytes >= slab_entry + _slab_region(states_n * 2),
+                    "the sm100 state passing needs the entry region",
+                )
                 ssd_state_sm100(
                     ctx,
                     total_len,
@@ -1292,16 +1383,12 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                     b_addr,
                     x_ld,
                     bc_ld,
-                    Int(delta_d.unsafe_ptr()),
-                    Int(cs_d.unsafe_ptr()),
-                    Int(states_d.unsafe_ptr()),
-                    Int(info_d.unsafe_ptr()),
+                    slab_base + slab_delta,
+                    slab_base + slab_cs,
+                    slab_base + slab_states,
+                    slab_base + slab_info,
                 )
-                var entry_d = ctx.enqueue_create_buffer[.bfloat16](
-                    slots * nheads * head_dim * DSTATE
-                )
-
-                state_pass[True](Int(entry_d.unsafe_ptr()))
+                state_pass[True](slab_base + slab_entry)
                 ssd_out_sm100(
                     ctx,
                     total_len,
@@ -1315,17 +1402,13 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                     x_ld,
                     bc_ld,
                     Int(D.ptr) if Int(D.dim[0]()) > 0 else 0,
-                    Int(delta_d.unsafe_ptr()),
-                    Int(cs_d.unsafe_ptr()),
-                    Int(entry_d.unsafe_ptr()),
+                    slab_base + slab_delta,
+                    slab_base + slab_cs,
+                    slab_base + slab_entry,
                     Int(y.ptr),
-                    Int(info_d.unsafe_ptr()),
+                    slab_base + slab_info,
                 )
-                _ = entry_d^
-                _ = states_d^
-                _ = cs_d^
-                _ = delta_d^
-                _ = info_d^
+                _ = slab_d^
                 return
 
         comptime state_kernel = ssd_chunk_state[
@@ -1451,5 +1534,15 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
                     and ctx.device().get_name() == "NVIDIA B200"
                 ):
                     launch_output[True]()
-                    return
-            launch_output[False]()
+                else:
+                    launch_output[False]()
+            else:
+                launch_output[False]()
+
+        # The tensors above carry an untracked origin, so nothing borrows the
+        # slab and this is the last use of `slab_d`: Mojo frees it here. The
+        # free has to come after every launch that reads or writes a region,
+        # because it is stream-ordered and a later allocation in this launch
+        # (the grouped score buffer) would otherwise get the memory back while
+        # the kernels still run.
+        _ = slab_d^

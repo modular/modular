@@ -73,6 +73,8 @@ async def _text_pipeline(model_path: str) -> CommonTextGenPipeline:
             max_batch_size=8,
             enable_chunked_prefill=True,
             enable_in_flight_batching=False,
+            # ModuleV3 architectures have no cascade pipeline.
+            prefer_module_v3=False,
         ),
     )
     pipeline = await build_pipeline(args)

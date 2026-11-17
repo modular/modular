@@ -147,9 +147,9 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
           : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
 
   IRRewriter b{OpBuilder(call)};
-  AttrTypeMangler mangler(manglerCache);
-  bool needsMangling =
-      mangler.populate(b, nameUniquer, calleeDecls, topLevelGraph);
+  AttrTypeMangler mangler(manglerCache, b, nameUniquer, calleeDecls,
+                          topLevelGraph);
+  bool needsMangling = mangler.needsMangling();
 
   // Make sure to rebind the call operands based on the mangled types of the
   // callee's argument types.

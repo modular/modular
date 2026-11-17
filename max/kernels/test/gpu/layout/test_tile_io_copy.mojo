@@ -46,7 +46,7 @@ from max.gpu.memory import (
 
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_io import ThreadScope
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.swizzle import Swizzle
 from layout.tile_io import (
     copy_dram_to_local,
@@ -388,9 +388,7 @@ def _bounded_local_to_dram_kernel[
     comptime for i in range(ROWS):
         owner[i + 1] = Float32(warp * 100000 + lane * 1000 + i)
     var local = owner.slice[1 : ROWS + 1]().reshape(row_major[ROWS // 4, 4]())
-    var layout = TileLayout(
-        Coord(Idx[ROWS], Idx[32]), Coord(row_stride, Idx[1])
-    )
+    var layout = Layout(Coord(Idx[ROWS], Idx[32]), Coord(row_stride, Idx[1]))
     var offset = 9 + (warp * (ROWS + 4) + 2) * Int(row_stride) + 32
     var dst = TileTensor[linear_idx_type=.int32](
         dst_ptr.unsafe_offset(offset), layout

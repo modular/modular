@@ -109,7 +109,7 @@ def run_mha_prefill_v2_paged[
     seq_len: Int,
     batch_size: Int,
     bench: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     comptime scale = Float32(0.125)  # ~rsqrt(64); the kernel is depth-agnostic
     # for the scale param — caller supplies. Matches contiguous bench.
@@ -238,7 +238,9 @@ def run_mha_prefill_v2_paged[
             mut b: Bencher,
         ) raises {var cb_q, var cb_o, var k_operand, var v_operand, imm}:
             @inline(.always)
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def _kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()

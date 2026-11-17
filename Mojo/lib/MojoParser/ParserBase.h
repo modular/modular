@@ -280,7 +280,6 @@ public:
                  //         foo.bar, foo[bar], lambda
 
     kExpression = kIfElse, // "expression" precedence is if/else.
-    kHighest = kPrimary
   };
 
   /// Return true if `tokKind` can start a primary expression (i.e. the set of

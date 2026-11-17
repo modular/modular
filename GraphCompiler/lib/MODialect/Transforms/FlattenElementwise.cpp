@@ -144,16 +144,6 @@ void handleElemwiseOp(ElemwiseInterfaceT elemwise, OpBuilder &builder,
     visitedOps.insert(op);
 }
 
-/// Flattens connected subgraphs of elementwise + reshape ops to rank 1, since
-/// reshapes between elementwise ops block fusion and a common shape removes
-/// the internal ones.
-///
-/// Reshapes inserted at the boundary with non-elementwise ops usually still
-/// fuse via view decomposition + affine view fusion. Extraneous reshapes are
-/// left for canonicalization + CSE.
-template <typename ElemwiseInterfaceT>
-void maybeFlattenElemwiseOp(ElemwiseInterfaceT elemwise, OpBuilder &builder,
-                            llvm::SmallDenseSet<Operation *> &visitedOps) {}
 struct FlattenElementwise
     : public impl::FlattenElementwiseBase<FlattenElementwise> {
   using FlattenElementwiseBase::FlattenElementwiseBase;

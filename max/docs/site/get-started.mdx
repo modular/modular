@@ -1,841 +1,272 @@
 ---
 title: Quickstart
-description: A quickstart guide to run a GenAI model locally with Modular.
+description: Serve a model locally with MAX, send it a request, and benchmark it.
 ---
 
-import Tabs from "@theme/Tabs";
-import TabItem from "@theme/TabItem";
-import ModelDropdownTabs from "@site/src/components/ModelDropdownTabs";
-import ContactSection from "@site/src/components/ContactSection";
-import Requirements from "@site/src/components/Requirements";
-import { requirementsNoMacWithGPU } from "./requirements";
-import InstallMAX from "./_includes/install-modular.mdx";
-import {
-  ModelSelector,
-  DynamicCode,
-  ConditionalContent,
-} from "@site/src/components/ModelSelector";
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs';
 
-MAX abstracts away the complexity of building and serving high-performance
-GenAI models on a wide range of hardware, including NVIDIA and AMD GPUs. In
-this quickstart, you'll create an endpoint for an LLM using MAX, run inference,
-and then benchmark the endpoint.
+MAX provides a high-performance engine for serving built-in and custom AI
+models. This quickstart shows you how to start a local endpoint and send it a
+text generation request using the OpenAI SDK.
 
-If you'd rather create a self-hosted endpoint with Docker, see our
-[tutorial to benchmark MAX](/serve/benchmark).
+:::caution Hardware requirements
 
-:::caution GPU strongly recommended
-
-To see MAX perform as intended, we strongly recommend running on a
-datacenter-grade GPU, such as **NVIDIA B200 / H200 / H100** or
-**AMD MI355X / MI325X / MI300X**. You do have the option to follow along on
-consumer-grade systems (including Macs)—just expect fewer compatible models and
-slower performance.
+Many models run best on datacenter-grade GPUs. This quickstart uses
+[Qwen/Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B), which needs a GPU
+with more than 80 GB of memory, such as an NVIDIA B200. To run this quickstart
+on consumer-grade hardware, try a smaller text generation model like
+[LiquidAI/LFM3-1.7B](https://huggingface.co/LiquidAI/LFM3-1.7B).
 
 :::
 
-System requirements:
+## Get started
 
-<Requirements
-  requirementsData={requirementsNoMacWithGPU}
-  url="/system-requirements/"
-/>
+Let's set up your system to run MAX. Check that you meet the [system
+requirements](/system-requirements/). Then use `pixi` or `uv` to
+create a project.
 
-## Set up your project
+<Tabs groupId="install">
+<TabItem value="pixi" label="pixi">
 
-First, create a project and install the `max` package to get the CLI you'll
-use to create an endpoint and benchmark it.
+1. If needed, install [`pixi`](https://pixi.sh/latest/):
 
-:::tip
+   ```sh
+   curl -fsSL https://pixi.sh/install.sh | sh
+   ```
 
-For the most reliable experience, we recommend installing with `pixi`.
+2. Create a project:
 
-:::
+   ```sh
+   pixi init max-quickstart \
+     -c https://conda.modular.com/max-nightly/ -c conda-forge \
+     && cd max-quickstart
+   ```
 
-<InstallMAX folder="quickstart" />
+3. Install `max-all`:
 
-## Start a model endpoint
+   <ConditionalVersionDocs version="nightly">
+   <CodeBlock language="sh">
+   {`pixi add max-all`}
+   </CodeBlock>
+   </ConditionalVersionDocs>
+   <ConditionalVersionDocs version="stable">
+   <CodeBlock language="sh">
+   {`pixi add "max-all==26.7"`}
+   </CodeBlock>
+   </ConditionalVersionDocs>
 
-Now you'll serve an LLM from a local endpoint using
-[`max serve`](/cli/serve). Choose whether you want **text-to-text**,
-**image-to-text**, or **video-to-text** inference by switching tabs below, then
-use the dropdown to select a model that fits your hardware's memory constraints.
+   :::note
 
-<ModelDropdownTabs groupId="inference" sticky dropdownOptions={allModelOptions}>
-<TabItem value="text" label="Text to text">
+   The `max-all` package installs MAX with all its optional dependencies,
+   including the OpenAI Python SDK. This quickstart uses the OpenAI Python SDK
+   to send an inference request to the model.
 
-<div className="model-selector-container">
-
-Select a model to change the code below:
-
-export const textModelOptions = [
-  {
-    label: "gemma-4-31B-it",
-    value: "google/gemma-4-31B-it",
-    description:
-      "Requires >96 GiB of GPU RAM — we suggest an NVIDIA B200 or AMD MI355X",
-    default: true,
-  },
-  {
-    label: "gemma-3-4b-it",
-    value: "google/gemma-3-4b-it",
-    description: "Requires >8 GiB of GPU RAM — works on most compatible GPUs",
-  },
-  {
-    label: "gemma-3-12b-it",
-    value: "google/gemma-3-12b-it",
-    description:
-      "Requires >24 GiB of GPU RAM — we suggest an A100, MI300, or better",
-  },
-  {
-    label: "gemma-3-27b-it",
-    value: "google/gemma-3-27b-it",
-    description:
-      "Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better",
-  },
-  {
-    label: "Llama-3.1-8B-Instruct",
-    value: "meta-llama/Llama-3.1-8B-Instruct",
-    description:
-      "Requires >15 GiB of RAM (GPU or CPU) — use this if you're on a Mac",
-  },
-];
-
-export const imageModelOptions = [
-  {
-    label: "gemma-4-31B-it",
-    value: "google/gemma-4-31B-it",
-    description:
-      "Requires >96 GiB of GPU RAM — we suggest an NVIDIA B200 or AMD MI355X",
-    default: true,
-  },
-  {
-    label: "gemma-3-12b-it",
-    value: "google/gemma-3-12b-it",
-    description:
-      "Requires >24 GiB of GPU RAM — we suggest an A100, MI300, or better",
-  },
-  {
-    label: "gemma-3-27b-it",
-    value: "google/gemma-3-27b-it",
-    description:
-      "Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better",
-  },
-  {
-    label: "InternVL3-8B-Instruct",
-    value: "OpenGVLab/InternVL3-8B-Instruct",
-    description:
-      "Requires >22 GiB of GPU RAM — we suggest an A100, MI300, or better",
-  },
-  {
-    label: "InternVL3-14B-Instruct",
-    value: "OpenGVLab/InternVL3-14B-Instruct",
-    description:
-      "Requires >36 GiB of GPU RAM — we suggest an H100, MI300, or better",
-  },
-];
-
-export const videoModelOptions = [
-  {
-    label: "gemma-4-31B-it",
-    value: "google/gemma-4-31B-it",
-    description:
-      "Requires >96 GiB of GPU RAM — we suggest an NVIDIA B200 or AMD MI355X",
-    default: true,
-  },
-];
-
-export const allModelOptions = {
-  text: textModelOptions,
-  image: imageModelOptions,
-  video: videoModelOptions,
-};
-
-<ModelSelector modelOptions={allModelOptions} variableName="text" />
-
-<ConditionalContent
-  variableName="text"
-  condition={(model) => model.includes('gemma-3')} >
-
-Google's [Gemma 3](https://huggingface.co/collections/google/gemma-3-release)
-models are multimodal. MAX supports text input for all available sizes and image
-input for the [12B](https://huggingface.co/google/gemma-3-12b-it) and
-[27B](https://huggingface.co/google/gemma-3-27b-it) models. All sizes require a
-[compatible GPU](/system-requirements/#gpu-compatibility).
-
-</ConditionalContent>
-
-<ConditionalContent
-  variableName="text"
-  condition={(model) => model.includes('gemma-4')} >
-
-MAX supports text, image, and video input for the developer-focused
-[Gemma 4 31B](https://huggingface.co/google/gemma-4-31B-it) model. A
-[compatible GPU](/system-requirements/#gpu-compatibility) is required.
-
-</ConditionalContent>
-
-<ConditionalContent
-  variableName="text"
-  condition={(model) => model.includes('Llama')} >
-
-Meta's
-[Llama 3.1 models](https://huggingface.co/collections/meta-llama/llama-31) are
-text-only LLMs. You can pick any model in the family, but we suggest the smaller
-[8B](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) model because it
-works on a wide range of CPUs, including on Macs.
-
-</ConditionalContent>
-
-</div>
-
-Start the endpoint with the `max` CLI:
-
-1. Add your [HF Access Token](https://huggingface.co/settings/tokens) as an
-  environment variable:
-
-    ```sh
-    export HF_TOKEN="hf_..."
-    ```
-
-<ConditionalContent
-  variableName="text"
-  condition={(model) => model.includes('gemma-4')} >
-
-2. Agree to the [Gemma 4 license](https://huggingface.co/google/gemma-4-31B-it).
-
-</ConditionalContent>
-<ConditionalContent
-  variableName="text"
-  condition={(model) => model.includes('gemma-3')} >
-
-2. Agree to the [Gemma 3 license](https://huggingface.co/google/gemma-3-27b-it).
-
-</ConditionalContent>
-<ConditionalContent
-  variableName="text"
-  condition={(model) => model.includes('Llama')} >
-
-2. Agree to the [Llama 3.1 license](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct).
-
-</ConditionalContent>
-
-3. Start the endpoint:
-
-    <DynamicCode language="sh" variableName="text">{
-    `max serve --model {text}`
-    }</DynamicCode>
+   :::
 
 </TabItem>
-<TabItem value="image" label="Image to text">
+<TabItem value="uv" label="uv">
 
-<div className="model-selector-container">
+1. If needed, install [`uv`](https://docs.astral.sh/uv/):
 
-Select a model to change the code below:
+   ```sh
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
 
-<ModelSelector modelOptions={allModelOptions} variableName="image" />
+2. Create a project:
 
-<ConditionalContent
-  variableName="image"
-  condition={(model) => model.includes('gemma-3')} >
+   ```sh
+   uv init max-quickstart && cd max-quickstart
+   ```
 
-Google's [Gemma 3](https://huggingface.co/collections/google/gemma-3-release)
-models are multimodal. MAX supports text input for all available sizes and image
-input for the [12B](https://huggingface.co/google/gemma-3-12b-it) and
-[27B](https://huggingface.co/google/gemma-3-27b-it) models. All sizes require a
-[compatible GPU](/system-requirements/#gpu-compatibility).
+3. Install `max[all]`:
 
-</ConditionalContent>
+   <ConditionalVersionDocs version="nightly">
+   <CodeBlock language="sh">
+   {`uv add "max[all]" \\
+   --index https://whl.modular.com/nightly/simple/ \\
+   --prerelease allow`}
+   </CodeBlock>
+   </ConditionalVersionDocs>
+   <ConditionalVersionDocs version="stable">
+   <CodeBlock language="sh">
+   {`uv add "max[all]"`}
+   </CodeBlock>
+   </ConditionalVersionDocs>
 
-<ConditionalContent
-  variableName="image"
-  condition={(model) => model.includes('gemma-4')} >
+   :::note
 
-MAX supports text, image, and video input for the developer-focused
-[Gemma 4 31B](https://huggingface.co/google/gemma-4-31B-it) model. A
-[compatible GPU](/system-requirements/#gpu-compatibility) is required.
+   The `max[all]` package installs MAX with all its optional dependencies,
+   including the OpenAI Python SDK. This quickstart uses the OpenAI Python SDK
+   to send an inference request to the model.
 
-</ConditionalContent>
-
-<ConditionalContent
-  variableName="image"
-  condition={(model) => model.includes('InternVL3')} >
-
-OpenGVLab's multimodal
-[InternVL3](https://huggingface.co/collections/OpenGVLab/internvl3) models come
-in many sizes, but they all require a
-[compatible GPU](/system-requirements/#gpu-compatibility). They aren't gated on
-Hugging Face, so you don't need to provide a Hugging Face access token to start
-the endpoint.
-
-</ConditionalContent>
-
-</div>
-
-<ConditionalContent
-  variableName="image"
-  condition={(model) => model.includes('gemma-3')} >
-
-Agree to the [Gemma 3 license](https://huggingface.co/google/gemma-3-27b-it) and
-add your [HF Access Token](https://huggingface.co/settings/tokens) as an
-environment variable:
-
-```bash
-export HF_TOKEN="hf_..."
-```
-
-</ConditionalContent>
-<ConditionalContent
-  variableName="image"
-  condition={(model) => model.includes('gemma-4')} >
-
-Agree to the [Gemma 4 license](https://huggingface.co/google/gemma-4-31B-it) and
-add your [HF Access Token](https://huggingface.co/settings/tokens) as an
-environment variable:
-
-```bash
-export HF_TOKEN="hf_..."
-```
-
-</ConditionalContent>
-
-Start the endpoint with the `max` CLI:
-
-<DynamicCode language="sh" variableName="image">{
-`max serve --model {image} --trust-remote-code`
-}</DynamicCode>
-
-</TabItem>
-<TabItem value="video" label="Video to text">
-
-<div className="model-selector-container">
-
-Select a model to change the code below:
-
-<ModelSelector modelOptions={allModelOptions} variableName="video" />
-
-MAX supports video-to-text inference for the developer-focused
-[Gemma 4 31B](https://huggingface.co/google/gemma-4-31B-it) model. A
-[compatible GPU](/system-requirements/#gpu-compatibility) is required.
-
-</div>
-
-Agree to the [Gemma 4 license](https://huggingface.co/google/gemma-4-31B-it) and
-add your [HF Access Token](https://huggingface.co/settings/tokens) as an
-environment variable:
-
-```bash
-export HF_TOKEN="hf_..."
-```
-
-Start the endpoint with the `max` CLI:
-
-<DynamicCode language="sh" variableName="video">{
-`max serve --model {video}`
-}</DynamicCode>
-
-</TabItem>
-</ModelDropdownTabs>
-
-It will take some time to download the model, compile it, and start the
-server. While that's working, you can get started on the next step.
-
-## Run inference with the endpoint
-
-Open a new terminal and send an inference request using the `openai` Python
-API:
-
-<Tabs groupId="inference" className="hidden">
-<TabItem value="text" label="Text to text">
-
-1. Navigate to the project you created above and then install the `openai`
-package:
-
-    <Tabs groupId="install">
-      <TabItem value="pixi" label="pixi">
-
-        ```bash
-        pixi add openai
-        ```
-
-      </TabItem>
-      <TabItem value="uv" label="uv">
-
-        ```bash
-        uv add openai
-        ```
-
-      </TabItem>
-      <TabItem value="pip" label="pip">
-
-        ```bash
-        pip install openai
-        ```
-
-      </TabItem>
-      <TabItem value="conda" label="conda">
-
-        ```bash
-        conda install -c conda-forge openai
-        ```
-
-      </TabItem>
-    </Tabs>
-
-2. Activate the virtual environment:
-
-    <Tabs groupId="install">
-      <TabItem value="pixi" label="pixi">
-
-        ```bash
-        pixi shell
-        ```
-
-      </TabItem>
-      <TabItem value="uv" label="uv">
-
-        ```bash
-        source .venv/bin/activate
-        ```
-
-      </TabItem>
-      <TabItem value="pip" label="pip">
-
-        ```bash
-        source .venv/quickstart/bin/activate
-        ```
-
-      </TabItem>
-      <TabItem value="conda" label="conda">
-
-        ```bash
-        conda init
-        ```
-
-        Or if you're on a Mac, use:
-
-        ```bash
-        conda init zsh
-        ```
-
-      </TabItem>
-    </Tabs>
-
-3. Create a new file that sends an inference request:
-
-    <DynamicCode language="python" title="generate-text.py" variableName="text">{
-    `from openai import OpenAI
-
-    client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
-
-    completion = client.chat.completions.create(
-        model="{text}",
-        messages=[
-            {
-              "role": "user",
-              "content": "Who won the world series in 2020?"
-            },
-        ],
-    )
-
-    print(completion.choices[0].message.content)`
-    }</DynamicCode>
-
-    Notice that the `OpenAI` API requires the `api_key` argument, but you
-    don't need that with MAX.
-
-4. Wait until the model server is ready—when it is, you'll see this message in
-your first terminal:
-
-    ```output
-    🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
-    ```
-
-    Then run the Python script from your second terminal, and you should see
-    results like this (your results may vary, especially for different model
-    sizes):
-
-    ```sh
-    python generate-text.py
-    ```
-
-    ```output
-    The **Los Angeles Dodgers** won the World Series in 2020!
-
-    They defeated the Tampa Bay Rays 4 games to 2. It was their first World Series title since 1988.
-    ```
-
-</TabItem>
-<TabItem value="image" label="Image to text">
-
-1. Navigate to the project you created above and then install the `openai`
-package:
-
-    <Tabs groupId="install">
-      <TabItem value="pixi" label="pixi">
-
-        ```bash
-        pixi add openai
-        ```
-
-      </TabItem>
-      <TabItem value="uv" label="uv">
-
-        ```bash
-        uv add openai
-        ```
-
-      </TabItem>
-      <TabItem value="pip" label="pip">
-
-        ```bash
-        pip install openai
-        ```
-
-      </TabItem>
-      <TabItem value="conda" label="conda">
-
-        ```bash
-        conda install -c conda-forge openai
-        ```
-
-      </TabItem>
-    </Tabs>
-
-2. Activate the virtual environment:
-
-    <Tabs groupId="install">
-      <TabItem value="pixi" label="pixi">
-
-        ```bash
-        pixi shell
-        ```
-
-      </TabItem>
-      <TabItem value="uv" label="uv">
-
-        ```bash
-        source .venv/bin/activate
-        ```
-
-      </TabItem>
-      <TabItem value="pip" label="pip">
-
-        ```bash
-        source .venv/quickstart/bin/activate
-        ```
-
-      </TabItem>
-      <TabItem value="conda" label="conda">
-
-        ```bash
-        conda init
-        ```
-
-        Or if you're on a Mac, use:
-
-        ```bash
-        conda init zsh
-        ```
-
-      </TabItem>
-    </Tabs>
-
-3. Create a new file that sends an inference request:
-
-    <DynamicCode language="python" title="generate-image-caption.py" variableName="image">{
-    `from openai import OpenAI
-
-    client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
-
-    completion = client.chat.completions.create(
-        model="{image}",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Write a caption for this image"
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
-                        }
-                    }
-                ]
-            }
-        ],
-        max_completion_tokens=300
-    )
-
-    print(completion.choices[0].message.content)`
-    }</DynamicCode>
-
-    Notice that the `OpenAI` API requires the `api_key` argument, but you
-    don't need that with MAX.
-
-4. Wait until the model server is ready—when it is, you'll see this message in
-your first terminal:
-
-    ```output
-    🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
-    ```
-
-    Then run the Python script from your second terminal, and you should see
-    results like this (your results will always be different):
-
-    ```sh
-    python generate-image-caption.py
-    ```
-
-    ```output
-    In a charming English countryside setting, Mr. Bun, dressed elegantly in a tweed outfit, stands proudly on a dirt path, surrounded by lush greenery and blooming wildflowers.
-    ```
-
-</TabItem>
-<TabItem value="video" label="Video to text">
-
-1. Navigate to the project you created above and then install the `openai`
-package:
-
-    <Tabs groupId="install">
-      <TabItem value="pixi" label="pixi">
-
-        ```bash
-        pixi add openai
-        ```
-
-      </TabItem>
-      <TabItem value="uv" label="uv">
-
-        ```bash
-        uv add openai
-        ```
-
-      </TabItem>
-      <TabItem value="pip" label="pip">
-
-        ```bash
-        pip install openai
-        ```
-
-      </TabItem>
-      <TabItem value="conda" label="conda">
-
-        ```bash
-        conda install -c conda-forge openai
-        ```
-
-      </TabItem>
-    </Tabs>
-
-2. Activate the virtual environment:
-
-    <Tabs groupId="install">
-      <TabItem value="pixi" label="pixi">
-
-        ```bash
-        pixi shell
-        ```
-
-      </TabItem>
-      <TabItem value="uv" label="uv">
-
-        ```bash
-        source .venv/bin/activate
-        ```
-
-      </TabItem>
-      <TabItem value="pip" label="pip">
-
-        ```bash
-        source .venv/quickstart/bin/activate
-        ```
-
-      </TabItem>
-      <TabItem value="conda" label="conda">
-
-        ```bash
-        conda init
-        ```
-
-        Or if you're on a Mac, use:
-
-        ```bash
-        conda init zsh
-        ```
-
-      </TabItem>
-    </Tabs>
-
-3. Create a new file that sends an inference request:
-
-    <DynamicCode language="python" title="generate-video-description.py" variableName="video">{
-    `from openai import OpenAI
-
-    client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
-
-    completion = client.chat.completions.create(
-        model="{video}",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Describe what is happening in this video"
-                    },
-                    {
-                        "type": "video_url",
-                        "video_url": {
-                            "url": "https://avtshare01.rz.tu-ilmenau.de/avt-vqdb-uhd-1/test_1/segments/bigbuck_bunny_8bit_15000kbps_1080p_60.0fps_h264.mp4"
-                        }
-                    }
-                ]
-            }
-        ],
-        max_completion_tokens=300
-    )
-
-    print(completion.choices[0].message.content)`
-    }</DynamicCode>
-
-    Notice that the `OpenAI` API requires the `api_key` argument, but you
-    don't need that with MAX.
-
-4. Wait until the model server is ready—when it is, you'll see this message in
-your first terminal:
-
-    ```output
-    🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
-    ```
-
-    Then run the Python script from your second terminal with a real video URL:
-
-    ```sh
-    python generate-video-description.py
-    ```
+   :::
 
 </TabItem>
 </Tabs>
 
-## Benchmark the endpoint
+## Start the server
 
-While still in your second terminal, run the following command to benchmark
-your endpoint:
+Start a local server with [`max serve`](/cli/serve):
 
-<Tabs groupId="inference" className="hidden">
-<TabItem value="text" label="Text to text">
+1. In your `max-quickstart` directory, start the virtual environment:
 
-    <DynamicCode language="sh" variableName="text">{
-    `max benchmark \\
-    --model {text} \\
-    --backend modular \\
-    --endpoint /v1/chat/completions \\
-    --dataset-name sonnet \\
-    --num-prompts 500 \\
-    --sonnet-input-len 550 \\
-    --output-lengths 256 \\
-    --sonnet-prefix-len 200 \\
-    --max-concurrency 32`
-    }</DynamicCode>
+   <Tabs groupId="install">
+   <TabItem value="pixi" label="pixi">
 
-</TabItem>
-<TabItem value="image" label="Image to text">
+   ```sh
+   pixi shell
+   ```
 
-    <DynamicCode language="sh" variableName="image">{
-    `max benchmark \\
-    --model {image} \\
-    --backend modular \\
-    --endpoint /v1/chat/completions \\
-    --dataset-name random \\
-    --num-prompts 500 \\
-    --random-input-len 40 \\
-    --random-output-len 150 \\
-    --random-image-size 512,512 \\
-    --random-image-count 1 \\
-    --max-concurrency 32`
-    }</DynamicCode>
+   </TabItem>
+   <TabItem value="uv" label="uv">
 
-</TabItem>
-<TabItem value="video" label="Video to text">
+   ```sh
+   source .venv/bin/activate
+   ```
 
-    :::note
+   </TabItem>
+   </Tabs>
 
-    Video input isn't supported in `max benchmark` yet, but you can benchmark
-    text and image input today using the endpoint you set up.
+2. Start the server:
 
-    :::
+   ```bash
+   max serve --model Qwen/Qwen3.8-27B
+   ```
 
-    <DynamicCode language="sh" variableName="image">{
-    `max benchmark \\
-    --model {image} \\
-    --backend modular \\
-    --endpoint /v1/chat/completions \\
-    --dataset-name random \\
-    --num-prompts 500 \\
-    --random-input-len 40 \\
-    --random-output-len 150 \\
-    --random-image-size 512,512 \\
-    --random-image-count 1 \\
-    --max-concurrency 32`
-    }</DynamicCode>
+   :::note
 
-</TabItem>
-</Tabs>
+   On the first run, MAX needs to download the model weights and compile the
+   model. MAX caches the compiled model, so subsequent startups take less time.
 
-When it's done, you'll see the results printed to the terminal.
+   :::
 
-If you want to save the results, pass a filename with `--result-filename` and
-it'll save a JSON file at that path. The path can include a directory prefix.
-For example:
+3. Once the server starts, you'll see:
 
-```sh
+   ```output
+   🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+   ```
+
+Keep this terminal open while you send requests to the server.
+
+## Send a request
+
+Send a text generation request to the server.
+
+1. Open a new terminal, go to your `max-quickstart` directory, and start the
+   virtual environment:
+
+   <Tabs groupId="install">
+   <TabItem value="pixi" label="pixi">
+
+   ```sh
+   pixi shell
+   ```
+
+   </TabItem>
+   <TabItem value="uv" label="uv">
+
+   ```sh
+   source .venv/bin/activate
+   ```
+
+   </TabItem>
+   </Tabs>
+
+2. Save the following script as `generate-text.py`:
+
+   ```python title="generate-text.py"
+   from openai import OpenAI
+
+   client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+   prompt = "In one sentence, what is the KV cache in LLM inference?"
+
+   completion = client.chat.completions.create(
+       model="Qwen/Qwen3.8-27B",
+       messages=[{"role": "user", "content": prompt}],
+   )
+
+   print(completion.choices[0].message.content.strip())
+   ```
+
+   :::note
+
+   You don't need an API key to send requests to a local MAX server. However,
+   the OpenAI SDK requires an API key, so you need to provide a placeholder.
+
+   :::
+
+3. Run the script:
+
+   ```bash
+   python generate-text.py
+   ```
+
+You'll see a response similar to the following:
+
+```output
+The KV cache stores the key and value vectors for previously processed tokens
+so that autoregressive decoding can reuse them in attention without recomputing
+them each step.
+```
+
+## Benchmark the model
+
+To measure the performance of your served model, use [`max
+benchmark`](/cli/benchmark). The following command runs a benchmark against the
+chat completions endpoint using the Sonnet dataset:
+
+```bash
 max benchmark \
-  ...
+  --model Qwen/Qwen3.8-27B \
+  --backend modular \
+  --endpoint /v1/chat/completions \
+  --dataset-name sonnet \
+  --num-prompts 500 \
+  --sonnet-input-len 550 \
+  --output-lengths 256 \
+  --sonnet-prefix-len 200 \
+  --max-concurrency 32
+```
+
+When the benchmark finishes, MAX prints the results in your terminal.
+
+To save the results as a JSON file, pass a path to `--result-filename`:
+
+```bash
+max benchmark \
+  ... \
   --result-filename "results/quickstart-benchmark.json"
 ```
 
-The benchmark options above are just a starting point. When you want to save
-your own benchmark configurations, you can define them in a YAML file and pass
-it to the `--config-file` option. For example configurations, see our
-[benchmark config files on GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
-
-For more details about the tool, including other datasets and configuration
-options, see the [`max benchmark` documentation](/cli/benchmark).
+For a complete list of datasets and configuration options, see the
+[`max benchmark` reference](/cli/benchmark).
 
 :::caution GPU ran out of memory
 
-If the server log says `GPU ran out of memory during model execution`, try
-reducing the benchmark input length with the option corresponding to your
-dataset (`--sonnet-input-len` or `--random-input-len`). Also consider
-restarting `max serve` and adding `--device-memory-utilization` with a value as
-low as `0.5` (the default is `0.9`).
+If the server reports `GPU ran out of memory during model execution`, reduce
+the benchmark input length using the option for your dataset
+(`--sonnet-input-len` or `--random-input-len`). If the error persists, restart
+`max serve` with a lower `--device-memory-utilization` value, such as `0.5`
+(the default is `0.9`).
 
 :::
 
 ## Next steps
 
-Now that you've completed this quickstart, try serving and benchmarking a
-different model from our
-[supported models](/models/)!
+MAX offers so much more than serving text generation models:
 
-Then, you can try to connect to your endpoint with our
-[Agentic Cookbook](https://modul.ar/cookbook)—an open-source project for
-building React-based interfaces for any model endpoint. Just clone the repo, run
-it with npm, and pick a recipe such as a chat interface, a drag-and-drop image
-caption tool, or build your own.
-
-To get started, see the [project README](https://modul.ar/cookbook).
-
-<img
-  src={require("./images/cookbook-captioning.png").default}
-  alt=""
-  width="704"
-/>
-
-## Stay in touch
-
-<ContactSection />
+- Try out other inference tasks like
+  [image generation](/serve/image-generation/),
+  [video generation](/serve/video-generation/), and
+  [audio generation](/serve/audio-generation/).
+- Serve other models from the list of [supported models](/models/) or a
+  [custom model](/develop/serve-custom-model-architectures/).
+- Configure how MAX serves your model with the [`max serve`](/cli/serve)
+  options.
+- Benchmark custom workloads and interpret the results with the
+  [benchmark tutorial](/serve/benchmark/).
+- Build an app around an endpoint with the
+  [Agentic Cookbook](https://modul.ar/cookbook).

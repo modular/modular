@@ -26,6 +26,7 @@ model:
     kv_cache_format: float8_e4m3fn
 
 runtime:
+  prefer_module_v3: false
   # On gfx950, warmup's device-graph-capture fails every time with
   # hipErrorStreamCaptureUnsupported inside a grouped-matmul primitive.
   # Serving with capture disabled works. Same class of issue GLM-5.3 and

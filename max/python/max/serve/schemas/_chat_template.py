@@ -34,6 +34,32 @@ def thinking_requested(kwargs: Mapping[str, Any]) -> bool | None:
     return None
 
 
+def thinking_disabled(kwargs: Mapping[str, Any] | None) -> bool:
+    """Whether the chat template kwargs explicitly close thinking.
+
+    A native ``thinking_mode`` outranks the boolean spellings; without one, the
+    first stated ``thinking`` or ``enable_thinking`` flag decides, under Python
+    truthiness. A null flag is unstated, as it is for a renderer. A bare
+    ``reasoning_effort: "none"`` is not a control of its own: the serve layer
+    derives these flags from it, and a model that does not serve the word still
+    refuses it.
+
+    Args:
+        kwargs: The chat template kwargs, or ``None``.
+
+    Returns:
+        True when the kwargs state a disable.
+    """
+    if not kwargs:
+        return False
+    if "thinking_mode" in kwargs:
+        return kwargs["thinking_mode"] == "disabled"
+    for key in ("thinking", "enable_thinking"):
+        if key in kwargs and kwargs[key] is not None:
+            return not kwargs[key]
+    return False
+
+
 def with_thinking(kwargs: Mapping[str, Any], enabled: bool) -> dict[str, Any]:
     """Returns ``kwargs`` with every spelling of the thinking toggle set."""
     return {**kwargs, **dict.fromkeys(THINKING_TOGGLE_KEYS, enabled)}

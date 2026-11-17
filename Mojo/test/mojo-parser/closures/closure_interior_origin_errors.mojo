@@ -17,10 +17,10 @@
 # TODO: lift this limitation
 
 struct MyList[T: AnyType](Movable where False):
-    var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
+    var data: Pointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[
+        self.data = Pointer[
             Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
@@ -34,10 +34,10 @@ struct MyList[T: AnyType](Movable where False):
 
 
 struct MyPtr[origin: Origin[mut=False]]:
-    var p: UnsafePointer[Int, Self.origin]
+    var p: Pointer[Int, Self.origin]
 
     def __init__(out self, *, ref [Self.origin] to: Int):
-        self.p = UnsafePointer[Int, Self.origin].address_of(to)
+        self.p = Pointer[Int, Self.origin].address_of(to)
 
     def get(self) -> Int:
         return self.p[]

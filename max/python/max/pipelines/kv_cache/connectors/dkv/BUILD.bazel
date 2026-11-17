@@ -30,6 +30,7 @@ modular_py_library(
         # CompletedTransfer). This is the lightweight interface target, not the
         # full kv_cache library, so there is no cycle (kv_cache depends on this
         # package, but this package depends only on the interface).
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/kv_cache:kv_connector",
         # The MODULAR_NIXL_TRANSFER_BACKEND validator shared with the transfer
         # engine. Also a leaf target, so it introduces no cycle.

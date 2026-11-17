@@ -217,7 +217,7 @@ def test_copies() raises:
     _run_fake_memcpy(ctx, 64, False)
     # _run_fake_memcpy(ctx, 64, True)
 
-    var cpu_ctx = DeviceContext(api="cpu")
+    var cpu_ctx = DeviceContext.cpu()
     _run_cpu_ctx_memcpy_async(ctx, cpu_ctx, 64)
     _run_cpu_ctx_memcpy_async(ctx, cpu_ctx, one_mb)
 

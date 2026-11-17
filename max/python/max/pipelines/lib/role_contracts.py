@@ -34,6 +34,8 @@ from typing_extensions import TypeVar
 from .interfaces.pipeline_model import ModuleV3Outputs
 
 __all__ = [
+    "BlockDiffusionInputs",
+    "BlockDiffusionOutputs",
     "DecoderInputs",
     "DecoderOutputs",
     "VisionInputs",
@@ -46,6 +48,7 @@ TensorT = TypeVar("TensorT", default=Tensor)
 """
 
 _LeafT = TypeVar("_LeafT")
+_SignalT = TypeVar("_SignalT", default=BufferValue)
 
 
 @tree.dataclass(frozen=True, kw_only=True)
@@ -66,7 +69,7 @@ class VisionInputs(Generic[_LeafT]):
 
 
 @tree.dataclass(frozen=True, kw_only=True)
-class DecoderInputs(Generic[TensorT]):
+class DecoderInputs(Generic[TensorT, _SignalT]):
     """The inputs of a ``DECODER`` module's ``forward``.
 
     The decoder graph takes the fields in this order, which is the canonical
@@ -83,6 +86,9 @@ class DecoderInputs(Generic[TensorT]):
 
     input_row_offsets: TensorT
     """Each sequence's start in :attr:`tokens`, shape ``[batch_size + 1]``."""
+
+    token_positions: TensorT | None = None
+    """Each ragged token's absolute sequence position, when declared."""
 
     host_input_row_offsets: TensorT | None = None
     """A CPU copy of :attr:`input_row_offsets`, under data parallelism.
@@ -103,12 +109,14 @@ class DecoderInputs(Generic[TensorT]):
     ``data_parallel_splits[i + 1]``.
     """
 
-    signals: tuple[BufferValue, ...] | None = None
+    signals: tuple[_SignalT, ...] | None = None
     """The allreduce signal buffers, one per device, of a graph-API decoder.
 
     A multi-device graph-API decoder takes them, and so does one that sets
     ``always_signal_buffers``. A ModuleV3 decoder never sees them: its
-    compiled graph adds its own.
+    compiled graph adds its own, where its ``input_layout`` names them.
+    Runtime inputs hold driver buffers; graph-API inputs hold buffer values
+    by default.
     """
 
     kv: Any
@@ -116,7 +124,11 @@ class DecoderInputs(Generic[TensorT]):
 
     batch_context_lengths: tuple[TensorT, ...] | None = None
     """Each data-parallel replica's page-aligned KV context length, a CPU
-    ``int32`` tensor of shape ``[1]`` per replica.
+    ``int32`` tensor of shape ``[1]`` per replica. A decoder that sets
+    ``takes_total_context_length`` takes each replica's total context length
+    instead, a CPU ``uint32`` per device. The graph takes them as the
+    ``length`` or ``total_length`` of a
+    :class:`~max.nn.legacy.graph_groups.BatchContext` group.
 
     Set when the config sets
     :attr:`~max.pipelines.lib.registration_runtime.DeploymentConfig.takes_batch_context_lengths`,
@@ -129,6 +141,9 @@ class DecoderInputs(Generic[TensorT]):
     in the tree :meth:`~max.nn.legacy.comm.ep.EPBatchManager.input_tree`
     declares."""
 
+    hisparse: tuple[TensorT, ...] | None = None
+    """Host and hot page tables per device, followed by the host mirror."""
+
     lora: tuple[TensorT, ...] | None = None
     """The LoRA routing and adapter inputs, when serving LoRA adapters.
 
@@ -136,9 +151,97 @@ class DecoderInputs(Generic[TensorT]):
     the decoder, so a decoder doesn't read them.
     """
 
+    constants: Any = None
+    """The checkpoint-backed deployment inputs, held for the model lifetime."""
+
+    state: tuple[Any, ...] | None = None
+    """The decoder's per-request state, in the order its
+    :class:`~max.pipelines.lib.request_state.RequestStateStore` declares:
+    tensors, or buffers for state the graph updates in place. The
+    architecture defines what each one holds.
+    """
+
+    scratch: tuple[Any, ...] | None = None
+    """The workspace buffers the decoder declares with ``scratch_types``, in
+    its order (see :mod:`~max.pipelines.lib.decoder_scratch`). The same
+    buffers come every step, and nothing in them outlives one."""
+
+    stage_boundary: Any = None
+    """What the previous pipeline stage's decoder returned, in the tree it
+    returned it, on a stage after the first (see
+    :attr:`~max.pipelines.lib.pipeline_stage.PipelineStage.boundary_types`).
+    A stage before the last returns such a tree in place of
+    :class:`DecoderOutputs`."""
+
 
 DecoderOutputs = ModuleV3Outputs
 """The outputs of a ``DECODER`` module's ``forward``.
 
 Generic over the same tensor type as :class:`DecoderInputs`.
 """
+
+
+@tree.dataclass(frozen=True, kw_only=True)
+class BlockDiffusionInputs(Generic[TensorT]):
+    """The inputs of a ``BLOCK_DIFFUSION`` module's ``forward``.
+
+    One denoise step over the batch's canvases. The framework builds every
+    field, and the graph takes them in this order, named by a
+    :class:`~max.nn.legacy.graph_groups.BlockDiffusionGraphInputs`. The
+    ``DECODER`` has
+    already committed each request's context into the KV cache; the step
+    reads it and writes the canvas's keys and values into the slots after
+    it, without committing them.
+    """
+
+    tokens: TensorT
+    """The canvases' token ids, shape ``[total_seq_len]``, in batch order."""
+
+    input_row_offsets: TensorT
+    """Each canvas's start in :attr:`tokens`, shape ``[batch_size + 1]``."""
+
+    sc_logits: TensorT
+    """The previous step's processed logits, shape
+    ``[total_seq_len, vocab_size]``: the self-conditioning signal."""
+
+    sc_enabled: TensorT
+    """Whether :attr:`sc_logits` holds a previous step, a ``float32`` tensor
+    of shape ``[1]``: zero on a canvas's first step, one after."""
+
+    temperature: TensorT
+    """The step's sampling temperature, a ``float32`` tensor of shape
+    ``[1]``."""
+
+    kv: Any
+    """The KV cache inputs, in the tree the config's KV params declare."""
+
+
+@tree.kind("block_diffusion_outputs")
+@tree.dataclass(frozen=True, kw_only=True)
+class BlockDiffusionOutputs(Generic[TensorT]):
+    """The outputs of a ``BLOCK_DIFFUSION`` module's ``forward``.
+
+    The graph returns them in this order. The processed logits feed the
+    next step's
+    :attr:`BlockDiffusionInputs.sc_logits`; the rest are the sampling
+    statistics the block-diffusion pipeline accepts and renoises from.
+    """
+
+    logits: TensorT
+    """The temperature-scaled logits, ``bfloat16`` of shape
+    ``[total_seq_len, vocab_size]``."""
+
+    argmax: TensorT
+    """Each token's most likely id, ``int64`` of shape ``[total_seq_len]``."""
+
+    top_k_probs: TensorT
+    """Each token's largest probabilities, ``float32`` of shape
+    ``[total_seq_len, k]``."""
+
+    top_k_indices: TensorT
+    """The ids of :attr:`top_k_probs`, ``int64`` of shape
+    ``[total_seq_len, k]``."""
+
+    entropy: TensorT
+    """Each token's entropy over the full vocabulary, ``float32`` of shape
+    ``[total_seq_len]``."""

@@ -68,6 +68,13 @@ pub struct PoolOptions {
     /// prefix hit. The tiered connector sets it when the host tier only stages
     /// blocks on their way to disk.
     pub skip_prefix_cache: bool,
+    /// Never hands out a huge block below this id, so every cache allocates
+    /// only at the top of its id space. Zero leaves every block allocatable.
+    ///
+    /// For tests only: index arithmetic that multiplies a block id by a page
+    /// stride overflows at the highest ids first, and a short run on a fresh
+    /// pool never reaches them.
+    pub min_huge_bid: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -224,6 +231,12 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
                 "cache_ratios must be non-empty".to_owned(),
             ));
         }
+        if options.min_huge_bid >= num_huge_blocks {
+            return Err(JengaError::InvalidGeometry(format!(
+                "min_huge_bid must leave a huge block to allocate, found {} of {num_huge_blocks}",
+                options.min_huge_bid
+            )));
+        }
         if let Some(idx) = cache_ratios.iter().position(|&ratio| ratio == 0) {
             return Err(JengaError::InvalidGeometry(format!(
                 "cache_ratios must be positive, but cache {idx}'s ratio is 0"
@@ -234,7 +247,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         // so no cache has any little block in circulation yet.
         let mut huge_blocks: Vec<HugeBlock> =
             (0..num_huge_blocks).map(|_| HugeBlock::default()).collect();
-        let first_huge_bid = usize::from(options.null_block);
+        let first_huge_bid = usize::from(options.null_block).max(options.min_huge_bid);
         let free_huge_blocks =
             FreeList::with_ids(&mut huge_blocks, first_huge_bid..num_huge_blocks);
 
@@ -269,11 +282,12 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         self.options.null_block.then_some(NULL_BID)
     }
 
-    /// Returns the huge blocks allocation can hand out: all of them, or all
-    /// but huge block 0 when it holds the null block.
+    /// Returns the huge blocks allocation can hand out: all of them, but huge
+    /// block 0 when it holds the null block and any below
+    /// [`PoolOptions::min_huge_bid`].
     #[must_use]
     pub fn allocatable_huge_bids(&self) -> Range<usize> {
-        usize::from(self.options.null_block)..self.huge_blocks.len()
+        usize::from(self.options.null_block).max(self.options.min_huge_bid)..self.huge_blocks.len()
     }
 
     fn is_null(&self, bid: usize) -> bool {
@@ -862,6 +876,7 @@ mod tests {
     const WITH_NULL: PoolOptions = PoolOptions {
         null_block: true,
         skip_prefix_cache: false,
+        min_huge_bid: 0,
     };
 
     /// Builds a pool with `allocatable` huge blocks to hand out, plus huge
@@ -1036,6 +1051,63 @@ mod tests {
             );
             assert_eq!(huge.num_referenced == 0, summed == 0);
         }
+    }
+
+    #[test]
+    fn min_huge_bid_allocates_only_high_ids() {
+        const HASHES: [&str; 12] = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
+        let ratios = [2, 3];
+        let options = PoolOptions {
+            null_block: true,
+            min_huge_bid: 8,
+            ..PoolOptions::default()
+        };
+        let mut p = Pool::new(11, ratios.to_vec(), options).expect("a pool");
+        assert_eq!(p.allocatable_huge_bids(), 8..11);
+        check_invariants(&p);
+
+        // Commits and eviction cycle every cache through the allowed huge
+        // blocks many times over, so a low id would surface if one leaked.
+        for round in 0..300 {
+            let mut held = Vec::new();
+            for (cache, ratio) in ratios.iter().enumerate() {
+                for _ in 0..1 + (round + cache) % 4 {
+                    let Ok(bid) = p.alloc_block(cache) else { break };
+                    assert!(bid >= 8 * ratio, "round {round}: {cache}/{bid}");
+                    let hash = HASHES[(round * 5 + held.len()) % HASHES.len()];
+                    if p.lookup_hash(cache, hash).is_none() {
+                        p.commit_into_prefix_cache(cache, hash, bid);
+                    }
+                    held.push((cache, bid));
+                }
+            }
+            check_invariants(&p);
+            for (cache, bid) in held {
+                p.free_block(cache, bid);
+            }
+            check_invariants(&p);
+        }
+
+        let all_but_one = PoolOptions {
+            min_huge_bid: 10,
+            ..options
+        };
+        let mut p = Pool::new(11, ratios.to_vec(), all_but_one).expect("a pool");
+        let mut bids = alloc_n(&mut p, 0, 2);
+        bids.sort_unstable();
+        assert_eq!(bids, [20, 21]);
+        expect_exhausted(&mut p, 0);
+
+        let err = Pool::new(
+            11,
+            ratios.to_vec(),
+            PoolOptions {
+                min_huge_bid: 11,
+                ..options
+            },
+        )
+        .expect_err("no huge block left");
+        assert!(err.to_string().contains("min_huge_bid"), "{err}");
     }
 
     #[test]

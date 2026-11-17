@@ -224,9 +224,7 @@ def test_array_alignment() raises:
     """Test array allocation alignment behavior."""
     # Allocate array - base pointer should be 64-byte aligned
     var arr_alloc = alloc[CacheAligned]({length = 4}).into_managed()
-    var arr: Pointer[
-        CacheAligned, origin_of(arr_alloc)
-    ] = arr_alloc.unsafe_ptr()
+    var arr = arr_alloc.unsafe_ptr()
     var base_addr = Int(arr)
     assert_true(
         (base_addr & 63) == 0,

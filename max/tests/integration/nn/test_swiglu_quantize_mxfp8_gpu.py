@@ -27,12 +27,12 @@ from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     dynamic_block_scaled_matmul,
     quantize_dynamic_block_scaled,
     swiglu_quantize_dynamic_block_scaled,
 )
+from max.nn.activation import GatedActivation
 from test_common.graph_utils import is_b100_b200
 
 K = 2304

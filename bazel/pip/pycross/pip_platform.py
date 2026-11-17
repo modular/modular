@@ -16,9 +16,17 @@ import functools
 from download import Download
 from packaging.tags import Tag, compatible_tags, cpython_tags, mac_platforms
 
-SUPPORTED_PYTHON_VERSIONS = {"3.10", "3.11", "3.12", "3.13", "3.14"}
+SUPPORTED_PYTHON_VERSIONS = {
+    "3.10",
+    "3.11",
+    "3.12",
+    "3.13",
+    "3.14",
+    "3.15",
+}
 FREETHREADED_PYTHON_VERSIONS = {
     "3.14",
+    "3.15",
 }
 SUPPORTED_PLATFORMS = {
     ("linux", "aarch64"),

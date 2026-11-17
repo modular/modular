@@ -117,7 +117,6 @@ MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/Mojo/stdlib/std mojo main.mojo
 
 - Follow value semantics and ownership conventions
 - Use `Origin` parameters (`ImmOrigin`/`MutOrigin`) with `Pointer` in APIs
-- Prefer `Pointer` to the deprecated `UnsafePointer` alias
 - Prefer `AnyType` over `__TypeOfAllTypes` (except for MLIR interactions)
 
 ## Development Workflow

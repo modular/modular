@@ -18,12 +18,11 @@ blocks. The Nemotron 3 MoE variants add mixture-of-experts blocks.
 """
 
 from .arch import nemotron_h_arch
-from .model import NemotronHInputs, NemotronHModel
 from .model_config import NemotronHConfig
+from .nemotron_h import NemotronH
 
 __all__ = [
+    "NemotronH",
     "NemotronHConfig",
-    "NemotronHInputs",
-    "NemotronHModel",
     "nemotron_h_arch",
 ]

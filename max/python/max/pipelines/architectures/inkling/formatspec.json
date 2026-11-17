@@ -1,0 +1,57 @@
+{
+  "argument_syntax": "json",
+  "call": {
+    "begin": {
+      "id": 200049,
+      "text": "<|content_invoke_tool_json|>"
+    },
+    "end": {
+      "id": 200010,
+      "text": "<|end_message|>"
+    },
+    "name_layout": {
+      "args_key": "args",
+      "echoes_name": true,
+      "kind": "json_frame",
+      "message_start": {
+        "id": 200001,
+        "text": "<|message_model|>"
+      },
+      "name_key": "name",
+      "text_start": {
+        "id": 200004,
+        "text": "<|content_text|>"
+      }
+    },
+    "section": null,
+    "sep": null
+  },
+  "delivery": {
+    "kind": "id",
+    "string_delim": null
+  },
+  "format": "formatspec.spec",
+  "json_key_order": "sorted",
+  "json_whitespace": "compact",
+  "reasoning": {
+    "close": {
+      "id": 200010,
+      "text": "<|end_message|>"
+    },
+    "close_suffix": "",
+    "default": "on",
+    "open": {
+      "id": 200008,
+      "text": "<|content_thinking|>"
+    },
+    "prompt_start": "model_emits_open",
+    "strip_prefix": ""
+  },
+  "spec_version": 1,
+  "terminators": [
+    {
+      "id": 200006,
+      "text": "<|content_model_end_sampling|>"
+    }
+  ]
+}

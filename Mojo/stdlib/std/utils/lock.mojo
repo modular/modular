@@ -18,8 +18,8 @@ automatic lock management. These primitives enable safe concurrent access to
 shared resources in multi-threaded code.
 """
 
-from std.atomic import Atomic
-from std.ffi import external_call
+from std.atomic import Atomic, Ordering
+from std.ffi import external_call, c_size_t
 
 # ===-----------------------------------------------------------------------===#
 # SpinWaiter
@@ -29,27 +29,31 @@ from std.ffi import external_call
 struct SpinWaiter(Defaultable):
     """A proxy for the C++ runtime's SpinWaiter type."""
 
-    var storage: OpaquePointer[MutUntrackedOrigin]
-    """Pointer to the underlying SpinWaiter instance."""
+    var storage: c_size_t
+    """Underlying SpinWaiter instance.
+    
+    This memory must be sized and aligned to accommodate a 
+    C++ SpinWaiter<true> class instance.
+    """
 
     def __init__(out self):
         """Initializes a SpinWaiter instance."""
-        self.storage = external_call[
-            "KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
-            OpaquePointer[MutUntrackedOrigin],
-        ]()
+        self.storage = 0
+        external_call["KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter", NoneType](
+            Pointer(to=self.storage)
+        )
 
     def __deinit__(deinit self):
         """Destroys the SpinWaiter instance."""
         external_call["KGEN_CompilerRT_AsyncRT_DestroySpinWaiter", NoneType](
-            self.storage
+            Pointer(to=self.storage)
         )
 
-    def wait(self):
+    def wait(mut self):
         """Blocks the current task for a duration determined by the underlying
         policy."""
         external_call["KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait", NoneType](
-            self.storage
+            Pointer(to=self.storage)
         )
 
 
@@ -77,7 +81,9 @@ struct BlockingSpinLock(Defaultable):
 
         var expected = Int64(Self.UNLOCKED)
         var waiter = SpinWaiter()
-        while not self.counter.compare_exchange(expected, Int64(owner)):
+        while not self.counter.compare_exchange[
+            success_ordering=.ACQUIRE, failure_ordering=.RELAXED
+        ](expected, Int64(owner)):
             # this should be yield
             waiter.wait()
             expected = Self.UNLOCKED
@@ -92,12 +98,13 @@ struct BlockingSpinLock(Defaultable):
             The successful release of the lock.
         """
 
-        var expected = Int64(owner)
-        if self.counter.load() != Int64(owner):
+        # we don't care about anything except the value of the counter here
+        # and any modifications to shared data in the case we're not locked
+        # are UB data races by (almost) definition.
+        if self.counter.load[ordering=Ordering.RELAXED]() != Int64(owner):
             # No one else can modify other than owner
             return False
-        while not self.counter.compare_exchange(expected, Self.UNLOCKED):
-            expected = Int64(owner)
+        self.counter.store[ordering=.RELEASE](Self.UNLOCKED)
         return True
 
 

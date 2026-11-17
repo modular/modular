@@ -166,13 +166,11 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
         var initial_b_bounds = self._initial_inner_b.bounds()
 
         var lower_bound = a_bounds[0] * initial_b_bounds[0] + b_bounds[0]
-        if not a_bounds[1] or not initial_b_bounds[1]:
-            return (lower_bound, None)
-
-        var upper_bound = a_bounds[1].unsafe_value() * initial_b_bounds[
-            1
-        ].unsafe_value() + b_bounds[1].or_else(0)
-        return (lower_bound, upper_bound)
+        if case .Some(a_upper) = a_bounds[1]:
+            if case .Some(initial_b_upper) = initial_b_bounds[1]:
+                var b_upper = b_bounds[1].or_else(0)
+                return (lower_bound, a_upper * initial_b_upper + b_upper)
+        return (lower_bound, None)
 
 
 @inline(.always)
@@ -778,14 +776,17 @@ def cycle(
 # ===-----------------------------------------------------------------------===#
 
 
-@fieldwise_init
 struct _TakeWhileIterator[
     InnerIteratorType: Iterator,
     //,
-    predicate: def(InnerIteratorType.Element) thin -> Bool,
+    Function: def(InnerIteratorType.Element) -> Bool,
 ](
-    Copyable where conforms_to(InnerIteratorType, Copyable),
-    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Copyable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    Iterable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
     IterableOwned,
     Iterator,
 ):
@@ -793,8 +794,7 @@ struct _TakeWhileIterator[
 
     Parameters:
         InnerIteratorType: The type of the inner iterator.
-        predicate: A function that takes an element and returns True if the
-            element should be yielded.
+        Function: The type of the predicate.
     """
 
     comptime Element = Self.InnerIteratorType.Element
@@ -804,29 +804,30 @@ struct _TakeWhileIterator[
     comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
+    var _predicate: Self.Function
     var _exhausted: Bool
 
-    def __init__(out self, var inner: Self.InnerIteratorType):
+    def __init__(
+        out self,
+        var inner: Self.InnerIteratorType,
+        var predicate: Self.Function,
+    ):
         """Creates a take_while iterator from an inner iterator.
 
         Args:
             inner: The inner iterator to wrap.
+            predicate: Returns True for each element that should be yielded.
         """
         self._inner = inner^
+        self._predicate = predicate^
         self._exhausted = False
-
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = copy._inner.copy()
-        self._exhausted = copy._exhausted
 
     @inline(.always)
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
         Self.InnerIteratorType, Copyable
-    ):
+    ) and conforms_to(Self.Function, Copyable):
         return self.copy()
 
     @inline(.always)
@@ -840,7 +841,7 @@ struct _TakeWhileIterator[
         if self._exhausted:
             raise StopIteration()
         var elem = next(self._inner)
-        if not Self.predicate(elem):
+        if not self._predicate(elem):
             self._exhausted = True
             # Discard the element that failed the predicate
             _ = elem^
@@ -853,11 +854,12 @@ def take_while[
     origin: ImmOrigin,
     IterableType: Iterable,
     //,
-    predicate: def(IterableType.IteratorType[origin].Element) thin -> Bool,
-](ref[origin] iterable: IterableType) -> _TakeWhileIterator[
-    InnerIteratorType=IterableType.IteratorType[origin],
-    predicate=predicate,
-] where conforms_to(IterableType.IteratorType[origin].Element, Deinitable,):
+    Function: def(IterableType.IteratorType[origin].Element) -> Bool,
+](
+    ref[origin] iterable: IterableType, var predicate: Function
+) -> _TakeWhileIterator[Function] where conforms_to(
+    IterableType.IteratorType[origin].Element, Deinitable
+):
     """Creates an iterator that yields elements while predicate returns True.
 
     This function returns an iterator that yields elements from the input
@@ -868,11 +870,11 @@ def take_while[
     Parameters:
         origin: The origin of the iterable.
         IterableType: The type of the iterable.
-        predicate: A function that takes an element and returns True if the
-            element should be yielded.
+        Function: The type of the predicate.
 
     Args:
         iterable: The iterable to take elements from.
+        predicate: Returns True for each element that should be yielded.
 
     Returns:
         An iterator that yields elements while predicate returns True.
@@ -883,41 +885,44 @@ def take_while[
     from std.itertools import take_while
 
     var nums = [1, 2, 3, 4, 5, 6, 7]
-    for num in take_while[lambda (x: Int) -> Bool: x < 5](nums):
+    var limit = 5
+    for num in take_while(nums, lambda (x: Int) {limit} -> Bool: x < limit):
         print(num)  # Prints: 1, 2, 3, 4
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't ve needed, something isn't getting
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
     # substituted through associated types right.
-    return _TakeWhileIterator[predicate=predicate](
-        rebind_var[IterableType.IteratorType[origin]](iter(iterable))
-    )
+    return {
+        rebind_var[_TakeWhileIterator[Function].InnerIteratorType](
+            iter(iterable)
+        ),
+        predicate^,
+    }
 
 
 @inline(.always)
 def take_while[
     IterableType: IterableOwned,
     //,
-    predicate: def(IterableType.IteratorOwnedType.Element) thin -> Bool,
-](var iterable: IterableType) -> _TakeWhileIterator[
-    InnerIteratorType=IterableType.IteratorOwnedType,
-    predicate=predicate,
-] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable,):
+    Function: def(IterableType.IteratorOwnedType.Element) -> Bool,
+](var iterable: IterableType, var predicate: Function) -> _TakeWhileIterator[
+    Function
+] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable):
     """Creates an iterator that yields elements while predicate returns True,
     consuming the iterable.
 
     Parameters:
         IterableType: The type of the iterable.
-        predicate: A function that takes an element and returns True if the
-            element should be yielded.
+        Function: The type of the predicate.
 
     Args:
         iterable: The iterable to consume and take elements from.
+        predicate: Returns True for each element that should be yielded.
 
     Returns:
         An iterator that yields elements while predicate returns True.
     """
-    return _TakeWhileIterator[predicate=predicate](iter(iterable^))
+    return {iter(iterable^), predicate^}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -925,14 +930,17 @@ def take_while[
 # ===-----------------------------------------------------------------------===#
 
 
-@fieldwise_init
 struct _DropWhileIterator[
     InnerIteratorType: Iterator,
     //,
-    predicate: def(InnerIteratorType.Element) thin -> Bool,
+    Function: def(InnerIteratorType.Element) -> Bool,
 ](
-    Copyable where conforms_to(InnerIteratorType, Copyable),
-    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Copyable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    Iterable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
     IterableOwned,
     Iterator,
 ):
@@ -940,8 +948,7 @@ struct _DropWhileIterator[
 
     Parameters:
         InnerIteratorType: The type of the inner iterator.
-        predicate: A function that takes an element and returns True if the
-            element should be dropped.
+        Function: The type of the predicate.
     """
 
     comptime Element = Self.InnerIteratorType.Element
@@ -951,29 +958,31 @@ struct _DropWhileIterator[
     comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
+    var _predicate: Self.Function
     var _dropping: Bool
 
-    def __init__(out self, var inner: Self.InnerIteratorType):
+    def __init__(
+        out self,
+        var inner: Self.InnerIteratorType,
+        var predicate: Self.Function,
+    ):
         """Creates a drop_while iterator from an inner iterator.
 
         Args:
             inner: The inner iterator to wrap.
+            predicate: Returns True for each leading element that should be
+                dropped.
         """
         self._inner = inner^
+        self._predicate = predicate^
         self._dropping = True
-
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = copy._inner.copy()
-        self._dropping = copy._dropping
 
     @inline(.always)
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
         Self.InnerIteratorType, Copyable
-    ):
+    ) and conforms_to(Self.Function, Copyable):
         return self.copy()
 
     @inline(.always)
@@ -987,7 +996,7 @@ struct _DropWhileIterator[
         if self._dropping:
             while True:
                 var elem = next(self._inner)
-                if Self.predicate(elem):
+                if self._predicate(elem):
                     # Discard the element that matched the predicate
                     _ = elem^
                     continue
@@ -1001,11 +1010,12 @@ def drop_while[
     origin: ImmOrigin,
     IterableType: Iterable,
     //,
-    predicate: def(IterableType.IteratorType[origin].Element) thin -> Bool,
-](ref[origin] iterable: IterableType) -> _DropWhileIterator[
-    InnerIteratorType=IterableType.IteratorType[origin],
-    predicate=predicate,
-] where conforms_to(IterableType.IteratorType[origin].Element, Deinitable,):
+    Function: def(IterableType.IteratorType[origin].Element) -> Bool,
+](
+    ref[origin] iterable: IterableType, var predicate: Function
+) -> _DropWhileIterator[Function] where conforms_to(
+    IterableType.IteratorType[origin].Element, Deinitable
+):
     """Creates an iterator that drops elements while predicate returns True.
 
     This function returns an iterator that drops elements from the input
@@ -1016,11 +1026,12 @@ def drop_while[
     Parameters:
         origin: The origin of the iterable.
         IterableType: The type of the iterable.
-        predicate: A function that takes an element and returns True if the
-            element should be dropped.
+        Function: The type of the predicate.
 
     Args:
         iterable: The iterable to drop elements from.
+        predicate: Returns True for each leading element that should be
+            dropped.
 
     Returns:
         An iterator that drops elements while predicate returns True, then
@@ -1032,42 +1043,46 @@ def drop_while[
     from std.itertools import drop_while
 
     var nums = [1, 2, 3, 4, 5, 6, 1, 2]
-    for num in drop_while[lambda (x: Int) -> Bool: x < 5](nums):
+    var limit = 5
+    for num in drop_while(nums, lambda (x: Int) {limit} -> Bool: x < limit):
         print(num)  # Prints: 5, 6, 1, 2
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't ve needed, something isn't getting
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
     # substituted through associated types right.
-    return _DropWhileIterator[predicate=predicate](
-        rebind_var[IterableType.IteratorType[origin]](iter(iterable))
-    )
+    return {
+        rebind_var[_DropWhileIterator[Function].InnerIteratorType](
+            iter(iterable)
+        ),
+        predicate^,
+    }
 
 
 @inline(.always)
 def drop_while[
     IterableType: IterableOwned,
     //,
-    predicate: def(IterableType.IteratorOwnedType.Element) thin -> Bool,
-](var iterable: IterableType) -> _DropWhileIterator[
-    InnerIteratorType=IterableType.IteratorOwnedType,
-    predicate=predicate,
-] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable,):
+    Function: def(IterableType.IteratorOwnedType.Element) -> Bool,
+](var iterable: IterableType, var predicate: Function) -> _DropWhileIterator[
+    Function
+] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable):
     """Creates an iterator that drops elements while predicate returns True,
     consuming the iterable.
 
     Parameters:
         IterableType: The type of the iterable.
-        predicate: A function that takes an element and returns True if the
-            element should be dropped.
+        Function: The type of the predicate.
 
     Args:
         iterable: The iterable to consume and drop elements from.
+        predicate: Returns True for each leading element that should be
+            dropped.
 
     Returns:
         An iterator that drops elements while predicate returns True, then
         yields all remaining elements.
     """
-    return _DropWhileIterator[predicate=predicate](iter(iterable^))
+    return {iter(iterable^), predicate^}
 
 
 # ===-----------------------------------------------------------------------===#

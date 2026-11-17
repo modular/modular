@@ -526,9 +526,9 @@ struct StableAddrEngine[*, element_width: Int = 1](TensorEngine):
         ](storage, other)
 
 
-comptime StableTileTensor[dtype: DType, LayoutType: TensorLayout] = TileTensor[
-    dtype,
-    LayoutType,
+comptime StableTileTensor = TileTensor[
+    _,
+    _,
     MutUntrackedOrigin,
     Engine=StableAddrEngine[element_width=1],
     address_space=.GENERIC,

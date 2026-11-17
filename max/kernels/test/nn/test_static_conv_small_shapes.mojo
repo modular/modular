@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.sys.info import simd_width_of
 
-from layout import Coord, IntTuple, TileTensor, row_major
+from layout import Coord, TileTensor, coord, row_major
 from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv.conv_utils import ConvShape, get_micro_kernel_shape
 
@@ -44,9 +44,9 @@ comptime WO = (
 comptime num_groups = 1
 
 comptime conv_attr = ConvInfoStatic[2](
-    IntTuple(pad_bottom, pad_left, pad_top, pad_right),
-    IntTuple(stride_h, stride_w),
-    IntTuple(dilation_h, dilation_w),
+    coord[pad_bottom, pad_top, pad_left, pad_right],
+    coord[stride_h, stride_w],
+    coord[dilation_h, dilation_w],
     num_groups,
 )
 

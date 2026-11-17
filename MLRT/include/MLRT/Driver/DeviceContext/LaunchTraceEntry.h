@@ -21,6 +21,7 @@
 #ifndef MLRT_DRIVER_DEVICECONTEXT_LAUNCHTRACEENTRY_H
 #define MLRT_DRIVER_DEVICECONTEXT_LAUNCHTRACEENTRY_H
 
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <cstddef>
@@ -34,7 +35,7 @@ class Value;
 namespace M::Driver {
 
 /// Metadata for a trace entry (kernel launch, memcpy, or memset).
-struct KernelLaunchMetadata {
+struct MODULAR_CXX_EXPORT KernelLaunchMetadata {
   /// Type of operation that produced this trace entry
   enum class OperationKind : uint8_t {
     KernelLaunch,

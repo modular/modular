@@ -155,7 +155,7 @@ def _run[
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, log1p(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var gpu_worst = 0
     var cpu_worst = 0

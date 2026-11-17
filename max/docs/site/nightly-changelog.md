@@ -10,6 +10,9 @@ This version is still a work in progress.
 
 ## Models
 
+- Qwen 3.5 models served with MTP or DFlash2 speculative decoding now read the
+  images and videos in a request. They used to answer without them.
+
 - GLM-5.1, GLM-5.2, and GLM-5.3 now default `clear_thinking` to `False`, which
   keeps the `reasoning_content` a client sends back for earlier turns in the
   prompt. GLM-5.3 previously defaulted it to `True`, and GLM-5.1's and
@@ -54,6 +57,16 @@ This version is still a work in progress.
   video input.
 
 ## Inference server
+
+- `max serve` now sends about ten tokens per streamed chunk instead of one,
+  which cuts network traffic and per-chunk overhead without changing time to
+  first token. `MAX_SERVE_STREAM_MIN_CHUNK_TOKENS=1` restores the old
+  behavior.
+
+- `max serve`, `max generate`, `AutoModel`, and `AutoPipeline` now prefer
+  ModuleV3 when an architecture has both ModuleV3 and graph API
+  implementations. Pass `--no-prefer-module-v3` on the command line or
+  `prefer_module_v3=False` to use the graph API implementation.
 
 - Serving metric names now use `max.*` instead of `maxserve.*`. Batch
   instruments use `max.batch.*`, such as `max.batch.size`. Prometheus
@@ -110,6 +123,19 @@ This version is still a work in progress.
 
 ## `max` CLI
 
+- `PipelineArgs` sub-config flags are now flat, matching `max serve`'s
+  spellings everywhere the class is bound with cyclopts. The benchmark
+  engine's `--pipeline.runtime.max-batch-size` becomes
+  `--pipeline.max-batch-size`, `--pipeline.kv-cache.enable-prefix-caching`
+  becomes `--pipeline.enable-prefix-caching`, and
+  `--pipeline.profiling.gpu-profiling` becomes `--pipeline.gpu-profiling`;
+  the `MODULAR_PIPELINE_*` environment variable names change with them
+  (`MODULAR_PIPELINE_MAX_BATCH_SIZE`, not
+  `MODULAR_PIPELINE_RUNTIME_MAX_BATCH_SIZE`). The experimental cascade
+  serve CLI (`//mach:cascade`) now accepts the full `max serve` flag
+  surface, including `--config-file` recipes and the `--model`,
+  `--devices`, and `--use-dummy-weights` aliases.
+
 - `max generate` runs image generation models such as FLUX.2 and saves the
   images to `--output`, which defaults to `image.png` and whose suffix picks
   the format. A path without a suffix is a directory, created with its parents
@@ -120,7 +146,21 @@ This version is still a work in progress.
   including `--max-batch-size` and `--device-graph-capture` on an image
   model, raises an error before anything loads. Text models run as before.
 
+- `max benchmark` renames `--warmup-to-steady-state` to `--warmup-multiturn`,
+  since it applies only to multi-turn workloads and is unrelated to the
+  steady-state measurement window. The old flag, its workload and config
+  file keys, and `MODULAR_WARMUP_TO_STEADY_STATE` still work and log a
+  deprecation warning. Result files record the option as `warmup_multiturn`
+  under `client_args`.
+
 ## Python API
+
+- `AutoModel(eager=True)`, `AutoPipeline(eager=True)` and `max generate --eager`
+  run the decoder op by op instead of as a compiled graph, so `pdb` stopped
+  inside a module's `forward()` sees real values on every step. It is for
+  debugging and much slower than the compiled graph. It runs ModuleV3 text
+  generation architectures that register a `DECODER` module, on one device.
+  See the [pdb guide](/develop/debugging/#step-through-a-model-with-pdb).
 
 - The eager `Module` framework moved from `max.experimental.nn` to `max.nn`,
   and the graph-based layers that `max.nn` held moved to `max.nn.legacy`.
@@ -177,6 +217,13 @@ This version is still a work in progress.
   bfloat16. The `max.functional` form falls back to that two-launch path for
   inputs that are not 2-D bfloat16 and for meshes without signal buffers.
 
+- Added `ops.allreduce_post_norm_residual_rms_norm` and
+  `max.functional.allreduce_post_norm_residual_rms_norm`, which run a
+  transformer block's branch allreduce, its post-norm, the weighted join to
+  the residual stream and the next pre-norm in one launch per device. They
+  take bfloat16 2-D tensors and need P2P access between the GPUs. On NVIDIA
+  GPUs, `allreduce_rms_norm` now also fuses small payloads into one launch.
+
 - Added the `ops.CoordinateTransformMode` and `ops.RoundMode` enums.
   `ops.resize_linear`, `ops.resize_nearest`, and their `max.functional`
   counterparts take them for `coordinate_transform_mode` and
@@ -188,7 +235,7 @@ This version is still a work in progress.
   uses the filter of Pillow's `BICUBIC` and matches PyTorch's
   `interpolate(mode="bicubic", antialias=True)` to float32 rounding. The
   antialiased resize runs on the CPU, on a float32 input, or on a uint8 input
-  that it resizes to uint8, rounding and clamping once at the end.
+  that it resizes to uint8 bit for bit as Pillow's `BICUBIC` does.
   `ops.resize_bicubic()` also takes its output size as a runtime int64
   tensor, with `out_dims` declaring the output's dimensions.
 
@@ -206,6 +253,10 @@ This version is still a work in progress.
   `PipelineModel`, return the module from `graph_specs()` under
   `GraphRole.ENCODER`, and load it with `load_graphs()` instead.
 
+- Removed the `LLM` class, deprecated in 26.5 when `max.entrypoints` became
+  private. To generate in-process, use `AutoModel` or `AutoPipeline` from
+  `max.pipelines`.
+
 - `Buffer.to(device)` for a buffer on another queue of that device requires an
   `after` event and no longer syncs implicitly. Mojo's `reassign_ownership_to()`
   is removed; use `enqueue_wait_for()` and keep buffers alive until synced.
@@ -213,6 +264,17 @@ This version is still a work in progress.
 - Removed `max.nn.legacy.FusedMLP`. Use `max.nn.legacy.MLP`, which takes the
   separate `gate_proj` and `up_proj` weights a checkpoint ships and fuses their
   matmuls in the graph.
+
+- `max.nn.legacy.kv_cache` moved to `max.nn.kv_cache`. Change
+  `from max.nn.legacy.kv_cache import ...` to
+  `from max.nn.kv_cache import ...`.
+
+- Removed `max.nn.legacy.kernels`, `max.nn.legacy.state_space`,
+  `max.nn.legacy.data_parallelism`, `max.nn.legacy.quant_ops`,
+  `max.nn.legacy.moe.quant_strategy`, `max.nn.legacy.sampling.penalties`, and
+  `max.nn.legacy.comm.ep.ep_kernels`. The graph ops they held are now internal
+  to MAX. `max.nn.kernels` provides the kernels `max.nn` modules use, and
+  `LogitPenalties` stays importable from `max.nn.legacy.sampling`.
 
 - Removed `max_single_alloc_size()` and `run_healthcheck()` from the Mojo
   `DeviceContext`. On NVIDIA and AMD GPUs the health check still runs when a
@@ -289,9 +351,44 @@ This version is still a work in progress.
   `KVCacheInputsPerDevice`. A KV cache is again one buffer per device, capped
   at that limit.
 
+- Added `Device.architecture_version`, which returns an `ArchitectureVersion`
+  with `major`, `minor` and `stepping` fields so code can compare architectures
+  instead of parsing `architecture_name`: the compute capability on NVIDIA
+  GPUs (`sm_100a` is 10.0.0), the processor version on AMD GPUs (`gfx950` is
+  9.5.0), and the Apple silicon generation on Apple GPUs (an M5 is 5.0.0).
+  Versions compare for equality only, since a higher version is not always a
+  newer part. A virtual device for compile-only mode whose target is an
+  architecture name, such as `sm_100a` or `gfx950`, reports the version of
+  that architecture.
+
 ## C API
 
 ## Kernels and GPU programming
+
+- A custom op's `execute` method no longer accepts `ManagedTensorSlice`
+  arguments (`InputTensor`, `OutputTensor` and their fused, mutable and
+  variadic variants). Loading a kernel package that uses them fails with an
+  error at the offending argument. Declare the arguments with tensor traits
+  instead, for example `Some[Input & Tensor]`, `Some[Output & Tensor]`, or
+  `TensorTuple` for variadic operands.
+
+- `DeviceStream.wait_for_host_value()` in `max.gpu.host` is deprecated; use
+  `DeviceStream.wait_for_flag()` instead.
+
+- Built-in custom ops are now named after their class instead of `mo.`,
+  which is kept for the graph compiler's own ops. For example,
+  `mo.launch_host_func` and `mo.inplace_memcpy` are now
+  `runtime.launch_host_func` and `runtime.inplace_memcpy`, and
+  `mo.matmul_swiglu` is now `matmul.swiglu`. Update the name passed to
+  `ops.custom()` in graphs that call these ops directly.
+
+- On AMD MI355X (CDNA4), the fused gated activation now quantizes to MXFP4 as
+  well as MXFP8, so a `uint8` / `float8_e8m0fnu` request from
+  `swiglu_quantize_dynamic_block_scaled` runs as one kernel. Such a request
+  was rejected on AMD before; quantizing MXFP4 without the fusion writes the
+  bfloat16 `[M, N]` activation of the `[gate | up]` input out with a SwiGLU
+  kernel and reads it back in an ungated quantize, and the fused kernel never
+  materializes it.
 
 - Enabled automatic fusion of eligible bfloat16 matrix multiplications and
   SwiGLU activations on NVIDIA B200 GPUs.
@@ -300,6 +397,17 @@ This version is still a work in progress.
   from the `layout` package, along with the `to_layout_tensor()` and
   `lt_to_tt()` conversions. Use `TileTensor` and `TileTensorIter` instead.
   `ThreadScope` now lives in `layout.tile_io`.
+
+- The legacy `Layout` and `IntTuple` types have been removed from the `layout`
+  package, along with the original `layout.layout` and `layout.int_tuple`
+  modules, the `to_layout()`, `LTToTTLayout` and `print_layout()` bridges, and
+  the legacy `tile_layout_k_major()`, `tile_layout_mn_major()` and
+  `tile_sf_layout_k_major()` constructors. Use the typed layouts in the new
+  `layout.layout` (`Layout`, also exported as `MixedLayout`) for layout values,
+  `Coord` for shapes, strides and indices, and the `*_typed` tile layout
+  constructors in `layout.tensor_core_async`. `wgmma_desc_sbo_lbo()` and
+  `wgmma_canonical_strides()` replace `tile_to_descriptor()`, and `print()`
+  accepts a typed layout directly.
 
 - `TileTensor.tile()` on a nested layout now indexes each mode first leaf
   first, as `crd2idx` and the CuTe `local_tile` operation do: tile `c` of size
@@ -316,6 +424,22 @@ This version is still a work in progress.
   `t.load[4](Coord(r, c))`. On CPU, `load()` and `store()` default to the
   element's alignment rather than the full vector's, so pass `alignment=` to
   keep a wider one.
+
+- `@extensibility.register` takes a platform as a second argument
+  that selects the devices a custom kernel supports, built from the `type`,
+  `api`, `arch`, and `model` platforms and the `CPU`, `ACCELERATOR`, `CUDA`,
+  `HIP`, and `METAL` helpers,
+  combined with `&` and `|` into a named alias:
+  `comptime TCGEN05 = ACCELERATOR & CUDA & (arch("sm_100a") |
+  arch("sm_103a"))`, then `@extensibility.register("my_op", TCGEN05)`.
+  When several registrations of an op match a device, the graph compiler now
+  selects the one whose set of devices is a strict subset of the sets of all
+  the others, and reports an error if no registration is. Before, it selected
+  the registration that set the most device fields. Two registrations of an op
+  for the same set of devices are an error. The `type`, `api`, `arch`, and
+  `model` arguments of `register` are removed: replace
+  `type="gpu", api="cuda"` with `CUDA`, and in general with the `&` of
+  the matching platforms.
 
 - Removed the `max`, `min`, `sum`, `product` and `mean` overloads in
   `max.algorithm` that take an input shape, an `input_fn`, an `output_fn` and
@@ -336,7 +460,33 @@ This version is still a work in progress.
   block, dynamic shared memory) or `ClusterLaunchConfig` (plus thread block
   clusters) from `max.gpu.host` as its first argument. A cluster launch on a
   GPU without clusters fails to compile; generic code checks
-  `conforms_to(DeviceContext.ExecutionConfigType, ClusterExecutionConfig)`.
+  `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
+  On NVIDIA GPUs, `GridBlockAttributeLaunchConfig` and
+  `ClusterAttributeLaunchConfig` from `max.gpu.host.nvidia` also carry launch
+  attributes, such as the ones `pdl_launch_attributes()` returns for
+  programmatic dependent launch.
+
+- A bare `DeviceContext` is now an unbound parameterized type, not a concrete
+  type.
+
+  Code written expecting a concrete `DeviceContext` can change to
+  `DeviceContext[]` to bind the default parameter values.
+
+  Prefer to accept generic `DeviceContext` as input instead of restricting an
+  implementation to the default parameter values.
+
+- The `load_fn`, `compute_fn` and `compute_finalize_fn` callbacks of
+  `stencil()` and `stencil_gpu()` in `max.algorithm` now take a `Coord`
+  instead of an `IndexList[rank]`. `map_fn` still takes and returns
+  `IndexList`. The coordinate holds the same values as before:
+
+  ```mojo
+  # was: def load_fn[...](point: IndexList[rank, ...]) -> ...
+  def load_fn[simd_width: Int, dtype: DType](point: Coord) -> SIMD[
+      dtype, simd_width
+  ]:
+      return input.load[width=simd_width](point)
+  ```
 
 ## Tools
 

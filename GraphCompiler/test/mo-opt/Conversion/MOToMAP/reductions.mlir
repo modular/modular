@@ -41,6 +41,17 @@ mo.graph @minMiddleAxis(%x: !mo.tensor<[2, 16, 4], f16>) -> !mo.tensor<[2, 1, 4]
   mo.output %r : !mo.tensor<[2, 1, 4], f16>
 }
 
+// A product on an outer axis, in bf16: the fold and the store keep bf16.
+// CHECK-LABEL: mo.graph @productOuterAxis
+// CHECK:       map.iter.rowwise<[16, 4], axis = 0>
+// CHECK:       outputs (%[[OUT5:.*]]: !mo.tensor<[1, 4], bf16>)
+// CHECK:       %[[ACC5:.*]] = map.iter.reduce @builtin_kernels.monoids.ReduceProduct index ({{.*}}: !map.index<2>) -> bf16 {
+// CHECK:       map.store %[[OUT5]][{{.*}}] = %[[ACC5]] : !mo.tensor<[1, 4], bf16>
+mo.graph @productOuterAxis(%x: !mo.tensor<[16, 4], bf16>) -> !mo.tensor<[1, 4], bf16> {
+  %r = mo.reduce.mul(%x) : (!mo.tensor<[16, 4], bf16>) -> !mo.tensor<[1, 4], bf16>
+  mo.output %r : !mo.tensor<[1, 4], bf16>
+}
+
 // A monoid with several output fields has one result per field, each stored
 // at the row index. ArgMax's index output is int64.
 // CHECK-LABEL: mo.graph @argMax
@@ -52,7 +63,7 @@ mo.graph @minMiddleAxis(%x: !mo.tensor<[2, 16, 4], f16>) -> !mo.tensor<[2, 1, 4]
 // CHECK-NEXT:  map.store %[[OI]][{{.*}}] = %[[IDXS]] : !mo.tensor<[4, 1], si64>
 // CHECK:       mo.output %[[R4]]#0, %[[R4]]#1
 mo.graph @argMax(%x: !mo.tensor<[4, 16], bf16>) -> (!mo.tensor<[4, 1], bf16>, !mo.tensor<[4, 1], si64>) {
-  %v, %i = mo.custom [symbol = "mo.reduce.arg_max.tmp", device = #M.device_ref<"cpu", 0>](%x) : (!mo.tensor<[4, 16], bf16>) -> (!mo.tensor<[4, 1], bf16>, !mo.tensor<[4, 1], si64>)
+  %v, %i = mo.custom [symbol = "reduction.arg_max.tmp", device = #M.device_ref<"cpu", 0>](%x) : (!mo.tensor<[4, 16], bf16>) -> (!mo.tensor<[4, 1], bf16>, !mo.tensor<[4, 1], si64>)
   mo.output %v, %i : !mo.tensor<[4, 1], bf16>, !mo.tensor<[4, 1], si64>
 }
 
@@ -60,6 +71,6 @@ mo.graph @argMax(%x: !mo.tensor<[4, 16], bf16>) -> (!mo.tensor<[4, 1], bf16>, !m
 // CHECK:       map.iter.reduce @builtin_kernels.monoids.Welford index ({{.*}}: !map.index<2>) -> (f32, f32, f32) {
 // CHECK-COUNT-3: map.store
 mo.graph @welford(%x: !mo.tensor<[4, 16], f32>) -> (!mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], f32>) {
-  %count, %mean, %m2 = mo.custom [symbol = "mo.reduce.mean_var.tmp", device = #M.device_ref<"cpu", 0>](%x) : (!mo.tensor<[4, 16], f32>) -> (!mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], f32>)
+  %count, %mean, %m2 = mo.custom [symbol = "reduction.mean_var.tmp", device = #M.device_ref<"cpu", 0>](%x) : (!mo.tensor<[4, 16], f32>) -> (!mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], f32>)
   mo.output %count, %mean, %m2 : !mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], f32>, !mo.tensor<[4, 1], f32>
 }

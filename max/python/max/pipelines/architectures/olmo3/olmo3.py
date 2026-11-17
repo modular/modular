@@ -18,10 +18,10 @@ from __future__ import annotations
 import functools
 
 from max import functional as F
-from max import tree
 from max.dtype import DType
 from max.nn import Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
@@ -29,8 +29,7 @@ from max.nn.common_layers.rotary_embedding import (
     YarnScalingParams,
 )
 from max.nn.embedding import Embedding
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.linear import Linear
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
@@ -248,7 +247,7 @@ class Olmo3(Module[[DecoderInputs], DecoderOutputs]):
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Unflattens the hybrid KV leaves, then runs the text model."""
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         assert isinstance(self.kv_params, MultiKVCacheParams)
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(
             kv_inputs

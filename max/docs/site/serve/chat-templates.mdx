@@ -152,6 +152,12 @@ the standard fields in each request:
   you override it through `chat_template_kwargs`.
 - `enable_thinking`, `thinking`: Booleans that render as `true` when the request
   asks for reasoning and `false` when it turns reasoning off.
+- `thinking_mode`: A string set to `enabled` or `disabled` to match the
+  request's `thinking.type`. MAX sets it only when `chat_template_kwargs`
+  contains none of `thinking`, `enable_thinking`, or `thinking_mode`. If
+  `thinking.type` is `adaptive` or the `thinking` object has no `type`, MAX
+  leaves `thinking_mode` unset so the template decides whether to enable
+  reasoning.
 - `reasoning_effort`: The requested effort as a string, such as `low` or
   `none`.
 

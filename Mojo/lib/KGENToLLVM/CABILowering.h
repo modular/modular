@@ -14,11 +14,13 @@
 #ifndef KGEN_LIB_KGENTOLLVM_CABILOWERING_H
 #define KGEN_LIB_KGENTOLLVM_CABILOWERING_H
 
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Types.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include <memory>
 
@@ -40,6 +42,7 @@ namespace M::KGEN {
 
 // Forward declarations
 class LLVMDataLayout;
+struct POPToLLVMTypeConverter;
 class StructType;
 
 //===----------------------------------------------------------------------===//
@@ -93,9 +96,9 @@ struct CoercionInfo {
   bool useSRet = false; // If true, use hidden pointer parameter
 
   /// Extension of an integer the target ABI requires the producer to widen,
-  /// set only on identity classifications. Classifiers see signless LLVM
-  /// integers, so they set ZExt; CABIInfo::computeSignatureInfo then applies
-  /// the sign, or clears it on the side that receives the value.
+  /// set only on identity classifications. The classifiers take the sign from
+  /// the KGEN dtype; CABIInfo::computeSignatureInfo clears it on the side that
+  /// receives the value.
   IntExtKind ext = IntExtKind::None;
 
   /// Default constructor creates NoClass (identity/pass-through)
@@ -127,13 +130,6 @@ struct CoercionInfo {
 
   /// Check if this is a pass-through (no coercion needed)
   bool isIdentity() const { return argClass == ABIArgClass::NoClass; }
-
-  /// Turn a pending zero extension into a sign extension for a signed
-  /// source type.
-  void applySignedness(bool isSigned) {
-    if (isSigned && ext == IntExtKind::ZExt)
-      ext = IntExtKind::SExt;
-  }
 
   /// Check if this requires two registers
   bool isTwoRegister() const {
@@ -168,12 +164,15 @@ struct SignatureClassification {
                   mlir::Type retType, bool isVarArg,
                   size_t numFixedArgs = SIZE_MAX) const;
 
-  /// Get the C ABI attributes (sret, byval, zeroext/signext) of the LLVM
-  /// parameters of the first `numArgs` arguments, one list per LLVM
-  /// parameter.
+  /// Get the attributes of the LLVM parameters of the first `numArgs`
+  /// arguments. The result has one list for each LLVM parameter. The
+  /// attributes of each argument in `argAttrs` move to the first LLVM
+  /// parameter of that argument. Then the C ABI attributes (sret, byval,
+  /// zeroext/signext) are added. A struct that is passed by value does not
+  /// get `noundef`, because its padding bytes are not defined.
   llvm::SmallVector<mlir::NamedAttrList>
   getParamAttrs(mlir::TypeRange argTypes, mlir::Type retType,
-                size_t numArgs = SIZE_MAX) const;
+                mlir::ArrayAttr argAttrs = {}, size_t numArgs = SIZE_MAX) const;
 
   /// Get the C ABI attributes (zeroext/signext) of the LLVM result.
   mlir::NamedAttrList getResultAttrs(mlir::MLIRContext *ctx) const;
@@ -185,19 +184,7 @@ struct SignatureClassification {
 /// (callee).
 /// We lower signatures slightly differently depending on the role. See the
 /// implementation lowering code in computeSignatureInfo for an explanation.
-struct CABIRole {
-  bool isCaller;
-  /// One entry per argument, for a caller.
-  llvm::ArrayRef<bool> isArgSigned;
-  bool isResultSigned = false;
-
-  static CABIRole caller(llvm::ArrayRef<bool> isArgSigned) {
-    return {/*isCaller=*/true, isArgSigned};
-  }
-  static CABIRole callee(bool isResultSigned) {
-    return {/*isCaller=*/false, {}, isResultSigned};
-  }
-};
+enum class CABIRole { Caller, Callee };
 
 //===----------------------------------------------------------------------===//
 // Platform ABI Interface
@@ -215,9 +202,10 @@ public:
   virtual ~CABIInfo() = default;
 
   /// Classify a whole signature at once, as lowered by `role`. This is the
-  /// entry point for callers. Types must be LLVM dialect types (convert POP
-  /// types first). Args at index >= numFixedArgs are variadic (SIZE_MAX for
-  /// non-variadic).
+  /// entry point for callers. Pass the unconverted types: the classification
+  /// needs the union members, field layout and signedness that only KGEN and
+  /// POP types have. LLVM dialect types are also accepted. Args at index >=
+  /// numFixedArgs are variadic (SIZE_MAX for non-variadic).
   SignatureClassification
   computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
                        mlir::Location loc, CABIRole role,
@@ -226,8 +214,10 @@ public:
   const LLVMDataLayout &getDataLayout() const { return dataLayout; }
 
 protected:
-  CABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout)
-      : ctx(ctx), dataLayout(dataLayout) {}
+  CABIInfo(mlir::MLIRContext *ctx, const POPToLLVMTypeConverter &typeConverter);
+
+  /// Get the LLVM type of an unconverted type.
+  mlir::Type convertType(mlir::Type type) const;
 
   /// Classify a whole signature, independent of the role. Internal building
   /// block for computeSignatureInfo.
@@ -243,17 +233,18 @@ protected:
 
   /// Classify a single argument type. Internal building block for
   /// classifySignature; not safe to call on its own because it cannot apply
-  /// ordering-dependent rules such as rollback-to-stack. Type must be an LLVM
-  /// dialect type. isVariadicArg marks a variadic (...) argument.
+  /// ordering-dependent rules such as rollback-to-stack. Type is the
+  /// unconverted type. isVariadicArg marks a variadic (...) argument.
   virtual CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
                                             bool isVariadicArg) const = 0;
 
   /// Classify a return type. Internal building block for classifySignature.
-  /// Type must be an LLVM dialect type.
+  /// Type is the unconverted type.
   virtual CoercionInfo classifyReturnType(mlir::Type type,
                                           mlir::Location loc) const = 0;
 
   mlir::MLIRContext *ctx;
+  const POPToLLVMTypeConverter &typeConverter;
   const LLVMDataLayout &dataLayout;
 };
 
@@ -268,8 +259,9 @@ protected:
 /// All types are passed and returned as-is with no ABI adjustments.
 class DefaultCABIInfo : public CABIInfo {
 public:
-  DefaultCABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout)
-      : CABIInfo(ctx, dataLayout) {}
+  DefaultCABIInfo(mlir::MLIRContext *ctx,
+                  const POPToLLVMTypeConverter &typeConverter)
+      : CABIInfo(ctx, typeConverter) {}
 
 protected:
   CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
@@ -293,11 +285,11 @@ protected:
 ///
 /// \param triple Target architecture triple
 /// \param ctx MLIR context
-/// \param dataLayout Data layout for size/alignment queries
+/// \param typeConverter Converts the classified types and gives the data layout
 /// \return Platform-specific ABI handler, or nullptr if unsupported
-std::unique_ptr<CABIInfo> createCABIInfo(const llvm::Triple &triple,
-                                         mlir::MLIRContext *ctx,
-                                         const LLVMDataLayout &dataLayout);
+std::unique_ptr<CABIInfo>
+createCABIInfo(const llvm::Triple &triple, mlir::MLIRContext *ctx,
+               const POPToLLVMTypeConverter &typeConverter);
 
 //===----------------------------------------------------------------------===//
 // Utility Functions
@@ -310,9 +302,22 @@ namespace CabiUtils {
 int64_t getStructSize(mlir::LLVM::LLVMStructType type,
                       const LLVMDataLayout &dataLayout);
 
-/// Check if an LLVM struct contains only float/double types.
-/// Used for ARM64 HFA (Homogeneous Float Aggregate) detection.
-bool isAllFloatStruct(mlir::LLVM::LLVMStructType type);
+/// Walk `type` as a tree and call `callback` for each leaf with its type and
+/// byte offset, in the order a C compiler sees the members. Leaves are
+/// scalars, vectors and types without size. `offset` is the byte offset of
+/// `type` in the struct; pass 0 at the top.
+/// Arrays are visited once per element, so bound the size of `type` first.
+void forEachMember(mlir::Type type, int64_t offset,
+                   const LLVMDataLayout &dataLayout,
+                   llvm::function_ref<void(mlir::Type, int64_t)> callback);
+
+/// Walk the unconverted `type` as forEachMember does, and give each leaf as
+/// its LLVM type. The members of a union are all visited, at the offset of
+/// the union. The padding that the conversion of a KGEN struct adds is not a
+/// member, so it is not visited.
+void forEachMember(mlir::Type type, int64_t offset,
+                   const POPToLLVMTypeConverter &typeConverter,
+                   llvm::function_ref<void(mlir::Type, int64_t)> callback);
 
 /// Get the integer type for a given byte size: 1→i8, 2→i16, ≤4→i32, ≤8→i64.
 mlir::IntegerType getIntegerTypeForSize(int64_t size, mlir::MLIRContext *ctx);
@@ -320,10 +325,13 @@ mlir::IntegerType getIntegerTypeForSize(int64_t size, mlir::MLIRContext *ctx);
 /// Classify a 1-8 byte struct as an integer type for register passing.
 CoercionInfo classifySmallIntegerStruct(int64_t size, mlir::MLIRContext *ctx);
 
-/// Classify a non-aggregate type on a target whose C ABI requires the
-/// producer to extend narrow integers. The result is an identity coercion,
-/// with `ext` set for an integer that needs extension.
-CoercionInfo classifyExtendedScalar(mlir::Type type);
+/// Classify the unconverted non-aggregate `type` on a target whose C ABI
+/// requires the producer to extend narrow integers. The result is an identity
+/// coercion, with `ext` set for an integer that needs extension: SExt for a
+/// signed KGEN dtype, otherwise ZExt.
+CoercionInfo
+classifyExtendedScalar(mlir::Type type,
+                       const POPToLLVMTypeConverter &typeConverter);
 
 /// Check if C ABI functionality is enabled.
 /// C ABI coercion is enabled by default.

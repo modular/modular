@@ -84,13 +84,6 @@ def transfer_routine_sender(
         f"[Sender] Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)"
     )
 
-    # The TCP fallback measures about 0.2 GB/s; this floor catches it with
-    # headroom for a contended executor, since the test times one cold
-    # transfer. It does not prove CUDA IPC was used: a host-staged path can
-    # clear it too. The cuMemcpyDtoDAsync_v2 log assertion in the test is the
-    # authoritative check for transport selection.
-    assert bw > 0.5, f"Transfer speed is too low: {bw:.2f} GB/s"
-
     # Verify sender buffer is unchanged
     result = blocks.to_numpy()
     for i in range(total_num_pages):
@@ -165,8 +158,11 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     receiver_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
 
     # Transfer parameters
+    # The test checks the data and the transport, not the speed, so a small
+    # payload is sufficient. A large host allocation can stall for seconds on
+    # a busy host.
     GB = 1024 * 1024 * 1024
-    total_bytes = int(1 * GB)
+    total_bytes = 64 * 1024 * 1024
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]
@@ -217,6 +213,6 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
                 print(line)
         print("-" * 80)
 
-    # Verify CUDA IPC transport is selected. The bandwidth floor alone is
-    # insufficient since d2h->h2d paths can also clear it.
+    # Check the transport, not the speed. One transfer on a shared host can be
+    # slow, also over CUDA IPC.
     assert "UCX  DEBUG cuMemcpyDtoDAsync_v2" in out

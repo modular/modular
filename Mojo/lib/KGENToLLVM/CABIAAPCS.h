@@ -15,6 +15,7 @@
 #define KGEN_LIB_KGENTOLLVM_CABIAAPCS_H
 
 #include "CABILowering.h"
+#include <optional>
 
 namespace M::KGEN {
 
@@ -38,8 +39,8 @@ namespace M::KGEN {
 // https://discourse.llvm.org/t/rfc-an-abi-lowering-library-for-llvm/84495
 class AAPCSABIInfo : public CABIInfo {
 public:
-  AAPCSABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout,
-               bool isDarwinOS);
+  AAPCSABIInfo(mlir::MLIRContext *ctx,
+               const POPToLLVMTypeConverter &typeConverter, bool isDarwinOS);
 
 protected:
   CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
@@ -64,20 +65,18 @@ private:
   CoercionInfo classifyTwoRegisterStruct(int64_t size,
                                          mlir::Location loc) const;
 
+  /// Classify the unconverted `type`, whose LLVM type is `structType`, as a
+  /// homogeneous floating-point or short-vector aggregate (HFA or HVA). An
+  /// aggregate is homogeneous if its members are 1-4 of the same float type,
+  /// or 1-4 vectors of the same 64- or 128-bit size, with no padding, as in
+  /// clang's isHomogeneousAggregate. The members of a union overlap, so they
+  /// count once. Returns a coercion to an array of the base type, or no value
+  /// for any other aggregate.
+  std::optional<CoercionInfo>
+  classifyHomogeneousAggregate(mlir::Type type,
+                               mlir::LLVM::LLVMStructType structType) const;
+
   bool isDarwin; // true = Darwin (macOS/iOS), false = Linux/other
-
-  //===--------------------------------------------------------------------===//
-  // Phase 3: HFA classification (TODO - future work)
-  //===--------------------------------------------------------------------===//
-
-  // HFA (Homogeneous Float Aggregate) detection
-  // - All fields are float32, float64, or float16
-  // - Up to 4 fields total
-  // - Passed in V0-V3 (SIMD registers)
-  //
-  // Phase 3 methods (not yet implemented):
-  // - bool isHFA(StructType type, mlir::Type &baseType, int &count) const;
-  // - CoercionInfo classifyHFA(...);
 };
 
 } // namespace M::KGEN

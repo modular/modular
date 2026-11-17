@@ -20,7 +20,7 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import (
     BufferType,
@@ -30,13 +30,13 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     cross_attention_ragged,
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,
@@ -47,12 +47,9 @@ from torch.nn.functional import scaled_dot_product_attention
 TORCH_DTYPE = torch.bfloat16
 
 
-def causal_max_flash_attn(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
-) -> torch.Tensor:
-    dtype = torch_dtype_to_max(q.dtype)
-    _batch, _q_seq_len, nheads, head_dim = q.shape
-
+def load_causal_max_flash_attn(
+    dtype: DType, nheads: int, head_dim: int
+) -> Model:
     # Graph types.
     q_type = TensorType(
         dtype,
@@ -85,12 +82,7 @@ def causal_max_flash_attn(
     )
 
     # Compile model.
-    model = session.load(graph)
-
-    # Execute.
-    output = model.execute(q.detach(), k.detach(), v.detach())[0]
-    assert isinstance(output, Buffer)
-    return torch.from_dlpack(output)
+    return session.load(graph)
 
 
 @pytest.mark.parametrize(
@@ -112,11 +104,17 @@ def test_causal_flash_attention_gpu(q_seqlen: int, k_seqlen: int) -> None:
     q_shape = (batch_size, q_seqlen, nheads, head_dim)
     kv_shape = (batch_size, k_seqlen, nheads_k, head_dim)
 
+    model = load_causal_max_flash_attn(
+        torch_dtype_to_max(torch_dtype), nheads, head_dim
+    )
+
     q = torch.randn(q_shape, device=torch_device, dtype=torch_dtype)
     k = torch.randn(kv_shape, device=torch_device, dtype=torch_dtype)
     v = torch.randn(kv_shape, device=torch_device, dtype=torch_dtype)
 
-    out_max = causal_max_flash_attn(q, k, v).squeeze()
+    output = model.execute(q.detach(), k.detach(), v.detach())[0]
+    assert isinstance(output, Buffer)
+    out_max = torch.from_dlpack(output).squeeze()
     out_flash_attn = (
         scaled_dot_product_attention(
             q.to(torch_device).permute(0, 2, 1, 3),

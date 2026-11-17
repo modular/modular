@@ -35,7 +35,6 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu
 from max.gpu.memory import AddressSpace
 from max.gpu.primitives import block
 from max.gpu.primitives.grid_controls import (
@@ -224,15 +223,15 @@ def _cumsum_shape[axis: Int](input: ImmTileTensor[...]) -> Tuple[Int, Int, Int]:
     `[num_rows, axis_len, stride]`.
     """
     comptime axis_pos = axis if axis >= 0 else axis + input.rank
-    var shape = coord_to_index_list(input.layout.shape_coord())
+    var shape = input.layout.shape_coord()
     var num_rows = 1
     var stride = 1
     comptime for i in range(input.rank):
         comptime if i < axis_pos:
-            num_rows *= shape[i]
+            num_rows *= Int(shape[i])
         elif i > axis_pos:
-            stride *= shape[i]
-    return (num_rows, shape[axis_pos], stride)
+            stride *= Int(shape[i])
+    return (num_rows, Int(shape[axis_pos]), stride)
 
 
 @inline(.always)
@@ -1445,13 +1444,12 @@ def cumsum[
     reverse: Bool,
     *,
     axis: Int,
-    target: StaticString,
 ](
     output: TileTensor[mut=True, dtype, ...],
     input: TileTensor[dtype, ...],
     ctx: DeviceContext,
 ) raises:
-    """Computes the cumulative sum of `input` along `axis` on `target`.
+    """Computes the cumulative sum of `input` along `axis` on `ctx`'s target.
 
     See the CPU overload for the semantics. On GPU, float32 inputs accumulate
     in float32 rather than float64.
@@ -1461,7 +1459,6 @@ def cumsum[
         exclusive: If set to True, return exclusive sum (top element not included).
         reverse: If set to True, perform cumsum operation in reverse direction.
         axis: The axis on which to perform the cumsum operation.
-        target: The target device, `"cpu"` or a GPU target.
 
     Args:
         output: The output tensor.
@@ -1477,10 +1474,10 @@ def cumsum[
     comptime assert (
         -input.rank <= axis < input.rank
     ), "Axis value must be in range [-rank, rank)"
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "cumsum", task_id=get_safe_task_id(ctx)
     ):
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             cumsum[dtype, exclusive, reverse, axis=axis](output, input)
         else:
             _cumsum_gpu[dtype, exclusive, reverse, axis=axis](

@@ -307,6 +307,10 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
   KGEN::TargetTraitsRegistry::get().registerAllDialects(registry);
 }
 
+void M::configureKGENContext(MLIRContext *ctx) {
+  KGEN::TargetTraitsRegistry::get().configureContext(ctx);
+}
+
 void M::preloadAllKGENDialects(MLIRContext *ctx) {
   ctx->loadDialect<
       // clang-format off

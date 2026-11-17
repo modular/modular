@@ -49,7 +49,7 @@ from layout import (
 )
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tile_iterator import TileTensorIter
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout.tile_async_copy import copy_dram_to_sram_async_ldmatrix
 from layout.tile_io import (
@@ -206,11 +206,11 @@ def warp_split_k_reduction[
 @always_inline
 def _static_tile_layout[
     L: TensorLayout
-]() -> TileLayout[
+]() -> Layout[
     shape_types=L._shape_types, stride_types=L._stride_types
 ] where L.all_dims_known:
     """Builds the layout instance of a fully static `L`."""
-    return TileLayout[shape_types=L._shape_types, stride_types=L._stride_types](
+    return Layout[shape_types=L._shape_types, stride_types=L._stride_types](
         Coord[*L._shape_types](), Coord[*L._stride_types]()
     )
 
@@ -332,7 +332,7 @@ def multistage_mma[
 
     @inline(.always)
     def _copy_tile_to_sram[
-        thread_layout: TileLayout, swizzle: Bool, masked: Bool
+        thread_layout: Layout, swizzle: Bool, masked: Bool
     ](
         dst: TileTensor[mut=True, address_space=.SHARED, ...],
         src: TileTensor,
@@ -1141,7 +1141,7 @@ def _multistage_gemm_kernel_impl[
         ufloordiv(ufloordiv(K, BK), num_warp_k_partitions) * warp_k_part_id
     )
     var a_row0 = block_m * BM
-    var a_tile_layout = TileLayout(
+    var a_tile_layout = Layout(
         Coord(Idx[BM], Idx[BK]), a_tt.layout.stride_coord()
     )
     var a_gmem_iter = TileTensorIter[
@@ -1159,7 +1159,7 @@ def _multistage_gemm_kernel_impl[
 
     comptime b_tile_axis = 1 if transpose_b else 0
     var b_row0 = block_n * BN if transpose_b else bk_start * BK
-    var b_tile_layout = TileLayout(
+    var b_tile_layout = Layout(
         Coord(Idx[BD_0], Idx[BD_1]), b_tt.layout.stride_coord()
     )
     var b_gmem_iter = TileTensorIter[
@@ -1551,14 +1551,12 @@ def multistage_gemm_split_k_kernel[
         var k_size = Int64(min(partition_size, K - k_start))
         var a_part = TileTensor(
             a.ptr_at_offset((0, k_start)),
-            TileLayout(
-                Coord(a.layout.shape[0](), k_size), a.layout.stride_coord()
-            ),
+            Layout(Coord(a.layout.shape[0](), k_size), a.layout.stride_coord()),
         )
         comptime if transpose_b:
             var b_part = TileTensor(
                 b.ptr_at_offset((0, k_start)),
-                TileLayout(
+                Layout(
                     Coord(b.layout.shape[0](), k_size), b.layout.stride_coord()
                 ),
             )
@@ -1568,7 +1566,7 @@ def multistage_gemm_split_k_kernel[
         else:
             var b_part = TileTensor(
                 b.ptr_at_offset((k_start, 0)),
-                TileLayout(
+                Layout(
                     Coord(k_size, b.layout.shape[1]()), b.layout.stride_coord()
                 ),
             )

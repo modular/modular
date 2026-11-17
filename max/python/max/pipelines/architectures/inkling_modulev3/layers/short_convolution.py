@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max import functional as F
 from max.nn import Module
-from max.nn.legacy.state_space import short_conv_ring
+from max.nn._graph_ops.state_space import short_conv_ring
 from max.nn.norm import RMSNorm
 from max.nn.norm.rms_norm import rms_norm
 from max.tensor import Tensor

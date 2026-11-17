@@ -26,7 +26,7 @@ from std.utils.index import Index, IndexList
 
 def bench_rms_norm_fused_residual_add_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank]
-](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
@@ -117,11 +117,10 @@ def bench_rms_norm_fused_residual_add_gpu[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             rms_norm_fused_residual_add[
                 dtype,
                 rank,
-                target="gpu",
                 epsilon1=epsilon1,
                 weight_offset1=weight_offset1,
                 epsilon2=epsilon2,

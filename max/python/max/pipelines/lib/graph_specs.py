@@ -33,16 +33,18 @@ from typing import Any
 
 from max import tree
 from max._artifact.value_types import ArtifactError, treedef_to_json
-from max.driver import DLPackArray
+from max.driver import Buffer, DLPackArray
 from max.engine import CompiledModel, InferenceSession, Model
 from max.graph import Graph, Type
 from max.graph import Module as GraphModule
 from max.nn import Module as ModuleV3
 from max.nn.legacy import Module
-from max.nn.legacy.graph_groups import HiddenStates, Logits
+from max.nn.legacy.graph_groups import HiddenStates, Logits, TPSignals
+from max.nn.module import InputType
+from max.pipelines.modeling.eager_validation import eager_validator
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable, StagedGraph
-from max.tensor.sharding import TensorLayout
+from max.tensor.sharding import BufferLayout, TensorLayout
 from max.tensor.sharding.types import as_layout
 
 
@@ -51,6 +53,9 @@ class GraphRole(str, Enum):
 
     DECODER = "decoder"
     """The forward pass: tokens and KV cache to logits."""
+
+    DRAFT = "draft"
+    """A speculative proposal model, composed with a target decoder."""
 
     SAMPLER = "sampler"
     """Samples the next token from the decoder's logits."""
@@ -77,6 +82,14 @@ class GraphRole(str, Enum):
     """The single forward pass of a model without a KV cache, such as an
     embedding model: inputs to embeddings or hidden states."""
 
+    BLOCK_DIFFUSION = "block_diffusion"
+    """One block-diffusion denoise step: canvas tokens and the paged KV
+    cache to the processed self-conditioning logits and the step's sampling
+    statistics.
+
+    A registration that adds it serves through
+    :class:`~max.pipelines.lib.pipeline_variants.block_diffusion_text_generation.BlockDiffusionTextGenerationPipeline`."""
+
     EP_INIT = "ep_init"
     """The one-time expert-parallel setup graph run at engine startup."""
 
@@ -100,8 +113,8 @@ class GraphSpec:
         name: The graph's name. Graphs in one group need distinct names.
         input_types: The graph's input types: a sequence, or a named tree
             such as a module's ``input_tree`` whose leaves are the inputs in
-            order. A ModuleV3 graph takes a sequence, one type per argument
-            of its ``forward``.
+            order. A ModuleV3 graph takes a sequence, one type or tree of
+            types per argument of its ``forward``.
         weights: The weight values, keyed by name. Defaults to the module's
             :meth:`~max.nn.legacy.Module.state_dict` once traced, or a ModuleV3
             module's own parameters.
@@ -112,16 +125,21 @@ class GraphSpec:
         is_device_graph: Whether to build a device graph.
         auto_cast: Whether a ModuleV3 graph casts a ``float32`` or
             ``bfloat16`` weight to the dtype its parameter declares.
+        signal_buffer_index: Where a ModuleV3 graph takes its signal
+            buffers among its inputs, to match an existing graph's calling
+            convention. ``None`` puts them after the last input, and only on
+            a graph that runs on several devices.
     """
 
     module: Module | ModuleV3[..., Any]
     name: str
-    input_types: Sequence[Type[Any]] | Mapping[str, object]
+    input_types: Sequence[tree.Tree[InputType]] | Mapping[str, object]
     weights: Mapping[str, DLPackArray] | None = None
     group: str | None = None
     custom_extensions: Sequence[Path] = ()
     is_device_graph: bool = False
     auto_cast: bool = False
+    signal_buffer_index: int | None = None
 
     def trace(self, module: GraphModule | None = None) -> Graph:
         """Traces the graph, into ``module`` if given.
@@ -165,6 +183,7 @@ class GraphSpec:
             custom_extensions=self.custom_extensions,
             auto_cast=self.auto_cast,
             is_device_graph=self.is_device_graph,
+            signal_buffer_index=self.signal_buffer_index,
         )
 
 
@@ -211,7 +230,8 @@ def compile_and_init_graphs(
     so the host weights can be released after initialization. A ModuleV3
     role's callable instead takes and returns what the module's ``forward``
     does, adds the signal buffers a multi-device graph takes, and keeps its
-    weight registry.
+    weight registry. Its exported signature names the signal buffers as a
+    :class:`~max.nn.legacy.graph_groups.TPSignals` group.
 
     Args:
         session: The session that compiles and initializes the graphs.
@@ -288,7 +308,7 @@ def compile_and_init_graphs(
                 # returns what ``forward`` does and adds any signal buffers.
                 staged, registry = spec._staged
                 callables[role] = CompiledCallable.from_engine_model(
-                    staged, compiled, model, registry
+                    staged, compiled, model, registry, signals_group=tp_signals
                 )
             else:
                 callables[role] = graph_callable(
@@ -297,6 +317,87 @@ def compile_and_init_graphs(
                 _check_inputs(role, callables[role].in_tree)
                 _check_outputs(role, callables[role].out_tree)
     return callables
+
+
+def tp_signals(
+    signals: tuple[BufferLayout, ...],
+) -> TPSignals[tuple[BufferLayout, ...]]:
+    """Returns the signal buffers as a ``TPSignals`` group.
+
+    Pass it as a :class:`~max.tensor.compilation.CompiledCallable`'s
+    ``signals_group``.
+
+    Args:
+        signals: The signal buffers' layouts, one per device.
+    """
+    return TPSignals(signal=signals)
+
+
+class _EagerCallable:
+    """Runs a ModuleV3 role's module op by op instead of a compiled graph.
+
+    It takes the buffers the role's compiled graph would, in graph order, and
+    returns what the module's ``forward`` does, with real tensors. So a
+    debugger stopped inside ``forward`` sees real values. Like a
+    :class:`~max.tensor.compilation.CompiledCallable`, it also runs on flat
+    buffers with :meth:`execute_raw`.
+
+    Args:
+        spec: The role's graph. Its weights are loaded into the module's
+            parameters.
+
+    Raises:
+        TypeError: If the spec's module is not a ModuleV3 module.
+    """
+
+    #: The structure and layouts of the last :meth:`execute_raw` call's
+    #: outputs, as a compiled callable describes its graph's outputs.
+    out_tree: tree.TreeDef
+    out_layouts: list[TensorLayout]
+
+    def __init__(self, spec: GraphSpec) -> None:
+        if not isinstance(spec.module, ModuleV3):
+            raise TypeError(
+                f"eager runs ModuleV3 decoders, and the {spec.name} graph is"
+                " built with the graph API. The checkpoint may use an encoding"
+                " the architecture's ModuleV3 version doesn't support."
+            )
+        if spec.weights is not None:
+            with eager_validator.allow_eager(reason="eager weight loading"):
+                # Not strict, as the compiled graph ignores checkpoint
+                # weights the module doesn't declare.
+                spec.module.load_state_dict(
+                    spec.weights, strict=False, auto_cast=spec.auto_cast
+                )
+        self.module = spec.module
+        _, self.in_tree = _input_signature(spec.input_types)
+
+    def __call__(self, *buffers: Buffer) -> Any:
+        """Runs the module on one buffer per graph input, in graph order."""
+        args, kwargs = tree.unflatten(
+            self.in_tree, [Tensor(storage=buffer) for buffer in buffers]
+        )
+        with (
+            eager_validator.allow_eager(reason="an eager role"),
+            eager_validator.allow_device_transfer(
+                reason="inspecting an eager role's values"
+            ),
+        ):
+            return self.module(*args, **kwargs)
+
+    def execute_raw(self, *buffers: Buffer) -> list[Buffer]:
+        """Runs the module on buffers and returns its outputs' buffers.
+
+        Args:
+            buffers: The graph's input buffers, in graph order.
+
+        Returns:
+            One buffer per output shard, in output order. :attr:`out_tree`
+            and :attr:`out_layouts` describe them.
+        """
+        outputs, self.out_tree = tree.flatten(self(*buffers), leaf=Tensor)
+        self.out_layouts = [output.layout for output in outputs]
+        return [buffer for output in outputs for buffer in output.buffers]
 
 
 def _check_inputs(role: str, in_tree: tree.TreeDef) -> None:
@@ -372,7 +473,7 @@ def _has_kind(treedef: tree.TreeDef, cls: type) -> bool:
 
 
 def _input_signature(
-    input_types: Sequence[Type[Any]] | Mapping[str, object],
+    input_types: Sequence[tree.Tree[InputType]] | Mapping[str, object],
 ) -> tuple[list[TensorLayout], tree.TreeDef]:
     """Returns the input layouts and call structure of a role's callable.
 
@@ -399,7 +500,7 @@ def _input_signature(
 def graph_callable(
     compiled: CompiledModel,
     model: Model,
-    input_types: Sequence[Type[Any]] | Mapping[str, object],
+    input_types: Sequence[tree.Tree[InputType]] | Mapping[str, object],
     output_types: tree.Tree[Type[Any]],
 ) -> CompiledCallable[..., Any]:
     """Wraps a graph compiled and initialized elsewhere as a callable.

@@ -21,9 +21,9 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn import Linear, Module
+from max.nn._graph_ops import swiglu_quantize_dynamic_block_scaled
+from max.nn.activation import GatedActivation
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import swiglu_quantize_dynamic_block_scaled
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
@@ -124,13 +124,25 @@ class KimiK3DenseMLP(Module[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the dense MLP over ``x``."""
-        activated = kimi_situ_and_mul(
-            self.gate_up_proj(x),
-            self.beta,
-            self.linear_beta,
-            self.intermediate_size,
+        return self.down_proj(self.activation(x))
+
+    def activation(self, x: Tensor) -> Tensor:
+        """Runs the gate/up projection and SiTU-and-mul, but not ``down_proj``.
+
+        Lets a caller that owns the down projection -- the latent MoE's
+        merged exit GEMM -- read the shared expert's activation on its own.
+        """
+        return self.situ_and_mul(self.gate_up_proj(x))
+
+    def situ_and_mul(self, gate_up: Tensor) -> Tensor:
+        """Runs SiTU-and-mul over a ``gate_up_proj`` output.
+
+        Lets a caller that computes the gate/up projection in a merged GEMM
+        -- the latent MoE's entry -- apply the activation on its own.
+        """
+        return kimi_situ_and_mul(
+            gate_up, self.beta, self.linear_beta, self.intermediate_size
         )
-        return self.down_proj(activated)
 
 
 def tensor_parallel_dense_mlp(

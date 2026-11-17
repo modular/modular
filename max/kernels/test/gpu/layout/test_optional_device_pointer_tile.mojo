@@ -26,7 +26,7 @@ must leave the buffer untouched when it is `None`.
 
 `Optional[T].device_type` is `Optional[T.device_type]`, so an
 `Optional[DeviceBuffer]` argument is declared by the kernel as an
-`Optional[UnsafePointer]`; the last test covers that conversion.
+`Optional[Pointer]`; the last test covers that conversion.
 """
 
 from layout import TensorLayout, TileTensor, row_major
@@ -40,10 +40,10 @@ from std.testing import assert_equal
 
 comptime _N = 8
 
-comptime _Tile[LayoutType: TensorLayout, origin: MutOrigin] = TileTensor[
+comptime _Tile = TileTensor[
     .float32,
-    LayoutType,
-    origin,
+    _,
+    _,
     Engine=DevicePointerEngine[element_width=1],
 ]
 

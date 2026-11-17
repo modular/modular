@@ -84,53 +84,38 @@ InterpreterState::MemoryBlob::MemoryBlob(llvm::BumpPtrAllocator &allocator,
       memory(hdl ? MemoryT(hdl) : MemoryT(allocator.Allocate(size, align))),
       refCount(refCount) {}
 
-/// Do one of the following:
-///  (1) Mark a region as a Pointer
-///  (2) Clear a Pointer Region by passing in None to a blob with regions
-///  (3) Mark a region as a Symbol
 ErrorOrSuccess InterpreterState::MemoryBlob::setMarkedRegion(
-    int64_t offset, int64_t regionSize, int64_t pointerSize,
-    RegionMark markedRegion) {
-  std::optional<llvm::BitVector> *regionFieldPtr = nullptr;
-  bool write = false;
-  switch (markedRegion) {
-  case RegionMark::None:
-    if (pointerRegions) {
-      regionFieldPtr = &pointerRegions;
-      break;
-    }
-    return success();
-  case RegionMark::Pointer:
-    write = true;
-    regionFieldPtr = &pointerRegions;
-    break;
-  case RegionMark::Symbol:
-    write = true;
-    regionFieldPtr = &symbolRegions;
-    break;
-  }
-  std::optional<llvm::BitVector> &regionField = *regionFieldPtr;
-  if (!regionField) {
-    regionField.emplace(size);
-    regionField->set(offset);
-    return success();
-  }
-  // The write clobbers a pointer region if a bit is set between
-  // `(offset - pointerSize, offset)` or between
-  // `(offset + size - pointerSize, offset + size)`, indicating partial
-  // overwrite of a pointer region.
-  if (regionSize >= 0 &&
-      (regionField->find_first_in(
-           std::max<int64_t>(0, offset - pointerSize + 1), offset) != -1 ||
-       regionField->find_first_in(
-           std::max<int64_t>(0, offset + regionSize - pointerSize + 1),
-           offset + regionSize) != -1))
+    int64_t offset, int64_t regionSize, TargetInfoAttr target,
+    RegionMark markedRegion, unsigned addressSpace) {
+  int64_t pointerSize = target.getDataLayout().getPointerSize(addressSpace);
+  int64_t symbolSize = target.getDataLayout().getPointerSize();
+  auto clobbers = [&](const std::optional<llvm::BitVector> &regions,
+                      int64_t width) {
+    return regions && regionSize >= 0 &&
+           (regions->find_first_in(std::max<int64_t>(0, offset - width + 1),
+                                   offset) != -1 ||
+            regions->find_first_in(
+                std::max<int64_t>(0, offset + regionSize - width + 1),
+                offset + regionSize) != -1);
+  };
+  if (clobbers(pointerRegions, pointerSize) ||
+      (markedRegion == RegionMark::Symbol &&
+       clobbers(symbolRegions, symbolSize)))
     return Error("write clobbers a pointer region");
 
-  if (!write)
-    regionField->reset(offset, offset + regionSize);
-  else
-    regionField->set(offset);
+  auto updateMarks = [&](std::optional<llvm::BitVector> &regions, int64_t width,
+                         RegionMark kind) {
+    if (regions && regionSize > 0)
+      regions->reset(std::max<int64_t>(0, offset - width + 1),
+                     offset + regionSize);
+    if (markedRegion == kind) {
+      if (!regions)
+        regions.emplace(size);
+      regions->set(offset);
+    }
+  };
+  updateMarks(pointerRegions, pointerSize, RegionMark::Pointer);
+  updateMarks(symbolRegions, symbolSize, RegionMark::Symbol);
   return success();
 }
 
@@ -343,15 +328,12 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
   if ((regionMark != RegionMark::None) && size != pointerSize)
     return Error("pointer write size is not equal to pointer bitwidth");
 
-  // For a raw-data write (None), a marked "pointer region" whose bytes
-  // don't resolve to a real blob isn't actually a live pointer (e.g. an SSO
-  // String's inline chars stored in the _ptr_or_data slot). Clear those stale
-  // marks so the write isn't rejected as a partial-pointer clobber. Genuine
-  // pointers (bytes resolve to a blob) are left marked and still trip the
-  // guard.
-  if (regionMark == RegionMark::None && blob.isOwned() && blob.pointerRegions) {
+  // setMarkedRegion rejects a region [offset, offset + size) that covers only
+  // part of a marked pointer. Before that check, clear the mark of each pointer
+  // that overlaps the region and no longer points to live memory, for example
+  // after a free.
+  if (blob.pointerRegions) {
     llvm::BitVector &bits = *blob.pointerRegions;
-    // Any pointer mark whose 8 bytes overlap this write...
     for (int64_t p = std::max<int64_t>(0, offset - (int64_t)pointerSize + 1);
          p < offset + (int64_t)size; ++p) {
       if (!bits[p])
@@ -359,16 +341,14 @@ ErrorOr<void *> InterpreterState::getWritableMemory(int64_t addr, size_t size,
       APInt v(target.getDataLayout().getPointerBitWidth(), 0);
       llvm::LoadIntFromMemory(v, (uint8_t *)blob.getOwned() + p, pointerSize);
 
-      // garbage → not a real pointer
       if (getMemory(v.getSExtValue(), 0).isError()) {
-        // drop the stale mark
         bits.reset(p, p + (int64_t)pointerSize);
       }
     }
   }
 
   if (ErrorOrSuccess err =
-          blob.setMarkedRegion(offset, size, pointerSize, regionMark);
+          blob.setMarkedRegion(offset, size, target, regionMark, addrSpace);
       err.isError())
     return err.takeError();
 
@@ -502,6 +482,75 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
 
   return Error(mlir::debugString(type) +
                " does not implement MemoryableTypeInterface");
+}
+
+ErrorOr<SmallVector<TypedAttr>>
+InterpreterState::readMemoryFragments(int64_t addr, size_t size,
+                                      Type pointerType) {
+  auto memory = getMemory(addr, size);
+  if (memory.isError())
+    return memory.takeError();
+  auto [blob, start] = memory.takeValue();
+  auto *bytes = static_cast<const uint8_t *>(blob.getMemory()) + start;
+  auto byteType = IntegerType::get(ctx, 8);
+  size_t pointerSize = target.getDataLayout().getPointerSize();
+  SmallVector<TypedAttr> fragments;
+  for (size_t offset = 0; offset < size;) {
+    bool pointer =
+        blob.pointerRegions && (*blob.pointerRegions)[start + offset];
+    bool symbol = blob.symbolRegions && (*blob.symbolRegions)[start + offset];
+    if (!pointer && !symbol) {
+      fragments.push_back(IntegerAttr::get(byteType, bytes[offset++]));
+      continue;
+    }
+    if (pointerSize > size - offset)
+      return Error("union field ends inside an interpreted pointer or symbol");
+    APInt bits(pointerSize * CHAR_BIT, 0);
+    llvm::LoadIntFromMemory(bits, bytes + offset, pointerSize);
+    if (symbol) {
+      auto value = getSymbol(bits.getZExtValue());
+      if (value.isError())
+        return value.takeError();
+      fragments.push_back(*value);
+    } else {
+      fragments.push_back(PointerAttr::get(bits.getSExtValue(), pointerType));
+    }
+    offset += pointerSize;
+  }
+  return fragments;
+}
+
+ErrorOrSuccess
+InterpreterState::writeMemoryFragments(int64_t addr, size_t size,
+                                       ArrayRef<TypedAttr> fragments) {
+  size_t extent = 0;
+  SmallVector<int64_t> fragmentSizes;
+  for (TypedAttr fragment : fragments) {
+    auto fragmentSize =
+        DataLayoutInterface::getTypeStoreSize(target, fragment.getType());
+    if (!fragmentSize || *fragmentSize <= 0 ||
+        uint64_t(*fragmentSize) > size - extent)
+      return Error("union fragments exceed the field extent");
+    extent += *fragmentSize;
+    fragmentSizes.push_back(*fragmentSize);
+  }
+  if (extent != size)
+    return Error("union fragments do not fill the field extent");
+  if (!size)
+    return success();
+
+  // Clearing the whole field first permits byte fragments to replace an old
+  // pointer without triggering the partial-pointer-write guard.
+  auto writable = getWritableMemory(addr, size);
+  if (writable.isError())
+    return writable.takeError();
+  size_t offset = 0;
+  for (auto [fragment, fragmentSize] : llvm::zip(fragments, fragmentSizes)) {
+    if (ErrorOrSuccess err = writeAttributeToMemory(addr + offset, fragment))
+      return err.takeError();
+    offset += fragmentSize;
+  }
+  return success();
 }
 
 uint64_t InterpreterState::addSymbolToSymbolTable(TypedAttr symbol) {
@@ -718,7 +767,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       int64_t index = coord.getRefSlot();
       int64_t offset = coord.getOffset();
       auto [ptrTab, ptrBlobIdx] = map.blobs[index];
-      int64_t addr = ptrTab->blobs[index].baseAddr + offset;
+      int64_t addr = ptrTab->blobs[ptrBlobIdx].baseAddr + offset;
       return PointerAttr::get(addr, coord.getType());
     });
     for (unsigned index = 0, numSymbols = model.getSymbols().size();
@@ -743,8 +792,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
                                target.getDataLayout().getPointerSize());
 
         // Mark ptrRegion for the internalized blob.
-        (void)interned->setMarkedRegion(ptr.offset, -1,
-                                        target.getDataLayout().getPointerSize(),
+        (void)interned->setMarkedRegion(ptr.offset, -1, target,
                                         RegionMark::Pointer);
       }
 
@@ -759,6 +807,11 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
                        symbolMap[index.getZExtValue()]);
         llvm::StoreIntToMemory(newIndex, owned,
                                target.getDataLayout().getPointerSize());
+
+        // Mark the slot again, as for pointers above: a read that follows the
+        // marks rather than a type, such as an untagged union's, needs it.
+        (void)interned->setMarkedRegion(symbolRegion, -1, target,
+                                        RegionMark::Symbol);
       }
     }
     return interned.try_emplace(space, std::move(map)).first->second;

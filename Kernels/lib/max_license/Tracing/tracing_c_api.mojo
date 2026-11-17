@@ -15,7 +15,7 @@ from std.collections.string import StaticString
 from std.os import abort
 
 from std.memory import OwnedPointer
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 
 from max.runtime.tracing import Color, Trace, TraceLevel
 

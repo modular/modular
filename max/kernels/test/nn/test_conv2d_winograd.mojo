@@ -119,8 +119,8 @@ def winograd_2d_convolution_3x3[
     for i in range(0, Oh, 2):
         for j in range(0, Ow, 2):
             # Extract 4x4 input tile
-            comptime for di in range(4):
-                comptime for dj in range(4):
+            for di in range(4):
+                for dj in range(4):
                     var v = Scalar[dtype](0)
                     if (i + di) < H and (j + dj) < W:
                         v = signal[i + di, j + dj]
@@ -140,8 +140,8 @@ def winograd_2d_convolution_3x3[
             matmul[2, 2, 4, True](y, scratch, A)
 
             # Store results
-            comptime for di in range(2):
-                comptime for dj in range(2):
+            for di in range(2):
+                for dj in range(2):
                     if i + di < Oh and j + dj < Ow:
                         output[i + di, j + dj] = y[di, dj]
 

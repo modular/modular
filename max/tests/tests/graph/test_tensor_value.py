@@ -13,7 +13,7 @@
 """Test TensorValue behaviors."""
 
 import pytest
-from conftest import axes, shapes, tensor_types
+from conftest import axes, constant_float_dtypes, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -126,10 +126,8 @@ def test_tensor_value__min__with_axis(
         graph.output(out)
 
 
-@given(input_type=...)
+@given(input_type=tensor_types(dtypes=constant_float_dtypes()))
 def test_tensor_value__stdev__no_axis(input_type: TensorType) -> None:
-    # Variance not defined for bools
-    assume(input_type.dtype is not DType.bool)
     with Graph("stdev", input_types=[input_type]) as graph:
         input = graph.inputs[0].tensor
         out = input.stdev()
@@ -140,12 +138,15 @@ def test_tensor_value__stdev__no_axis(input_type: TensorType) -> None:
         graph.output(out)
 
 
-@given(input_type=tensor_types(shapes=shared_shapes), axis=axes(shared_shapes))
+@given(
+    input_type=tensor_types(
+        dtypes=constant_float_dtypes(), shapes=shared_shapes
+    ),
+    axis=axes(shared_shapes),
+)
 def test_tensor_value__stdev__with_axis(
     input_type: TensorType, axis: int
 ) -> None:
-    # Variance not defined for bools
-    assume(input_type.dtype is not DType.bool)
     with Graph("stdev", input_types=[input_type]) as graph:
         input = graph.inputs[0].tensor
         out = input.stdev(axis=axis)

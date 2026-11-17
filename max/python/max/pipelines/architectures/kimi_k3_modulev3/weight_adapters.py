@@ -15,32 +15,29 @@
 The tree is the ModuleV3 registry's layout for the text tower
 (:class:`~.model.KimiK3Model`). Builds the
 ``dict[str, Weights] -> dict[str, WeightData]`` the registry loads from,
-applying the same shape transforms (fused qkv projection, fused qkv conv,
-fused gate/up, stacked experts, de-padded ``A_log``) that ``model.py``'s
-``load_kimi_k3_weights`` applies to a live module -- re-derived locally
-here rather than imported, to avoid a dependency on V2's package. Layer,
-KDA, and expert counts instead come from :class:`~.model_config.KimiK3Config`,
+applying the same shape transforms (fused KDA qkvg and MLA q_a/kv_a/gate
+projections, fused qkv conv, fused gate/up, de-padded ``A_log``) that
+``model.py``'s ``load_kimi_k3_weights`` applies to a live module --
+re-derived locally here rather than imported, to avoid a dependency on V2's
+package. Layer, KDA, and expert counts instead come from
+:class:`~.model_config.KimiK3Config`,
 the single source of truth for those.
 
-Loads MXFP4-packed routed experts now that ``moe_latent.py`` has a compute
-path for them (the AMD CDNA4 W4A8 arm). The packed bytes fuse and stack the
-same way as the dense case; only the E8M0 scales need relabeling, since
-safetensors has no such dtype. A checkpoint without packed experts still
-loads through the dense path unchanged.
+The routed experts load per expert, as zero-copy views of the checkpoint's
+own buffers: ``moe_latent.py`` stacks them in the graph, at model init.
+MXFP4-packed experts load the same way; only their E8M0 scales need
+relabeling, since safetensors has no such dtype.
 
 Under tensor parallelism each fused tensor is written interleaved per TP
-rank (:func:`interleave_for_tp`) rather than block-major. The loader splits
-the checkpoint arrays contiguously along the sharded axis on the host and
-never reshards them on device, so each rank's contiguous slice must already
-hold its share of every fused block.
+rank (:func:`interleave_for_tp`, :func:`fuse_qkv_a_g_for_tp`) rather than
+block-major. The loader splits the checkpoint arrays contiguously along the
+sharded axis on the host and never reshards them on device, so each rank's
+contiguous slice must already hold its share of every fused block.
 """
 
 from __future__ import annotations
 
-import os
-import tempfile
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
@@ -73,19 +70,14 @@ _DIRECT_ATTN_WEIGHTS = {
     "kda": (
         "f_a_proj",
         "f_b_proj",
-        "b_proj",
         "o_norm",
-        "g_proj",
         "o_proj",
     ),
     "mla": (
-        "q_a_proj",
         "q_a_layernorm",
         "q_b_proj",
-        "kv_a_proj_with_mqa",
         "kv_a_layernorm",
         "kv_b_proj",
-        "g_proj",
         "o_proj",
     ),
 }
@@ -93,16 +85,21 @@ _DIRECT_ATTN_WEIGHTS = {
 _PACKED = "weight_packed"
 
 # Weights whose MAX parameter is explicitly declared fp32 regardless of the
-# model's working dtype: KDA's `a_log`/`dt_bias` gate parameters
-# (`kda_attention.py`), and the router's `gate_score`/`e_score_correction_bias`
-# (built inside a `default_dtype(float32)` context in `moe_router.py`).
-# `b_proj`/`conv_weight`/`o_norm.weight` only get cast to fp32 transiently at
-# compute time -- their parameters themselves follow the model's working
-# dtype like everything else, so they are deliberately not pinned here.
+# model's working dtype: KDA's `a_log`/`dt_bias` gate parameters and its
+# `conv_weight` (`kda_attention.py`), and the router's
+# `e_score_correction_bias` (built from the explicit `correction_bias_dtype`
+# in `moe_router.py`). The KDA kernels bind fp32 for those operands, so
+# loading them fp32 keeps the per-step graph free of widening casts. The
+# router's `gate_score.weight` follows the working dtype like everything
+# else: the checkpoint stores it bf16 and the gate GEMV computes
+# bf16 x bf16 -> fp32, so pinning it fp32 would only double the replicated
+# weight. `o_norm.weight` also follows the working dtype: the kernel binds it
+# to the qkv family's dtype, so it needs no widening. `b_proj` rides inside
+# the fused qkvg weight and takes its dtype from the fuse's cast.
 _FP32_SUFFIXES = (
     ".a_log",
     ".dt_bias",
-    ".gate.gate_score.weight",
+    ".conv_weight",
     ".gate.e_score_correction_bias",
 )
 
@@ -211,32 +208,85 @@ def _fuse_gate_up(
     return _rewrap(fused, gate, name)
 
 
-def _fuse_qkv_proj(
+def fuse_qkvgb_for_tp(
+    parts: Sequence[np.ndarray], f_a: np.ndarray | None, tp_size: int
+) -> np.ndarray:
+    """Row-fuses a KDA layer's q/k/v/g/beta blocks, plus the gate's rows.
+
+    Rank ``r``'s contiguous block is ``[q_r | k_r | v_r | g_r | b_r | f_a]``:
+    the split blocks that every rank shards, then the gate's down projection
+    whole, because ``f_a_proj`` stays replicated -- each rank's ``f_b_proj``
+    slice needs all ``head_dim`` of it. The result therefore holds ``tp_size``
+    copies of ``f_a``; that is the price of one GEMM producing it, and it is
+    the same block the layer used to build in the graph, now built once here
+    so no layer holds a second resident copy of its fused weight.
+
+    Args:
+        parts: The q, k, v, g and beta weights, in that order.
+        f_a: The ``[head_dim, hidden]`` gate down-projection, or ``None`` to
+            leave it out (a checkpoint whose gate never joined the GEMM).
+        tp_size: The TP degree the fused weight is sharded over.
+
+    Returns:
+        The ``[4 * inner + heads + tp_size * head_dim, hidden]`` weight.
+
+    Raises:
+        ValueError: If a split part's width does not divide over ``tp_size``.
+    """
+    moves = _interleaved_slices([p.shape[0] for p in parts], tp_size)
+    per_rank = len(parts)
+    blocks: list[np.ndarray] = []
+    for r in range(tp_size):
+        rank_block = [
+            parts[p][src]
+            for p, src, _ in moves[r * per_rank : (r + 1) * per_rank]
+        ]
+        if f_a is not None:
+            rank_block.append(f_a)
+        blocks.append(np.concatenate(rank_block, axis=0))
+    return np.concatenate(blocks, axis=0)
+
+
+def _fuse_qkvgb_proj(
     q: WeightData,
     k: WeightData,
     v: WeightData,
+    g: WeightData,
+    b: WeightData,
     name: str,
     tp_size: int,
     dtype: DType | None = None,
+    f_a: WeightData | None = None,
 ) -> WeightData:
-    """Merges q, k and v into one ``[3 * inner, hidden]`` projection weight.
+    """Merges q, k, v, g and beta into one ``[4 * inner + heads, hidden]`` weight.
 
-    ``KimiK3KDAAttention.qkv_proj`` takes the merged weight, interleaved per
-    TP rank like the conv weight that consumes its output. Castable float
-    parts are cast to ``dtype`` first (the dtype the final cast pass would
-    give each), so parts stored in different float dtypes still merge.
+    Every block reads the same layer input, so one GEMM can produce them
+    all. The per-rank row order is ``[q_r | k_r | v_r | g_r | b_r]``: the
+    qkv prefix keeps the interleave the packed conv weight expects, and
+    beta rides along as one more row-sharded block. Beta leaves the GEMM
+    rounded once to the weight dtype; the layer widens it back to fp32 for
+    the kda op.
+
+    When ``f_a`` is given, its rows are appended whole to every rank's block
+    (see :func:`fuse_qkvgb_for_tp`), so the same GEMM also produces the
+    gate's down projection and the layer needs no GEMV launch for it.
 
     Raises:
-        ValueError: If the parts differ in shape, or still differ in dtype
-            after the cast.
+        ValueError: If q/k/v/g disagree in shape or dtype, if beta shares
+            neither the merged dtype nor the input width, if a block's
+            width does not split over the TP degree, or if ``f_a`` does not
+            match the merged dtype and input width.
     """
-    parts = [q, k, v]
+    parts = [q, k, v, g]
     if dtype is not None:
         parts = [
             part.astype(dtype) if part.dtype in _CASTABLE_DTYPES else part
             for part in parts
         ]
-    for axis, part in zip(("q", "k", "v"), parts, strict=True):
+        b = b.astype(dtype) if b.dtype in _CASTABLE_DTYPES else b
+        if f_a is not None:
+            f_a = f_a.astype(dtype) if f_a.dtype in _CASTABLE_DTYPES else f_a
+    for axis, part in zip(("q", "k", "v", "g"), parts, strict=True):
         if part.dtype != parts[0].dtype or tuple(part.shape) != tuple(
             parts[0].shape
         ):
@@ -245,14 +295,106 @@ def _fuse_qkv_proj(
                 f" {tuple(part.shape)}, but must match q_proj's"
                 f" {parts[0].dtype} and {tuple(parts[0].shape)}."
             )
-    rows = [_elements(part) for part in parts]
-    shape = (sum(r.shape[0] for r in rows), *rows[0].shape[1:])
-    out = _stack_output(shape, rows[0].dtype)
-    pairs = []
-    for p, src, dst in _interleaved_slices([r.shape[0] for r in rows], tp_size):
-        pairs.append((out[dst], rows[p][src]))
-    _copy_into(pairs)
-    return _rewrap(_settle(out), parts[0], name)
+    if b.dtype != parts[0].dtype or b.shape[1] != parts[0].shape[1]:
+        raise ValueError(
+            f"Kimi K3: b_proj has dtype {b.dtype} and shape"
+            f" {tuple(b.shape)}, but must share the weight dtype and the"
+            f" input width of q_proj's {parts[0].dtype} and"
+            f" {tuple(parts[0].shape)}."
+        )
+    if f_a is not None:
+        if f_a.dtype != parts[0].dtype or f_a.shape[1] != parts[0].shape[1]:
+            raise ValueError(
+                f"Kimi K3: f_a_proj has dtype {f_a.dtype} and shape"
+                f" {tuple(f_a.shape)}, but must share the weight dtype and"
+                f" the input width of q_proj's {parts[0].dtype} and"
+                f" {tuple(parts[0].shape)}. A gate the fused GEMM cannot"
+                f" carry would need its own projection."
+            )
+    fused = fuse_qkvgb_for_tp(
+        [*(_elements(part) for part in parts), _elements(b)],
+        None if f_a is None else _elements(f_a),
+        tp_size,
+    )
+    return _rewrap(fused, parts[0], name)
+
+
+def fuse_qkv_a_g_for_tp(
+    q_a: np.ndarray, kv_a: np.ndarray, g: np.ndarray, tp_size: int
+) -> np.ndarray:
+    """Row-fuses an MLA layer's q_a, kv_a and gate projections per TP rank.
+
+    ``q_a`` and ``kv_a`` stay replicated under TP while the gate is
+    head-sharded, so rank ``r``'s contiguous block is ``[q_a | kv_a | g_r]``:
+    whole copies of both latent projections, then the rank's slice of the
+    gate. The result holds ``tp_size`` copies of ``q_a`` and ``kv_a``. With
+    ``tp_size == 1`` it is the plain concatenation.
+
+    Args:
+        q_a: The ``[q_lora_rank, hidden]`` query down-projection.
+        kv_a: The ``[kv_lora_rank + qk_rope_head_dim, hidden]`` key/value
+            down-projection.
+        g: The ``[heads * v_head_dim, hidden]`` output gate projection.
+        tp_size: The TP degree the fused weight is sharded over.
+
+    Returns:
+        The ``[tp_size * (q_a rows + kv_a rows) + g rows, hidden]`` weight.
+
+    Raises:
+        ValueError: If ``g``'s rows do not split evenly over ``tp_size``.
+    """
+    gate_slices = [
+        src for _, src, _ in _interleaved_slices([g.shape[0]], tp_size)
+    ]
+    return np.concatenate(
+        [part for rows in gate_slices for part in (q_a, kv_a, g[rows])], axis=0
+    )
+
+
+def _fuse_qkv_a_g_proj(
+    q_a: WeightData,
+    kv_a: WeightData,
+    g: WeightData,
+    name: str,
+    tp_size: int,
+    dtype: DType | None = None,
+) -> WeightData:
+    """Merges an MLA layer's q_a, kv_a and gate projections into one weight.
+
+    ``KimiK3MLAAttention.qkv_a_g_proj`` takes the merged weight, laid out
+    per TP rank by :func:`fuse_qkv_a_g_for_tp`. As in
+    :func:`_fuse_qkvgb_proj`, castable float parts are cast to ``dtype``
+    first, so parts stored in different float dtypes still merge.
+
+    Raises:
+        ValueError: If a part differs from ``q_a_proj`` in dtype (after the
+            cast) or in input width, or if the gate's rows do not split
+            over the TP degree.
+    """
+    parts = [q_a, kv_a, g]
+    if dtype is not None:
+        parts = [
+            part.astype(dtype) if part.dtype in _CASTABLE_DTYPES else part
+            for part in parts
+        ]
+    ref = parts[0]
+    for label, part in zip(
+        ("kv_a_proj_with_mqa", "g_proj"), parts[1:], strict=True
+    ):
+        if part.dtype != ref.dtype or tuple(part.shape[1:]) != tuple(
+            ref.shape[1:]
+        ):
+            raise ValueError(
+                f"Kimi K3: {label} has dtype {part.dtype} and shape"
+                f" {tuple(part.shape)}, but must share the dtype and input"
+                f" width of q_a_proj's {ref.dtype} and"
+                f" {tuple(ref.shape)}."
+            )
+    q_a, kv_a, g = parts
+    fused = fuse_qkv_a_g_for_tp(
+        _elements(q_a), _elements(kv_a), _elements(g), tp_size
+    )
+    return _rewrap(fused, q_a, name)
 
 
 def _fuse_qkv_conv_weight(
@@ -298,136 +440,6 @@ def _canonical_a_log(
     return _rewrap(broadcast, a_log, name)
 
 
-# Each expert copy is a memcpy plus a page fault per source page, and numpy
-# releases the GIL for both, so overlapping several copies in threads hides
-# that latency; bounded low since the win is concurrent faults, not cores.
-_STACK_WORKERS = min(16, os.cpu_count() or 8)
-
-# Above this, an expert stack is backed by a file instead of anonymous memory,
-# so its pages stay reclaimable under memory pressure.
-_SPILL_BYTES = int(os.environ.get("MAX_KIMI_K3_STACK_SPILL_BYTES", 4 << 30))
-_SPILL_DIR = os.environ.get("MAX_KIMI_K3_STACK_SPILL_DIR") or None
-
-
-def _stack_output(shape: tuple[int, ...], dtype: np.dtype) -> np.ndarray:
-    """Allocates an expert stack, spilling to a file past ``_SPILL_BYTES``.
-
-    The file is unlinked as soon as it is mapped: the mapping keeps the inode
-    alive, so the space is returned when the array is freed and nothing is
-    left behind if the process dies.
-    """
-    nbytes = int(np.prod(shape)) * np.dtype(dtype).itemsize
-    if nbytes < _SPILL_BYTES:
-        return np.empty(shape, dtype=dtype)
-
-    fd, path = tempfile.mkstemp(prefix="max-k3-expert-stack-", dir=_SPILL_DIR)
-    os.close(fd)
-    try:
-        out = np.memmap(path, dtype=dtype, mode="w+", shape=shape)
-    finally:
-        os.unlink(path)
-    return out
-
-
-def _settle(out: np.ndarray) -> np.ndarray:
-    """Writes a spilled stack back, so its pages become reclaimable.
-
-    Spilling makes the bytes file-backed, but a freshly written shared mapping
-    is DIRTY, and dirty page cache is no more reclaimable than anonymous
-    memory -- so one ``msync`` per stack makes the pages clean and lets the
-    kernel drop them under pressure.
-    """
-    if isinstance(out, np.memmap):
-        out.flush()
-    return out
-
-
-def _copy_into(pairs: Sequence[tuple[np.ndarray, np.ndarray]]) -> None:
-    """Runs ``dst[...] = src`` for each pair, concurrently.
-
-    Every ``dst`` is a disjoint slice of one preallocated output, so the
-    writes do not race and the peak stays one output rather than two.
-    """
-    if len(pairs) < 2 or _STACK_WORKERS < 2:
-        for dst, src in pairs:
-            dst[...] = src
-        return
-
-    def one(pair: tuple[np.ndarray, np.ndarray]) -> None:
-        dst, src = pair
-        dst[...] = src
-
-    with ThreadPoolExecutor(max_workers=_STACK_WORKERS) as pool:
-        # list() rather than a bare map(): map is lazy, and an exception in a
-        # worker only surfaces when its result is consumed.
-        list(pool.map(one, pairs))
-
-
-def _stack_experts_arrays(parts: Sequence[np.ndarray]) -> np.ndarray:
-    """Stacks per-expert arrays into ``[E, *parts[0].shape]``.
-
-    ``np.stack`` allocates the same output and fills it serially; this fills
-    it through :func:`_copy_into` instead.
-    """
-    if not parts:
-        raise ValueError("_stack_experts_arrays needs at least one expert")
-    out = _stack_output((len(parts), *parts[0].shape), parts[0].dtype)
-    _copy_into([(out[e], p) for e, p in enumerate(parts)])
-    return _settle(out)
-
-
-def _stack_gate_up_arrays(
-    gate: Sequence[np.ndarray], up: Sequence[np.ndarray], tp_size: int
-) -> np.ndarray:
-    """Stacks per-expert gate and up into ``[E, gate_rows + up_rows, cols]``.
-
-    Each expert's rows are interleaved per TP rank, as
-    :func:`interleave_for_tp` lays them out. Writes each rank's gate and up
-    slices into a preallocated output instead of fusing every expert first
-    and stacking the list, which costs the same result at twice the peak
-    memory and serializes every expert's page faults.
-    """
-    if not gate:
-        raise ValueError("_stack_gate_up_arrays needs at least one expert")
-    moves = _interleaved_slices([gate[0].shape[0], up[0].shape[0]], tp_size)
-    out = _stack_output(
-        (len(gate), gate[0].shape[0] + up[0].shape[0], *gate[0].shape[1:]),
-        gate[0].dtype,
-    )
-    pairs: list[tuple[np.ndarray, np.ndarray]] = []
-    for e, parts in enumerate(zip(gate, up, strict=True)):
-        for p, src, dst in moves:
-            pairs.append((out[e, dst], parts[p][src]))
-    _copy_into(pairs)
-    return _settle(out)
-
-
-def _stack_expert_weights(
-    w1: list[WeightData],
-    w2: list[WeightData],
-    w3: list[WeightData],
-    name: str,
-    tp_size: int,
-) -> tuple[WeightData, WeightData]:
-    """Stacks per-expert checkpoint tensors into the two grouped tensors.
-
-    ``KimiK3LatentMoE.experts_gate_up_proj`` and ``experts_down_proj`` take
-    them. ``w1`` is gate, ``w3`` is up and ``w2`` is down: the checkpoint's own
-    numbering does not follow the data flow. The MXFP4 case's ``weight_scale``
-    tensors go through the same stacking, since whether the values are packed
-    or dense makes no difference to it -- so the scales land in the same
-    per-rank interleaved row order as the weights they scale.
-    """
-    gate_up = _stack_gate_up_arrays(
-        [_elements(g) for g in w1], [_elements(u) for u in w3], tp_size
-    )
-    down = _stack_experts_arrays([_elements(w) for w in w2])
-    return (
-        _rewrap(gate_up, w1[0], f"{name}.experts_gate_up_proj"),
-        _rewrap(down, w2[0], f"{name}.experts_down_proj"),
-    )
-
-
 def _experts_are_packed(state_dict: dict[str, Weights], moe: str) -> bool:
     """Whether this MoE block's routed experts arrived MXFP4-packed."""
     return f"{moe}.experts.0.w1.{_PACKED}" in state_dict
@@ -455,7 +467,7 @@ def _as_e8m0(data: WeightData, name: str) -> WeightData:
 def tp_degree(pipeline_config: Any) -> int:
     """Returns the TP degree the module tree shards fused tensors over.
 
-    The mesh ``pipeline_model.py`` builds is 1-D over every device: ``tp``,
+    The mesh ``KimiK3Config.apply_runtime`` builds is 1-D over every device: ``tp``,
     unless ``ep_size > 1`` makes it ``ep``, which shards nothing along TP.
     Under data parallelism (which ``KimiK3Config`` rejects) nothing is
     TP-sharded either.
@@ -477,9 +489,12 @@ def convert_kimi_k3_state_dict(
     """Converts a Kimi K3 checkpoint's text tower onto the module tree.
 
     The names it produces are :class:`~.model.KimiK3Model`'s own. Under TP,
-    every fused tensor (gate/up, routed-expert gate/up and its MXFP4 scales,
-    the KDA qkv projection, the KDA qkv conv) is interleaved per TP rank by
-    :func:`interleave_for_tp`.
+    every fused tensor (the dense and shared gate/up, the KDA qkvg
+    projection, the KDA qkv conv) is interleaved per TP rank by
+    :func:`interleave_for_tp`, and the MLA q_a/kv_a/gate projection by
+    :func:`fuse_qkv_a_g_for_tp`, which copies the replicated q_a and kv_a
+    into every rank's block. Each routed expert keeps the checkpoint's own
+    ``w1``/``w2``/``w3`` names and buffers.
 
     Args:
         **unused_kwargs: Accepted so every adapter shares one signature.
@@ -549,13 +564,16 @@ def convert_kimi_k3_state_dict(
                 state_dict, f"{attn_src}.{name}.weight"
             )
         if is_kda:
-            out[f"{attn_dst}.qkv_proj.weight"] = _fuse_qkv_proj(
+            out[f"{attn_dst}.qkvg_proj.weight"] = _fuse_qkvgb_proj(
                 _wd(state_dict, f"{attn_src}.q_proj.weight"),
                 _wd(state_dict, f"{attn_src}.k_proj.weight"),
                 _wd(state_dict, f"{attn_src}.v_proj.weight"),
-                f"{attn_dst}.qkv_proj.weight",
+                _wd(state_dict, f"{attn_src}.g_proj.weight"),
+                _wd(state_dict, f"{attn_src}.b_proj.weight"),
+                f"{attn_dst}.qkvg_proj.weight",
                 tp_size,
                 dtype,
+                _wd(state_dict, f"{attn_src}.f_a_proj.weight"),
             )
             q_conv, k_conv, v_conv = (
                 _wd(state_dict, f"{attn_src}.{axis}_conv1d.weight")
@@ -575,6 +593,15 @@ def convert_kimi_k3_state_dict(
                 _elements(dt_bias).reshape(kda_num_heads, kda_head_dim),
                 dt_bias,
                 f"{attn_dst}.dt_bias",
+            )
+        else:
+            out[f"{attn_dst}.qkv_a_g_proj.weight"] = _fuse_qkv_a_g_proj(
+                _wd(state_dict, f"{attn_src}.q_a_proj.weight"),
+                _wd(state_dict, f"{attn_src}.kv_a_proj_with_mqa.weight"),
+                _wd(state_dict, f"{attn_src}.g_proj.weight"),
+                f"{attn_dst}.qkv_a_g_proj.weight",
+                tp_size,
+                dtype,
             )
 
         ffn_dst = f"{dst}.ffn"
@@ -606,62 +633,19 @@ def convert_kimi_k3_state_dict(
         out[f"{ffn_dst}.routed_expert_norm.weight"] = _wd(
             state_dict, f"{moe}.routed_expert_norm.weight"
         )
-        if _experts_are_packed(state_dict, moe):
-            packed1 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w1.{_PACKED}")
-                for e in range(num_experts)
-            ]
-            packed2 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w2.{_PACKED}")
-                for e in range(num_experts)
-            ]
-            packed3 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w3.{_PACKED}")
-                for e in range(num_experts)
-            ]
-            gate_up, down = _stack_expert_weights(
-                packed1, packed2, packed3, ffn_dst, tp_size
-            )
-            out[f"{ffn_dst}.experts_gate_up_proj"] = gate_up
-            out[f"{ffn_dst}.experts_down_proj"] = down
-
-            scale1 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w1.weight_scale")
-                for e in range(num_experts)
-            ]
-            scale2 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w2.weight_scale")
-                for e in range(num_experts)
-            ]
-            scale3 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w3.weight_scale")
-                for e in range(num_experts)
-            ]
-            gate_up_scale, down_scale = _stack_expert_weights(
-                scale1, scale2, scale3, f"{ffn_dst}_scale", tp_size
-            )
-            out[f"{ffn_dst}.experts_gate_up_proj_scale"] = _as_e8m0(
-                gate_up_scale, f"{ffn_dst}.experts_gate_up_proj_scale"
-            )
-            out[f"{ffn_dst}.experts_down_proj_scale"] = _as_e8m0(
-                down_scale, f"{ffn_dst}.experts_down_proj_scale"
-            )
-        else:
-            w1 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w1.weight")
-                for e in range(num_experts)
-            ]
-            w2 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w2.weight")
-                for e in range(num_experts)
-            ]
-            w3 = [
-                _wd(state_dict, f"{moe}.experts.{e}.w3.weight")
-                for e in range(num_experts)
-            ]
-            gate_up, down = _stack_expert_weights(w1, w2, w3, ffn_dst, tp_size)
-            out[f"{ffn_dst}.experts_gate_up_proj"] = gate_up
-            out[f"{ffn_dst}.experts_down_proj"] = down
+        packed = _experts_are_packed(state_dict, moe)
+        for e in range(num_experts):
+            for w in ("w1", "w2", "w3"):
+                src_w = f"{moe}.experts.{e}.{w}"
+                dst_w = f"{ffn_dst}.experts.{e}.{w}"
+                if not packed:
+                    out[f"{dst_w}.weight"] = _wd(state_dict, f"{src_w}.weight")
+                    continue
+                out[f"{dst_w}.weight"] = _wd(state_dict, f"{src_w}.{_PACKED}")
+                out[f"{dst_w}.weight_scale"] = _as_e8m0(
+                    _wd(state_dict, f"{src_w}.weight_scale"),
+                    f"{dst_w}.weight_scale",
+                )
         out[f"{ffn_dst}.shared_experts.gate_up_proj.weight"] = _fuse_gate_up(
             _wd(state_dict, f"{moe}.shared_experts.gate_proj.weight"),
             _wd(state_dict, f"{moe}.shared_experts.up_proj.weight"),

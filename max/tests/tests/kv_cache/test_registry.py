@@ -16,13 +16,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import CompileOnlyExecutionError, InferenceSession
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
@@ -34,7 +34,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateRegion,
     estimated_memory_size,
 )
-from max.nn.legacy.kv_cache.cache_params import TIERED_CONNECTOR_TYPES
+from max.nn.kv_cache.cache_params import TIERED_CONNECTOR_TYPES
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,
     PagedKVCacheManager,
@@ -44,6 +44,7 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.registry import (
+    CompileOnlyKVCacheManager,
     _use_jenga_kv_cache,
     jenga_supports_di,
 )
@@ -487,10 +488,10 @@ class TestLoadKvManagerVirtualDevice:
         "max.pipelines.kv_cache.registry.is_virtual_device_mode",
         return_value=True,
     )
-    def test_load_kv_manager_returns_mock_in_virtual_mode(
+    def test_load_kv_manager_returns_compile_only_stand_in(
         self, mock_is_virtual: MagicMock
     ) -> None:
-        """In virtual device mode, load_kv_manager should return a Mock."""
+        """Checks a virtual-device pipeline gets a stand-in carrying its params."""
         params = create_kv_params()
         mock_session = MagicMock()
 
@@ -502,7 +503,32 @@ class TestLoadKvManagerVirtualDevice:
             available_cache_memory=1024 * 1024 * 1024,
         )
 
-        assert isinstance(result, Mock)
+        assert isinstance(result, CompileOnlyKVCacheManager)
+        assert result.params is params
+
+
+class TestCompileOnlyKVCacheManager:
+    """A virtual-device pipeline's KV manager refuses what needs the cache."""
+
+    def test_carries_params_and_shuts_down(self) -> None:
+        params = create_kv_params()
+        manager = CompileOnlyKVCacheManager(params)
+        assert manager.params is params
+        manager.shutdown()
+
+    @pytest.mark.parametrize(
+        "member",
+        ["claim", "alloc", "runtime_inputs", "effective_max_seq_length"],
+    )
+    def test_refuses_what_needs_the_cache(self, member: str) -> None:
+        manager = CompileOnlyKVCacheManager(create_kv_params())
+        with pytest.raises(CompileOnlyExecutionError, match=member):
+            getattr(manager, member)
+
+    def test_unknown_member_is_an_attribute_error(self) -> None:
+        manager = CompileOnlyKVCacheManager(create_kv_params())
+        with pytest.raises(AttributeError):
+            manager.not_a_manager_member  # noqa: B018
 
 
 class TestKvCacheMemorySize:

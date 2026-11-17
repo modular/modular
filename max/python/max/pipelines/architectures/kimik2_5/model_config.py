@@ -19,10 +19,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
-    KVCacheParamInterface,
-    spec_decode_cache_slack,
-)
+from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding

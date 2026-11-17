@@ -145,7 +145,7 @@ def _inflated_chat_session_count(
     The inflation gives the length-biased warmup pick cap headroom (sweeps
     inflate by the largest requested concurrency).
     """
-    if not args.warmup_to_steady_state or args.warmup_oversample_factor <= 0:
+    if not args.warmup_multiturn or args.warmup_oversample_factor <= 0:
         return base_session_count
     max_warmup = 0
     if args.max_concurrent_conversations is not None:

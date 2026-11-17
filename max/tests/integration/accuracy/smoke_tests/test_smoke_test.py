@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import pytest
 from pytest import MonkeyPatch
 from smoke_tests import smoke_test
 from smoke_tests.smoke_test import MODEL_RECIPES
@@ -390,3 +391,19 @@ def test_merge_serve_extra_args_does_not_mutate_input() -> None:
     snapshot = list(args)
     smoke_test.merge_serve_extra_args(args, "--kv-connector-config=tiered.json")
     assert args == snapshot
+
+
+@pytest.mark.parametrize("framework", ["max", "max-ci"])
+def test_flint_smoke_uses_eager_recipe(
+    monkeypatch: MonkeyPatch, framework: str
+) -> None:
+    monkeypatch.setattr(
+        smoke_test, "_inside_bazel", lambda: framework == "max-ci"
+    )
+    cmd, _ = smoke_test.get_server_cmd(
+        framework, "RecursiveSI/flint", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--prefer-module-v3" in cmd
+    recipe_path = cmd[cmd.index("--config-file") + 1]
+    assert recipe_path == MODEL_RECIPES["RecursiveSI/flint"]

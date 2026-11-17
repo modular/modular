@@ -127,6 +127,55 @@ class _Routed(Module[..., Tensor]):
         return routed(x, ids, weights, w1, w3, w2, _FIRST, 10.0)
 
 
+class _Shifted(_Routed):
+    """``_Routed`` with the local window starting at global expert 0.
+
+    ``routed`` bakes ``first`` into the compiled body, so the shifted
+    window runs a second compiled graph with the same operands.
+    """
+
+    def forward(
+        self,
+        x: Tensor,
+        ids: Tensor,
+        weights: Tensor,
+        w1_codes: Tensor,
+        w1_scales: Tensor,
+        w1_ws2: Tensor,
+        w1_is: Tensor,
+        w3_codes: Tensor,
+        w3_scales: Tensor,
+        w3_ws2: Tensor,
+        w3_is: Tensor,
+        w2_codes: Tensor,
+        w2_scales: Tensor,
+        w2_ws2: Tensor,
+        w2_is: Tensor,
+    ) -> Tensor:
+        w1 = NVFP4Tensor(
+            weight=w1_codes,
+            weight_scale=w1_scales.cast(DType.float8_e4m3fn),
+            weight_scale_2=w1_ws2,
+            input_scale=w1_is,
+            block_size=(1, 16),
+        )
+        w3 = NVFP4Tensor(
+            weight=w3_codes,
+            weight_scale=w3_scales.cast(DType.float8_e4m3fn),
+            weight_scale_2=w3_ws2,
+            input_scale=w3_is,
+            block_size=(1, 16),
+        )
+        w2 = NVFP4Tensor(
+            weight=w2_codes,
+            weight_scale=w2_scales.cast(DType.float8_e4m3fn),
+            weight_scale_2=w2_ws2,
+            input_scale=w2_is,
+            block_size=(1, 16),
+        )
+        return routed(x, ids, weights, w1, w3, w2, 0, 10.0)
+
+
 def _input_types() -> list[TensorType]:
     gpu = DeviceRef.GPU()
     n, h, m, t = _EXPERTS, _HIDDEN, _MOE_DIM, _TOKENS
@@ -162,6 +211,7 @@ def _stack_args(stack: _Stack, device: Device) -> list[Tensor]:
 @dataclass(frozen=True)
 class _Fixture:
     run: Callable[..., Tensor]
+    shifted: Callable[..., Tensor]
     x: np.ndarray
     w1: _Stack
     w3: _Stack
@@ -171,10 +221,11 @@ class _Fixture:
 
 @pytest.fixture(scope="module")
 def compiled() -> _Fixture:
-    """One compiled ``routed`` graph plus the single-expert reference.
+    """The compiled ``routed`` graphs plus the single-expert reference.
 
-    Everything the tests need executes against the same compiled body,
-    so the suite pays one graph compile, not one per test.
+    Everything the tests need executes against the same compiled bodies,
+    so the suite pays two graph compiles, not one per test. Both compile
+    before anything touches the device, so a CPU record captures both.
     """
     rng = np.random.default_rng(30)
     x = (rng.standard_normal((_TOKENS, _HIDDEN)) * 0.5).astype(np.float32)
@@ -184,6 +235,7 @@ def compiled() -> _Fixture:
         _stack(111, _HIDDEN, _MOE_DIM),
     )
     run = _Routed().compile(*_input_types())
+    shifted = _Shifted().compile(*_input_types())
     device = Accelerator()
 
     def call(
@@ -209,7 +261,13 @@ def compiled() -> _Fixture:
         single_expert[e] = call(ids, weights, x)
 
     return _Fixture(
-        run=run, x=x, w1=w1, w3=w3, w2=w2, single_expert=single_expert
+        run=run,
+        shifted=shifted,
+        x=x,
+        w1=w1,
+        w3=w3,
+        w2=w2,
+        single_expert=single_expert,
     )
 
 
@@ -383,50 +441,6 @@ def test_local_window_offset_masks_correctly(compiled: _Fixture) -> None:
     )
     device = Accelerator()
 
-    # ``routed`` bakes ``first`` into the compiled body, so the shifted
-    # window runs a second compiled graph with the same operands.
-    class _Shifted(_Routed):
-        def forward(
-            self,
-            x: Tensor,
-            ids: Tensor,
-            weights: Tensor,
-            w1_codes: Tensor,
-            w1_scales: Tensor,
-            w1_ws2: Tensor,
-            w1_is: Tensor,
-            w3_codes: Tensor,
-            w3_scales: Tensor,
-            w3_ws2: Tensor,
-            w3_is: Tensor,
-            w2_codes: Tensor,
-            w2_scales: Tensor,
-            w2_ws2: Tensor,
-            w2_is: Tensor,
-        ) -> Tensor:
-            w1 = NVFP4Tensor(
-                weight=w1_codes,
-                weight_scale=w1_scales.cast(DType.float8_e4m3fn),
-                weight_scale_2=w1_ws2,
-                input_scale=w1_is,
-                block_size=(1, 16),
-            )
-            w3 = NVFP4Tensor(
-                weight=w3_codes,
-                weight_scale=w3_scales.cast(DType.float8_e4m3fn),
-                weight_scale_2=w3_ws2,
-                input_scale=w3_is,
-                block_size=(1, 16),
-            )
-            w2 = NVFP4Tensor(
-                weight=w2_codes,
-                weight_scale=w2_scales.cast(DType.float8_e4m3fn),
-                weight_scale_2=w2_ws2,
-                input_scale=w2_is,
-                block_size=(1, 16),
-            )
-            return routed(x, ids, weights, w1, w3, w2, 0, 10.0)
-
     at_two = (
         compiled.run(
             Tensor.from_dlpack(compiled.x).to(device).cast(DType.bfloat16),
@@ -440,9 +454,8 @@ def test_local_window_offset_masks_correctly(compiled: _Fixture) -> None:
         .to_numpy()
     )
 
-    shifted = _Shifted().compile(*_input_types())
     at_zero = (
-        shifted(
+        compiled.shifted(
             Tensor.from_dlpack(compiled.x).to(device).cast(DType.bfloat16),
             Tensor.from_dlpack(ids - _FIRST).to(device),
             Tensor.from_dlpack(weights).to(device),

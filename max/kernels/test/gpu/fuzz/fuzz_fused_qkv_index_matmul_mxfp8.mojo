@@ -14,7 +14,7 @@
 # Per-kernel fuzz target:
 # generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4
 # (MiniMax-M3's 5-way dual-cache fused projection, op
-#  `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8`; Python wrapper
+#  `kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp8`; Python wrapper
 #  `_fused_qkv_index_ragged_matmul_scaled_mxfp8`, kernels.py:902). MXFP8:
 #  float8_e4m3fn input + the concatenated weight [Wq|Wk|Wv|Wiq|Wik], E8M0 block
 #  scales over 32-element K blocks in the rank-5 SF-atom layout, fp32 accum.
@@ -593,7 +593,7 @@ def run_one_case(
 
     # === Kernel under test ===================================================
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
     ](
         hs_dev_tt.as_imm().as_unsafe_any_origin(),
         row_offsets_tt,

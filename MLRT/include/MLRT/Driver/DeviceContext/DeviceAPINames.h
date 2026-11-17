@@ -20,9 +20,9 @@
 // out of an API name, and `CompilationDevice::create` takes either -- so the
 // translation lives here once instead of in each TU that happens to need it.
 //
-// Header-only and dependency-free on purpose: `CompilerDeviceArch.cpp`
-// provides `getAcceleratorArchOrEmpty` for the compiler family, which exists
-// precisely so that family links no DeviceContext runtime at all.
+// Header-only and dependency-free on purpose: `AcceleratorArch.cpp` and
+// `DeviceContextStatics.cpp` provide `getAcceleratorArchOrEmpty` for the
+// compiler family, which links no DeviceContext runtime at all.
 //
 // Spelled as literals rather than the `Device::*API` constants because this
 // header is included by the headers that declare them. `DeviceAPINamesTest`

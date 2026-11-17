@@ -45,8 +45,13 @@ import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
-from max.nn.legacy.kv_cache import BatchCharacteristics, KVCacheParamInterface
-from max.nn.legacy.kv_cache.utils import AttnKeyInterface, MultiAttnKey
+from max.nn.kv_cache import (
+    BatchCharacteristics,
+    CacheLeafParamInterface,
+    KVCacheParamInterface,
+    recurrent_leaves,
+)
+from max.nn.kv_cache.utils import AttnKeyInterface, MultiAttnKey
 from max.profiler import traced
 from max.tensor.compilation import CompiledCallable
 from tqdm import tqdm
@@ -205,23 +210,55 @@ def _release_graph_capture_outputs_to_borrowed(
     return outputs
 
 
-def _engine_model_and_signal_buffers(
-    model: Model | CompiledCallable[..., Any],
-) -> tuple[Model, list[Buffer]]:
-    """Returns the engine model to capture and the inputs appended to each call.
-
-    A :class:`~max.tensor.compilation.CompiledCallable` (ModuleV3) wraps
-    its engine model and appends its signal buffers to every call, so capture,
-    replay and verification must append them too.
-    """
-    if isinstance(model, CompiledCallable):
-        return model.engine_model, model.signal_buffers
-    return model, []
-
-
 def _pack_model_graph_key(key: AttnKeyInterface) -> int:
     """Maps a capture key to a uint64 for the C++ capture layer."""
     return hash(key) & 0xFFFFFFFFFFFFFFFF
+
+
+def debug_verify_replay_refusal(
+    kv_params: CacheLeafParamInterface,
+    *,
+    holds_request_state: bool = False,
+) -> str | None:
+    """Returns why launch-trace verification must not run over this model.
+
+    ``debug_verify_replay`` executes the step eagerly on the live buffers
+    and then replays the captured graph over the same ones, so state an op
+    advances in place -- the pools a recurrent/state-space leaf owns, or a
+    registered decoder's request-state store held outside the KV cache
+    (refused whether its pools update in place or from graph outputs,
+    since the runner cannot tell which) -- moves
+    twice per verified replay and every request after the first decodes
+    from corrupt state. Attention pages only append idempotently, so an
+    attention-only model returns ``None`` and verifies safely.
+
+    The runner sees only the KV-params tree, so a store outside it is the
+    pipeline's signal to pass: ``_refuse_debug_verify_over_recurrent_state``
+    reads it off the pipeline model.
+    """
+    states = recurrent_leaves(kv_params)
+    if not states and not holds_request_state:
+        return None
+    sites: list[str] = []
+    if states:
+        leaf_ids = sorted(
+            {region.leaf_id for state in states for region in state.regions}
+        )
+        sites.append(
+            f"in-place recurrent state (leaves: {', '.join(leaf_ids)})"
+        )
+    if holds_request_state:
+        sites.append("in-place request state held outside the KV cache")
+    return (
+        "debug_verify_replay is unsupported for a model that advances "
+        f"{' and '.join(sites)}. "
+        "Launch-trace verification executes the step eagerly on the live "
+        "state buffers and then replays it, so state a step advances in "
+        "place advances twice and corrupts every request decoded after "
+        "the first. Attention-only models append idempotently and stay "
+        "verifiable. Unset debug_verify_replay to run this model under "
+        "device graph capture."
+    )
 
 
 class ServeGraphCaptureRunner:
@@ -238,8 +275,11 @@ class ServeGraphCaptureRunner:
         num_speculative_tokens: int = 0,
         widths_by_batch_size: Sequence[Sequence[int]] | None = None,
     ) -> None:
-        self._engine_model, self._signal_buffers = (
-            _engine_model_and_signal_buffers(model)
+        # A ModuleV3 callable adds its signal buffers to every call of its
+        # engine model, so capture, replay and verification add them too.
+        self._compiled = model if isinstance(model, CompiledCallable) else None
+        self._engine_model = (
+            model.engine_model if isinstance(model, CompiledCallable) else model
         )
         self._warmup_model_inputs = warmup_model_inputs
         self._num_speculative_tokens = num_speculative_tokens
@@ -308,6 +348,12 @@ class ServeGraphCaptureRunner:
         """
         self.graph_entries.pop(key, None)
         self._engine_model.release_captured_graph(_pack_model_graph_key(key))
+
+    def _engine_inputs(self, buffers: Sequence[Buffer]) -> list[Buffer]:
+        """Returns ``buffers`` with the signal buffers in their place."""
+        if self._compiled is None:
+            return list(buffers)
+        return self._compiled.engine_inputs(buffers)
 
     def _probe_verify_widths(self, batch_size: int) -> list[int]:
         """Returns the verify widths to capture for ``batch_size``."""
@@ -404,8 +450,7 @@ class ServeGraphCaptureRunner:
                     input_buffers = model_inputs.buffers
                     output_buffers = self._engine_model.capture(
                         _pack_model_graph_key(graph_key),
-                        *input_buffers,
-                        *self._signal_buffers,
+                        *self._engine_inputs(input_buffers),
                     )
                     if not self._is_spec_decode:
                         outputs = ModelOutputs(*output_buffers)
@@ -451,16 +496,24 @@ class ServeGraphCaptureRunner:
 
     @cached_property
     def _host_input_names(self) -> list[str]:
-        """Returns the engine model's input names, by position.
+        """Returns the engine model's input names, by replay buffer position.
 
-        ``captured_inputs`` is the prefix of the model's declared inputs that
-        graph capture recorded -- ``replay`` appends the signal buffers after
-        it -- so positions line up with ``input_metadata`` over that prefix.
+        ``captured_inputs`` holds every engine model input but the signal
+        buffers, which ``replay`` adds where the graph takes them, so their
+        names are left out here for positions to line up.
         """
-        return [
+        names = [
             spec.name or f"<input {index}>"
             for index, spec in enumerate(self._engine_model.input_metadata)
         ]
+        compiled = self._compiled
+        if compiled is not None and compiled.signal_buffers:
+            count = len(compiled.signal_buffers)
+            at = compiled.signal_buffer_index
+            if at is None:
+                at = len(names) - count
+            del names[at : at + count]
+        return names
 
     def _guard_host_input(
         self, index: int, captured: Buffer, live: Buffer
@@ -505,7 +558,7 @@ class ServeGraphCaptureRunner:
         length, yielding aligned characteristics for the
         ``(batch_size, q, aligned_cache_length)`` shape (a pure CPU bucketing --
         no resolver kernel op). The caller passes the returned
-        :class:`~max.nn.legacy.kv_cache.BatchCharacteristics` to
+        :class:`~max.nn.kv_cache.BatchCharacteristics` to
         ``KVCacheManager.runtime_inputs`` so the dispatch metadata is prepared
         for the aligned length, and to :meth:`replay`, which looks up the
         captured ``GraphKey`` for those characteristics.
@@ -555,6 +608,11 @@ class ServeGraphCaptureRunner:
         already carry dispatch metadata prepared for the aligned characteristics
         (via ``runtime_inputs(batch_characteristics=...)``); this method only
         copies the inputs into the captured replay buffers and replays.
+
+        Raises:
+            ValueError: If ``debug_verify_replay`` is set and this cache holds
+                in-place recurrent state, which the eager verification run
+                would advance twice per replay.
         """
         input_buffers = model_inputs.buffers
         replay_graph_key = self._records.get(batch_characteristics)
@@ -563,6 +621,11 @@ class ServeGraphCaptureRunner:
                 f"No captured device graph for {batch_characteristics}. "
                 f"Available keys are {list(self._records.keys())}."
             )
+
+        if debug_verify_replay:
+            refusal = debug_verify_replay_refusal(self._kv_params)
+            if refusal is not None:
+                raise ValueError(refusal)
 
         packed_model_graph_key = _pack_model_graph_key(replay_graph_key)
         captured_inputs, outputs = self.graph_entries[replay_graph_key]
@@ -597,11 +660,10 @@ class ServeGraphCaptureRunner:
             verify_inputs = debug_verify_model_inputs or model_inputs
             self._engine_model.debug_verify_replay(
                 packed_model_graph_key,
-                *verify_inputs.buffers,
-                *self._signal_buffers,
+                *self._engine_inputs(verify_inputs.buffers),
             )
 
         self._engine_model.replay(
-            packed_model_graph_key, *captured_inputs, *self._signal_buffers
+            packed_model_graph_key, *self._engine_inputs(captured_inputs)
         )
         return outputs

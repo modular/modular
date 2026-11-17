@@ -64,7 +64,7 @@ from .layers.mhc import (
 from .layers.mxfp8_linear import MXFP8Linear
 from .layers.norm import RMSNorm
 from .layers.rope import RopeParams
-from .model_config import DeepseekV41Config
+from .model_config import DeepseekV41Config, position_capacity
 
 __all__ = ["DSparkDrafter", "DSparkStage", "drafter_layer_infos"]
 
@@ -134,8 +134,8 @@ class DSparkStage(Module[..., tuple[Tensor, Tensor, Tensor, Tensor, Tensor]]):
         self.layer_id = info.layer_id
         self.hc_mult = config.hc_mult
         h = config.hidden_size
-        self.attn_norm = RMSNorm(h)
-        self.ffn_norm = RMSNorm(h)
+        self.attn_norm = RMSNorm(h, config.rms_norm_eps)
+        self.ffn_norm = RMSNorm(h, config.rms_norm_eps)
         mix = (2 + config.hc_mult) * config.hc_mult
         for role in ("attn", "ffn"):
             setattr(
@@ -162,7 +162,10 @@ class DSparkStage(Module[..., tuple[Tensor, Tensor, Tensor, Tensor, Tensor]]):
             info,
             mesh,
             rope=rope,
-            max_position=config.max_seq_len,
+            # A request at the context limit drafts past max_seq_len, into
+            # the KV pool's speculative slack, so the stage's RoPE tables
+            # span the same position capacity the trunk's do.
+            max_position=position_capacity(config),
             data_parallel=data_parallel,
         )
         self.ffn = DSparkMoE(config, mesh, data_parallel=data_parallel)
@@ -196,7 +199,7 @@ class DSparkStage(Module[..., tuple[Tensor, Tensor, Tensor, Tensor, Tensor]]):
             stage's carried ``pre``), and the unwritten feed-forward output
             with its gates.
         """
-        stream, post, comb, pre, x = mhc_fused_post_pre(
+        stream, post, comb, pre, x, _ = mhc_fused_post_pre(
             stream,
             y,
             post,
@@ -208,7 +211,7 @@ class DSparkStage(Module[..., tuple[Tensor, Tensor, Tensor, Tensor, Tensor]]):
             self.attn_norm,
         )
         y = self.attn(x, window, positions)
-        stream, post, comb, pre, x = mhc_fused_post_pre(
+        stream, post, comb, pre, x, _ = mhc_fused_post_pre(
             stream,
             y,
             post,
@@ -254,7 +257,7 @@ class DSparkDrafter(Module[..., Tensor]):
         n_taps = len(config.dspark_target_layer_ids)
 
         self.main_proj = MXFP8Linear(hidden * n_taps, hidden)
-        self.main_norm = RMSNorm(hidden)
+        self.main_norm = RMSNorm(hidden, config.rms_norm_eps)
         self.layer_infos = drafter_layer_infos(config)
         self.stages = ModuleList(
             [
@@ -268,7 +271,7 @@ class DSparkDrafter(Module[..., Tensor]):
                 for row in self.layer_infos
             ]
         )
-        self.norm = RMSNorm(hidden)
+        self.norm = RMSNorm(hidden, config.rms_norm_eps)
         self.markov_head = DSparkMarkovHead(
             vocab_size=config.vocab_size,
             draft_vocab_size=config.vocab_size,
@@ -444,7 +447,9 @@ class DSparkDrafter(Module[..., Tensor]):
             ],
             axis=1,
         )
-        y, post, comb = mhc_identity_writeback(stream)
+        # The embedding is finite, so it stands in for the identity's
+        # ``y`` instead of a zero fill.
+        y, post, comb = mhc_identity_writeback(stream, h)
         for stage, window in zip(stages, windows, strict=True):
             stream, pre, y, post, comb = stage(
                 y, stream, post, comb, pre, window, positions

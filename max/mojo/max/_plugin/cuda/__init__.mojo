@@ -29,6 +29,9 @@ from max.gpu.sync.sync import (
 
 from .._shuffle import shuffle_words
 from .._trait import MaxPlugin, MaxPluginHooks
+from max._driver.max_license.hal._plugin.cuda.cuda_plugin import (
+    CudaHalPluginHooks,
+)
 
 
 @inline(.always)
@@ -80,12 +83,14 @@ struct CudaMaxPlugin(MaxPlugin):
     """Provides default MAX behavior for CUDA targets."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["cuda"]()
-    comptime HookFor[target: CompilationTarget] = CudaMaxPluginHooks[target]
+    comptime HookFor = CudaMaxPluginHooks[_]
 
 
 struct CudaMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
     comptime _raw_mlir_target = Self.target._mlir_value
     comptime warp_size = 32
+
+    comptime HalHooks = CudaHalPluginHooks[Self.target]
     comptime barrier_fn: OptionalReg[_BarrierPluginHookFnType] = _barrier
     comptime syncwarp_fn: OptionalReg[_SyncwarpPluginHookFnType] = _syncwarp
     comptime async_copy_commit_group_fn: OptionalReg[

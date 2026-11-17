@@ -425,7 +425,8 @@ def execute_fused_qk_rope_ragged(
     # "true CE" execution
     print("true")
     fused_qk_rope_ragged[
-        mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
+        mixed_ce_k_cache_collection.CacheType,
+        interleaved=False,
     ](
         q_proj=true_ce_q_ragged_tensor,
         input_row_offsets=true_ce_row_offsets_tensor,
@@ -440,7 +441,8 @@ def execute_fused_qk_rope_ragged(
     # "mixed CE" execution
     print("mixed")
     fused_qk_rope_ragged[
-        mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
+        mixed_ce_k_cache_collection.CacheType,
+        interleaved=False,
     ](
         q_proj=mixed_ce_q_ragged_tensor,
         input_row_offsets=mixed_ce_row_offsets_tensor,
@@ -920,7 +922,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     )
 
     fused_qk_rope_ragged[
-        k_cache_collection.CacheType, interleaved=True, target="gpu"
+        k_cache_collection.CacheType,
+        interleaved=True,
     ](
         q_proj=q_ragged_tensor,
         input_row_offsets=row_offsets_tensor,
@@ -934,7 +937,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
 
     # Execute the kernel for 64
     fused_qk_rope_ragged[
-        k_cache_collection_64.CacheType, interleaved=True, target="gpu"
+        k_cache_collection_64.CacheType,
+        interleaved=True,
     ](
         q_proj=q_ragged_64_tensor,
         input_row_offsets=row_offsets_tensor,

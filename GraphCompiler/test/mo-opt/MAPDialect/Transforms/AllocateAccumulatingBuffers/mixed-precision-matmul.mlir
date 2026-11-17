@@ -23,6 +23,23 @@ mo.graph @matmul_cast(
   mo.output %c : !mo.tensor<[2, 2], si32>
 }
 
+// A custom matmul registered under the `matmul.` class gets the same pre-cast
+// scratch buffer.
+
+// CHECK-LABEL: mo.graph @class_matmul_cast
+// CHECK: map.iter.opaque
+// CHECK: outputs (%{{.*}} : !mo.tensor<[2, 2], si32>, %{{.*}} : !mo.tensor<[2, 2], f32>)
+// CHECK: map.iter.epilogue
+// CHECK-SAME: intermediate %{{.*}} : !mo.tensor<[2, 2], f32>
+mo.graph @class_matmul_cast(
+  %a: !mo.tensor<[2, 2], f32>,
+  %b: !mo.tensor<[2, 2], f32>
+) -> !mo.tensor<[2, 2], si32> {
+  %mm = mo.custom [symbol = "matmul.fuse_out", device = #M.device_ref<"cpu", 0>](%a, %b) : (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %c = mo.cast(%mm) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], si32>
+  mo.output %c : !mo.tensor<[2, 2], si32>
+}
+
 // Two consumers of the matmul fuse horizontally and then into its epilogue, so
 // the epilogue stores twice at two dtypes. The slice the kernel binds is built
 // over `$intermediateTensor`, so it has to name the destination whose dtype the

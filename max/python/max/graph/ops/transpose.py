@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for transpose."""
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 
 from ..graph import Graph
@@ -93,7 +93,7 @@ def transpose(x: TensorValueLike, axis_1: int, axis_2: int) -> TensorValue:
         indices[axis_1], indices[axis_2] = axis_2, axis_1
 
     return Graph.current._add_op_generated(
-        rmo.MoTransposeOp,
+        mo.TransposeOp,
         TensorType(dtype=v.dtype, shape=new_shape, device=v.device),
         v,
         constant(indices, DType.int64, DeviceRef.CPU()),

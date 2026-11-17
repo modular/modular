@@ -307,24 +307,6 @@ SmallVector<OpOperand *, 1> M::MGP::getInputChainOpOperands(Operation *op) {
   return result;
 }
 
-void M::MGP::moveAllBefore(Operation *origTargetOp, Operation *origAnchorOp) {
-  std::deque<std::pair<Operation *, Operation *>> worklist;
-  worklist.emplace_back(origTargetOp, origAnchorOp);
-  while (!worklist.empty()) {
-    auto [targetOp, anchorOp] = worklist.front();
-    worklist.pop_front();
-    if (targetOp == nullptr || anchorOp == nullptr)
-      continue;
-    if (targetOp->getBlock() != anchorOp->getBlock())
-      continue;
-    if (targetOp->isBeforeInBlock(anchorOp))
-      continue;
-    targetOp->moveBefore(anchorOp);
-    for (auto operand : targetOp->getOperands())
-      worklist.emplace_front(operand.getDefiningOp(), targetOp);
-  }
-}
-
 /// Adds chain to primitiveChains, looking through grt.chain.create ops.
 void M::MGP::accumulatePrimitiveChains(ValueSetVector &primitiveChains,
                                        Value chain) {
@@ -448,12 +430,6 @@ InitState::InitState(ModelOp model)
   ASSERT_STREAM(contextCreateOp,
                 << "model is missing mgp.context.create op in init block");
   builder.setInsertionPoint(&init->back());
-}
-
-size_t InitState::allocSlot() {
-  size_t slot = contextCreateOp.getNumSlots();
-  contextCreateOp.setNumSlots(slot + 1);
-  return slot;
 }
 
 TypedValue<MEF::ChainType> InitState::getFinalChain() {

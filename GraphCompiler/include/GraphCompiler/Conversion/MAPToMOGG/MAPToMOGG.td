@@ -28,9 +28,9 @@ def MAPToMOGG : Pass<"map-to-mogg", "mlir::ModuleOp"> {
   let options = [
     Option<"enableComputeLambdas", "enable-compute-lambdas", "bool",
       /*default=*/"true",
-      "Build compute lambdas for epilogues feeding a kernel argument that "
-      "declares `_FusedComputeOutputTensor`. When false, such an epilogue gets "
-      "a classic store lambda instead.">,
+      "Build compute lambdas for epilogues feeding a `_LegacyComputeOutput` "
+      "kernel argument. When false, such an epilogue gets a classic store "
+      "lambda instead.">,
   ];
 
   let dependentDialects = [

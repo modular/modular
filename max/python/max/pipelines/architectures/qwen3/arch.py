@@ -14,7 +14,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -40,9 +39,6 @@ qwen3_arch = SupportedArchitecture(
     },
     config=Qwen3Config,
     multi_gpu_supported=True,
-    memory_planner=PagedMemoryPlanner.with_activation_reservation(
-        0, always_signal_buffers=True
-    ),
     supports_device_graph_capture=False,
 )
 
@@ -68,8 +64,5 @@ qwen3_moe_arch = SupportedArchitecture(
     config=Qwen3Config,
     batching=Qwen3BatchProcessor,
     multi_gpu_supported=True,
-    memory_planner=PagedMemoryPlanner.with_activation_reservation(
-        0, always_signal_buffers=True
-    ),
     supports_device_graph_capture=False,
 )

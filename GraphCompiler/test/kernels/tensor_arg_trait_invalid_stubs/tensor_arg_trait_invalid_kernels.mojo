@@ -18,7 +18,7 @@
 # because an invalid composition fails the package import.
 #
 from std.collections.string import StaticString
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, DeviceGraphBuilder
 from std.utils import IndexList
 
 from layout import coord_to_index_list
@@ -30,8 +30,6 @@ from extensibility import (
     InputTensor,
     InputVariadicTensors,
     ManagedTensorSlice,
-    StableInputTensor,
-    StableInputVariadicTensors,
     VariadicTensors,
     _FusedInputVariadicTensors as FusedInputVariadicTensors,
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
@@ -42,6 +40,7 @@ from extensibility import (
     Stable,
     StoreAccess,
     Storable,
+    Tensor,
     TensorTuple,
     TileTensorable,
     _LegacyComputable,
@@ -53,9 +52,7 @@ from extensibility import (
 @extensibility.register("trait_no_role")
 struct TraitNoRole:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[TileTensorable], ctx: DeviceContext) raises:
+    def execute(z: Some[TileTensorable], ctx: DeviceContext) raises:
         pass
 
 
@@ -64,7 +61,6 @@ struct TraitNoRole:
 struct TraitTwoRoles:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Input & Output & TileTensorable,
     ](z: Z, ctx: DeviceContext) raises:
         pass
@@ -74,9 +70,9 @@ struct TraitTwoRoles:
 @extensibility.register("trait_fused_no_access")
 struct TraitFusedNoAccess:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Output & Fused & TileTensorable], ctx: DeviceContext) raises:
+    def execute(
+        z: Some[Output & Fused & TileTensorable], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -86,7 +82,6 @@ struct TraitFusedNoAccess:
 struct TraitForeign:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable & Copyable,
     ](z: Z, ctx: DeviceContext) raises:
         pass
@@ -100,7 +95,6 @@ struct TraitTensorTupleMovable:
     def execute[
         Ts: TypeList[Trait=Input & TileTensorable & Movable, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         xs: TensorTuple[*Ts],
@@ -114,7 +108,6 @@ struct TraitTensorTupleMovable:
 struct TraitVariadicPack:
     @staticmethod
     def execute[
-        target: StaticString,
         *Ts: Input & TileTensorable,
     ](z: Some[Output & TileTensorable], *xs: *Ts, ctx: DeviceContext) raises:
         pass
@@ -124,9 +117,7 @@ struct TraitVariadicPack:
 @extensibility.register("trait_store_on_input")
 struct TraitStoreOnInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Input & Fused & Storable], ctx: DeviceContext) raises:
+    def execute(z: Some[Input & Fused & Storable], ctx: DeviceContext) raises:
         pass
 
 
@@ -136,7 +127,6 @@ struct TraitStoreOnInput:
 struct TraitInputAndMutableInput:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Input & MutableInput & TileTensorable,
     ](z: Z, ctx: DeviceContext) raises:
         pass
@@ -149,9 +139,7 @@ struct TraitInputAndMutableInput:
 @extensibility.register("trait_multi_access_forms")
 struct TraitMultiAccessForms:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[MutableInput & Fused & Loadable & Storable],
         ctx: DeviceContext,
     ) raises:
@@ -164,9 +152,9 @@ struct TraitMultiAccessForms:
 @extensibility.register("trait_multi_access_markers_nonfused")
 struct TraitMultiAccessMarkersNonFused:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Input & LoadAccess & StoreAccess], ctx: DeviceContext) raises:
+    def execute(
+        z: Some[Input & LoadAccess & StoreAccess], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -175,9 +163,7 @@ struct TraitMultiAccessMarkersNonFused:
 @extensibility.register("trait_load_on_output")
 struct TraitLoadOnOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Output & Fused & Loadable], ctx: DeviceContext) raises:
+    def execute(z: Some[Output & Fused & Loadable], ctx: DeviceContext) raises:
         pass
 
 
@@ -186,9 +172,9 @@ struct TraitLoadOnOutput:
 @extensibility.register("trait_transform_on_input")
 struct TraitTransformOnInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Input & Fused & _LegacyComputeOutput], ctx: DeviceContext) raises:
+    def execute(
+        z: Some[Input & Fused & _LegacyComputeOutput], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -198,9 +184,7 @@ struct TraitTransformOnInput:
 @extensibility.register("trait_transform_on_mutable_input")
 struct TraitTransformOnMutableInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[MutableInput & Fused & _LegacyComputeOutput],
         ctx: DeviceContext,
     ) raises:
@@ -214,9 +198,9 @@ struct TraitTransformOnMutableInput:
 @extensibility.register("trait_computable_on_signature")
 struct TraitComputableOnSignature:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Output & Fused & _LegacyComputable], ctx: DeviceContext) raises:
+    def execute(
+        z: Some[Output & Fused & _LegacyComputable], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -227,9 +211,7 @@ struct TraitComputableOnSignature:
 @extensibility.register("trait_compute_output_tile_on_signature")
 struct TraitComputeOutputTileOnSignature:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & _LegacyComputeOutput & TileTensorable],
         ctx: DeviceContext,
     ) raises:
@@ -274,9 +256,24 @@ def trait_shape_fn_loadable[
 @extensibility.register("trait_stable_output")
 struct TraitStableOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Output & TileTensorable & Stable], ctx: DeviceContext) raises:
+    def execute(
+        z: Some[Output & TileTensorable & Stable], ctx: DeviceContext
+    ) raises:
+        pass
+
+
+# The same on `build_graph`, the one entry point that may take `Stable`
+# inputs: a device graph still writes its outputs through live addresses.
+@extensibility.register("trait_stable_output_on_build_graph")
+struct TraitStableOutputOnBuildGraph:
+    @staticmethod
+    def execute(z: Some[Output & Tensor], ctx: DeviceContext) raises:
+        pass
+
+    @staticmethod
+    def build_graph(
+        z: Some[Output & Tensor & Stable], builder: DeviceGraphBuilder
+    ) raises:
         pass
 
 
@@ -285,9 +282,7 @@ struct TraitStableOutput:
 @extensibility.register("trait_stable_fused")
 struct TraitStableFused:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & Loadable & Stable],
         ctx: DeviceContext,
@@ -320,12 +315,5 @@ def legacy_shape_variadic(
 @extensibility.register_shape_function("legacy_shape_fused_variadic")
 def legacy_shape_fused_variadic(
     x: FusedInputVariadicTensors, y: FusedOutputVariadicTensors
-) -> IndexList[1]:
-    return IndexList[1]()
-
-
-@extensibility.register_shape_function("legacy_shape_stable")
-def legacy_shape_stable(
-    x: StableInputTensor, y: StableInputVariadicTensors
 ) -> IndexList[1]:
     return IndexList[1]()

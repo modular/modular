@@ -40,12 +40,11 @@ from layout import (
     Coord,
     Idx,
     coord,
-    Layout,
     DefaultEngine,
     TileTensor,
     row_major,
 )
-from layout.tile_layout import (
+from layout.layout import (
     Layout as InternalLayout,
     TensorLayout,
     blocked_product,
@@ -1348,11 +1347,6 @@ struct TMEMToSMemWriter[
     comptime cta_group = Self.epc.cta_group
     comptime transpose_c = Self.epc.transpose_c
 
-    # Create internal layout from dimensions
-    comptime c_smem_layout = Layout.row_major(
-        Self.c_smem_dim0, Self.c_smem_dim1
-    )
-
     # Alias for fragment_size access (used by callers via SMEMWriter.Config)
     comptime Config = Self.epc
 
@@ -1637,11 +1631,6 @@ struct SMemEpilogueWriter[
     comptime transpose_c = Self.epc.transpose_c
     comptime is_lower_frag_required = Self.epc.is_lower_frag_required
     comptime num_stages = Self.epc.num_stages
-
-    # Create layout from dimensions
-    comptime c_smem_layout = Layout.row_major(
-        Self.c_smem_dim0, Self.c_smem_dim1
-    )
 
     comptime stageN = Self.c_smem_dim0 if Self.transpose_c else Self.c_smem_dim1
     comptime stage_contiguous_size = Self.c_smem_dim1

@@ -21,6 +21,7 @@ model:
     enable_prefix_caching: true
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   max_batch_input_tokens: 4096
   enable_chunked_prefill: true

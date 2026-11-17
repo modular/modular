@@ -262,7 +262,7 @@ def bench_copy_roundtrip[
     M: Int,
     N: Int,
     num_threads: Int,
-](ctx: DeviceContext, mut bench: Bench) raises:
+](ctx: DeviceContext[], mut bench: Bench) raises:
     comptime simd_size = simd_width_of[dtype, target=ctx.target]()
 
     comptime assert (
@@ -345,7 +345,7 @@ def bench_copy_roundtrip[
     @inline(.always)
     def bench_tile_io_roundtrip(mut b: Bencher) {var}:
         @inline(.always)
-        def tile_io_roundtrip_launch(ctx: DeviceContext) raises {var}:
+        def tile_io_roundtrip_launch(ctx: DeviceContext[]) raises {var}:
             ctx.enqueue_function[tile_io_kernel](
                 src_dev,
                 tile_io_dst_dev,
@@ -358,7 +358,7 @@ def bench_copy_roundtrip[
     @inline(.always)
     def bench_tile_io_dram_to_sram(mut b: Bencher) {var}:
         @inline(.always)
-        def tile_io_dram_to_sram_launch(ctx: DeviceContext) raises {var}:
+        def tile_io_dram_to_sram_launch(ctx: DeviceContext[]) raises {var}:
             ctx.enqueue_function[tile_io_dram_to_sram_kernel_type](
                 src_dev,
                 tile_io_dst_dev,
@@ -371,7 +371,7 @@ def bench_copy_roundtrip[
     @inline(.always)
     def bench_tile_io_sram_to_dram(mut b: Bencher) {var}:
         @inline(.always)
-        def tile_io_sram_to_dram_launch(ctx: DeviceContext) raises {var}:
+        def tile_io_sram_to_dram_launch(ctx: DeviceContext[]) raises {var}:
             ctx.enqueue_function[tile_io_sram_to_dram_kernel_type](
                 src_dev,
                 tile_io_dst_dev,

@@ -20,15 +20,20 @@ from typing import Any
 from max import functional as F
 from max.dtype import DType
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.weight_transform import (
+    CheckpointRole,
+    WeightEntry,
+    WeightTransform,
+)
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 
-from ..dflash_mimo_v2.drafter import (
+from .dflash_mimo_v2 import DFlashMiMoV2
+from .drafter import (
     DFlashMiMoV2DraftArchConfigBase,
     DFlashMiMoV2DraftConfig,
     load_drafter,
 )
-from .dflash_mimo_v2 import DFlashMiMoV2
 
 __all__ = ["DFlashMiMoV2ModuleV3DraftArchConfig"]
 
@@ -80,3 +85,17 @@ class DFlashMiMoV2ModuleV3DraftArchConfig(DFlashMiMoV2DraftArchConfigBase):
             draft_model.huggingface_weight_repo, config.module
         )
         return dict(state)
+
+    @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: DFlashMiMoV2DraftConfig
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the drafter's weights.
+
+        Empty when its checkpoint doesn't load through rules; the drafter
+        then compiles with :meth:`checkpoint_weights`.
+        """
+        del config
+        if not isinstance(context.adapter, WeightTransform):
+            return []
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

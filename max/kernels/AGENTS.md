@@ -190,6 +190,11 @@ mojo format ./
 - AMD GPU support through ROCm
 - Tests can be run on specific hardware using remote configs
 - GPU kernels use device contexts and memory management
+- Every stream, memory, event, graph, sync or device-attribute operation goes
+  through `DeviceContext`. A kernel, test or benchmark never opens `libcuda`
+  or `libamdhip64` or calls a `cu*` or `hip*` function directly, and never
+  copies such a call from a neighboring file. An operation `DeviceContext`
+  lacks is a Driver-team ticket, not a vendor bridge.
 
 ### CPU Optimizations
 

@@ -20,6 +20,8 @@ modular_py_test(
         # cpu_count workers.
         "MAX_BENCHMARK_MAX_TOKENIZER_THREADS": "2",
     },
+    # Lets tests import the shared fakes as `tests.benchmark.benchmark_fakes`.
+    imports = ["../.."],
     # TODO(MXTOOLS-443): This glob fans out into 20 py_test targets, each
     # paying a full `transformers` import. Scheduled together on a contended
     # macOS worker they starve each other and time out at the 1200s cap, still

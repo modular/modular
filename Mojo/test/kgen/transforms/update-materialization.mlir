@@ -24,9 +24,9 @@ kgen.func @self_pointer() {
   // COM: object.
 
   // CHECK: %[[BYTES:.*]] = pop.pointer.bitcast %[[DEST:.*]] : {{.*}} to !kgen.pointer<i8>
-  // CHECK: %[[T:.*]] = index.constant 0
+  // CHECK: %[[T:.*]] = kgen.param.constant: scalar<index> = <0>
   // CHECK: %[[TARGET:.*]] = pop.offset %[[BYTES]][%[[T]]]
-  // CHECK: %[[O:.*]] = index.constant 8
+  // CHECK: %[[O:.*]] = kgen.param.constant: scalar<index> = <8>
   // CHECK: %[[SLOT:.*]] = pop.offset %[[BYTES]][%[[O]]]
   // CHECK: %[[SLOTP:.*]] = pop.pointer.bitcast %[[SLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK: pop.store %[[TARGET]], %[[SLOTP]]
@@ -76,9 +76,9 @@ kgen.func @interior_target() {
   // COM: Both offsets come from the pointer region `(8, 0, 4)`: the pointer
   // COM: at byte 8 is set to the address of byte 4, not byte 0.
   // CHECK-NEXT: %[[BYTES:.*]] = pop.pointer.bitcast %[[DEST]] : {{.*}} to !kgen.pointer<i8>
-  // CHECK-NEXT: %[[I4:.*]] = index.constant 4
+  // CHECK-NEXT: %[[I4:.*]] = kgen.param.constant: scalar<index> = <4>
   // CHECK-NEXT: %[[TARGET:.*]] = pop.offset %[[BYTES]][%[[I4]]] : !kgen.pointer<i8>
-  // CHECK-NEXT: %[[I8:.*]] = index.constant 8
+  // CHECK-NEXT: %[[I8:.*]] = kgen.param.constant: scalar<index> = <8>
   // CHECK-NEXT: %[[SLOT:.*]] = pop.offset %[[BYTES]][%[[I8]]] : !kgen.pointer<i8>
   // CHECK-NEXT: %[[SLOTP:.*]] = pop.pointer.bitcast %[[SLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[TARGET]], %[[SLOTP]] : !kgen.pointer<pointer<i8>>
@@ -108,17 +108,17 @@ kgen.func @two_self_pointers() {
   // CHECK-NEXT: %[[BYTES:.*]] = pop.pointer.bitcast %[[DEST]] : {{.*}} to !kgen.pointer<i8>
 
   // COM: Region (8, 0, 0): the pointer at byte 8 takes the address of byte 0.
-  // CHECK-NEXT: %[[I0:.*]] = index.constant 0
+  // CHECK-NEXT: %[[I0:.*]] = kgen.param.constant: scalar<index> = <0>
   // CHECK-NEXT: %[[T0:.*]] = pop.offset %[[BYTES]][%[[I0]]] : !kgen.pointer<i8>
-  // CHECK-NEXT: %[[I8:.*]] = index.constant 8
+  // CHECK-NEXT: %[[I8:.*]] = kgen.param.constant: scalar<index> = <8>
   // CHECK-NEXT: %[[S0:.*]] = pop.offset %[[BYTES]][%[[I8]]] : !kgen.pointer<i8>
   // CHECK-NEXT: %[[S0P:.*]] = pop.pointer.bitcast %[[S0]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[T0]], %[[S0P]] : !kgen.pointer<pointer<i8>>
 
   // COM: Region (24, 0, 16): the pointer at byte 24 takes the address of byte 16.
-  // CHECK-NEXT: %[[I16:.*]] = index.constant 16
+  // CHECK-NEXT: %[[I16:.*]] = kgen.param.constant: scalar<index> = <16>
   // CHECK-NEXT: %[[T1:.*]] = pop.offset %[[BYTES]][%[[I16]]] : !kgen.pointer<i8>
-  // CHECK-NEXT: %[[I24:.*]] = index.constant 24
+  // CHECK-NEXT: %[[I24:.*]] = kgen.param.constant: scalar<index> = <24>
   // CHECK-NEXT: %[[S1:.*]] = pop.offset %[[BYTES]][%[[I24]]] : !kgen.pointer<i8>
   // CHECK-NEXT: %[[S1P:.*]] = pop.pointer.bitcast %[[S1]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[T1]], %[[S1P]] : !kgen.pointer<pointer<i8>>
@@ -152,9 +152,9 @@ kgen.func @self_and_external() {
   // COM: Only region (8, 0, 0) is resolved; (16, 1, 0) targets another blob
   // COM: and is left alone.
   // CHECK-NEXT: %[[BYTES:.*]] = pop.pointer.bitcast %[[DEST]] : {{.*}} to !kgen.pointer<i8>
-  // CHECK-NEXT: %[[I0:.*]] = index.constant 0
+  // CHECK-NEXT: %[[I0:.*]] = kgen.param.constant: scalar<index> = <0>
   // CHECK-NEXT: %[[TARGET:.*]] = pop.offset %[[BYTES]][%[[I0]]] : !kgen.pointer<i8>
-  // CHECK-NEXT: %[[I8:.*]] = index.constant 8
+  // CHECK-NEXT: %[[I8:.*]] = kgen.param.constant: scalar<index> = <8>
   // CHECK-NEXT: %[[SLOT:.*]] = pop.offset %[[BYTES]][%[[I8]]] : !kgen.pointer<i8>
   // CHECK-NEXT: %[[SLOTP:.*]] = pop.pointer.bitcast %[[SLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[TARGET]], %[[SLOTP]] : !kgen.pointer<pointer<i8>>
@@ -184,9 +184,9 @@ kgen.func @two_stores() {
   // CHECK-NEXT: pop.store %[[VAL]], %[[A]]
   pop.store %2, %0 : !kgen.pointer<struct<(struct<(array<8, scalar<si8>>) memoryOnly>, pointer<none>) memoryOnly>>
   // CHECK-NEXT: %[[ABYTES:.*]] = pop.pointer.bitcast %[[A]] : {{.*}} to !kgen.pointer<i8>
-  // CHECK-NEXT: %[[A0:.*]] = index.constant 0
+  // CHECK-NEXT: %[[A0:.*]] = kgen.param.constant: scalar<index> = <0>
   // CHECK-NEXT: %[[ATGT:.*]] = pop.offset %[[ABYTES]][%[[A0]]] : !kgen.pointer<i8>
-  // CHECK-NEXT: %[[A8:.*]] = index.constant 8
+  // CHECK-NEXT: %[[A8:.*]] = kgen.param.constant: scalar<index> = <8>
   // CHECK-NEXT: %[[ASLOT:.*]] = pop.offset %[[ABYTES]][%[[A8]]] : !kgen.pointer<i8>
   // CHECK-NEXT: %[[ASLOTP:.*]] = pop.pointer.bitcast %[[ASLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[ATGT]], %[[ASLOTP]] : !kgen.pointer<pointer<i8>>
@@ -195,9 +195,9 @@ kgen.func @two_stores() {
   // CHECK-NEXT: pop.store %[[VAL]], %[[B]]
   pop.store %2, %1 : !kgen.pointer<struct<(struct<(array<8, scalar<si8>>) memoryOnly>, pointer<none>) memoryOnly>>
   // CHECK-NEXT: %[[BBYTES:.*]] = pop.pointer.bitcast %[[B]] : {{.*}} to !kgen.pointer<i8>
-  // CHECK-NEXT: %[[B0:.*]] = index.constant 0
+  // CHECK-NEXT: %[[B0:.*]] = kgen.param.constant: scalar<index> = <0>
   // CHECK-NEXT: %[[BTGT:.*]] = pop.offset %[[BBYTES]][%[[B0]]] : !kgen.pointer<i8>
-  // CHECK-NEXT: %[[B8:.*]] = index.constant 8
+  // CHECK-NEXT: %[[B8:.*]] = kgen.param.constant: scalar<index> = <8>
   // CHECK-NEXT: %[[BSLOT:.*]] = pop.offset %[[BBYTES]][%[[B8]]] : !kgen.pointer<i8>
   // CHECK-NEXT: %[[BSLOTP:.*]] = pop.pointer.bitcast %[[BSLOT]] : !kgen.pointer<i8> to !kgen.pointer<pointer<i8>>
   // CHECK-NEXT: pop.store %[[BTGT]], %[[BSLOTP]] : !kgen.pointer<pointer<i8>>

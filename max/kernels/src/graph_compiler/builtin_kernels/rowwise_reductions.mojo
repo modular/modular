@@ -12,22 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 """Row-based row-wise reductions (free-form body layer).
 
-Pure-reduction entry points (`reduce_product` / `reduce_argmax` /
-`reduce_argmin` / `reduce_min_and_max`) built on the `algorithm.rowwise`
-scaffolder and the `builtin_kernels.monoids` monoid library. Each authors one free-form body — a
+Pure-reduction entry points (`reduce_argmax` / `reduce_argmin` /
+`reduce_min_and_max`) built on the `algorithm.rowwise` scaffolder and the
+`builtin_kernels.monoids` monoid library. Each authors one free-form body — a
 single reduce phase plus a per-row `emit` — and runs on both CPU and GPU.
 """
 
 from max.gpu.host import DeviceContext
-from std.utils.coord import Coord
+from std.utils.coord import Coord, DynamicCoord
 
 from algorithm import rowwise
-from algorithm.rowwise_types import RowCoord
 from .monoids import (
     ArgMax,
     ArgMin,
     MinMax,
-    ReduceProduct,
 )
 
 
@@ -61,89 +59,6 @@ def _in_range_indices[
     )
 
 
-def reduce_product[
-    dtype: DType,
-    InputFn: ImplicitlyCopyable
-    & RegisterPassable
-    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
-    OutputFn: ImplicitlyCopyable
-    & RegisterPassable
-    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
-    /,
-    target: StaticString,
-    *,
-    reduce_dim: Int,
-    name: StaticString = "reduce_product",
-](
-    input_fn: InputFn,
-    output_fn: OutputFn,
-    input_shape: Coord,
-    context: Optional[DeviceContext] = None,
-) raises:
-    comptime simd_width = rowwise.pick_simd_width[
-        ReduceProduct[dtype, 1], target, 64, dtype
-    ]()
-    comptime assert (
-        0 <= reduce_dim < input_shape.rank
-    ), "reduce_dim must index input_shape"
-    comptime assert input_shape.is_flat, "input_shape must be flat"
-    comptime op_name = name if name != "" else "reduce_product"
-    var axis_size = Int(input_shape[reduce_dim])
-
-    @inline(.always)
-    def body[
-        params: rowwise.ContextParams
-    ](row_coords: Coord, mut ctx: rowwise.Context[params]) {
-        var axis_size, var input_fn, var output_fn
-    }:
-        comptime rank = row_coords.rank
-
-        # Load: fuses the caller's input closure into the row's primary load.
-        @inline(.always)
-        def load[
-            width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
-
-        # Prepare Row: build the row view over the axis size (always
-        # dynamic here — these entry points take no static_cols param).
-        var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Int(axis_size), ctx, load)
-
-        # Reduce: product via the ReduceProduct monoid.
-        @inline(.always)
-        def val[
-            width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
-            dtype, width
-        ]:
-            return tile
-
-        var acc = row.reduce[ReduceProduct[dtype, params.simd_width]](
-            val, load
-        ).acc
-
-        # Emit: per-row output — the reduced scalar.
-        @inline(.always)
-        def write(oc: RowCoord[rank]) {var acc, var output_fn}:
-            output_fn[params.emit_tile_width](
-                oc.coord,
-                acc.slice[params.emit_tile_width](),
-            )
-
-        # `acc`/`output_fn` ride `write`'s capture list into `emit`.
-        row.emit(write)
-
-    rowwise.launch[
-        axis=reduce_dim,
-        simd_width=simd_width,
-        target=target,
-        num_phases=1,
-        name=op_name,
-    ](body, input_shape, context)
-
-
 # ===----------------------------------------------------------------------=== #
 # Row-based argument reductions: argmax / argmin. Same free-form body;
 # the ArgMax / ArgMin monoid also tracks the winning index.
@@ -159,7 +74,6 @@ def reduce_argmin[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[.int64, width]) -> None),
     /,
-    target: StaticString,
     *,
     reduce_dim: Int,
     name: StaticString = "reduce_argmin",
@@ -167,13 +81,13 @@ def reduce_argmin[
     input_fn: InputFn,
     output_fn: OutputFn,
     input_shape: Coord,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Finds the argmin along `reduce_dim` via the Row layer: one
     `ArgMin` phase (native dtype, lower index wins ties) plus a per-row
     `emit` of the int64 index."""
     comptime simd_width = rowwise.pick_simd_width[
-        ArgMin[dtype, 1], target, 64, dtype
+        ArgMin[dtype, 1], context.T.target, 64, dtype
     ]()
     comptime assert (
         0 <= reduce_dim < input_shape.rank
@@ -194,22 +108,24 @@ def reduce_argmin[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, is_cached=False
+            params, dtype, dtype, reduce_dim, rank, keep_tile=False
         ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: argmin via the ArgMin monoid (lower index wins ties).
         @inline(.always)
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
-            dtype, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, rank]
+        ) {} -> SIMD[dtype, width]:
             return tile
 
         var indices = row.reduce[ArgMin[dtype, params.simd_width]](
@@ -218,9 +134,11 @@ def reduce_argmin[
 
         # Emit: per-row output — the winning index.
         @inline(.always)
-        def write(oc: RowCoord[rank]) {var indices, var output_fn}:
+        def write(
+            oc: DynamicCoord[DType.int, rank]
+        ) {var indices, var output_fn}:
             output_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 _in_range_indices(indices.slice[params.emit_tile_width]()),
             )
 
@@ -230,7 +148,6 @@ def reduce_argmin[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=1,
         name=op_name,
     ](body, input_shape, context)
@@ -245,7 +162,6 @@ def reduce_argmax[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[.int64, width]) -> None),
     /,
-    target: StaticString,
     *,
     reduce_dim: Int,
     name: StaticString = "reduce_argmax",
@@ -253,10 +169,10 @@ def reduce_argmax[
     input_fn: InputFn,
     output_fn: OutputFn,
     input_shape: Coord,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     comptime simd_width = rowwise.pick_simd_width[
-        ArgMax[dtype, 1], target, 64, dtype
+        ArgMax[dtype, 1], context.T.target, 64, dtype
     ]()
     comptime assert (
         0 <= reduce_dim < input_shape.rank
@@ -277,22 +193,24 @@ def reduce_argmax[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, is_cached=False
+            params, dtype, dtype, reduce_dim, rank, keep_tile=False
         ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: argmax via the ArgMax monoid (lower index wins ties).
         @inline(.always)
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
-            dtype, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, rank]
+        ) {} -> SIMD[dtype, width]:
             return tile
 
         var indices = row.reduce[ArgMax[dtype, params.simd_width]](
@@ -301,9 +219,11 @@ def reduce_argmax[
 
         # Emit: per-row output — the winning index.
         @inline(.always)
-        def write(oc: RowCoord[rank]) {var indices, var output_fn}:
+        def write(
+            oc: DynamicCoord[DType.int, rank]
+        ) {var indices, var output_fn}:
             output_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 _in_range_indices(indices.slice[params.emit_tile_width]()),
             )
 
@@ -313,7 +233,6 @@ def reduce_argmax[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=1,
         name=op_name,
     ](body, input_shape, context)
@@ -337,7 +256,6 @@ def reduce_min_and_max[
     & RegisterPassable
     & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
-    target: StaticString,
     *,
     reduce_dim: Int,
     name: StaticString = "reduce_min_and_max",
@@ -346,12 +264,12 @@ def reduce_min_and_max[
     output_min_fn: OutputMinFn,
     output_max_fn: OutputMaxFn,
     input_shape: Coord,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
 ) raises:
     """Computes min and max in one axis walk (`MinMax` monoid), two
     outputs."""
     comptime simd_width = rowwise.pick_simd_width[
-        MinMax[dtype, 1], target, 64, dtype
+        MinMax[dtype, 1], context.T.target, 64, dtype
     ]()
     comptime assert (
         0 <= reduce_dim < input_shape.rank
@@ -372,22 +290,24 @@ def reduce_min_and_max[
         @inline(.always)
         def load[
             width: Int, alignment: Int
-        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment](idx.coord)
+        ](idx: DynamicCoord[DType.int, rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, is_cached=False
+            params, dtype, dtype, reduce_dim, rank, keep_tile=False
         ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: min and max in one pass via the MinMax monoid.
         @inline(.always)
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
-            dtype, width
-        ]:
+        ](
+            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, rank]
+        ) {} -> SIMD[dtype, width]:
             return tile
 
         var stats = row.reduce[MinMax[dtype, params.simd_width]](val, load)
@@ -397,14 +317,14 @@ def reduce_min_and_max[
         # Emit: per-row output — both the min and the max.
         @inline(.always)
         def write(
-            oc: RowCoord[rank],
+            oc: DynamicCoord[DType.int, rank],
         ) {var mn, var mx, var output_min_fn, var output_max_fn,}:
             output_min_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 mn.slice[params.emit_tile_width](),
             )
             output_max_fn[params.emit_tile_width](
-                oc.coord,
+                oc,
                 mx.slice[params.emit_tile_width](),
             )
 
@@ -414,7 +334,6 @@ def reduce_min_and_max[
     rowwise.launch[
         axis=reduce_dim,
         simd_width=simd_width,
-        target=target,
         num_phases=1,
         name=op_name,
     ](body, input_shape, context)

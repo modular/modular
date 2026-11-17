@@ -18,6 +18,7 @@
 #include "Mojo/TransformUtils/CallGraphUtils.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "llvm/ADT/SCCIterator.h"
+#include <array>
 
 using namespace M;
 using namespace KGEN;
@@ -103,6 +104,36 @@ struct CallGraphNode
   /// The set of dependencies that has to be deduplicated before we can start
   /// working on this node.
   llvm::SmallPtrSet<CallGraphNode *, 6> dependencies;
+
+  /// Hash of the body, set once the callsites are rewritten. The body does not
+  /// change after that, so callers reuse it instead of rewalking the body.
+  std::optional<unsigned> hash;
+};
+
+/// A function and the hash of its body.
+struct HashedFunc {
+  FuncOp func;
+  unsigned hash;
+};
+
+struct HashedFuncInfo {
+  static unsigned getHashValue(const HashedFunc &f) { return f.hash; }
+  static bool isEqual(const HashedFunc &lhs, const HashedFunc &rhs) {
+    if (lhs.func == rhs.func)
+      return true;
+    return lhs.hash == rhs.hash &&
+           DuplicateFuncOpEquivalenceInfo::isEqual(lhs.func, rhs.func);
+  }
+};
+
+/// The functions whose hash selects this shard. Workers lock only the shard
+/// they look up, so lookups of unrelated functions do not wait on each other.
+struct UniqueFuncShard {
+  std::mutex mutex;
+  llvm::DenseSet<HashedFunc, HashedFuncInfo> funcs;
+  // Maps each class representative's symbol name to the lexicographically
+  // smallest symbol of that class.
+  DenseMap<StringAttr, FuncOp> representativeToLexMin;
 };
 
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
@@ -146,18 +177,22 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   /// (this deduplication pass) to be done.
   AsyncRT::AsyncValueRef<AsyncRT::Chain> done;
 
-  // Map from the target FuncOp to callsites that need to be redirected.
-  DenseSet<FuncOp, DuplicateFuncOpEquivalenceInfo> uniqueFuncSet;
+  static constexpr unsigned kShardBits = 6;
+  static constexpr unsigned kNumShards = 1u << kShardBits;
+  std::array<UniqueFuncShard, kNumShards> shards;
 
-  // Maps each class representative's symbol name to the lexicographically
-  // smallest symbol of that class.
+  // DenseSet buckets come from the low bits of the hash, so the shard comes
+  // from the high bits.
+  UniqueFuncShard &getShard(unsigned hash) {
+    static_assert(sizeof(unsigned) == 4, "shard bits assume a 32-bit hash");
+    return shards[hash >> (32 - kShardBits)];
+  }
+
+  // The union of the shards' maps, built once deduplication is done.
   DenseMap<StringAttr, FuncOp> representativeToLexMin;
 
-  // Guards `uniqueFuncSet` and `representativeToLexMin`.
-  std::mutex setAccessMutex;
-
   // Number of deduplicated functions
-  uint64_t numDeduped = 0;
+  std::atomic<uint64_t> numDeduped = 0;
 };
 
 struct EliminateDuplicateFunctionsPass
@@ -175,8 +210,7 @@ struct GraphTraits<CallGraph *> : public GraphTraits<CallGraph::BaseT *> {};
 CallGraph::CallGraph(mlir::ModuleOp module, const SymbolTable &symtable,
                      AsyncRT::CPUDevice &cpuDevice)
     : externalNode(nullptr, cpuDevice), numWorkItems(0), cpuDevice(cpuDevice),
-      done(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)),
-      uniqueFuncSet() {
+      done(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(cpuDevice)) {
   CallGraphBase::build(module, symtable, cpuDevice);
 
   for (auto &[func, node] : nodes) {
@@ -225,26 +259,35 @@ void CallGraph::deduplicateNode(CallGraphNode *node) {
 
   auto dedupFunc = [this, node](ArrayRef<AnyAsyncValueRef>) mutable {
     for (auto [call, callee] : node->callsites) {
+      // A callee in a cycle has no stored hash because it is never rewritten.
+      // Its body does not change either, so hashing it here is safe.
+      unsigned hash =
+          callee->hash
+              ? *callee->hash
+              : DuplicateFuncOpEquivalenceInfo::getHashValue(callee->func);
+      UniqueFuncShard &shard = getShard(hash);
       FuncOp replaceTo(nullptr);
-      // Looks up potential replacement.
       {
-        std::lock_guard<std::mutex> lock(setAccessMutex);
-        auto it = uniqueFuncSet.find(callee->func);
-        if (it != uniqueFuncSet.end() && *it != callee->func) {
-          replaceTo = *it;
-          ++numDeduped;
-        }
+        std::lock_guard<std::mutex> lock(shard.mutex);
+        auto it = shard.funcs.find(HashedFunc{callee->func, hash});
+        if (it != shard.funcs.end() && it->func != callee->func)
+          replaceTo = it->func;
       }
       if (replaceTo) {
+        ++numDeduped;
         call.setCalleeAttr(FuncSymbolGenerator::get(replaceTo));
       }
     }
 
     // Done rewriting the FuncOp, now updates the map.
+    node->hash = DuplicateFuncOpEquivalenceInfo::getHashValue(node->func);
+    UniqueFuncShard &shard = getShard(*node->hash);
     {
-      std::lock_guard<std::mutex> lock(setAccessMutex);
-      auto [representative, inserted] = uniqueFuncSet.insert(node->func);
-      FuncOp &lexMin = representativeToLexMin[representative->getSymNameAttr()];
+      std::lock_guard<std::mutex> lock(shard.mutex);
+      auto [representative, inserted] =
+          shard.funcs.insert(HashedFunc{node->func, *node->hash});
+      FuncOp &lexMin =
+          shard.representativeToLexMin[representative->func.getSymNameAttr()];
       if (inserted || node->func.getSymName() < lexMin.getSymName())
         lexMin = node->func;
     }
@@ -262,6 +305,11 @@ void CallGraph::startDeduplication() {
 
   finishHandleNode(&externalNode);
   AsyncRT::await(done);
+
+  for (UniqueFuncShard &shard : shards) {
+    representativeToLexMin.insert(shard.representativeToLexMin.begin(),
+                                  shard.representativeToLexMin.end());
+  }
 }
 
 void CallGraph::replaceCallSitesWithLexMin() {

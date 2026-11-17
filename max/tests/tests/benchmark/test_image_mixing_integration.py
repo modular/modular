@@ -42,43 +42,15 @@ from max.benchmark.benchmark_shared.datasets.types import (
 )
 from max.benchmark.benchmark_shared.multi_turn import chat_session_driver
 from max.benchmark.benchmark_shared.request import (
-    BaseRequestFuncInput,
     OpenAIChatCompletionsRequestDriver,
     RequestCounter,
-    RequestDriver,
     RequestFuncInput,
-    RequestFuncOutput,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     print_workload_stats,
 )
 from pytest_mock import MockerFixture
-
-
-class _FakeTokenizer:
-    """Picklable stand-in for `PreTrainedTokenizerBase`, mirroring the one in
-    test_benchmark_datasets.py."""
-
-    name_or_path = "_fake_"
-    vocab_size = 1000
-    unk_token_id = None
-    all_special_ids: frozenset[int] = frozenset({0, 1, 2})
-
-    def __init__(self, model_max_length: int = 50_000) -> None:
-        self.model_max_length = model_max_length
-
-    def encode(
-        self, text: str, add_special_tokens: bool = False, **_: object
-    ) -> list[int]:
-        return list(range(max(4, len(text))))
-
-    def decode(
-        self, ids: list[int], skip_special_tokens: bool = False, **_: object
-    ) -> str:
-        return "Z" * len(ids)
-
-    def convert_tokens_to_ids(self, token: str) -> int:
-        return 223
+from tests.benchmark.benchmark_fakes import CapturingDriver, FakeTokenizer
 
 
 def _fake_loader(
@@ -86,27 +58,8 @@ def _fake_loader(
     model_max_length: int | None,
     trust_remote_code: bool,
     revision: str | None,
-) -> _FakeTokenizer:
-    return _FakeTokenizer(model_max_length=model_max_length or 50_000)
-
-
-class _CapturingDriver(RequestDriver):
-    def __init__(self) -> None:
-        super().__init__()
-        self.calls: list[RequestFuncInput] = []
-
-    async def request(
-        self, request_func_input: BaseRequestFuncInput
-    ) -> RequestFuncOutput:
-        assert isinstance(request_func_input, RequestFuncInput)
-        self.calls.append(request_func_input)
-        return RequestFuncOutput(
-            success=True,
-            latency=0.1,
-            ttft=0.05,
-            prompt_len=request_func_input.prompt_len,
-            generated_text="ok",
-        )
+) -> FakeTokenizer:
+    return FakeTokenizer(model_max_length=model_max_length or 50_000)
 
 
 def test_image_mixing_pipeline_end_to_end(
@@ -115,7 +68,7 @@ def test_image_mixing_pipeline_end_to_end(
     """A dataset-agnostic multi-turn workload augmented with images: the
     images survive sampling, get attached to the wire request by the
     multi-turn driver, and show up in --dry-run workload stats."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer(model_max_length=50_000)
     pool_texts = [f"turn body {i} " * 20 for i in range(6)]
 
     with TokenizerPool(tok, loader=_fake_loader) as pool:
@@ -149,7 +102,7 @@ def test_image_mixing_pipeline_end_to_end(
         for later in user_messages[1:]:
             assert len(later.images) == 0
 
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
 
     async def run_first_session() -> None:
         await chat_session_driver(

@@ -20,6 +20,7 @@
 #define MLRT_DRIVER_DEVICECONTEXT_LAUNCHTRACEREGISTRY_H
 
 #include "MLRT/Driver/DeviceContext/LaunchTraceEntry.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -61,7 +62,7 @@ struct LaunchTraceState {
 // creating deterministic hashes that exclude memory addresses but capture
 // all other launch parameters. This enables detecting changes in GPU work
 // patterns for regression testing and debugging.
-class LaunchTraceRegistry {
+class MODULAR_CXX_EXPORT LaunchTraceRegistry {
 public:
   // Check if launch tracing is enabled for a stream
   bool isLaunchTraceEnabled(void *stream);
@@ -140,7 +141,7 @@ private:
 };
 
 // Get the global launch trace registry singleton
-LaunchTraceRegistry &launchTraceRegistry();
+MODULAR_CXX_EXPORT LaunchTraceRegistry &launchTraceRegistry();
 
 // Begin/end a process-global launch trace on the singleton registry. Thin
 // wrappers so callers outside MLRT reach the same registry instance the device

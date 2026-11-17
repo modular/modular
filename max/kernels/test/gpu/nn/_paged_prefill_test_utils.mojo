@@ -47,7 +47,7 @@ from std.memory.alloc import unsafe_alloc
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.gpu.mla import flare_mla_prefill
+from nn.attention.gpu.mla import MLAKernels, flare_mla_prefill
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import TileTensorMHAOperand
 
@@ -83,7 +83,7 @@ def paged_block_elems(
 ) -> Int:
     """Number of scalar elements in the paged block array.
 
-    Block shape (matching ``test_mla_decode_paged_variable.mojo``):
+    Block shape (matching ``_mla_paged_variable_shell.mojo``):
     ``[total_pages, kv_dim2=1, NUM_LAYERS=1, page_size, KV_NUM_HEADS=1,
     head_size]``.
     """
@@ -396,6 +396,8 @@ def run_test_paged_prefill[
     # parameter existed. >1 = scatter pages across a `scatter_pool_factor`x
     # pool (`fill_scattered_paged_blocks_and_lut`); requires batch_size=1.
     scatter_pool_factor: Int = 1,
+    *,
+    kernels: MLAKernels,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     """Runs one paged-KV MLA-prefill shape and asserts the output matches
     naive MHA.
@@ -403,7 +405,8 @@ def run_test_paged_prefill[
     Drives the plain bf16 ``flare_mla_prefill`` path (``KVCacheT`` for
     K_rope, dispatched to ``mla_sm100_prefill_generic`` on B200). Shared by
     the generic-paged test (DeepSeek ``v_head_dim == qk_nope_head_dim``) and
-    the CENG-282 vhead test (decoupled ``v_head_dim``).
+    the CENG-282 vhead test (decoupled ``v_head_dim``). ``kernels`` names
+    the vendor's MLA kernels, so each test binary reaches only its own.
 
     ``nope_depth`` is the K-nope / Q@K' contraction width; ``v_depth`` is the
     V / output width. ``v_depth < 0`` (default) means ``v_depth ==
@@ -657,7 +660,7 @@ def run_test_paged_prefill[
     # ------------------------------------------------------------------
     print("  Launching MLA prefill kernel (paged K_rope)...")
 
-    flare_mla_prefill[rank=3](
+    flare_mla_prefill[rank=3, kernels=kernels](
         output_device,
         q_device,
         k_device,

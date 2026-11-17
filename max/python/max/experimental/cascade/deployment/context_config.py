@@ -29,8 +29,9 @@ import importlib
 import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Annotated, Literal
 
+from cyclopts import Parameter
 from max.experimental.cascade.core import Runtime
 from max.experimental.cascade.core.local_runtime import LocalRuntime
 from max.experimental.cascade.deployment.routing import (
@@ -115,9 +116,19 @@ CONTEXT_FACTORIES: dict[Transport, ContextFactory] = {
 class ContextConfig(BaseModel):
     """Configuration for building a hybrid Cascade deployment context."""
 
-    transport: Transport = "http"
-    local_cpu_workers: int = 2
-    local_gpu_workers: int | None = Field(
+    transport: Annotated[
+        Transport,
+        # ``max serve --cascade`` spells these knobs with a --cascade-
+        # prefix (they are gated behind --cascade there); accept both.
+        Parameter(alias="--cascade-transport"),
+    ] = "http"
+    local_cpu_workers: Annotated[
+        int, Parameter(alias="--cascade-local-cpu-workers")
+    ] = 2
+    local_gpu_workers: Annotated[
+        int | None,
+        Parameter(alias="--cascade-local-gpu-workers"),
+    ] = Field(
         default=None,
         description=(
             "Number of local GPU worker subprocesses. When unset, the server "
@@ -126,8 +137,12 @@ class ContextConfig(BaseModel):
             "process."
         ),
     )
-    remote_cpu_workers: tuple[str, ...] = Field(default_factory=tuple)
-    remote_gpu_workers: tuple[str, ...] = Field(default_factory=tuple)
+    remote_cpu_workers: Annotated[
+        tuple[str, ...], Parameter(alias="--cascade-remote-cpu-workers")
+    ] = Field(default_factory=tuple)
+    remote_gpu_workers: Annotated[
+        tuple[str, ...], Parameter(alias="--cascade-remote-gpu-workers")
+    ] = Field(default_factory=tuple)
     otlp_metrics_endpoint: str | None = Field(
         default=None,
         description=(

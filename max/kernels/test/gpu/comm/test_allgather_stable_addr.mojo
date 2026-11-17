@@ -93,7 +93,7 @@ def _input_value(alt: Bool, src_rank: Int, j: Int) -> Scalar[dtype]:
 
 
 def _check_outputs(
-    ctxs: List[DeviceContext],
+    ctxs: List[DeviceContext[]],
     out_dev: List[DeviceBuffer[dtype]],
     length: Int,
     group_size: Int,
@@ -120,7 +120,7 @@ def _check_outputs(
 
 def stable_allgather_test[
     ngpus: Int, group_size: Int
-](ctxs: List[DeviceContext], length: Int) raises:
+](ctxs: List[DeviceContext[]], length: Int) raises:
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var in_dev_alt = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus * group_size)
@@ -231,7 +231,7 @@ def main() raises:
         if DeviceContext.number_of_devices() < ngpus:
             continue
 
-        var ctxs = List[DeviceContext]()
+        var ctxs = List[DeviceContext[]]()
         for i in range(ngpus):
             ctxs.append(DeviceContext(device_id=i))
 
@@ -245,7 +245,7 @@ def main() raises:
     # Two groups of two: group-local slicing over slot-backed inputs, plus
     # the relay kernel on CDNA4 where the grouped path pairs groups up.
     if DeviceContext.number_of_devices() >= 4:
-        var ctxs = List[DeviceContext]()
+        var ctxs = List[DeviceContext[]]()
         for i in range(4):
             ctxs.append(DeviceContext(device_id=i))
         print("====allgather-stable-addr-grouped-2-groups-of-2")

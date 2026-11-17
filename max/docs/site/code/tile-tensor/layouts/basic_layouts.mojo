@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # DOC: tile-tensor/layouts.mdx
-from layout import Coord, coord, Idx, print_layout
-from layout.tile_layout import Layout, col_major, row_major
+from layout import Coord, coord, Idx
+from layout.layout import Layout, col_major, row_major
 
 
 def row_and_column_major():
@@ -37,7 +37,7 @@ def coords_to_index():
     print("coordinates to index")
     # start-print-layout-example
     var row_major3x4 = row_major[3, 4]()
-    print_layout(row_major3x4.to_layout())
+    print(row_major3x4)
     # end-print-layout-example
 
     # start-coords-to-index-example
@@ -52,13 +52,13 @@ def coords_to_index():
 def nested_modes():
     print("nested modes")
     var layout_a = Layout(coord[4, 4], coord[4, 1])
-    print_layout(layout_a.to_layout())
+    print(layout_a)
     print()
     var layout_b = Layout(
         Coord(coord[2, 2], coord[2, 2]),
         Coord(coord[1, 4], coord[2, 8]),
     )
-    print_layout(layout_b.to_layout())
+    print(layout_b)
     print()
 
 
@@ -80,11 +80,11 @@ def dynamic_dimensions():
     var runtime_int = rows  # Run-time int from dynamic value
     var mixed_shape = Coord((rows, Idx[columns]))  # Define a mixed Coord
     var mixed_layout = row_major((rows, Idx[columns]))
-    print_layout(mixed_layout.to_layout())
+    print(mixed_layout)
     var shape = Coord(rows, Idx[columns])
     var stride = coord[8, 1]
     var layout2 = Layout(shape, stride)
-    print_layout(layout2.to_layout())
+    print(layout2)
     # start-runtime-layout-example
     # Layout with compile-time dimensions
     comptime row_major_comptime = row_major(coord[16, 8])

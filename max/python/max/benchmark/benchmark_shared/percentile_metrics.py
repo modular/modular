@@ -171,6 +171,46 @@ class Metrics(ABC):
 
 
 @dataclass
+class InteractivityMetrics(Metrics):
+    """Per-user token rate: tokens/s one user's request streams.
+
+    Agentic serving benchmarks report an "interactivity" (``intvty``) figure
+    per latency basis. ``p50``/``p75``/``p90``/``p95``/``p99`` are the
+    50th/75th/90th/95th/99th percentiles of the same distribution as
+    ``mean``.
+    """
+
+    mean: float
+    p50: float
+    p75: float
+    p90: float
+    p95: float
+    p99: float
+    unit: str | None = "tok/s"
+
+    def to_flat_dict(self, name: str) -> dict[str, float]:
+        """Flatten the stats into ``{"mean_{name}": v, "p50_{name}": v, ...}``.
+
+        The 50th percentile flattens to ``p50_{name}``, matching its
+        ``p75``/``p90``/``p95`` siblings.
+        """
+        return {
+            f"mean_{name}": self.mean,
+            f"p50_{name}": self.p50,
+            f"p75_{name}": self.p75,
+            f"p90_{name}": self.p90,
+            f"p95_{name}": self.p95,
+            f"p99_{name}": self.p99,
+        }
+
+    def validate_metrics(self) -> tuple[bool, list[str]]:
+        """Validate that the mean is finite and positive."""
+        if not _is_finite_and_positive(self.mean):
+            return False, [f"Invalid mean: {self.mean}"]
+        return True, []
+
+
+@dataclass
 class PercentileMetrics(Metrics):
     """Container for percentile-based metrics."""
 

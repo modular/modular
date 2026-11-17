@@ -42,12 +42,14 @@ from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import unsafe_stack_allocation
 from std.sys._assembly import inlined_assembly
 from std.sys.defines import get_defined_bool, get_defined_int
-from std.utils.coord import Coord, CoordLike, coord_to_index_list
-from std.utils.index import IndexList
+from std.utils.coord import Coord, CoordLike, DynamicCoord
 from std.utils.static_tuple import StaticTuple
 
 from std.algorithm.backend.unswitch import unswitch
-from max.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import (
+    _index_coord,
+    _start_indices_of_nth_element,
+)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -84,50 +86,66 @@ def _mbarrier_wait_acquire_cta(
 
 
 @inline(.nodebug)
-def _advance_indices[
-    rank: Int
-](
-    mut idx: IndexList[rank, element_type=_],
-    shape: IndexList[rank, element_type=_],
-):
+def _advance_indices[rank: Int](mut idx: StaticTuple[Int, rank], shape: Coord):
     """Advances a multi-dimensional index by one element in row-major order."""
     idx[rank - 1] += 1
     comptime for d in reversed(range(1, rank)):
-        if idx[d] >= shape[d]:
+        if idx[d] >= Int(shape[d]):
             idx[d] = 0
             idx[d - 1] += 1
 
 
-@inline(.nodebug)
-def _start_indices_of_nth_element[
-    rank: Int, //, shape_types: TypeList[Trait=CoordLike, ...]
-](n: Int, shape: IndexList[rank, element_type=_], out res: type_of(shape)):
-    """Converts a flat index into row-major ND start indices.
+@inline(.always)
+def _uneven_vector_alignment[
+    rank: Int, shape_types: TypeList[Trait=CoordLike, ...], simd_width: Int
+]() -> Int:
+    """The alignment, in elements, of a vector that stays inside its row when
+    `simd_width` doesn't divide the innermost extent.
 
-    Divides by a compile-time literal for every dimension whose extent the
-    `Coord` shape knows statically, so those divisions strength-reduce instead
-    of lowering to a runtime `div`.
-
-    Matches `_get_start_indices_of_nth_subvolume[0]` exactly, including
-    leftover-into-dim-0: the outermost coordinate is the undivided remainder,
-    never reduced modulo `shape[0]`. Callers rely on that for indices past the
-    end of the packed region.
+    Vectors start at multiples of `simd_width` in the flat row-major index,
+    so a vector's column, `k * simd_width - row * n`, and its row's offset,
+    `row * n`, are both multiples of `gcd(simd_width, n)`. That needs the
+    innermost extent `n` at compile time; without it, or with rank 1 where
+    the flat index is the column, only the trivial answer is known. Each
+    load still bounds this by its own tensor's alignment, so a view with
+    odd strides stays safe. A row shorter than `simd_width` holds no
+    vector, so the answer is unused there; it stays 1, as before, because
+    the aligned branch it compiles changes how the lane-by-lane path that
+    does run is scheduled.
     """
-    comptime IntType = type_of(shape)._int_type
+    comptime if rank == 1:
+        return simd_width
+    comptime if shape_types[rank - 1].is_static_value:
+        comptime extent = shape_types[rank - 1].static_value
+        comptime if extent < simd_width:
+            return 1
+        return min(simd_width, extent & -extent)
+    return 1
 
-    res = {}
-    var curr_index = IntType(n)
 
-    comptime for i in reversed(range(1, rank)):
-        comptime if shape_types[i].is_static_value:
-            comptime static_extent = shape_types[i].static_value
-            curr_index, res.data[i] = divmod(curr_index, IntType(static_extent))
-        else:
-            curr_index, res.data[i] = divmod(
-                curr_index, IntType(shape.get[i]())
-            )
+@inline(.always)
+def _row_bounded_simd_width[
+    rank: Int, shape_types: TypeList[Trait=CoordLike, ...], simd_width: Int
+]() -> Int:
+    """The width to run a loop of rank 2 or more with when its static rows
+    are shorter than two vectors and not a multiple of `simd_width`: the
+    largest power of two dividing both, but at least 4. Any other loop keeps
+    `simd_width`.
 
-    res.data[0] = curr_index
+    In rows that short most vectors cross a row end, and the uneven path runs
+    each of those as single-lane calls in one thread. `extent & -extent` is
+    the largest power of two dividing the row, so a width it bounds keeps
+    every vector inside its row; that part follows from the indexing. The
+    4-lane floor is empirical: 4 lanes measured faster than main's full
+    width on odd and 2-mod-4 rows from 1M elements up, but floors of 1 and 2
+    were not measured. A 1-D loop has no row ends, so it keeps the width.
+    """
+    comptime if rank < 2 or not shape_types[rank - 1].is_static_value:
+        return simd_width
+    comptime extent = shape_types[rank - 1].static_value
+    comptime if extent % simd_width == 0 or extent >= 2 * simd_width:
+        return simd_width
+    return max(min(4, simd_width), min(simd_width, extent & -extent))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -137,13 +155,12 @@ def _start_indices_of_nth_element[
 
 @fieldwise_init
 struct _ClcKernel[
-    rank: Int,
-    shape_dtype: DType,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
-    //,
+    rank: Int,
     shape_types: TypeList[Trait=CoordLike, ...],
+    use_32bit: Bool,
     handle_uneven_simd: Bool,
     simd_width: Int,
     block_size: Int,
@@ -160,7 +177,7 @@ struct _ClcKernel[
     """
 
     var func: Self.FuncType
-    var shape: IndexList[Self.rank, element_type=Self.shape_dtype]
+    var shape: DynamicCoord[.int64, Self.rank]
     var num_packed_elems: Int
     var unpacked_tail_length: Int
     var packed_region_length: Int
@@ -221,34 +238,27 @@ struct _ClcKernel[
                 comptime for e in range(Self.elems_per_thread):
                     var global_packed_idx = base + e * Self.block_size
                     if global_packed_idx < self.num_packed_elems:
-                        var start_indices = _start_indices_of_nth_element[
-                            Self.shape_types
+                        var flat = _start_indices_of_nth_element[
+                            Self.rank, Self.shape_types, Self.use_32bit
                         ](global_packed_idx * Self.simd_width, self.shape)
                         comptime if Self.handle_uneven_simd:
-                            # Even when simd_width doesn't evenly divide the shape, we can still guarantee alignment when rank == 1.
-                            # TODO(GEX-3960): for N-D tensors, `alignment = gcd(simd_width, shape[-1])`.
-                            # This needs the static shape propagated via the `Coord` type.
-                            comptime alignment = (
-                                Self.simd_width if Self.rank == 1 else 1
-                            )
-                            if (
-                                start_indices[Self.rank - 1] + Self.simd_width
-                                > self.shape[Self.rank - 1]
+                            comptime alignment = _uneven_vector_alignment[
+                                Self.rank, Self.shape_types, Self.simd_width
+                            ]()
+                            if flat[Self.rank - 1] + Self.simd_width > Int(
+                                self.shape[Self.rank - 1]
                             ):
-                                self.func[1](
-                                    Coord(start_indices.canonicalize())
-                                )
-                                var si = start_indices
+                                self.func[1](_index_coord(flat))
                                 comptime for _off in range(1, Self.simd_width):
-                                    _advance_indices(si, self.shape)
-                                    self.func[1](Coord(si.canonicalize()))
+                                    _advance_indices(flat, self.shape)
+                                    self.func[1](_index_coord(flat))
                             else:
                                 self.func[Self.simd_width, alignment](
-                                    Coord(start_indices.canonicalize())
+                                    _index_coord(flat)
                                 )
                         else:
                             self.func[Self.simd_width, Self.simd_width](
-                                Coord(start_indices.canonicalize())
+                                _index_coord(flat)
                             )
 
                 # Leader: wait for cancel result, extract values, then
@@ -291,20 +301,17 @@ struct _ClcKernel[
 
             # Tail: only the first block handles remainder elements.
             if block_idx.x == 0 and thread_idx.x < self.unpacked_tail_length:
-                self.func[1](
-                    Coord(
-                        _start_indices_of_nth_element[Self.shape_types](
-                            self.packed_region_length + thread_idx.x, self.shape
-                        ).canonicalize()
-                    )
-                )
+                var flat = _start_indices_of_nth_element[
+                    Self.rank, Self.shape_types, Self.use_32bit
+                ](self.packed_region_length + thread_idx.x, self.shape)
+                self.func[1](_index_coord(flat))
 
 
 @inline(.always)
 def _elementwise_impl_gpu_clc[
     rank: Int,
-    //,
     shape_types: TypeList[Trait=CoordLike, ...],
+    use_32bit: Bool,
     simd_width: Int,
     block_size: Int,
     FuncType: ImplicitlyCopyable
@@ -314,7 +321,9 @@ def _elementwise_impl_gpu_clc[
     *,
     trace_description: StaticString = "",
 ](
-    func: FuncType, shape: IndexList[rank, element_type=_], ctx: DeviceContext
+    func: FuncType,
+    shape: DynamicCoord[.int64, rank],
+    ctx: DeviceContext,
 ) raises:
     """Executes `func` over `shape` on SM100+ GPUs using Cluster Launch Control
     work-stealing.
@@ -329,6 +338,8 @@ def _elementwise_impl_gpu_clc[
         rank: The rank of the buffer.
         shape_types: The `Coord` element types of the shape, carrying whichever
             extents are known at compile time.
+        use_32bit: Decompose indices in 32-bit arithmetic. The dispatcher sets
+            this when the flattened length fits in `UInt32`.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
         FuncType: The body function type.
@@ -346,7 +357,10 @@ def _elementwise_impl_gpu_clc[
         If the GPU kernel launch fails.
     """
 
-    var length = shape.flattened_length()
+    comptime assert (
+        rank == shape_types.length
+    ), "shape_types must describe one extent per dimension"
+    var length = Int(shape.product())
     var num_packed_elems, unpacked_tail_length = udivmod(length, simd_width)
     var packed_region_length = length - unpacked_tail_length
 
@@ -360,7 +374,9 @@ def _elementwise_impl_gpu_clc[
     @inline(.always)
     def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _ClcKernel[
+            rank=rank,
             shape_types=shape_types,
+            use_32bit=use_32bit,
             handle_uneven_simd=handle_uneven_simd,
             simd_width=simd_width,
             block_size=block_size,
@@ -380,7 +396,7 @@ def _elementwise_impl_gpu_clc[
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
 
-    unswitch(shape[rank - 1] % simd_width != 0, launch)
+    unswitch(Int(shape[rank - 1]) % simd_width != 0, launch)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -390,13 +406,12 @@ def _elementwise_impl_gpu_clc[
 
 @fieldwise_init
 struct _GridStrideKernel[
-    rank: Int,
-    shape_dtype: DType,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
-    //,
+    rank: Int,
     shape_types: TypeList[Trait=CoordLike, ...],
+    use_32bit: Bool,
     handle_uneven_simd: Bool,
     simd_width: Int,
     block_size: Int,
@@ -409,7 +424,7 @@ struct _GridStrideKernel[
     """
 
     var func: Self.FuncType
-    var shape: IndexList[Self.rank, element_type=Self.shape_dtype]
+    var shape: DynamicCoord[.int64, Self.rank]
     var num_packed_elems: Int
     var unpacked_tail_length: Int
     var packed_region_length: Int
@@ -437,52 +452,42 @@ struct _GridStrideKernel[
                 comptime for e in range(Self.elems_per_thread):
                     var idx = base_idx + e * stride
                     if idx < self.num_packed_elems:
-                        var start_indices = _start_indices_of_nth_element[
-                            Self.shape_types
+                        var flat = _start_indices_of_nth_element[
+                            Self.rank, Self.shape_types, Self.use_32bit
                         ](idx * Self.simd_width, self.shape)
                         comptime if Self.handle_uneven_simd:
-                            # Even when simd_width doesn't evenly divide the shape, we can still guarantee alignment when rank == 1.
-                            # TODO(GEX-3960): for N-D tensors, `alignment = gcd(simd_width, shape[-1])`.
-                            # This needs the static shape propagated via the `Coord` type.
-                            comptime alignment = (
-                                Self.simd_width if Self.rank == 1 else 1
-                            )
-                            if (
-                                start_indices[Self.rank - 1] + Self.simd_width
-                                > self.shape[Self.rank - 1]
+                            comptime alignment = _uneven_vector_alignment[
+                                Self.rank, Self.shape_types, Self.simd_width
+                            ]()
+                            if flat[Self.rank - 1] + Self.simd_width > Int(
+                                self.shape[Self.rank - 1]
                             ):
-                                self.func[1](
-                                    Coord(start_indices.canonicalize())
-                                )
-                                var si = start_indices
+                                self.func[1](_index_coord(flat))
                                 comptime for _off in range(1, Self.simd_width):
-                                    _advance_indices(si, self.shape)
-                                    self.func[1](Coord(si.canonicalize()))
+                                    _advance_indices(flat, self.shape)
+                                    self.func[1](_index_coord(flat))
                             else:
                                 self.func[Self.simd_width, alignment](
-                                    Coord(start_indices.canonicalize())
+                                    _index_coord(flat)
                                 )
                         else:
                             self.func[Self.simd_width, Self.simd_width](
-                                Coord(start_indices.canonicalize())
+                                _index_coord(flat)
                             )
 
             # process the tail region
             if tid < self.unpacked_tail_length:
-                self.func[1](
-                    Coord(
-                        _start_indices_of_nth_element[Self.shape_types](
-                            Int(self.packed_region_length + tid), self.shape
-                        ).canonicalize()
-                    )
-                )
+                var flat = _start_indices_of_nth_element[
+                    Self.rank, Self.shape_types, Self.use_32bit
+                ](Int(self.packed_region_length + tid), self.shape)
+                self.func[1](_index_coord(flat))
 
 
 @inline(.always)
 def _elementwise_impl_gpu_grid_stride[
     rank: Int,
-    //,
     shape_types: TypeList[Trait=CoordLike, ...],
+    use_32bit: Bool,
     simd_width: Int,
     block_size: Int,
     num_waves: Int,
@@ -495,7 +500,9 @@ def _elementwise_impl_gpu_grid_stride[
     *,
     trace_description: StaticString = "",
 ](
-    func: FuncType, shape: IndexList[rank, element_type=_], ctx: DeviceContext
+    func: FuncType,
+    shape: DynamicCoord[.int64, rank],
+    ctx: DeviceContext,
 ) raises:
     """Executes `func` over `shape` using a grid-stride loop.
 
@@ -503,6 +510,8 @@ def _elementwise_impl_gpu_grid_stride[
         rank: The rank of the buffer.
         shape_types: The `Coord` element types of the shape, carrying whichever
             extents are known at compile time.
+        use_32bit: Decompose indices in 32-bit arithmetic. The dispatcher sets
+            this when the flattened length fits in `UInt32`.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
         num_waves: The number of waves to saturate SMs.
@@ -524,7 +533,10 @@ def _elementwise_impl_gpu_grid_stride[
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
 
-    var length = shape.flattened_length()
+    comptime assert (
+        rank == shape_types.length
+    ), "shape_types must describe one extent per dimension"
+    var length = Int(shape.product())
     var num_packed_elems, unpacked_tail_length = udivmod(length, simd_width)
     var packed_region_length = length - unpacked_tail_length
 
@@ -545,7 +557,9 @@ def _elementwise_impl_gpu_grid_stride[
     @inline(.always)
     def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _GridStrideKernel[
+            rank=rank,
             shape_types=shape_types,
+            use_32bit=use_32bit,
             handle_uneven_simd=handle_uneven_simd,
             simd_width=simd_width,
             block_size=block_size,
@@ -565,7 +579,7 @@ def _elementwise_impl_gpu_grid_stride[
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
 
-    unswitch(shape[rank - 1] % simd_width != 0, launch)
+    unswitch(Int(shape[rank - 1]) % simd_width != 0, launch)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -575,15 +589,16 @@ def _elementwise_impl_gpu_grid_stride[
 
 @fieldwise_init
 struct _DualGridStrideKernel[
-    shape_0_types: TypeList[Trait=CoordLike, ...],
-    shape_1_types: TypeList[Trait=CoordLike, ...],
     Func0Type: RegisterPassable
     & ImplicitlyCopyable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
     Func1Type: RegisterPassable
     & ImplicitlyCopyable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
-    //,
+    rank: Int,
+    shape_0_types: TypeList[Trait=CoordLike, ...],
+    shape_1_types: TypeList[Trait=CoordLike, ...],
+    use_32bit: Bool,
     handle_uneven_simd: Bool,
     simd_width: Int,
     block_size: Int,
@@ -595,12 +610,10 @@ struct _DualGridStrideKernel[
     See `_ClcKernel` for the rationale behind the callable-struct form.
     """
 
-    comptime rank = Self.shape_0_types.length
-
     var func_0: Self.Func0Type
     var func_1: Self.Func1Type
-    var shape_0: Coord[*Self.shape_0_types]
-    var shape_1: Coord[*Self.shape_1_types]
+    var shape_0: DynamicCoord[.int64, Self.rank]
+    var shape_1: DynamicCoord[.int64, Self.rank]
     var num_packed_0: Int
     var unpacked_tail_0: Int
     var packed_region_0: Int
@@ -631,84 +644,60 @@ struct _DualGridStrideKernel[
                 comptime for e in range(Self.elems_per_thread):
                     var idx = base_idx + e * stride
                     if idx < self.num_packed_0:
-                        var start_indices_0 = (
-                            _get_start_indices_of_nth_subvolume[0](
-                                idx * Self.simd_width,
-                                coord_to_index_list(self.shape_0),
-                            )
-                        )
+                        var flat = _start_indices_of_nth_element[
+                            Self.rank, Self.shape_0_types, Self.use_32bit
+                        ](idx * Self.simd_width, self.shape_0)
                         comptime if Self.handle_uneven_simd:
-                            if Int(
-                                start_indices_0[Self.rank - 1]
-                            ) + Self.simd_width > Int(
+                            if flat[Self.rank - 1] + Self.simd_width > Int(
                                 self.shape_0[Self.rank - 1]
                             ):
-                                self.func_0[1](Coord(start_indices_0))
-                                var si = start_indices_0
+                                self.func_0[1](_index_coord(flat))
                                 comptime for _off in range(1, Self.simd_width):
-                                    _advance_indices(
-                                        si, coord_to_index_list(self.shape_0)
-                                    )
-                                    self.func_0[1](Coord(si))
+                                    _advance_indices(flat, self.shape_0)
+                                    self.func_0[1](_index_coord(flat))
                             else:
-                                self.func_0[Self.simd_width](
-                                    Coord(start_indices_0)
-                                )
+                                self.func_0[Self.simd_width](_index_coord(flat))
                         else:
                             self.func_0[Self.simd_width, Self.simd_width](
-                                Coord(start_indices_0)
+                                _index_coord(flat)
                             )
                     if idx < self.num_packed_1:
-                        var start_indices_1 = (
-                            _get_start_indices_of_nth_subvolume[0](
-                                idx * Self.simd_width,
-                                coord_to_index_list(self.shape_1),
-                            )
-                        )
+                        var flat = _start_indices_of_nth_element[
+                            Self.rank, Self.shape_1_types, Self.use_32bit
+                        ](idx * Self.simd_width, self.shape_1)
                         comptime if Self.handle_uneven_simd:
-                            if Int(
-                                start_indices_1[Self.rank - 1]
-                            ) + Self.simd_width > Int(
+                            if flat[Self.rank - 1] + Self.simd_width > Int(
                                 self.shape_1[Self.rank - 1]
                             ):
-                                self.func_1[1](Coord(start_indices_1))
-                                var si = start_indices_1
+                                self.func_1[1](_index_coord(flat))
                                 comptime for _off in range(1, Self.simd_width):
-                                    _advance_indices(
-                                        si, coord_to_index_list(self.shape_1)
-                                    )
-                                    self.func_1[1](Coord(si))
+                                    _advance_indices(flat, self.shape_1)
+                                    self.func_1[1](_index_coord(flat))
                             else:
-                                self.func_1[Self.simd_width](
-                                    Coord(start_indices_1)
-                                )
+                                self.func_1[Self.simd_width](_index_coord(flat))
                         else:
                             self.func_1[Self.simd_width, Self.simd_width](
-                                Coord(start_indices_1)
+                                _index_coord(flat)
                             )
 
             if tid < self.unpacked_tail_0:
-                self.func_0[1, Self.rank](
-                    Coord(
-                        _get_start_indices_of_nth_subvolume[0](
-                            Int(self.packed_region_0 + tid),
-                            coord_to_index_list(self.shape_0),
-                        )
-                    )
-                )
+                var tail_0 = _start_indices_of_nth_element[
+                    Self.rank, Self.shape_0_types, Self.use_32bit
+                ](Int(self.packed_region_0 + tid), self.shape_0)
+                self.func_0[1, Self.rank](_index_coord(tail_0))
             if tid < self.unpacked_tail_1:
-                self.func_1[1, Self.rank](
-                    Coord(
-                        _get_start_indices_of_nth_subvolume[0](
-                            Int(self.packed_region_1 + tid),
-                            coord_to_index_list(self.shape_1),
-                        )
-                    )
-                )
+                var tail_1 = _start_indices_of_nth_element[
+                    Self.rank, Self.shape_1_types, Self.use_32bit
+                ](Int(self.packed_region_1 + tid), self.shape_1)
+                self.func_1[1, Self.rank](_index_coord(tail_1))
 
 
 @inline(.always)
 def _dual_elementwise_impl_gpu_grid_stride[
+    rank: Int,
+    shape_0_types: TypeList[Trait=CoordLike, ...],
+    shape_1_types: TypeList[Trait=CoordLike, ...],
+    use_32bit: Bool,
     simd_width: Int,
     block_size: Int,
     num_waves: Int,
@@ -727,8 +716,8 @@ def _dual_elementwise_impl_gpu_grid_stride[
     func_0: Func0Type,
     func_1: Func1Type,
     *,
-    shape_0: Coord,
-    shape_1: Coord,
+    shape_0: DynamicCoord[.int64, rank],
+    shape_1: DynamicCoord[.int64, rank],
     ctx: DeviceContext,
 ) raises:
     """Executes two elementwise functions over their respective shapes in a
@@ -738,6 +727,13 @@ def _dual_elementwise_impl_gpu_grid_stride[
     before calling this function).
 
     Parameters:
+        rank: The rank of both shapes.
+        shape_0_types: The `Coord` element types of the first shape, carrying
+            whichever extents are known at compile time.
+        shape_1_types: The `Coord` element types of the second shape, carrying
+            whichever extents are known at compile time.
+        use_32bit: Decompose indices in 32-bit arithmetic. The dispatcher sets
+            this when the flattened length fits in `UInt32`.
         simd_width: The SIMD vector width to use.
         block_size: The number of threads per block.
         num_waves: The number of waves to saturate SMs.
@@ -759,8 +755,9 @@ def _dual_elementwise_impl_gpu_grid_stride[
     Raises:
         If the GPU kernel launch fails.
     """
-    comptime assert shape_0.rank == shape_1.rank
-    comptime rank = shape_0.rank
+    comptime assert (
+        rank == shape_0_types.length == shape_1_types.length
+    ), "shape types must describe one extent per dimension"
 
     var length_0 = Int(shape_0.product())
     var length_1 = Int(shape_1.product())
@@ -791,6 +788,10 @@ def _dual_elementwise_impl_gpu_grid_stride[
     @inline(.always)
     def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _DualGridStrideKernel[
+            rank=rank,
+            shape_0_types=shape_0_types,
+            use_32bit=use_32bit,
+            shape_1_types=shape_1_types,
             handle_uneven_simd=handle_uneven_simd,
             simd_width=simd_width,
             block_size=block_size,
@@ -836,7 +837,8 @@ def _elementwise_impl_gpu[
     combination of width and indices so as to cover shape on the GPU.
 
     Parameters:
-        simd_width: The SIMD vector width to use.
+        simd_width: The widest SIMD vector to use; a loop with short static
+            rows may run narrower (see `_row_bounded_simd_width`).
         FuncType: The body function type.
         trace_description: Description of the trace.
 
@@ -849,6 +851,9 @@ def _elementwise_impl_gpu[
         If the GPU kernel launch fails.
     """
     comptime rank = shape.rank
+    comptime width = _row_bounded_simd_width[
+        rank, type_of(shape).ParamListType, simd_width
+    ]()
 
     comptime hw_info = ctx.default_device_info
 
@@ -885,8 +890,13 @@ def _elementwise_impl_gpu[
     comptime clc_min_packed_per_row = get_defined_int[
         "MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9
     ]()
-    var packed_elems_per_row = ufloordiv(Int(shape[rank - 1]), simd_width)
-    var shape_idx = coord_to_index_list(shape)
+    comptime shape_types = type_of(shape).ParamListType
+    # The kernels carry the shape as an all-dynamic `Coord`: static extents
+    # stay available to `_start_indices_of_nth_element` through `shape_types`.
+    var shape_idx = rebind[DynamicCoord[.int64, rank]](
+        shape.make_dynamic[.int64]()
+    )
+    var packed_elems_per_row = ufloordiv(Int(shape[rank - 1]), width)
 
     var length = Int(shape.product())
     var use_32bit = length <= Int(UInt32.MAX)
@@ -899,7 +909,7 @@ def _elementwise_impl_gpu[
     # actually enabled. This avoids per-instantiation comptime cost in the
     # common case where `_USE_CLC_WORK_STEALING` is off.
     comptime if _USE_CLC_WORK_STEALING and ctx.target._is_sm_100x_or_newer():
-        var num_packed = ufloordiv(length, simd_width)
+        var num_packed = ufloordiv(length, width)
         var num_tiles = uceildiv(num_packed, block_size * elems_per_thread)
 
         if packed_elems_per_row < clc_min_packed_per_row or num_tiles <= 1:
@@ -908,66 +918,78 @@ def _elementwise_impl_gpu[
             # when there is nothing to steal.
             if use_32bit:
                 _elementwise_impl_gpu_grid_stride[
-                    shape_types=type_of(shape).ParamListType,
-                    simd_width=simd_width,
+                    rank=rank,
+                    shape_types=shape_types,
+                    use_32bit=True,
+                    simd_width=width,
                     block_size=short_row_block_size,
                     num_waves=num_waves,
                     sm_count=sm_count,
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
+                ](func=func, shape=shape_idx, ctx=ctx)
             else:
                 _elementwise_impl_gpu_grid_stride[
-                    shape_types=type_of(shape).ParamListType,
-                    simd_width=simd_width,
+                    rank=rank,
+                    shape_types=shape_types,
+                    use_32bit=False,
+                    simd_width=width,
                     block_size=short_row_block_size,
                     num_waves=num_waves,
                     sm_count=sm_count,
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
+                ](func=func, shape=shape_idx, ctx=ctx)
         else:
             if use_32bit:
                 _elementwise_impl_gpu_clc[
-                    shape_types=type_of(shape).ParamListType,
-                    simd_width=simd_width,
+                    rank=rank,
+                    shape_types=shape_types,
+                    use_32bit=True,
+                    simd_width=width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
+                ](func=func, shape=shape_idx, ctx=ctx)
             else:
                 _elementwise_impl_gpu_clc[
-                    shape_types=type_of(shape).ParamListType,
-                    simd_width=simd_width,
+                    rank=rank,
+                    shape_types=shape_types,
+                    use_32bit=False,
+                    simd_width=width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
+                ](func=func, shape=shape_idx, ctx=ctx)
     else:
         if use_32bit:
             _elementwise_impl_gpu_grid_stride[
-                shape_types=type_of(shape).ParamListType,
-                simd_width=simd_width,
+                rank=rank,
+                shape_types=shape_types,
+                use_32bit=True,
+                simd_width=width,
                 block_size=block_size,
                 num_waves=num_waves,
                 sm_count=sm_count,
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 trace_description=trace_description,
-            ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
+            ](func=func, shape=shape_idx, ctx=ctx)
         else:
             _elementwise_impl_gpu_grid_stride[
-                shape_types=type_of(shape).ParamListType,
-                simd_width=simd_width,
+                rank=rank,
+                shape_types=shape_types,
+                use_32bit=False,
+                simd_width=width,
                 block_size=block_size,
                 num_waves=num_waves,
                 sm_count=sm_count,
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 trace_description=trace_description,
-            ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
+            ](func=func, shape=shape_idx, ctx=ctx)
 
 
 @inline(.always)
@@ -1041,11 +1063,27 @@ def _dual_elementwise_impl_gpu[
         max_length = len_1
     var use_32bit = max_length <= Int(UInt32.MAX)
 
+    comptime rank = shape_0.rank
+    comptime shape_0_types = type_of(shape_0).ParamListType
+    comptime shape_1_types = type_of(shape_1).ParamListType
+    comptime assert rank == shape_1.rank
+
     if max_length == 0:
         return
 
+    var shape_0_idx = rebind[DynamicCoord[.int64, rank]](
+        shape_0.make_dynamic[.int64]()
+    )
+    var shape_1_idx = rebind[DynamicCoord[.int64, rank]](
+        shape_1.make_dynamic[.int64]()
+    )
+
     if use_32bit:
         _dual_elementwise_impl_gpu_grid_stride[
+            rank=rank,
+            shape_0_types=shape_0_types,
+            shape_1_types=shape_1_types,
+            use_32bit=True,
             simd_width=simd_width,
             block_size=block_size,
             num_waves=num_waves,
@@ -1056,12 +1094,16 @@ def _dual_elementwise_impl_gpu[
         ](
             func_0=func_0,
             func_1=func_1,
-            shape_0=shape_0.cast[.uint32](),
-            shape_1=shape_1.cast[.uint32](),
+            shape_0=shape_0_idx,
+            shape_1=shape_1_idx,
             ctx=ctx,
         )
     else:
         _dual_elementwise_impl_gpu_grid_stride[
+            rank=rank,
+            shape_0_types=shape_0_types,
+            shape_1_types=shape_1_types,
+            use_32bit=False,
             simd_width=simd_width,
             block_size=block_size,
             num_waves=num_waves,
@@ -1072,7 +1114,7 @@ def _dual_elementwise_impl_gpu[
         ](
             func_0=func_0,
             func_1=func_1,
-            shape_0=shape_0.cast[.uint64](),
-            shape_1=shape_1.cast[.uint64](),
+            shape_0=shape_0_idx,
+            shape_1=shape_1_idx,
             ctx=ctx,
         )

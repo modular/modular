@@ -44,11 +44,7 @@ def input_tensor(clip_config: dict[str, Any]) -> torch.Tensor:
     batch_size = 1
     seq_length = 77  # Standard CLIP text sequence length
     hidden_size = clip_config["hidden_size"]
-    return (
-        torch.randn(batch_size, seq_length, hidden_size)
-        .to(torch.bfloat16)
-        .to("cuda")
-    )
+    return torch.randn(batch_size, seq_length, hidden_size).to(torch.bfloat16)
 
 
 @pytest.fixture

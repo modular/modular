@@ -39,7 +39,7 @@ from max.gpu import block_dim, global_idx, grid_dim
 from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.utils import (
     ElementwiseComputeFn,

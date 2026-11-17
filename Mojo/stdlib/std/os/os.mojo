@@ -100,21 +100,12 @@ struct _DirHandle:
         if not isdir(path):
             raise Error("the directory '", path, "' does not exist")
 
-        var handle = external_call[
+        __guard case .Some(handle) = external_call[
             "opendir", Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
-        ](path.as_c_string_span())
-
-        if not handle:
+        ](path.as_c_string_span()) else:
             var err = get_errno()
-            raise Error(
-                "unable to open the directory '",
-                path,
-                "'",
-                " Err: ",
-                String(err),
-            )
-
-        self._handle = handle.value()
+            raise Error(t"unable to open the directory '{path}' Err: {err}")
+        self._handle = handle
 
     def __deinit__(deinit self):
         """Closes the handle opened via popen."""
@@ -140,15 +131,12 @@ struct _DirHandle:
         """
         var res = List[String]()
 
-        while True:
-            var ep = external_call[
-                "readdir", Optional[Pointer[_dirent_linux, MutUntrackedOrigin]]
-            ](self._handle)
-            if not ep:
-                break
-            ref name = ep.unsafe_value().unsafe_take_pointee().name
+        while case .Some(ep) = external_call[
+            "readdir", Optional[Pointer[_dirent_linux, MutUntrackedOrigin]]
+        ](self._handle):
+            ref name = ep.unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
-            var name_str = StringSlice(
+            var name_str = StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=name_ptr,
                     length=Int(
@@ -170,15 +158,12 @@ struct _DirHandle:
         """
         var res = List[String]()
 
-        while True:
-            var ep = external_call[
-                "readdir", Optional[Pointer[_dirent_macos, MutUntrackedOrigin]]
-            ](self._handle)
-            if not ep:
-                break
-            ref name = ep.unsafe_value().unsafe_take_pointee().name
+        while case .Some(ep) = external_call[
+            "readdir", Optional[Pointer[_dirent_macos, MutUntrackedOrigin]]
+        ](self._handle):
+            ref name = ep.unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
-            var name_str = StringSlice(
+            var name_str = StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=name_ptr,
                     length=Int(

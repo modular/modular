@@ -68,7 +68,7 @@ from max.gpu.primitives import warp_id
 from std.math import ceildiv, align_up
 
 from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE, MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import Shuffler
 

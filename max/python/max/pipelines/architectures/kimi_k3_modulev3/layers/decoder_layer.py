@@ -39,19 +39,20 @@ the FFN; nothing else in the layer changes.
 from __future__ import annotations
 
 from max import functional as F
-from max.nn import Module
+from max.nn import Module, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MLAKVCacheParams
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 
 from . import ep
 from .attn_residual import (
+    PendingAttnResStream,
     kimi_k3_attn_res_post_attention,
     kimi_k3_attn_res_pre_attention,
 )
@@ -75,7 +76,9 @@ def _tp_active(mesh: DeviceMesh) -> bool:
     return TP in mesh.axis_names and mesh.axis_size(TP) > 1
 
 
-class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
+class KimiK3DecoderLayer(
+    Module[..., tuple[Tensor | PendingAttnResStream, list[Tensor]]]
+):
     """One decoder layer: residual mixture, attention, residual mixture, FFN."""
 
     def __init__(
@@ -89,6 +92,7 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         attention: KimiK3KDAAttention | KimiK3MLAAttention,
         ffn: KimiK3DenseMLP | KimiK3LatentMoE,
         rms_norm_eps: float = KIMI_RMS_NORM_EPS,
+        fold_pending_ffn: bool = False,
     ) -> None:
         super().__init__()
         self.layer_idx = layer_idx
@@ -98,6 +102,12 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         self.rms_norm_eps = rms_norm_eps
         self.attention = attention
         self.ffn = ffn
+        # Defer the layer-end residual add to the next layer's mix op,
+        # which folds it into its last candidate's load. The fold is the
+        # latent MoE's -- a dense layer keeps the standalone add -- and is
+        # per layer, off on the feature-tap layers, whose stream the
+        # drafter reads eagerly.
+        self.fold_pending_ffn = fold_pending_ffn
 
         self.input_layernorm_weight = Tensor.ones([hidden_size])
         self.post_attention_layernorm_weight = Tensor.ones([hidden_size])
@@ -108,7 +118,7 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
 
     def forward(
         self,
-        hidden_states: Tensor,
+        hidden_states: Tensor | PendingAttnResStream,
         block_residual: list[Tensor],
         *,
         conv_pool: Tensor | None = None,
@@ -121,12 +131,14 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         kv_collection: PagedCacheValues | None = None,
         mla_prefill_plan: MLAPrefillMetadata | None = None,
         mla_freqs_cis: Tensor | None = None,
-    ) -> tuple[Tensor, list[Tensor]]:
+    ) -> tuple[Tensor | PendingAttnResStream, list[Tensor]]:
         """Runs the layer over the batch's tokens.
 
         Args:
             hidden_states: ``[total_seq_len, hidden]`` ragged (batch size 1
-            at this scope, so ``total_seq_len == seq_len``).
+            at this scope, so ``total_seq_len == seq_len``), or the previous
+            layer's :class:`PendingAttnResStream` when the residual add is
+            folded into the next layer's mix.
             block_residual: The candidate stack entering this layer.
             conv_pool: KDA's conv-history pool, mutated in place at
             ``conv_row_id``; required when ``is_kda``.
@@ -213,16 +225,23 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             self.post_attention_layernorm_weight,
             self.rms_norm_eps,
         )
-        if isinstance(self.ffn, KimiK3LatentMoE):
+        if isinstance(self.ffn, KimiK3LatentMoE) and ep_config is None:
+            # Every MoE block shares one subgraph, so its per-expert weight
+            # stacking compiles once rather than once per layer.
+            ffn_out = as_subgraph(self.ffn, name="moe_block")(normed2)
+        elif isinstance(self.ffn, KimiK3LatentMoE):
             ffn_out = self.ffn(
                 normed2, ep_config=ep_config, ep_buffers=ep_buffers
             )
         else:
             ffn_out = self.ffn(normed2)
-        if isinstance(self.ffn, KimiK3DenseMLP) and _tp_active(
-            self.ffn.down_proj.weight.mesh
-        ):
-            ffn_out = F.allreduce_sum(ffn_out, mesh_axis=TP)
+            if isinstance(self.ffn, KimiK3DenseMLP) and _tp_active(
+                self.ffn.down_proj.weight.mesh
+            ):
+                ffn_out = F.allreduce_sum(ffn_out, mesh_axis=TP)
+        assert isinstance(ffn_out, Tensor)
+        if self.fold_pending_ffn and isinstance(self.ffn, KimiK3LatentMoE):
+            return PendingAttnResStream(prefix, ffn_out), stack
         return prefix + ffn_out, stack
 
 

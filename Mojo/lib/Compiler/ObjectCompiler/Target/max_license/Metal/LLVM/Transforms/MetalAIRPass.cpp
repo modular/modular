@@ -230,6 +230,17 @@ static bool transformTargetTriple(Module &module,
   return false;
 }
 
+/// Rebuilds \p gep over \p ptr and \p indices with the same source element
+/// type. Unlike IRBuilder::CreateGEP, this neither folds nor canonicalizes to
+/// an i8 ptradd, so the i32 indices this pass produces for AIR survive.
+static GetElementPtrInst *rebuildGEP(IRBuilder<> &builder,
+                                     GetElementPtrInst *gep, Value *ptr,
+                                     ArrayRef<Value *> indices,
+                                     GEPNoWrapFlags flags) {
+  return builder.Insert(GetElementPtrInst::Create(gep->getSourceElementType(),
+                                                  ptr, indices, flags));
+}
+
 /// Helper function to construct a new type identical to \p type with pointers
 /// from `MetalAddressSpace::None` transformed to pointer from \p addressSpace
 static llvm::Type *createTypeWithAddressSpace(llvm::Type *type,
@@ -849,7 +860,6 @@ private:
   void propagateAddressSpace(Function &func) {
     DenseSet<llvm::Instruction *> toRemove;
     SmallVector<llvm::Instruction *, 8> worklist;
-    DenseSet<llvm::Instruction *> visited;
 
     ReversePostOrderTraversal<BasicBlock *> rpot(&func.getEntryBlock());
     for (llvm::BasicBlock *bb : rpot) {
@@ -888,14 +898,10 @@ private:
                     })
                 .Case<llvm::GetElementPtrInst>(
                     [&](llvm::GetElementPtrInst *gep) {
-                      llvm::GetElementPtrInst *newGEP =
-                          cast<llvm::GetElementPtrInst>(builder.CreateGEP(
-                              gep->getSourceElementType(),
-                              gep->getPointerOperand(),
-                              SmallVector<llvm::Value *>(gep->indices())));
-                      newGEP->setIsInBounds(gep->isInBounds());
-                      newGEP->setNoWrapFlags(gep->getNoWrapFlags());
-                      return newGEP;
+                      return rebuildGEP(
+                          builder, gep, gep->getPointerOperand(),
+                          SmallVector<llvm::Value *>(gep->indices()),
+                          gep->getNoWrapFlags());
                     })
                 .Case<llvm::BitCastInst>([&](llvm::BitCastInst *cast) {
                   llvm::Type *newTy =
@@ -1722,8 +1728,89 @@ private:
     return true;
   }
 
-  /// Scan all functions in functionsToUpdate for the kgen.variant<T, i1>
-  /// alloca type-pun pattern and record any promoted load types into worklist.
+  bool hasPointer(llvm::Type *ty) const {
+    if (ty->isPointerTy())
+      return true;
+    return llvm::any_of(ty->subtypes(),
+                        [&](llvm::Type *subTy) { return hasPointer(subTy); });
+  }
+
+  /// Find a stored field that covers exactly the requested bytes. Aggregate
+  /// wrappers are skipped so a pointer reload can match a nested pointer leaf.
+  llvm::Type *getStoredFieldType(llvm::Type *ty, uint64_t offset,
+                                 uint64_t size) {
+    const llvm::DataLayout &dl = module.getDataLayout();
+    llvm::TypeSize tySize = dl.getTypeAllocSize(ty);
+    if (tySize.isScalable() || offset > tySize.getFixedValue() ||
+        size > tySize.getFixedValue() - offset)
+      return nullptr;
+    if (!ty->isAggregateType())
+      return offset == 0 && size == tySize.getFixedValue() ? ty : nullptr;
+    if (auto *st = dyn_cast<llvm::StructType>(ty)) {
+      const llvm::StructLayout *layout = dl.getStructLayout(st);
+      for (unsigned i = 0, e = st->getNumElements(); i < e; ++i) {
+        uint64_t fieldOffset = layout->getElementOffset(i);
+        if (fieldOffset > offset)
+          break;
+        if (llvm::Type *field = getStoredFieldType(st->getElementType(i),
+                                                   offset - fieldOffset, size))
+          return field;
+      }
+    } else if (auto *at = dyn_cast<ArrayType>(ty)) {
+      uint64_t stride = dl.getTypeAllocSize(at->getElementType());
+      if (offset < stride * at->getNumElements())
+        return getStoredFieldType(at->getElementType(), offset % stride, size);
+    }
+    return nullptr;
+  }
+
+  /// Match each reload field to the stored layout, without guessing address
+  /// spaces for bytes that do not describe a complete stored pointer.
+  llvm::Type *getReloadType(llvm::Type *loadTy, llvm::Type *storeTy,
+                            uint64_t offset) {
+    const llvm::DataLayout &dl = module.getDataLayout();
+    llvm::TypeSize size = dl.getTypeAllocSize(loadTy);
+    llvm::TypeSize storeSize = dl.getTypeAllocSize(storeTy);
+    if (size.isScalable() || storeSize.isScalable() ||
+        offset > storeSize.getFixedValue() ||
+        size.getFixedValue() > storeSize.getFixedValue() - offset)
+      return nullptr;
+    if (size.isZero())
+      return loadTy;
+    if (auto *st = dyn_cast<llvm::StructType>(loadTy)) {
+      const llvm::StructLayout *layout = dl.getStructLayout(st);
+      SmallVector<llvm::Type *, 8> fields;
+      for (unsigned i = 0, e = st->getNumElements(); i < e; ++i) {
+        llvm::Type *field = getReloadType(st->getElementType(i), storeTy,
+                                          offset + layout->getElementOffset(i));
+        if (!field)
+          return nullptr;
+        fields.push_back(field);
+      }
+      return llvm::StructType::get(loadTy->getContext(), fields,
+                                   st->isPacked());
+    }
+    if (auto *at = dyn_cast<ArrayType>(loadTy)) {
+      uint64_t stride = dl.getTypeAllocSize(at->getElementType());
+      llvm::Type *element = nullptr;
+      for (uint64_t i = 0, e = at->getNumElements(); i < e; ++i) {
+        llvm::Type *field =
+            getReloadType(at->getElementType(), storeTy, offset + i * stride);
+        if (!field || (element && element != field))
+          return nullptr;
+        element = field;
+      }
+      return ArrayType::get(element, at->getNumElements());
+    }
+    llvm::Type *field =
+        getStoredFieldType(storeTy, offset, size.getFixedValue());
+    if (!field)
+      return nullptr;
+    return loadTy->isPointerTy() ? mergePromotedTypes(loadTy, field) : loadTy;
+  }
+
+  /// Scan functionsToUpdate for spilled pointer fields and opaque type-puns,
+  /// recording promoted load types into worklist.
   ///
   /// kgen.variant<T, i1> lowers to an opaque byte-array struct with no visible
   /// pointer fields. A callee unpacks T by storing the blob to an alloca and
@@ -1732,6 +1819,8 @@ private:
   /// + ptr-bearing load) and records the promoted load types. When the reload
   /// happens in a callee that received the alloca by pointer, the promotion is
   /// delegated interprocedurally to `promoteCalleeBlobLoads`.
+  /// Visible stored pointers also allow partial reloads through constant GEPs,
+  /// provided each reloaded field matches the stored byte layout.
   ///
   /// Returns false on type conflict, true otherwise. Sets foundTypePun to true
   /// if at least one load type was promoted.
@@ -1747,13 +1836,14 @@ private:
           if (!alloca)
             continue;
 
-          // Find the opaque-blob store size (if any) and collect loads of
-          // ptr-bearing aggregates whose size matches.
+          // Find the stored aggregate's layout before collecting its reloads.
           uint64_t opaqueBlobSize = 0;
           // The stored blob's promoted type (with its real per-field address
           // spaces); reloads are promoted to match it, not blanket-Device.
           llvm::Type *opaqueBlobType = nullptr;
-          SmallVector<LoadInst *, 4> ptrStructLoads;
+          // Pointer-bearing loads from the alloca, each with its byte offset
+          // into the alloca.
+          SmallVector<std::pair<LoadInst *, uint64_t>, 4> ptrLoads;
 
           // Calls that receive the alloca pointer by value; the callee
           // reloads the device-bearing blob and (without promotion) reads its
@@ -1792,10 +1882,6 @@ private:
                 opaqueBlobSize = sz.getFixedValue();
                 opaqueBlobType = storeTy;
               }
-            } else if (auto *load = dyn_cast<LoadInst>(use.getUser())) {
-              if (load->getType()->isAggregateType() &&
-                  hasPointerWithoutAddressSpace(load->getType()))
-                ptrStructLoads.push_back(load);
             } else if (auto *call = dyn_cast<CallInst>(use.getUser())) {
               // The alloca pointer is passed by value to a callee that reloads
               // the device-bearing blob on its own stack copy. This is the
@@ -1812,24 +1898,55 @@ private:
 
           if (!opaqueBlobSize)
             continue;
-          if (ptrStructLoads.empty() && escapingCalls.empty())
+
+          // Follow constant-offset GEPs from the alloca to find the loads that
+          // read stored pointers back. Each work item is a pointer into the
+          // alloca and its byte offset from the alloca.
+          SmallVector<std::pair<llvm::Value *, APInt>, 8> ptrWork;
+          ptrWork.emplace_back(
+              alloca, APInt(dl.getIndexTypeSizeInBits(alloca->getType()), 0));
+          while (!ptrWork.empty()) {
+            auto [ptr, offset] = ptrWork.pop_back_val();
+            for (llvm::User *user : ptr->users()) {
+              if (auto *gep = dyn_cast<GetElementPtrInst>(user)) {
+                APInt gepOffset(offset.getBitWidth(), 0);
+                if (!gep->accumulateConstantOffset(dl, gepOffset))
+                  continue;
+                bool overflow = false;
+                APInt nextOffset = offset.sadd_ov(gepOffset, overflow);
+                if (!overflow)
+                  ptrWork.emplace_back(gep, nextOffset);
+              } else if (auto *load = dyn_cast<LoadInst>(user)) {
+                // A load at a negative offset, or at one wider than 64 bits,
+                // is out of bounds of the alloca; it keeps its type.
+                if (hasPointerWithoutAddressSpace(load->getType()) &&
+                    !offset.isNegative() && offset.getActiveBits() <= 64)
+                  ptrLoads.emplace_back(load, offset.getZExtValue());
+              }
+            }
+          }
+          if (ptrLoads.empty() && escapingCalls.empty())
             continue;
 
-          for (LoadInst *load : ptrStructLoads) {
-            // Only treat as a type-pun when the load covers the same bytes as
-            // the opaque store; a smaller load is a legitimate partial access.
+          for (auto [load, offset] : ptrLoads) {
             llvm::TypeSize loadSz = dl.getTypeAllocSize(load->getType());
-            if (loadSz.isScalable() || loadSz.getFixedValue() != opaqueBlobSize)
+            if (loadSz.isScalable())
               continue;
-            // Promote to the blob's actual per-field address spaces (see
-            // `promoteCalleeBlobLoads`); Device only as the opaque-blob
-            // fallback.
-            llvm::Type *newLoadTy =
-                mergePromotedTypes(load->getType(), opaqueBlobType);
-            if (!newLoadTy)
-              newLoadTy = createTypeWithAddressSpace(load->getType(),
-                                                     MetalAddressSpace::Device);
-            if (newLoadTy != load->getType()) {
+            llvm::Type *newLoadTy = nullptr;
+            if (hasPointer(opaqueBlobType))
+              newLoadTy =
+                  getReloadType(load->getType(), opaqueBlobType, offset);
+            if (!newLoadTy && offset == 0 &&
+                load->getType()->isAggregateType() &&
+                loadSz.getFixedValue() == opaqueBlobSize) {
+              // Preserve whole-blob type-puns, including opaque fields nested
+              // inside an otherwise pointer-bearing stored aggregate.
+              newLoadTy = mergePromotedTypes(load->getType(), opaqueBlobType);
+              if (!newLoadTy)
+                newLoadTy = createTypeWithAddressSpace(
+                    load->getType(), MetalAddressSpace::Device);
+            }
+            if (newLoadTy && newLoadTy != load->getType()) {
               if (!recordNewType(load, newLoadTy, worklist))
                 return false;
               foundTypePun = true;
@@ -1937,12 +2054,9 @@ private:
                       SmallVector<Value *, 4> indices;
                       for (Value *idx : gep->indices())
                         indices.push_back(getVal(idx));
-                      auto *newGEP = cast<GetElementPtrInst>(builder.CreateGEP(
-                          gep->getSourceElementType(),
-                          getVal(gep->getPointerOperand()), indices));
-                      newGEP->setIsInBounds(gep->isInBounds());
-                      newGEP->setNoWrapFlags(gep->getNoWrapFlags());
-                      return newGEP;
+                      return rebuildGEP(builder, gep,
+                                        getVal(gep->getPointerOperand()),
+                                        indices, gep->getNoWrapFlags());
                     })
                 .Case<BitCastInst>([&](BitCastInst *cast) -> Value * {
                   Value *src = getVal(cast->getOperand(0));
@@ -2218,8 +2332,6 @@ public:
   /// of the new type is inserted at the entry block top; after the rewritten
   /// body is spliced into newFunc, each dummy is replaced with the real arg.
   virtual llvm::Function *updateFunction(llvm::Function &func) final {
-    llvm::LLVMContext &ctx = module.getContext();
-
     // Determine new parameter types from valueTypeMap.
     SmallVector<Type *, 8> newParamTypes;
     for (llvm::Argument &arg : func.args()) {
@@ -2262,7 +2374,7 @@ public:
     SmallVector<unsigned, 8> sameTypeArgIndices;
 
     BasicBlock &entryBB = func.getEntryBlock();
-    IRBuilder<> irBuilder(ctx);
+    IRBuilder<> irBuilder(module);
     irBuilder.SetInsertPoint(entryBB.getFirstNonPHIIt());
 
     // RAUW without the type-equality assertion; needed when old and new types
@@ -2591,10 +2703,10 @@ static bool convertI64OperationsToI32(Function &func) {
         }
 
         if (needsConversion) {
-          replacement = builder.CreateGEP(gep->getSourceElementType(),
-                                          gep->getPointerOperand(), newIndices);
-          if (gep->isInBounds())
-            cast<GetElementPtrInst>(replacement)->setIsInBounds(true);
+          replacement =
+              rebuildGEP(builder, gep, gep->getPointerOperand(), newIndices,
+                         gep->isInBounds() ? GEPNoWrapFlags::inBounds()
+                                           : GEPNoWrapFlags::none());
         }
       }
 
@@ -2708,7 +2820,7 @@ static void updateInstructionForAddressSpace(User *user, Value *oldPtr,
     // Create new gep with address space pointer - this will maintain the
     // address space
     Value *newGEP =
-        builder.CreateGEP(gep->getSourceElementType(), newPtr, indices);
+        rebuildGEP(builder, gep, newPtr, indices, GEPNoWrapFlags::none());
 
     // Now update all users of this gep to use the new address space version
     SmallVector<User *, 8> gepUsers(gep->users());
@@ -2806,8 +2918,8 @@ static bool eliminateAddrspaceCasts(Function &func) {
                 indices.push_back(idx);
 
               // Create new gep directly on the address space 1 pointer
-              Value *newGEP = builder.CreateGEP(gep->getSourceElementType(),
-                                                srcPtr, indices);
+              Value *newGEP = rebuildGEP(builder, gep, srcPtr, indices,
+                                         GEPNoWrapFlags::none());
 
               // Update all users of this gep
               SmallVector<User *, 8> gepUsers(gep->users());
@@ -3711,7 +3823,7 @@ static bool replaceFNeg(llvm::Module &module) {
     return false;
 
   // Replace fneg instructions by fsub instructions
-  llvm::IRBuilder<> builder(module.getContext());
+  llvm::IRBuilder<> builder(module);
   for (llvm::UnaryOperator *op : worklist) {
     builder.SetInsertPoint(op);
     llvm::Value *in = op->getOperand(0);

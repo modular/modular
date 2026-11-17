@@ -31,7 +31,6 @@ from std._gpu.host.info import (
     is_accelerator,
     is_cpu,
     is_gpu,
-    is_valid_target,
 )
 
 
@@ -62,6 +61,7 @@ from max._plugin.cuda.targets import (
     OrinNano,
     RTX2060,
     RTX3090,
+    RTX4080SUPER,
     RTX4090,
     RTX4090m,
     RTX5090,

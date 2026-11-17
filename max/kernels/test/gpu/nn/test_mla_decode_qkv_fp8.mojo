@@ -46,9 +46,10 @@ from layout import (
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import AMDMLA, SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import (
     CausalMask,
+    MHAMask,
     NullMask,
     SlidingWindowCausalMask,
 )
@@ -126,7 +127,7 @@ def test[
     num_heads: Int,
     group: Int = 1,
     batch_size: Int = 1,
-](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+](seq_len: Int, num_keys: Int, ctx: DeviceContext[],) raises:
     print(
         t"test_mla_decode_qkv_fp8 batch_size: {batch_size} seq_len:"
         t" {seq_len} num_keys: {num_keys} q_type: {q_type} kv_type:"
@@ -257,11 +258,11 @@ def test[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            flare_mla_decoding[config=config](
+            flare_mla_decoding[config=config, kernels=SM100MLA](
                 out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
@@ -271,7 +272,7 @@ def test[
                 scalar_args_buf_tt,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
-            flare_mla_decoding[config=config](
+            flare_mla_decoding[config=config, kernels=SM100MLA](
                 out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
@@ -410,7 +411,7 @@ def bench[
     num_heads: Int,
     group: Int,
     batch_size: Int,
-](num_keys: Int, ctx: DeviceContext) raises:
+](num_keys: Int, ctx: DeviceContext[]) raises:
     """Benchmark native FP8 MLA decode kernel (no correctness check)."""
     comptime scale = Float32(0.125)
     comptime kv_num_heads = num_heads // group
@@ -478,12 +479,12 @@ def bench[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt, imm
     }:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
@@ -518,7 +519,7 @@ def bench[
 def test_decoding[
     batch_size: Int,
     mla_mask_type: MLAMaskType,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test[
         mla_mask_type,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -557,12 +558,12 @@ def test_decoding[
 # The dispatcher enables fold_q when num_q_heads * q_len <= BM(64) and q_len > 1.
 # Small head groups (num_heads in {8, 16}) at seq_len in {2, 4, 8} exercise the
 # M-dimension fold: BM=64 packs q_len_fold * num_q_heads rows of the same
-# batch element, collapsing grid.y to 1.
+# batch element, collapsing grid_y to 1.
 def test_decoding_fold[
     batch_size: Int,
     num_heads: Int,
     mla_mask_type: MLAMaskType,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test[
         mla_mask_type,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -589,7 +590,7 @@ def test_decoding_fold[
 def run_fold_both_masks[
     batch_size: Int,
     num_heads: Int,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test_decoding_fold[batch_size, num_heads, MLAMaskType.NO_MASK](
         ctx, seq_len, num_keys
     )
@@ -604,7 +605,7 @@ def run_fold_both_masks[
 def run_fold_warp_local[
     batch_size: Int,
     num_heads: Int,
-](ctx: DeviceContext, seq_len: Int) raises:
+](ctx: DeviceContext[], seq_len: Int) raises:
     run_fold_both_masks[batch_size, num_heads](ctx, seq_len, 256)
     test_decoding_fold[batch_size, num_heads, MLAMaskType.CAUSAL](
         ctx, seq_len, 2048
@@ -624,7 +625,7 @@ def test_sw[
     num_heads: Int,
     group: Int = 1,
     batch_size: Int = 1,
-](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+](seq_len: Int, num_keys: Int, ctx: DeviceContext[],) raises:
     print(
         t"test_mla_decode_qkv_fp8 [SlidingWindow] W: {window_size} batch_size:"
         t" {batch_size} seq_len: {seq_len} num_keys: {num_keys} num_heads:"
@@ -728,10 +729,10 @@ def test_sw[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
@@ -843,7 +844,7 @@ def test_decoding_sw[
     batch_size: Int,
     num_heads: Int,
     window_size: Int,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test_sw[
         window_size,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -854,6 +855,62 @@ def test_decoding_sw[
         group=num_heads,
         batch_size=batch_size,
     ](seq_len, num_keys, ctx)
+
+
+# Ragged-Q probe for an out-of-envelope AMD decode fold. Dense Q never reaches
+# the padded short-chunk buckets, so the gates that reject a fold there (the
+# head-aligned M-tile, the mask, the bucket ceiling) are only reachable with
+# ragged Q. The launch raises inside `AMDMLA.decode_dispatch` before it reads
+# the KV operand, so these tensors only have to satisfy its shape checks.
+def expect_amd_ragged_fold_raise[
+    num_heads: Int,
+    seq_len: Int,
+    mask_t: MHAMask,
+](ctx: DeviceContext[], mask: mask_t, num_keys: Int) raises:
+    """Asserts a ragged-Q AMD decode fold outside the envelope raises."""
+    comptime depth = 576
+    comptime v_depth = 512
+    comptime dtype = DType.float8_e4m3fn
+    comptime config = MHAConfig[dtype](num_heads, depth)
+    var q_device = ctx.enqueue_create_buffer[dtype](seq_len * num_heads * depth)
+    var out_device = ctx.enqueue_create_buffer[.bfloat16](
+        seq_len * num_heads * v_depth
+    )
+    var k_device = ctx.enqueue_create_buffer[dtype](num_keys * depth)
+    var offsets_device = ctx.enqueue_create_buffer[.uint32](2)
+    var scalars_device = ctx.enqueue_create_buffer[DType.int64](3)
+
+    var q_tt = TileTensor(
+        q_device, row_major((seq_len, Idx[num_heads], Idx[depth]))
+    )
+    var out_tt = TileTensor(
+        out_device,
+        row_major((seq_len, Idx[num_heads], Idx[v_depth])),
+    )
+    var offsets_tt = TileTensor(offsets_device, row_major(2))
+    var k_tt = TileTensor(
+        k_device, row_major((1, num_keys, Idx[1], Idx[depth]))
+    )
+    var scalars_tt = TileTensor(scalars_device, row_major((Idx[3],)))
+
+    AMDMLA.decode_dispatch[
+        mask_t=mask_t,
+        dtype=dtype,
+        kv_num_heads=1,
+        config=config,
+        ragged=True,
+    ](
+        out_tt,
+        q_tt,
+        TileTensorMHAOperand(k_tt),
+        mask,
+        offsets_tt,
+        seq_len,
+        num_keys,
+        Float32(0.125),
+        ctx,
+        scalars_tt,
+    )
 
 
 def main() raises:
@@ -925,7 +982,7 @@ def main() raises:
 
             # fold-path configs.  num_q_heads * q_len <= BM(64) and
             # q_len > 1 triggers fold_q=True in the dispatcher.  BM=64 packs
-            # q_len_fold * num_q_heads M-rows into a single tile, so grid.y=1.
+            # q_len_fold * num_q_heads M-rows into a single tile, so grid_y=1.
             #
             # Fold path is implemented for NVIDIA SM10x only (mla_decode_qkv_fp8
             # struct fold_q comptime branch).  AMD backend does not yet support
@@ -1314,32 +1371,58 @@ def main() raises:
                 test_decoding_fold[2, 8, MLAMaskType.NO_MASK](ctx, 2, 65536)
 
                 # --- Negative tests: unsupported folds MUST raise ---
-                # Supported: S=1 (any H), or S>1 with num_heads <= 16 AND
-                # S <= MLA_DECODE_MAX_SEQ_LEN AND num_heads*S <= 128. Anything
-                # outside must fail loudly at launch (never silently downgrade to
-                # a smaller-S kernel and drop tokens). Three ways out of the
-                # envelope: (a) M > 128, (b) num_heads > 16 (only the
-                # num_heads<=16 arm threads q_seq_len), and (c) S > 8 even when
-                # M <= 128 (the independent S cap, which binds for num_heads<16).
-                # The host-side `raise` fires in default builds (unlike the
-                # compiled-out `debug_assert`).
+                # Supported: S=1 (any H), or S>1 with num_heads <= 16 and
+                # num_heads*S <= AMD_MLA_DECODE_FOLD_M_MAX (= 16 * 128 = 2048).
+                # A padded short-chunk width (8 < S <= 128) additionally needs
+                # ragged Q, a head-aligned M-tile under the 64-row cliff and a
+                # mask that does not place the query span. Anything outside must
+                # fail loudly at launch (never silently downgrade to a smaller-S
+                # kernel and drop tokens). The host-side `raise` fires in default
+                # builds (unlike the compiled-out `debug_assert`).
+                #
+                # `test_decoding_fold` sends dense Q (`ragged=False`), whose
+                # launch takes its sequence length from the compiled width, so
+                # every one of these raises only through the `not ragged` term of
+                # the padded-chunk gate. Ragged-Q probes for the other gates
+                # follow them.
                 print("=== AMD MTP unsupported-fold rejection (must raise) ===")
 
-                # H=16/S=9 → M=144 (> 128: the fold cap; smallest over).
+                # H=16/S=9 → M=144, inside the fold cap but past the S=8 cap
+                # that binds dense Q (`not ragged`).
                 with assert_raises():
                     test_decoding_fold[1, 16, MLAMaskType.CAUSAL](ctx, 9, 256)
-                # H=16/S=12 → M=192 (well over the cap).
+                # H=16/S=12 → M=192: the same dense-Q S cap.
                 with assert_raises():
                     test_decoding_fold[1, 16, MLAMaskType.NO_MASK](ctx, 12, 256)
                 # H=32/S=2 → M=64 (<= 128): isolates the num_heads > 16 term (the
                 # 32x32x64 fold isn't implemented).
                 with assert_raises():
                     test_decoding_fold[1, 32, MLAMaskType.CAUSAL](ctx, 2, 256)
-                # H=8/S=10 → M=80 (<= 128) but S > MLA_DECODE_MAX_SEQ_LEN=8:
-                # isolates the S-cap term. Caught at the chokepoint, not the
-                # dispatch ladder's backstop (the ladder builds only S=1..8).
+                # H=8/S=10 → M=80, a legal ragged chunk (8 < S <= 128) that
+                # raises only because the Q is dense (`not ragged`).
                 with assert_raises():
                     test_decoding_fold[1, 8, MLAMaskType.CAUSAL](ctx, 10, 256)
+
+                # Ragged Q is the only form that reaches the padded short-chunk
+                # buckets, so the remaining gates need ragged probes.
+                # H=10/S=16 → M=160 is inside the fold cap, but 10 heads has no
+                # head-aligned M-tile under the 64-row cliff (16/32/48/64 are
+                # not multiples of 10), which the tile-offset row math requires.
+                with assert_raises():
+                    expect_amd_ragged_fold_raise[10, 16, CausalMask](
+                        ctx, CausalMask(), 256
+                    )
+                # A sliding-window causal mask places its key span from the
+                # query width, so it cannot take a padded bucket at S=16.
+                with assert_raises():
+                    expect_amd_ragged_fold_raise[
+                        12, 16, SlidingWindowCausalMask[256]
+                    ](ctx, SlidingWindowCausalMask[256](), 256)
+                # S=129 is past the bucket ladder's 128-token ceiling.
+                with assert_raises():
+                    expect_amd_ragged_fold_raise[12, 129, CausalMask](
+                        ctx, CausalMask(), 256
+                    )
                 print("unsupported folds correctly rejected.")
 
             print("All tests passed!")

@@ -572,7 +572,7 @@ def test_transfer_to_subgraph_with_allreduce(num_gpus: int) -> None:
     """Tests transfers from GPU 0 -> subgraph with two allreduce calls.
 
     Mimics the Llama distributed transformer pattern:
-    1. Input on GPU 0 is transferred to all peers (serialized rmo.mo.transfer)
+    1. Input on GPU 0 is transferred to all peers (serialized mo.transfer)
     2. A subgraph (via ops.call) performs two allreduce operations with
        shared signal buffers and per-device constants
     3. Constants inside the subgraph trigger the HoistConstantSubgraphs pass

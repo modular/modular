@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 if TYPE_CHECKING:
@@ -41,6 +41,18 @@ def _default_ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
     """Returns no expert-parallel inputs."""
     del target
     return ()
+
+
+def _default_ep_input_tree(target: Any) -> object | None:
+    """Names no expert-parallel inputs."""
+    del target
+    return None
+
+
+def _default_ep_tail(target: Any) -> bool:
+    """Returns whether the target declares its collective buffers undivided."""
+    del target
+    return False
 
 
 def _default_batch_distributed_buffers(
@@ -69,15 +81,6 @@ def _default_export_contract(
     del input_types, structured_output
 
 
-def _default_tail_buffers(tail: Sequence[object]) -> list[Buffer]:
-    """Returns nothing.
-
-    The graph declares every KV child among its KV inputs.
-    """
-    del tail
-    return []
-
-
 def _default_check(
     speculative: SpeculativeConfig, structured_output: bool
 ) -> None:
@@ -89,6 +92,22 @@ def _default_trailing_input_types(target_config: Any) -> list[TensorType]:
     """Returns no inputs past the canonical tail."""
     del target_config
     return []
+
+
+def _default_trailing_input_tree(
+    target_config: Any,
+) -> Mapping[str, object] | None:
+    """Names no inputs past the canonical tail."""
+    del target_config
+    return None
+
+
+def _default_hisparse_input_types(
+    target_config: Any,
+) -> Sequence[TensorType | BufferType]:
+    """Returns no HiSparse inputs when latent pages stay resident."""
+    del target_config
+    return ()
 
 
 def _default_trailing_buffers(
@@ -135,9 +154,15 @@ def _default_batch_replay_buffers(target_inputs: object) -> list[Buffer]:
     return []
 
 
-def _default_takes_vision_outputs(target_config: Any) -> bool:
+def _default_takes_prefill_rows(target_config: Any) -> bool:
     del target_config
     return False
+
+
+def always_takes_prefill_rows(target_config: Any) -> bool:
+    """Returns that every method of this adapter commits a prefill row."""
+    del target_config
+    return True
 
 
 def _default_block_proposer(
@@ -232,16 +257,38 @@ class TargetAdapter:
     """The KV leaf a driver dispatches the target over; ``""`` for a target
     with one leaf."""
 
-    tail_kv: str | None = None
-    """The KV child the graph declares past the canonical tail, if any."""
-
     verify: Callable[[Module, Any, ReturnHiddenStates, Any], VerifyFn]
     """Returns how a built target module verifies under a driver."""
+
+    ep_input_tree: Callable[[Any], object | None] = _default_ep_input_tree
+    """Returns the group that names a built target module's expert-parallel
+    inputs, such as its ``EPBatchManager``'s ``input_tree()``, or ``None``
+    when expert parallelism is off. Its leaves are the inputs, and an export
+    names them by it."""
 
     ep_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
         _default_ep_input_types
     )
-    """Returns a built target module's expert-parallel inputs."""
+    """Returns a built target module's expert-parallel inputs when no group
+    names them, as for a target whose expert-parallel slot also carries
+    other state. Its fused graph's inputs then stay unnamed."""
+
+    ep_tail: Callable[[Any], bool] = _default_ep_tail
+    """Returns whether the target declares its expert-parallel buffers on a
+    signature that is not distributed.
+
+    The canonical spec signature declares them beside data parallelism, which
+    is where every pairing that runs EP today puts it. An EP target at one
+    attention replica -- one expert rank per device, no replica axis -- has no
+    data-parallel inputs to declare them beside, so it names the tail here
+    instead: its expert-parallel inputs are then declared after the KV tree
+    and nothing else of the distributed group is. ``False`` for every target that
+    keeps them on the distributed signature."""
+
+    hisparse_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
+        _default_hisparse_input_types
+    )
+    """Returns the target's HiSparse input types from its config."""
 
     batch_distributed_buffers: Callable[
         [Any], tuple[Sequence[Buffer] | None, Sequence[Buffer]]
@@ -254,11 +301,6 @@ class TargetAdapter:
     )
     """Returns the record an engine checks the export's inputs against."""
 
-    tail_buffers: Callable[[Sequence[Any]], list[Buffer]] = (
-        _default_tail_buffers
-    )
-    """Returns the inputs of the ``tail_kv`` child, in declared order."""
-
     check: Callable[[SpeculativeConfig, bool], None] = _default_check
     """Raises if the target can't verify under the speculative config."""
 
@@ -270,15 +312,38 @@ class TargetAdapter:
     """Whether the target's own batch processor prepares every batch of the
     pairing, as it does a distributed one."""
 
+    verify_commits_long_rows: bool = False
+    """Whether the target's verify commits a row longer than one token and
+    its drafts, at the row's last real token, in every recurrent leaf it
+    keeps. An engine may then mix a prompt row into a verify step."""
+
+    verify_takes_prefill_rows: Callable[[Any], bool] = (
+        _default_takes_prefill_rows
+    )
+    """Returns whether the verify commits a prefill row that rides a verify
+    step. An engine may then mix a prompt row into the step."""
+
+    successor_replay: bool = False
+    """Whether an engine replays a cached prompt row's boundary token
+    for the draft head."""
+
     signal_buffer_index: int | None = None
     """Where a ModuleV3 target's fused graph takes its signal buffers, on
-    every device count, for an engine that binds them there. ``None``
-    takes them after every other input, and none on one device."""
+    every device count, for an engine that binds them there. It counts the
+    inputs of an undistributed, text-only signature; the distributed inputs
+    and the image rows come ahead of it. ``None`` takes them after every
+    other input, and none on one device."""
 
     trailing_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
         _default_trailing_input_types
     )
     """Returns the inputs the target's call takes past the canonical tail."""
+
+    trailing_input_tree: Callable[[Any], Mapping[str, object] | None] = (
+        _default_trailing_input_tree
+    )
+    """Returns the groups an exported graph names :attr:`trailing_input_types`
+    by, in order; ``None`` leaves the graph's inputs unnamed."""
 
     trailing_buffers: Callable[
         [Any, Sequence[TextContext], Sequence[Device]], list[Buffer]
@@ -320,10 +385,6 @@ class TargetAdapter:
     )
     """Returns what the target's call reads of the replay graph's inputs,
     added to a driver batch's ``extra``."""
-
-    takes_vision_outputs: Callable[[Any], bool] = _default_takes_vision_outputs
-    """Returns whether the graph takes a vision encoder's output that MAX
-    doesn't compute, for an engine that runs the encoder itself."""
 
     block_proposer: Callable[
         [VerifyFn, Module, Any, SpeculativeConfig],

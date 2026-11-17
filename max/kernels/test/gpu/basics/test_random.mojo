@@ -62,9 +62,9 @@ def run_elementwise[
                 out_buffer[Int(idx0[0]) + i] = rng[i % len(rng)].cast[dtype]()
 
     comptime if distribution == "uniform":
-        elementwise[4, target="gpu"](func_uniform, Coord(length), ctx)
+        elementwise[4](func_uniform, Coord(length), ctx)
     else:
-        elementwise[4, target="gpu"](func_normal, Coord(length), ctx)
+        elementwise[4](func_normal, Coord(length), ctx)
 
     ctx.enqueue_copy(out_host._storage, out_device)
     ctx.synchronize()

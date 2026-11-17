@@ -20,13 +20,12 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from layout import (
-    Coord,
     TensorLayout,
     TensorEngine,
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 
 @__name(t"spatial_merge_{dtype}")

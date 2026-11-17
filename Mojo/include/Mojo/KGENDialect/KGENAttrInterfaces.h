@@ -30,6 +30,8 @@ class KGENParamPrinter;
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENAttrInterfaces.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_KGENDIALECT_KGENATTRINTERFACES_H

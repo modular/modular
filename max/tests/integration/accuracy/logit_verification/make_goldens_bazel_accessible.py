@@ -85,7 +85,7 @@ def main() -> None:
             continue
         https_url = s3_to_https(goldens.tar_file)
         sha256 = extract_sha256_from_url(https_url)
-        name = https_url.split("/")[-1]  # e.g. torch_olmo-1b-hf_golden.tar.gz
+        name = https_url.split("/")[-1]  # e.g. torch_llama_golden.tar.gz
         if name not in seen:
             seen[name] = (name, sha256, https_url)
 

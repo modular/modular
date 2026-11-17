@@ -72,8 +72,8 @@ struct MyKernelSmem[config: MyConfig]:
     # Tile storage (single source of truth for tile types)
     comptime Tiles = StandardTileStorage[
         config.a_type, config.b_type,
-        IndexList[2](config.BM, config.BK),  # A tile shape
-        IndexList[2](config.BN, config.BK),  # B tile shape
+        (config.BM, config.BK),  # A tile shape
+        (config.BN, config.BK),  # B tile shape
         config.num_pipeline_stages,
     ]
     var tiles: Self.Tiles
@@ -112,10 +112,8 @@ When the framework doesn't fit:
 """
 
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from layout.tensor_core_async import tile_layout_k_major_typed
-from std.utils.index import IndexList
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
 from .smem_types import SMemArray, SMemPtr
@@ -144,8 +142,8 @@ from .pipeline import ProducerConsumerPipeline
 struct StandardTileStorage[
     a_type: DType,
     b_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
     # Pipeline stages
     num_pipeline_stages: Int,
 ]:
@@ -200,13 +198,13 @@ struct BlockScaledTileStorage[
     c_type: DType,
     sfa_type: DType,
     sfb_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
     # C tile dimensions kept separate for type-level compatibility with TileWriter
     c_dim0: Int,
     c_dim1: Int,
-    sfa_shape: IndexList[2],  # Scale factor A dims
-    sfb_shape: IndexList[2],  # Scale factor B dims
+    sfa_shape: Tuple[Int, Int],  # Scale factor A dims
+    sfb_shape: Tuple[Int, Int],  # Scale factor B dims
     # Pipeline stages
     num_pipeline_stages: Int,
     num_output_stages: Int,
@@ -236,7 +234,6 @@ struct BlockScaledTileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based array types (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
@@ -316,12 +313,12 @@ struct BlockwiseFP8TileStorage[
     b_type: DType,
     c_type: DType,
     a_scales_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
     # C tile dimensions kept separate for type-level compatibility with TileWriter
     c_dim0: Int,
     c_dim1: Int,
-    a_scales_shape: IndexList[2],  # (1, BM)
+    a_scales_shape: Tuple[Int, Int],  # (1, BM)
     # Pipeline stages
     num_pipeline_stages: Int,
     num_output_stages: Int,
@@ -350,7 +347,6 @@ struct BlockwiseFP8TileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based array types for A/B (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
@@ -428,7 +424,6 @@ struct OutputTileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
     comptime CTileArray = SMemTileArray2DRowMajor[
@@ -653,7 +648,7 @@ struct TmemDeallocStorage:
 
 struct SourceTileStorage[
     src_type: DType,
-    src_shape: IndexList[2],  # (OutputM, OutputN)
+    src_shape: Tuple[Int, Int],  # (OutputM, OutputN)
     num_epi_load_stages: Int,
 ]:
     """Storage for source tensor C tiles (residual/skip connection input).
@@ -669,9 +664,6 @@ struct SourceTileStorage[
     """
 
     # Source tile layout (row_major for TMA compatibility, matches output)
-    comptime src_tile_layout = Layout.row_major(
-        Self.src_shape[0], Self.src_shape[1]
-    )
 
     # TileTensor-based for source storage and access
     comptime SrcTileArray = SMemTileArray2DRowMajor[

@@ -26,7 +26,7 @@ from max.gpu.compute.mma import (
 from internal_utils import assert_equal
 from std.random import rand
 from layout import TensorLayout, Coord, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
@@ -41,9 +41,9 @@ def wgmma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: TileLayout,
-    b_layout: TileLayout,
-    c_layout: TileLayout,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
     WMMA_M: Int,
     WMMA_N: Int,
     WMMA_K: Int,

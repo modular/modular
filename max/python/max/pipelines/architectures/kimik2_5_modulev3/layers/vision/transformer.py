@@ -22,7 +22,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
-from max.nn.legacy.kernels import tpool_patch_merger as _tpool_patch_merger
+from max.nn._graph_ops import tpool_patch_merger as _tpool_patch_merger
 from max.tensor import Tensor
 from max.tensor.sharding import AxisAssignment, replicated_rows
 from max.tensor.sharding.types import TensorLayout

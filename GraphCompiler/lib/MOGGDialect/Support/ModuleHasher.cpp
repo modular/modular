@@ -280,12 +280,6 @@ void M::MOGG::hashModuleContents(mlir::ModuleOp module,
   graph.run(cpuDevice);
 }
 
-std::string M::MOGG::getSemanticHash(KGEN::GeneratorOp generator) {
-  auto hashAttr = generator->getAttrOfType<StringAttr>(kSemanticHashName);
-  ASSERT_STREAM(hashAttr, "unable to find semantic hash for function");
-  return hashAttr.str();
-}
-
 llvm::DenseMap<StringAttr, KGEN::GeneratorOp>
 M::MOGG::applySemanticNaming(ModuleOp module,
                              ArrayRef<StringAttr> symbolsToRename,

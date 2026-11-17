@@ -26,7 +26,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu import block_id_in_cluster, lane_id
@@ -958,7 +958,7 @@ def blackwell_kernel_8[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
@@ -1103,9 +1103,6 @@ def blackwell_kernel_8[
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
 
 
@@ -1123,7 +1120,7 @@ def test_blackwell_kernel_8[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     if not benchmark:
         print(
             t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
@@ -1182,7 +1179,7 @@ def test_blackwell_kernel_8[
         comptime num_warmup = 100
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {mut c, imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {mut c, imm}:
             blackwell_kernel_8[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -1265,7 +1262,7 @@ def make_dic_of_shapes() -> (
     return dic^
 
 
-def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+def benchmark_blackwell_matmul(ctx: DeviceContext[]) raises:
     comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
         print("Benchmarking blackwell_matmul_tma_umma_kernel")
         print("============================================")

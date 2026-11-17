@@ -43,7 +43,7 @@ def test_repeat_interleave_gpu_rank1() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(repeats_device, repeats_host)
 
-        _repeat_interleave_gpu[target="gpu"](
+        _repeat_interleave_gpu(
             TileTensor(input_device, input_layout),
             TileTensor(repeats_device, row_major(1)),
             0,
@@ -84,7 +84,7 @@ def test_repeat_interleave_gpu_rank2_axis1() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(repeats_device, repeats_host)
 
-        _repeat_interleave_gpu[target="gpu"](
+        _repeat_interleave_gpu(
             TileTensor(input_device, input_layout),
             TileTensor(repeats_device, row_major(1)),
             1,
@@ -141,7 +141,7 @@ def test_repeat_interleave_gpu_tensor_repeats() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(repeats_device, repeats_host)
 
-        _repeat_interleave_gpu[target="gpu"](
+        _repeat_interleave_gpu(
             TileTensor(input_device, input_layout),
             TileTensor(repeats_device, row_major(3)),
             0,
@@ -183,7 +183,7 @@ def test_repeat_interleave_gpu_tensor_repeats_axis1() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(repeats_device, repeats_host)
 
-        _repeat_interleave_gpu[target="gpu"](
+        _repeat_interleave_gpu(
             TileTensor(input_device, input_layout),
             TileTensor(repeats_device, row_major(2)),
             1,
@@ -234,7 +234,7 @@ def test_repeat_interleave_gpu_large_axis_tensor_repeats() raises:
         ctx.enqueue_copy(input_device, input_host)
         ctx.enqueue_copy(repeats_device, repeats_host)
 
-        _repeat_interleave_gpu[target="gpu"](
+        _repeat_interleave_gpu(
             TileTensor(input_device, input_layout),
             TileTensor(repeats_device, row_major(numel)),
             0,

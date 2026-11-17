@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import warnings
 
-from max.mlir.dialects import mo, rmo
+from max._core.dialects import mo
 
 from ..graph import Graph
-from ..type import Device, DeviceRef, TensorType, _ChainType
+from ..type import Device, DeviceRef
 from ..value import StrongTensorValueLike, TensorValue
 
 
@@ -80,16 +80,8 @@ def transfer_to(
         # NOTE: leave the out chain unused: transfers between device and host
         # don't pose a deadlock risk with other multi-device ops, so their
         # sequence doesn't matter.
-        # TODO: migrate to `_add_op_generated(rmo.MoTransferOp, ...)` when the
-        # RMO_MOTransferOp gets a nanobind binding. The MO-side `mo.TransferOp`
-        # would change the graph-time op type from `rmo.mo.transfer` to
-        # `mo.transfer`, which downstream lowering doesn't expect.
-        (result, _) = graph._add_op(
-            rmo.mo_transfer,
-            TensorType(dtype=x.dtype, shape=x.shape, device=device).to_mlir(),
-            _ChainType().to_mlir(),
-            x,
-            in_chain,
+        (result, _) = graph._add_op_generated(
+            mo.TransferOp, input=x, dest_device=device, in_chain=in_chain
         )
         return result.tensor
 
@@ -108,20 +100,17 @@ def transfer_to(
     # the collective op has launched on each device.
     # This prevents reordering that could otherwise deadlock multi-device
     # collectives and transfers.
-    in_chain = graph._add_op(
-        mo.chain_create,
-        [
+    in_chain = graph._add_op_generated(
+        mo.ChainCreateOp,
+        result=mo.ChainType(),
+        inputs=[
             graph.device_chains[x.type.device],
             graph.device_chains[device],
         ],
     )[0]
 
-    (result, out_chain) = graph._add_op(
-        rmo.mo_transfer,
-        TensorType(dtype=x.dtype, shape=x.shape, device=device).to_mlir(),
-        _ChainType().to_mlir(),
-        x,
-        in_chain,
+    (result, out_chain) = graph._add_op_generated(
+        mo.TransferOp, input=x, dest_device=device, in_chain=in_chain
     )
 
     # Set source and destination device chains to ensure ordering of subsequent

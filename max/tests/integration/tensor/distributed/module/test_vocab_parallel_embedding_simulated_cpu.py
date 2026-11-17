@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.tensor import Tensor, default_device
@@ -44,3 +45,35 @@ def test_lookup_matches_the_whole_table(
     out = embedding(Tensor(ids))
 
     np.testing.assert_allclose(out.to_numpy(), table[ids], rtol=1e-6)
+
+
+def test_split_over_the_tp_axis_of_a_dp_tp_mesh() -> None:
+    """On a ``(dp, tp)`` mesh the table splits over ``tp`` only.
+
+    Each replica holds the whole table across its four devices, so every
+    device of every replica gets the full lookup. Traces the lookup without
+    compiling or running it; the lookup values are
+    ``test_lookup_matches_the_whole_table``'s.
+    """
+    mesh = DeviceMesh(
+        devices=tuple(CPU() for _ in range(8)),
+        mesh_shape=(2, 4),
+        axis_names=("dp", "tp"),
+    )
+    vocab_size, dim = 10, 3
+    with F.lazy():
+        with default_device(mesh):
+            embedding = VocabParallelEmbedding(vocab_size, dim=dim)
+        # 10 rows over the 4 tp ranks split 3, 3, 2, 2, the same in each
+        # replica.
+        assert [int(w.shape[0]) for w in embedding.weight.local_shards] == [
+            3,
+            3,
+            2,
+            2,
+        ] * 2
+        ids = np.arange(vocab_size - 1, -1, -1, dtype=np.int64)
+        out = embedding(Tensor(ids))
+    assert not out.real
+    for shard in out.local_shards:
+        assert shard.shape == [vocab_size, dim]

@@ -48,6 +48,9 @@
   phase totals, so analysis joins on fields rather than parsing names. Under
   `bazel test` a relative path lands in the test's undeclared outputs.
 
+`bench_graph` times a launch replayed from a captured device graph instead,
+for kernels shorter than their launch latency.
+
 `SWEEPINFO` and `SWEEPTIME` lines and the `Bench` report are printed as
 before; `sweeptime.py` sums `SWEEPTIME` lines across processes.
 
@@ -64,7 +67,12 @@ from std.time import perf_counter_ns
 
 from internal_utils import arg_parse
 from max.benchmark import bencher_iter_custom
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceGraph,
+    DeviceGraphBuilder,
+)
 
 from .backend import SweepBackend
 from .driver import Config, Footprint
@@ -80,7 +88,7 @@ comptime _FLUSH_PROBE_ITERS = 3
 comptime _HEX_DIGITS: StaticString = "0123456789abcdef"
 
 
-def _json_string(s: StringSlice, mut writer: Some[Writer]):
+def _json_string(s: StringSpan, mut writer: Some[Writer]):
     writer.write('"')
     for cp in s.codepoint_slices():
         if cp == '"':
@@ -211,7 +219,7 @@ struct MeasurePolicy(Copyable, Movable):
         return policy^
 
     def evict_bytes(
-        self, ctx: DeviceContext, backend: SweepBackend
+        self, ctx: DeviceContext[], backend: SweepBackend
     ) raises -> Int:
         """Returns the bytes a cold iteration must evict: `--l2_bytes` when
         set, otherwise the backend's answer for the target."""
@@ -258,9 +266,9 @@ struct Rotation(ImplicitlyCopyable, Movable):
 
 
 def _time_flushed[
-    LaunchFn: def(DeviceContext) raises -> None
+    LaunchFn: def(DeviceContext[]) raises -> None
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     launch: LaunchFn,
     flush: DeviceBuffer[DType.uint8],
     num_iters: Int,
@@ -321,7 +329,7 @@ struct SweepHarness(Movable):
         self.info = []
         self.records = []
 
-    def start(mut self, ctx: DeviceContext) raises:
+    def start(mut self, ctx: DeviceContext[]) raises:
         """Sizes the cache to evict, allocates a flush buffer under
         `--l2=flush`, and checks throttling.
 
@@ -353,7 +361,7 @@ struct SweepHarness(Movable):
         ctx.synchronize()
         self.timer.lap("harness_setup")
 
-    def stop(mut self, ctx: DeviceContext) raises:
+    def stop(mut self, ctx: DeviceContext[]) raises:
         """Frees the flush buffer and, under `--throttle_check=both`, checks
         throttling again, so a sweep that heated the device says so.
 
@@ -368,7 +376,7 @@ struct SweepHarness(Movable):
         self.timer.lap("harness_teardown")
 
     def _check_throttle(
-        mut self, ctx: DeviceContext, key: String, mut fields: Fields
+        mut self, ctx: DeviceContext[], key: String, mut fields: Fields
     ) raises:
         if self.policy.throttle_check == "off":
             return
@@ -396,8 +404,8 @@ struct SweepHarness(Movable):
         )
 
     def first_launch[
-        LaunchFn: def(DeviceContext) raises -> None
-    ](mut self, ctx: DeviceContext, launch: LaunchFn) raises:
+        LaunchFn: def(DeviceContext[]) raises -> None
+    ](mut self, ctx: DeviceContext[], launch: LaunchFn) raises:
         """Runs `launch` once and charges it, module load included, to
         `first_launch`."""
         self.timer.reset()
@@ -406,8 +414,8 @@ struct SweepHarness(Movable):
         self.timer.lap("first_launch")
 
     def first_launch[
-        LaunchFn: def(DeviceContext, Int) raises -> None
-    ](mut self, ctx: DeviceContext, launch: LaunchFn) raises:
+        LaunchFn: def(DeviceContext[], Int) raises -> None
+    ](mut self, ctx: DeviceContext[], launch: LaunchFn) raises:
         """Runs copy 0 of a rotating `launch` once; see the other overload."""
         self.timer.reset()
         launch(ctx, 0)
@@ -415,10 +423,10 @@ struct SweepHarness(Movable):
         self.timer.lap("first_launch")
 
     def bench[
-        LaunchFn: def(DeviceContext, Int) raises -> None
+        LaunchFn: def(DeviceContext[], Int) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         bench_id: BenchId,
         var fields: Fields,
@@ -434,11 +442,11 @@ struct SweepHarness(Movable):
         fields.add("copies", copies)
 
         @inline(.always)
-        def launch_copy(launch_ctx: DeviceContext, i: Int) raises {imm}:
+        def launch_copy(launch_ctx: DeviceContext[], i: Int) raises {imm}:
             launch(launch_ctx, i % copies)
 
         @inline(.always)
-        def launch_first(launch_ctx: DeviceContext) raises {imm}:
+        def launch_first(launch_ctx: DeviceContext[]) raises {imm}:
             launch(launch_ctx, 0)
 
         if self.policy.l2 == "flush" or copies == 0:
@@ -460,10 +468,10 @@ struct SweepHarness(Movable):
         self._record(fields, measures)
 
     def bench[
-        LaunchFn: def(DeviceContext) raises -> None
+        LaunchFn: def(DeviceContext[]) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         bench_id: BenchId,
         var fields: Fields,
@@ -480,7 +488,9 @@ struct SweepHarness(Movable):
             if self.policy.target_time_s > 0:
 
                 @inline(.always)
-                def launch_warm(launch_ctx: DeviceContext, i: Int) raises {imm}:
+                def launch_warm(
+                    launch_ctx: DeviceContext[], i: Int
+                ) raises {imm}:
                     _ = i
                     launch(launch_ctx)
 
@@ -499,15 +509,77 @@ struct SweepHarness(Movable):
         self._ensure_flush(ctx)
         self._bench_flushed(ctx, launch, bench_id, fields^, measures)
 
-    def _bench_target_time[
-        LaunchFn: def(DeviceContext, Int) raises -> None
+    def bench_graph[
+        LaunchFn: def(DeviceContext[]) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
+        launch: LaunchFn,
+        bench_id: BenchId,
+        var fields: Fields,
+        repeats: Int,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Measures `launch` captured `repeats` times into one device graph,
+        and records it.
+
+        Every iteration replays the graph, and the reported time is that of
+        one launch, so a kernel shorter than its launch latency is timed the
+        way a captured model step runs it. The replays read the same inputs
+        back to back, so the cache is warm whatever `--l2` says. `repeats`
+        of 0 times eager launches through `bench` instead.
+        """
+        if repeats <= 0:
+            self.bench(ctx, launch, bench_id, fields^, measures)
+            return
+        fields.add("graph_repeats", repeats)
+
+        def build(
+            mut builder: DeviceGraphBuilder,
+        ) raises {imm launch, imm repeats}:
+            with builder.recording_context() as rec:
+                for _ in range(repeats):
+                    launch(rec)
+
+        var graph = DeviceGraph.create(ctx, build)
+        graph.replay()
+        ctx.synchronize()
+
+        @inline(.always)
+        def replay(launch_ctx: DeviceContext[], i: Int) raises {imm graph}:
+            _ = launch_ctx
+            _ = i
+            graph.replay()
+
+        if self.policy.target_time_s > 0:
+            self._bench_target_time(
+                ctx,
+                replay,
+                bench_id,
+                fields^,
+                measures,
+                launches_per_call=repeats,
+            )
+            return
+
+        @inline(.always)
+        def bench_func(mut b: Bencher) raises {imm}:
+            bencher_iter_custom(b, replay, ctx)
+            b.elapsed //= repeats
+
+        bench_charged(self.m, self.timer, bench_func, bench_id, measures)
+        self._record(fields, measures)
+
+    def _bench_target_time[
+        LaunchFn: def(DeviceContext[], Int) raises -> None
+    ](
+        mut self,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         bench_id: BenchId,
         var fields: Fields,
         measures: List[ThroughputMeasure],
+        launches_per_call: Int = 1,
     ) raises:
         """Measures `launch` for `--target_time` through one calibration batch.
 
@@ -520,6 +592,9 @@ struct SweepHarness(Movable):
         exists to measure -- and the measured batch is sized from its rate to
         last the target. Only the measured batch counts; counting the
         calibration instead would put the clock ramp inside the mean.
+
+        A call that runs `launches_per_call` launches, such as a graph
+        replay, reports the time of one launch.
         """
         comptime _CALIBRATION_SHARE = 0.25
         var target_ns = Int(self.policy.target_time_s * 1e9)
@@ -552,6 +627,7 @@ struct SweepHarness(Movable):
         @inline(.always)
         def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, launch, ctx)
+            b.elapsed //= launches_per_call
 
         self.m.bench_function(
             bench_func, bench_id, measures, fixed_iterations=iters
@@ -566,7 +642,7 @@ struct SweepHarness(Movable):
         self.timer.reset()
         self._record(fields, measures, calibrate_ns=cal_ns)
 
-    def _ensure_flush(mut self, ctx: DeviceContext) raises:
+    def _ensure_flush(mut self, ctx: DeviceContext[]) raises:
         """Allocates the flush buffer on first use."""
         if not self.flush:
             self.flush = ctx.enqueue_create_buffer[DType.uint8](
@@ -574,10 +650,10 @@ struct SweepHarness(Movable):
             )
 
     def _bench_flushed[
-        LaunchFn: def(DeviceContext) raises -> None
+        LaunchFn: def(DeviceContext[]) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         bench_id: BenchId,
         var fields: Fields,
@@ -639,10 +715,10 @@ struct SweepHarness(Movable):
         self.records.append(record^)
 
     def _flushed_iters[
-        LaunchFn: def(DeviceContext) raises -> None
+        LaunchFn: def(DeviceContext[]) raises -> None
     ](
         mut self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         launch: LaunchFn,
         flush: DeviceBuffer[DType.uint8],
     ) raises -> Int:

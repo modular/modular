@@ -35,6 +35,12 @@ Verification (`--verify=true`) uses cuDNN as the reference and is therefore
 only valid on NVIDIA. AMD `--verify` is a no-op (use the standalone
 correctness tests under max/kernels/test/gpu/nn/test_amd_4wave_conv*.mojo).
 
+`chain=N` (default 1) runs N back-to-back convs per timed iteration on the
+`im2col` arm with no host drain in between, and reports the chain's FLOPs so
+the derived rate stays per-conv. The elapsed column (`met`) is per *iteration*,
+i.e. per chain: divide it by N for the per-conv time. `bench_conv2d_chain.yaml`
+sweeps `chain: [1, 20]` at WAN VAE shapes.
+
 Usage (standalone NVIDIA):
     bazel test --config=remote-b200 \\
         //max/kernels/benchmarks:gpu/nn/bench_conv2d.mojo.run
@@ -78,7 +84,6 @@ from internal_utils import arg_parse
 from layout import (
     Coord,
     Idx,
-    Layout,
     TileTensor,
     row_major,
 )
@@ -146,7 +151,7 @@ def bench_conv2d[
     pad_h_static: Int = 1,
     pad_w_static: Int = 1,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     label: String,
     verify: Bool,
@@ -154,19 +159,13 @@ def bench_conv2d[
     pad_w: Int,
     stride_h: Int,
     stride_w: Int,
+    chain: Int = 1,
 ) raises:
     var h_out = (in_height + 2 * pad_h - filter_r) // stride_h + 1
     var w_out = (in_width + 2 * pad_w - filter_s) // stride_w + 1
 
-    comptime input_layout = Layout.row_major(
-        batch, in_height, in_width, in_channels
-    )
-    comptime filter_rscf_layout = Layout.row_major(
-        filter_r, filter_s, in_channels, out_channels
-    )
-
-    var input_size = comptime (input_layout.size())
-    var filter_size = comptime (filter_rscf_layout.size())
+    var input_size = batch * in_height * in_width * in_channels
+    var filter_size = filter_r * filter_s * in_channels * out_channels
     var output_size = batch * h_out * w_out * out_channels
 
     var flops = compute_conv2d_flops(
@@ -209,6 +208,8 @@ def bench_conv2d[
         stride_w,
         ")",
     )
+    if chain != 1:
+        bench_input_id += String("/chain=", chain)
 
     var input_host = List(length=input_size, fill=Scalar[dtype](0))
     var filter_rscf_host = List(length=filter_size, fill=Scalar[dtype](0))
@@ -302,26 +303,32 @@ def bench_conv2d[
     comptime if resolved == "im2col":
 
         @inline(.always)
-        def im2col_kernel(ctx: DeviceContext) raises {imm}:
-            _ = dispatch_im2col_matmul_conv2d(
-                input_tt,
-                filter_rscf_tt,
-                output_tt,
-                stride_idx,
-                dilation_idx,
-                pad_idx,
-                1,
-                ctx,
-            )
+        def im2col_kernel(ctx: DeviceContext[]) raises {imm}:
+            # `chain` back-to-back convs with no host drain in between, which
+            # is what a VAE forward looks like. The dispatcher must let the
+            # host run ahead of the queue for these to overlap.
+            for _ in range(chain):
+                _ = dispatch_im2col_matmul_conv2d(
+                    input_tt,
+                    filter_rscf_tt,
+                    output_tt,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    1,
+                    ctx,
+                )
 
         @inline(.always)
         def im2col_bench(mut bencher: Bencher) raises {imm}:
             bencher_iter_custom(bencher, im2col_kernel, ctx)
 
+        # Report the chain's total FLOPs so the derived rate is per-conv. The
+        # elapsed time stays per chain; the `chain=N` id below marks the row.
         b.bench_function(
             im2col_bench,
             BenchId("conv2d_im2col", input_id=bench_input_id),
-            [ThroughputMeasure(BenchMetric.flops, flops)],
+            [ThroughputMeasure(BenchMetric.flops, flops * chain)],
         )
     comptime if resolved == "cudnn":
         comptime assert ctx.target.is_nvidia_gpu(), (
@@ -330,7 +337,7 @@ def bench_conv2d[
         )
 
         @inline(.always)
-        def cudnn_kernel(ctx: DeviceContext) raises {imm}:
+        def cudnn_kernel(ctx: DeviceContext[]) raises {imm}:
             conv_cudnn[dtype, dtype, dtype](
                 input_tt,
                 filter_fcrs_tt,
@@ -466,7 +473,7 @@ def bench_conv2d[
         )
 
         @inline(.always)
-        def amd_4wave_kernel(ctx: DeviceContext) raises {imm}:
+        def amd_4wave_kernel(ctx: DeviceContext[]) raises {imm}:
             amd_4wave_conv[
                 H=in_height,
                 W=in_width,
@@ -510,7 +517,7 @@ def bench_conv2d[
         var grid_dim_y = batch
 
         @inline(.always)
-        def naive_conv_kernel(ctx: DeviceContext) raises {imm}:
+        def naive_conv_kernel(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[naive_kernel](
                 input_tt,
                 filter_rscf_tt,
@@ -615,6 +622,10 @@ def main() raises:
     var warmup_iters = arg_parse("warmup_iters", 2)
     var max_iters = arg_parse("max_iters", 20)
     var max_runtime_secs = arg_parse("max_runtime_secs", 3.0)
+    # Back-to-back convs per timed iteration, for the `im2col` arm. `1`
+    # times a single conv; a longer chain charges the per-conv host stall
+    # (allocations, queue drains) the way a VAE forward does.
+    var chain = arg_parse("chain", 1)
 
     var m = Bench(
         BenchConfig(
@@ -639,5 +650,5 @@ def main() raises:
             impl,
             pad_h_static=PAD_H,
             pad_w_static=PAD_W,
-        ](ctx, m, label, verify, pad_h, pad_w, stride_h, stride_w)
+        ](ctx, m, label, verify, pad_h, pad_w, stride_h, stride_w, chain)
     m.dump_report()

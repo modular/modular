@@ -15,8 +15,13 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/Threading/SignalAltStack.h"
+#include "Support/Threading/ThreadLocalCache.h"
+#include "llvm/ADT/DenseMap.h"
 #include "gtest/gtest.h"
+#include <array>
+#include <latch>
 #include <thread>
+#include <vector>
 
 using namespace M;
 
@@ -64,4 +69,66 @@ TEST(Threading, signalAltStack) {
 
   if (preinstalled)
     GTEST_SKIP() << "threads on this configuration already have one";
+}
+
+TEST(Threading, threadLocalCacheCopiesOriginalByDefault) {
+  llvm::DenseMap<int, int> original = {{1, 10}};
+  ThreadLocalCache<llvm::DenseMap<int, int>> caches(original,
+                                                    /*expectedNumThreads=*/1);
+
+  llvm::DenseMap<int, int> &threadCache = caches.getThreadLocalCache();
+  EXPECT_EQ(threadCache.lookup(1), 10);
+  threadCache[2] = 20;
+  EXPECT_FALSE(original.contains(2));
+  EXPECT_EQ(&caches.getThreadLocalCache(), &threadCache);
+}
+
+namespace {
+/// A cache whose thread caches record the cache they were made from. A copy
+/// would not record it.
+struct FactoryCache {
+  static FactoryCache makeThreadCache(const FactoryCache &original) {
+    return FactoryCache{&original};
+  }
+  const FactoryCache *madeFrom = nullptr;
+};
+} // namespace
+
+static_assert(HasThreadCacheFactory<FactoryCache>);
+static_assert(!HasThreadCacheFactory<llvm::DenseMap<int, int>>);
+
+TEST(Threading, threadLocalCacheUsesMakeThreadCache) {
+  FactoryCache original;
+  ThreadLocalCache<FactoryCache> caches(original, /*expectedNumThreads=*/1);
+
+  FactoryCache &threadCache = caches.getThreadLocalCache();
+  EXPECT_EQ(threadCache.madeFrom, &original);
+  EXPECT_EQ(&caches.getThreadLocalCache(), &threadCache);
+}
+
+TEST(Threading, threadLocalCacheAllowsMoreThreadsThanReserved) {
+  // More threads than `expectedNumThreads` make the map grow while other
+  // threads hold references to their caches. Those references must stay valid.
+  // `DenseMap` allocates at least 64 buckets, which hold 47 entries, so the
+  // test needs more threads than that to make the map grow.
+  constexpr int kNumThreads = 64;
+  llvm::DenseMap<int, int> original;
+  ThreadLocalCache<llvm::DenseMap<int, int>> caches(original,
+                                                    /*expectedNumThreads=*/1);
+
+  std::latch allInserted(kNumThreads);
+  std::array<bool, kNumThreads> stable{};
+  std::vector<std::thread> threads;
+  for (int i = 0; i < kNumThreads; ++i)
+    threads.emplace_back([&, i] {
+      llvm::DenseMap<int, int> &cache = caches.getThreadLocalCache();
+      cache[i] = i;
+      allInserted.arrive_and_wait();
+      stable[i] =
+          &caches.getThreadLocalCache() == &cache && cache.lookup(i) == i;
+    });
+  for (std::thread &thread : threads)
+    thread.join();
+  for (int i = 0; i < kNumThreads; ++i)
+    EXPECT_TRUE(stable[i]) << "thread " << i;
 }

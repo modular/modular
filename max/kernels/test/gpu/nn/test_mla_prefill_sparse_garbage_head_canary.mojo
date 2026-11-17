@@ -69,7 +69,7 @@ re-seed fix.
 
 The identical `should_scale_o` pattern (same line shape, verified by direct
 diff) appears in the two native-FP8 sibling kernels
-(`mla_prefill_sparse_qkv_fp8.mojo`, `mla_prefill_sparse_kv_fp8.mojo`), fixed
+(`mla_prefill_sparse_qkv_fp8.mojo` and the deleted FP8-cache sibling), fixed
 in the same commit; this file exercises the shared code path (the BF16-KV
 kernel) that all three forked from.
 

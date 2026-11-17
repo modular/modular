@@ -75,7 +75,7 @@ struct Config(Copyable, Movable, Writable):
     var names: List[String]
     var values: List[Int]
 
-    def __getitem__(self, name: StringSlice) raises -> Int:
+    def __getitem__(self, name: StringSpan) raises -> Int:
         for i in range(len(self.names)):
             if self.names[i] == name:
                 return self.values[i]
@@ -217,7 +217,7 @@ struct Footprint(Copyable, Movable, Writable):
         for i in range(len(other.names)):
             self.need(other.names[i], other.values[i])
 
-    def __getitem__(self, name: StringSlice) -> Int:
+    def __getitem__(self, name: StringSpan) -> Int:
         """Returns requirement `name`, or 0 when no config stated it."""
         for i in range(len(self.names)):
             if self.names[i] == name:

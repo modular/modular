@@ -18,13 +18,14 @@ import math
 
 import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn.legacy.activation import activation_function_from_name
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import LayerNorm
 from max.nn.legacy.sequential import Sequential
+from max.pipelines.lib.registration_encoder import EncoderInputs
 
 from .model_config import MPNetConfig
 
@@ -354,10 +355,15 @@ class MPNetEncoder(Module):
 
 
 class MPNetModel(Module):
-    """The MPNet encoder model.
+    """The MPNet encoder model, registered for ``ENCODER``.
 
-    Based on the MPNetModel transformers implementation.
+    Based on the MPNetModel transformers implementation. It takes a padded
+    batch.
     """
+
+    graph_name = "mpnet"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
 
     def __init__(self, config: MPNetConfig) -> None:
         self.embeddings = MPNetEmbeddings(config)
@@ -365,24 +371,11 @@ class MPNetModel(Module):
         self.pool_outputs = config.pool_embeddings
         self.device = config.device
 
-    def input_types(self) -> tuple[TensorType, TensorType]:
-        """Returns the graph's input types: input IDs and attention mask."""
-        return (
-            TensorType(
-                DType.int64, shape=["batch_size", "seq_len"], device=self.device
-            ),
-            TensorType(
-                DType.float32,
-                shape=["batch_size", "seq_len"],
-                device=self.device,
-            ),
-        )
-
-    def __call__(
-        self, input_ids: TensorValue, attention_mask: TensorValue
-    ) -> TensorValue:
-        """Runs the encoder over ``input_ids`` and the mask."""
-        embedding_output = self.embeddings(input_ids=input_ids)
+    def __call__(self, inputs: EncoderInputs[TensorValue]) -> TensorValue:
+        """Runs the encoder over the batch's token IDs and mask."""
+        attention_mask = inputs.attention_mask
+        assert attention_mask is not None
+        embedding_output = self.embeddings(input_ids=inputs.tokens)
         extended_attention_mask = ops.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )

@@ -25,8 +25,6 @@ from std.math import fma
 
 from layout import Coord, Idx, TileTensor
 
-from std.utils.index import Index, IndexList
-
 from ...accumulate import _Accumulator
 from ...utils import GemmShape
 from .impl import InnerMatmulKernel
@@ -58,7 +56,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
         global_offset: GemmShape,
-        tile_n_k_idx: IndexList[2],
+        tile_n_k_idx: Tuple[Int, Int],
     ):
         """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
@@ -123,7 +121,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         b_packed: TileTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
-        tile_n_k: IndexList[2],
+        tile_n_k: Tuple[Int, Int],
         skip_boundary_check: Bool,
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
@@ -157,8 +155,9 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         var c_stride = Int(c.dim[1]())
 
         var c_ptr = c.ptr_at_offset(Coord(global_offset.M, global_offset.N))
-        var c_bound = Index(global_bound.M, global_bound.N) - Index(
-            global_offset.M, global_offset.N
+        var c_bound = (
+            global_bound.M - global_offset.M,
+            global_bound.N - global_offset.N,
         )
 
         var acc = _Accumulator[

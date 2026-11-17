@@ -17,7 +17,7 @@ from std.memory.alloc import unsafe_alloc
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal
 from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     SF_MN_GROUP_SIZE,

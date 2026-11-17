@@ -22,7 +22,7 @@
 // CHECK-NOT:   _MoggOutputStoreFusionTensor
 // CHECK:       _MoggDenseTensorArg[{{[^,]+}}, {{[^,]+}}, {{[0-9]+}}, _MoggTensorIO.OUTPUT
 // CHECK:       _MoggDenseTensorArg[{{[^,]+}}, {{[^,]+}}, {{[0-9]+}}, _MoggTensorIO.OUTPUT
-// CHECK:       TraitUnfusedExecute.execute[target = "cpu"]
+// CHECK:       TraitUnfusedExecute.execute
 mo.graph @unfused(%x: !mo.tensor<[4], f32>) -> (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) {
   %z, %w = mo.custom [symbol = "trait_unfused_execute", device = #M.device_ref<"cpu", 0>] (%x) : (!mo.tensor<[4], f32>) -> (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>)
   mo.output %z, %w : !mo.tensor<[4], f32>, !mo.tensor<[4], f32>
@@ -33,7 +33,7 @@ mo.graph @unfused(%x: !mo.tensor<[4], f32>) -> (!mo.tensor<[4], f32>, !mo.tensor
 // CHECK-LABEL: def __custom__trait_unfused_execute{{[_0-9a-f]*}}(
 // CHECK:       _MoggOutputStoreFusionTensor[
 // CHECK:       _MoggOutputStoreFusionTensor[
-// CHECK:       TraitUnfusedExecute.execute[target = "cpu"]
+// CHECK:       TraitUnfusedExecute.execute
 mo.graph @fused_other(%x: !mo.tensor<[4], f32>) -> (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) {
   %z, %w = mo.custom [symbol = "trait_unfused_execute", device = #M.device_ref<"cpu", 0>] (%x) : (!mo.tensor<[4], f32>) -> (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>)
   %w2 = mo.add(%w, %x) : !mo.tensor<[4], f32>

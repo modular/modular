@@ -172,7 +172,7 @@ def test_add() raises:
 
 def test_add_string_slice() raises:
     var s1 = "123"
-    var s2 = StringSlice("abc")
+    var s2 = StringSpan("abc")
     var s3 = "abc"
     assert_equal("123abc", s1 + s2)
     assert_equal("123abc", s1 + s3)
@@ -242,11 +242,29 @@ def test_ord() raises:
     comptime literal = "α"
     assert_equal(ord(literal), 945)
 
-    # Test StringSlice overload
-    assert_equal(ord(StringSlice("A")), 65)
-    assert_equal(ord(StringSlice("α")), 945)
-    assert_equal(ord(StringSlice("➿")), 10175)
-    assert_equal(ord(StringSlice("🔥")), 128293)
+    # Test StringSpan overload: 1, 2, 3, and 4 byte codepoints.
+    assert_equal(ord(StringSpan("A")), 65)
+    assert_equal(ord(StringSpan("α")), 945)
+    assert_equal(ord(StringSpan("➿")), 10175)
+    assert_equal(ord(StringSpan("🔥")), 128293)
+    assert_equal(ord(String("A")), 65)
+    assert_equal(ord(String("α")), 945)
+    assert_equal(ord(String("➿")), 10175)
+    assert_equal(ord(String("🔥")), 128293)
+
+    # Boundaries of each UTF-8 encoding length.
+    assert_equal(ord(String("\x00")), 0)  # 1 byte
+    assert_equal(ord(String("\x7f")), 0x7F)  # 1 byte
+    assert_equal(ord(String("\x80")), 0x80)  # 2 bytes
+    assert_equal(ord(String("߿")), 0x7FF)  # 2 bytes, U+07FF
+    assert_equal(ord(String("ࠀ")), 0x800)  # 3 bytes, U+0800
+    assert_equal(ord(String("￿")), 0xFFFF)  # 3 bytes, U+FFFF
+    assert_equal(ord(String("\U00010000")), 0x10000)  # 4 bytes
+    assert_equal(ord(String("\U0010ffff")), 0x10FFFF)  # 4 bytes
+
+    # A single codepoint sliced out of a longer string.
+    var text = String("a🔥b")
+    assert_equal(ord(text[byte=1:5]), 128293)
 
     # `\xhh` and `\ooo` escapes denote Unicode code points (not raw bytes),
     # so values >= 0x80 are encoded to UTF-8 and `ord` recovers the original
@@ -261,6 +279,47 @@ def test_ord() raises:
     assert_equal(ord("\377"), 0xFF)  # octal form of U+00FF
 
 
+def test_ord_raises() raises:
+    with assert_raises(
+        contains="ord() expected a single codepoint, but got an empty string"
+    ):
+        _ = ord(String())
+
+    with assert_raises(contains="but got an empty string"):
+        _ = ord(StringSpan(""))
+
+    with assert_raises(
+        contains=(
+            "ord() expected a single codepoint, but got a string of 2"
+            " codepoints: 'ab'"
+        )
+    ):
+        _ = ord(String("ab"))
+
+    # Each multi-byte case would decode to a valid first codepoint, so these
+    # catch an implementation that only checks the leading codepoint.
+    with assert_raises(contains="got a string of 2 codepoints: 'α!'"):
+        _ = ord(String("α!"))
+
+    with assert_raises(contains="got a string of 2 codepoints: '🔥🔥'"):
+        _ = ord(String("🔥🔥"))
+
+    with assert_raises(contains="got a string of 3 codepoints: 'a➿🔥'"):
+        _ = ord(String("a➿🔥"))
+
+    # "é" spelled as "e" + U+0301 is one grapheme but two codepoints.
+    with assert_raises(contains="got a string of 2 codepoints"):
+        _ = ord(String("é"))
+
+    # The error is recoverable, so execution continues after catching it.
+    var result: Int
+    try:
+        result = ord(String(""))
+    except:
+        result = ord(String("z"))
+    assert_equal(result, 122)
+
+
 def test_ord_string_literal_folds() raises:
     # Unoptimized IR, so the constant must come from comptime evaluation of
     # the `StringLiteral` overload rather than from LLVM folding the decoder.
@@ -270,8 +329,8 @@ def test_ord_string_literal_folds() raises:
     def ord_multi_byte() -> Int:
         return ord("🔥")
 
-    def ord_slice() -> Int:
-        return ord(StringSlice("🔥"))
+    def ord_slice() raises -> Int:
+        return ord(StringSpan("🔥"))
 
     var ascii_ir = compile_info[ord_ascii, emission_kind="llvm"]()
     assert_true("ret i64 65" in ascii_ir)
@@ -281,7 +340,7 @@ def test_ord_string_literal_folds() raises:
     assert_true("ret i64 128293" in multi_byte_ir)
     assert_false("call " in multi_byte_ir)
 
-    # Guards against the check above passing vacuously: the `StringSlice`
+    # Guards against the check above passing vacuously: the `StringSpan`
     # overload decodes at runtime.
     var slice_ir = compile_info[ord_slice, emission_kind="llvm"]()
     assert_false("ret i64 128293" in slice_ir)
@@ -373,6 +432,19 @@ def test_atol() raises:
         contains="String is not convertible to integer with base 10: '5_'"
     ):
         _ = atol("5_")
+
+    # A trailing underscore is invalid when whitespace follows it, too.
+    with assert_raises():
+        _ = atol("9_ ")
+    with assert_raises():
+        _ = atol("1_2_ ")
+    with assert_raises():
+        _ = atol(" 9_\n")
+    with assert_raises():
+        _ = atol("ff_ ", 16)
+    with assert_raises():
+        _ = atol("0x1_ ", 0)
+    assert_equal(atol("1_2 "), 12)
 
     with assert_raises(
         contains="String is not convertible to integer with base 5: '5'"
@@ -674,24 +746,24 @@ def test_contains() raises:
 def test_find() raises:
     var str = "Hello world"
 
-    assert_equal(0, str.find(""))
-    assert_equal(0, str.find("Hello"))
-    assert_equal(2, str.find("llo"))
-    assert_equal(6, str.find("world"))
-    assert_equal(-1, str.find("universe"))
+    assert_equal(str.find(""), 0)
+    assert_equal(str.find("Hello"), 0)
+    assert_equal(str.find("llo"), 2)
+    assert_equal(str.find("world"), 6)
+    assert_false(str.find("universe"))
 
     # Test find() offset is absolute, not relative (issue mojo/#1355)
     var str2 = "...a"
-    assert_equal(3, str2.find("a", 0))
-    assert_equal(3, str2.find("a", 1))
-    assert_equal(3, str2.find("a", 2))
-    assert_equal(3, str2.find("a", 3))
+    assert_equal(str2.find("a", 0), 3)
+    assert_equal(str2.find("a", 1), 3)
+    assert_equal(str2.find("a", 2), 3)
+    assert_equal(str2.find("a", 3), 3)
 
     # Test find() support for negative start positions
-    assert_equal(4, str.find("o", -10))
-    assert_equal(7, str.find("o", -5))
+    assert_equal(str.find("o", -10), 4)
+    assert_equal(str.find("o", -5), 7)
 
-    assert_equal(-1, String("abc").find("abcd"))
+    assert_false(String("abc").find("abcd"))
 
 
 def test_replace() raises:
@@ -718,23 +790,23 @@ def test_rfind() raises:
     var s1 = "hello world"
     # Basic usage.
     assert_equal(s1.rfind("world"), 6)
-    assert_equal(s1.rfind("bye"), -1)
+    assert_false(s1.rfind("bye"))
 
     # Repeated substrings.
     assert_equal(String("ababab").rfind("ab"), 4)
 
     # Empty string and substring.
-    assert_equal(String().rfind("ab"), -1)
+    assert_false(String().rfind("ab"))
     assert_equal(String("foo").rfind(""), 3)
 
     # Test that rfind(start) returned pos is absolute, not relative to specified
     # start. Also tests positive and negative start offsets.
     assert_equal(s1.rfind("l", 5), 9)
     assert_equal(s1.rfind("l", -5), 9)
-    assert_equal(s1.rfind("w", -3), -1)
+    assert_false(s1.rfind("w", -3))
     assert_equal(s1.rfind("w", -5), 6)
 
-    assert_equal(-1, String("abc").rfind("abcd"))
+    assert_false(String("abc").rfind("abcd"))
 
     # Special characters.
     # TODO(#26444): Support unicode strings.
@@ -767,7 +839,7 @@ def test_split() raises:
         String(unsafe_from_utf8=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
-    assert_equal(StringSlice(s).split(), [StaticString("hello"), "world"])
+    assert_equal(StringSpan(s).split(), [StaticString("hello"), "world"])
 
     # should split into empty strings between separators
     assert_equal(S("1,,,3").split(","), [StaticString("1"), "", "", "3"])
@@ -1496,8 +1568,8 @@ def test_float_conversion() raises:
 
 
 def test_slice_contains() raises:
-    assert_true(StringSlice("hello world").__contains__("world"))
-    assert_false(StringSlice("hello world").__contains__("not-found"))
+    assert_true(StringSpan("hello world").__contains__("world"))
+    assert_false(StringSpan("hello world").__contains__("not-found"))
 
 
 def test_reserve() raises:
@@ -1505,6 +1577,64 @@ def test_reserve() raises:
     assert_equal(s.capacity_bytes(), 23)
     s.reserve_bytes(61)
     assert_equal(s.capacity_bytes(), 64)
+
+
+def test_copy_then_append_capacity() raises:
+    def appended_copy(text: String) -> String:
+        var copy = text.copy()
+        copy += "a"
+        return copy^
+
+    # The argument of `appended_copy` stays alive for the whole call, so each
+    # append writes to a buffer that the copy still shares with it. Inline,
+    # the original is destroyed after `copy()` and the buffer is never shared.
+    var text = String()
+    var iterations = 100
+    for _ in range(iterations):
+        var capacity = text.capacity_bytes()
+        text = appended_copy(text)
+        if text.byte_length() <= capacity:
+            assert_equal(text.capacity_bytes(), capacity)
+        else:
+            assert_true(
+                text.capacity_bytes() >= 2 * capacity,
+                "growth must at least double the capacity",
+            )
+    assert_equal(text, String("a") * iterations)
+
+
+def test_unshare_keeps_capacity() raises:
+    var length = 40
+    var original = String(capacity_bytes=64)
+    original += String("x") * length
+    var capacity = original.capacity_bytes()
+
+    # The copy shares the buffer, so each write below must un-share it.
+    var appended = original.copy()
+    assert_true(appended.unsafe_ptr() == original.unsafe_ptr())
+    appended += "y"
+    assert_equal(appended.capacity_bytes(), capacity)
+
+    var pushed = original.copy()
+    pushed.append(Codepoint.ord("y"))
+    assert_equal(pushed.capacity_bytes(), capacity)
+
+    var edited = original.copy()
+    edited.unsafe_as_bytes_mut()[0] = Byte(ord("y"))
+    assert_equal(edited.capacity_bytes(), capacity)
+
+    # Reading `original` here also keeps its buffer shared until this point.
+    assert_equal(original, String("x") * length)
+    assert_equal(appended, String("x") * length + "y")
+    assert_equal(pushed, String("x") * length + "y")
+    assert_equal(edited, "y" + String("x") * (length - 1))
+
+    # A literal's capacity is its length. Writing to it copies the bytes to a
+    # heap buffer; nothing grew, so the capacity must not double.
+    var literal = String("abcdefghijklmnopqrstuvwxyz0123456789")
+    literal.unsafe_as_bytes_mut()[0] = Byte(ord("A"))
+    assert_true(literal.capacity_bytes() < 2 * literal.byte_length())
+    assert_equal(literal, "Abcdefghijklmnopqrstuvwxyz0123456789")
 
 
 def test_resize() raises:
@@ -1666,12 +1796,11 @@ def test_sso() raises:
 
 
 def test_copyinit() raises:
-    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    var sizes: List[Int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    comptime for sizes_index in range(len(sizes)):
-        comptime current_size = sizes[sizes_index]
+    for current_size in sizes:
         var x = ""
         for i in range(current_size):
             x += String(i)[byte=0]
@@ -1888,12 +2017,12 @@ def test_string_zero_init() raises:
 
 
 def test_convertible_to_Python() raises:
-    check_convertible_to_python(StringSlice("Foo"), "Foo")
+    check_convertible_to_python(StringSpan("Foo"), "Foo")
     check_convertible_to_python(String("Bar"), "Bar")
     check_convertible_to_python("Baz", "Baz")
 
     # test implicit conversions
-    check_python_object(StringSlice("Foo"), "Foo")
+    check_python_object(StringSpan("Foo"), "Foo")
     check_python_object(String("Bar"), "Bar")
     check_python_object("Baz", "Baz")
 

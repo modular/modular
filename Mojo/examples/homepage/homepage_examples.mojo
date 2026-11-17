@@ -25,7 +25,7 @@ from std.sys import has_accelerator, simd_width_of
 
 from layout import TileTensor
 from layout.tensor_engine import DefaultEngine
-from layout.tile_layout import Layout, row_major
+from layout.layout import Layout, row_major
 from extensibility import InputTensor, OutputTensor
 
 

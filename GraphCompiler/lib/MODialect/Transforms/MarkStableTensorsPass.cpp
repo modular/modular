@@ -40,6 +40,25 @@ namespace {
 // MarkStableTensorsPass
 //===----------------------------------------------------------------------===//
 
+// Distributed collectives launch on every device from a single host entry
+// point, which has no device-graph form. Ops with a per-device form say how to
+// rewrite themselves, so the walk stays free of any concrete distributed op;
+// the bundled copies declare stable peers, so the marking below is what routes
+// their inputs through `mo.stable.create`.
+static LogicalResult expandDistributedCollectives(GraphOp graphOp) {
+  auto result = graphOp.walk([](Operation *op) -> WalkResult {
+    auto expansion = dyn_cast<MODistributedExpansionInterface>(op);
+    if (!expansion)
+      return WalkResult::advance();
+
+    IRRewriter rewriter(op);
+    if (failed(expansion.replaceWithBundledOps(rewriter)))
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+  return success(!result.wasInterrupted());
+}
+
 struct MarkStableTensorsPass final
     : public impl::MarkStableTensorsPassBase<MarkStableTensorsPass> {
   using Base::Base;
@@ -56,6 +75,11 @@ struct MarkStableTensorsPass final
              "look up kernel registrations";
       return signalPassFailure();
     }
+
+    // Expand first: the bundled copies declare stable peers, so the walk
+    // below is what routes their inputs through `mo.stable.create`.
+    if (failed(expandDistributedCollectives(graphOp)))
+      return signalPassFailure();
 
     MOGG::MojoRegistry registry(moduleOp);
 

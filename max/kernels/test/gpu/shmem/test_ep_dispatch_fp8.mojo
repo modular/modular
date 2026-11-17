@@ -23,7 +23,7 @@ from std.sys import argv
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from std.memory import Pointer
 from std.memory.alloc import unsafe_alloc
 from shmem import *
@@ -32,6 +32,7 @@ from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
+    NullExpertLoad,
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
@@ -98,7 +99,7 @@ def test_dispatch[
     n_experts: Int,
     n_ranks: Int,
     n_tokens_per_rank: Int,
-](ctx: DeviceContext, my_rank: Int) raises:
+](ctx: DeviceContext[], my_rank: Int) raises:
     comptime input_type = DType.bfloat16
     comptime group_size = 128
     comptime n_local_experts = n_experts // n_ranks
@@ -240,7 +241,9 @@ def test_dispatch[
     var e2e_stat_m2: Float64 = 0
 
     @inline(.always)
-    def run_dispatch_async(ctx: DeviceContext) raises {var atomic_counter, imm}:
+    def run_dispatch_async(
+        ctx: DeviceContext[],
+    ) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var recv_buf_ptrs: Array[Pointer[UInt8, MutUntrackedOrigin], 1] = [
             recv_buf
@@ -265,7 +268,7 @@ def test_dispatch[
 
     @inline(.always)
     def run_dispatch_async_wait(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var atomic_counter, imm}:
         ctx.enqueue_function(
             func_wait,
@@ -277,17 +280,18 @@ def test_dispatch[
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
 
     @inline(.always)
-    def run_e2e(ctx: DeviceContext) raises {imm}:
+    def run_e2e(ctx: DeviceContext[]) raises {imm}:
         run_dispatch_async(ctx)
         run_dispatch_async_wait(ctx)
 
     @inline(.always)
-    def clean_up(ctx: DeviceContext) raises {imm}:
+    def clean_up(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     for i in range(num_iters):

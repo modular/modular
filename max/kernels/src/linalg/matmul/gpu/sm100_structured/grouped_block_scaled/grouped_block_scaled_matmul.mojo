@@ -50,8 +50,7 @@ Usage:
 from std.math import align_up
 from std.sys import size_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
-from max.gpu.host.info import B200
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from layout import TileTensor, coord
 
 from structured_kernels.tile_types import create_tma_tile
@@ -509,7 +508,6 @@ def _grouped_block_scaled_matmul_impl[
     ctx.synchronize()
 
     # ===== Shared Memory Size =====
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     # Use GroupedBlockScaledSmem which includes SMEM for TMA descriptors
     comptime SmemType = GroupedBlockScaledSmem[
@@ -543,6 +541,11 @@ def _grouped_block_scaled_matmul_impl[
     comptime if config.cta_group == 2:
         # 2SM mode: use CLC-based run_2sm() for proper cluster synchronization
         ctx.enqueue_function[matmul_kernel.run_2sm](
+            GridBlockLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=num_threads,
+                shared_mem_bytes=smem_size,
+            ),
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -565,16 +568,15 @@ def _grouped_block_scaled_matmul_impl[
             problem_sizes,
             Int32(num_groups),
             host_args=(compute_fn,),
-            grid_dim=grid_dim,
-            block_dim=num_threads,
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
         )
     else:
         # 1SM mode: use linear iteration run()
         ctx.enqueue_function[matmul_kernel.run](
+            GridBlockLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=num_threads,
+                shared_mem_bytes=smem_size,
+            ),
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -597,47 +599,9 @@ def _grouped_block_scaled_matmul_impl[
             problem_sizes,
             Int32(num_groups),
             host_args=(compute_fn,),
-            grid_dim=grid_dim,
-            block_dim=num_threads,
-            shared_mem_bytes=smem_size,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(b200_smem)
-            ),
         )
 
 
 # =============================================================================
 # Helper: Calculate SMEM size for grouped kernel
 # =============================================================================
-
-
-def grouped_smem_size[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    sfa_dtype: DType,
-    sfb_dtype: DType,
-    transpose_b: Bool,
-    config: BlockScaledMatmulConfig[
-        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
-    ],
-]() -> Int:
-    """Calculate shared memory size for grouped block-scaled kernel.
-
-    Parameters:
-        a_type: Element type of the A operand matrices.
-        b_type: Element type of the B operand matrices.
-        c_type: Element type of the C output matrices.
-        sfa_dtype: Element type of the A scaling factors.
-        sfb_dtype: Element type of the B scaling factors.
-        transpose_b: Whether B operands are stored transposed (must be True).
-        config: Block-scaled matmul configuration carrying tile, cluster, and
-            pipeline parameters.
-
-    Returns:
-        SMEM size in bytes, including tensormap descriptor storage.
-    """
-    comptime SmemType = GroupedBlockScaledSmem[
-        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b, config=config
-    ]
-    return size_of[SmemType]()

@@ -22,7 +22,8 @@ LogicalResult MAPToMOGGState::lowerOp(Operation *op) {
   auto lowerable = dyn_cast<LowerableToMOGGInterface>(op);
   if (!lowerable)
     return op->emitOpError("MAPToMOGG: unsupported op");
-  return lowerable.lowerToMOGG(*this);
+  return tileBody ? lowerable.lowerToMOGGTile(*this)
+                  : lowerable.lowerToMOGG(*this);
 }
 
 LogicalResult MAPToMOGGState::lowerRegionBody(

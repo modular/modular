@@ -31,7 +31,7 @@ from typing import Any, Literal, Protocol
 from max import tree
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MultiKVCacheParams,
@@ -87,6 +87,28 @@ its text config says nothing. The overlap scheduler needs the history: under
 it the host does not yet know a step's accepted drafts when it builds the
 next step's window. The default stays the host-built window, so the default
 export's input list is unchanged."""
+
+
+def _field(config: object, name: str) -> object:
+    if isinstance(config, Mapping):
+        return config.get(name)
+    return getattr(config, name, None)
+
+
+def has_vision_tower(huggingface_config: object) -> bool:
+    """Returns whether the checkpoint has a vision tower.
+
+    The ``deepseek_v41`` HF config shim fills a missing ``vision_config``
+    with an empty one, so a tower is a ``vision_config`` that sets the
+    encoder's depth (``num_hidden_layers``).
+
+    Args:
+        huggingface_config: The HF config, or its ``to_dict()`` mapping.
+    """
+    vision = _field(huggingface_config, "vision_config")
+    return (
+        vision is not None and _field(vision, "num_hidden_layers") is not None
+    )
 
 
 @dataclass(frozen=True)
@@ -168,7 +190,7 @@ class V41Config:
             candidate_topk_blocks=text["candidate_topk_blocks"],
             hc_mult=text["hc_mult"],
             engram_layer_ids=tuple(text["engram_layer_ids"]),
-            has_vision="vision_config" in config,
+            has_vision=has_vision_tower(config),
             decoder_replay=bool(
                 text.get("decoder_replay", DECODER_REPLAY_DEFAULT)
             ),
@@ -356,13 +378,13 @@ def _expert_specs(
     if experts == "stacked":
         for name, out_dim, in_dim in _expert_projections(config):
             yield from _nvfp4_specs(
-                f"{p}.{name}.weight", out_dim, in_dim, "s0", lead=(n,)
+                f"{p}.{name}", out_dim, in_dim, "s0", lead=(n,)
             )
         return
     for e in range(n):
         for name, out_dim, in_dim in _expert_projections(config):
             yield from _nvfp4_specs(
-                f"{p}.{e}.{name}.weight",
+                f"{p}.{e}.{name}",
                 out_dim,
                 in_dim,
                 f"gpu:{e // per}",
@@ -374,8 +396,7 @@ def _checkpoint_specs(
 ) -> list[ParamSpec]:
     """The parameter tree at checkpoint granularity, in module-attribute order.
 
-    Names are the checkpoint's, except the NVFP4 expert leaves (see
-    :func:`to_checkpoint_name`). ``experts="stacked"`` is the fallback
+    Names are the checkpoint's. ``experts="stacked"`` is the fallback
     form with one stacked leaf per expert projection and layer.
     """
     if config.n_routed_experts % n_devices:
@@ -509,8 +530,7 @@ def parameter_specs(
 ) -> list[ParamSpec]:
     """The parameter tree of the stub, in module-attribute order.
 
-    Names are the checkpoint's, except the NVFP4 expert leaves (see
-    :func:`to_checkpoint_name`), the stacked projections
+    Names are the checkpoint's, except the stacked projections
     (:data:`STACKED_PROJECTIONS`, whose pairs share one leaf) and each MoE
     layer's derived uniform dispatch scale (see
     :func:`_derived_global_scale_spec`).
@@ -532,25 +552,6 @@ def unmerged_parameter_specs(
     pair, so the audit runs before the fold.
     """
     return _checkpoint_specs(config, n_devices, experts)
-
-
-_EXPERT_LEAF = re.compile(
-    r"^(?P<head>.*\.experts(?:\.\d+)?\.w\d)\.weight\."
-    r"(?P<leaf>weight|weight_scale|weight_scale_2|input_scale)$"
-)
-
-
-def to_checkpoint_name(name: str) -> str:
-    """Maps a tree path back to its checkpoint tensor name.
-
-    Only the NVFP4 expert leaves differ: they nest under the projection's
-    ``weight``, so ``w1.weight.weight`` is the checkpoint's ``w1.weight``
-    and ``w1.weight.weight_scale`` its ``w1.weight_scale``.
-    """
-    match = _EXPERT_LEAF.match(name)
-    if match is None:
-        return name
-    return f"{match['head']}.{match['leaf']}"
 
 
 class _BlockGroupConfig(Protocol):
@@ -657,7 +658,7 @@ class KVLeafSpec:
     float32: bool = False
     packed_format: int | None = None
     stride_alignment: int | None = None
-    """See :attr:`~max.nn.legacy.kv_cache.KVLeafRegion.stride_alignment`."""
+    """See :attr:`~max.nn.kv_cache.KVLeafRegion.stride_alignment`."""
     ring_rows: int | None = None
     """Rows of a ``state`` leaf's per-request ring, or ``None`` for a leaf
     paged by token."""
@@ -906,8 +907,9 @@ def extra_inputs(
     # window plus its device history: the host window arrives as int64
     # ids, each row says where to read its real window from (a history
     # row the previous step recorded, or -1 for the host window), and the
-    # history is a persistent device buffer. The dead companion stays with
-    # the host: it marks window slots, not the recorded ids.
+    # history is a persistent device buffer. The dead companion stays a
+    # host input; for a row that reads the history, the graph marks the
+    # image tokens of the recorded ids instead.
     if config.engram_lookback_history:
         i64 = DType.int64
         lookback: list[tuple[str, TensorType | BufferType]] = [

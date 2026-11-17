@@ -17,6 +17,7 @@ Submodules
 .. autosummary::
    :nosignatures:
 
+   max.nn.kv_cache
    max.nn.legacy
    max.nn.norm
    max.nn.rope
@@ -25,6 +26,7 @@ Submodules
    :maxdepth: 1
    :hidden:
 
+   nn.kv_cache
    nn.legacy
    nn.norm
    nn.rope
@@ -117,3 +119,23 @@ Mesh axes
    ~max.nn.common_layers.mesh_axis.DP
    ~max.nn.common_layers.mesh_axis.EP
    ~max.nn.common_layers.mesh_axis.TP
+
+KV cache inputs
+---------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.nn.common_layers.kv_cache.PagedCacheValues
+   ~max.nn.common_layers.kv_cache.TensorLike
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   ~max.nn.common_layers.kv_cache.cache_tensor
+   ~max.nn.common_layers.kv_cache.kv_input_values
+   ~max.nn.common_layers.kv_cache.per_device_caches

@@ -83,23 +83,3 @@ index af29da0..309b5f4 100644
          inputs = depset(ctx.files.srcs + ctx.files.additional_compiler_inputs, transitive = [transitive_mojodeps]),
          outputs = compile_outputs,
          arguments = [args],
-diff --git a/mojo/private/toolchain.BUILD b/mojo/private/toolchain.BUILD
-index 9fc4509..f16eea3 100644
---- a/mojo/private/toolchain.BUILD
-+++ b/mojo/private/toolchain.BUILD
-@@ -11,15 +11,11 @@ _INTERNAL_LIBRARIES = [
-     for library in glob(
-         [
-             # Globbed to allow .so or .dylib
--            "lib/libAsyncRTMojoBindings.*",
-             "lib/libAsyncRTRuntimeGlobals.*",
-             "lib/libKGENCompilerRTShared.*",
-             "lib/libMSupportGlobals.*",
-         ],
-         allow_empty = False,
--    ) + glob(
--        ["lib/libNVPTX.so"],  # buildifier: disable=constant-glob
--        allow_empty = True,
-     )
- ]
- 

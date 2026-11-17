@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Correctness tests for the FP8 quantize fusion consumers.
 
-``mo.quantize_static_scaled_float8`` takes a ``FusedInputTensor`` so a
+``quantization.quantize_static_scaled_float8`` takes a ``FusedInputTensor`` so a
 single-use elementwise producer (relu, add, cast) fuses INTO the quantize
 load lambda instead of materializing a separate HBM tensor + kernel launch.
 The quantized math must stay bit-identical to the unfused path: cast to
@@ -33,11 +33,11 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,

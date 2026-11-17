@@ -35,7 +35,7 @@ constexpr size_t kChunkAlignment = 256;
 
 class StubCompilationDevice final : public CompilationDevice {
 public:
-  StubCompilationDevice() : CompilationDevice(Device::cudaAPI, "sm_stub") {}
+  StubCompilationDevice() : CompilationDevice("cuda", "sm_stub") {}
 
   M::ErrorOr<int> getApiVersion() const override { return 0; }
 

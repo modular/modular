@@ -89,9 +89,9 @@ def test_transfer_h2d_uses_root_chain_not_device_chain() -> None:
 
     # Capture transfer chains and destination device ids.
     # Pattern examples:
-    #   rmo.mo.transfer[%ch1] %arg : ... to <"gpu", 0>
+    #   mo.transfer[%ch1] %arg : ... to <"gpu", 0>
     transfer_info = re.findall(
-        r"(?:rmo\.mo|mo)\.transfer\[(%[A-Za-z0-9_]+)\][^\n]*to\s+<\"gpu\",\s*([0-9]+)>",
+        r"\bmo\.transfer\[(%[A-Za-z0-9_]+)\][^\n]*to\s+<\"gpu\",\s*([0-9]+)>",
         ir,
     )
     # Expect two transfers to GPU:1 then GPU:0 in this graph.

@@ -1254,10 +1254,10 @@ def del_warnings():
 ##===----------------------------------------------------------------------===##
 
 # Test that parameter inference can handle this.
-def dependent_call_it[dtype: DType](ptr: UnsafePointer[SIMD[dtype, 1], AnyOrigin[mut=True]]):
+def dependent_call_it[dtype: DType](ptr: Pointer[SIMD[dtype, 1], AnyOrigin[mut=True]]):
    dependent_callee(ptr, 0.0)
 # This requires substitution to realize that storage.type.type == DType
-def dependent_callee[dtype: DType](storage: UnsafePointer[SIMD[dtype, 1], AnyOrigin[mut=True]],
+def dependent_callee[dtype: DType](storage: Pointer[SIMD[dtype, 1], AnyOrigin[mut=True]],
                    pad_value: SIMD[storage.type.dtype, 1]):
    pass
 

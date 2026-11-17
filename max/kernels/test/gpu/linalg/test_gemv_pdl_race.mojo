@@ -164,7 +164,6 @@ def run_case[
     var a_host = ctx.enqueue_create_host_buffer[dtype](M * K)
     var w_host = ctx.enqueue_create_host_buffer[dtype](N * K)
     var stale_host = ctx.enqueue_create_host_buffer[dtype](M * K)
-    var c_host = ctx.enqueue_create_host_buffer[dtype](M * N)
     var result_host = ctx.enqueue_create_host_buffer[dtype](M * N)
 
     # The real activation is all 2.0; the stale sentinel is all 1.0. The

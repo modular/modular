@@ -1,4 +1,4 @@
-// RUN: not mo-opt %s --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu compiled-framework-label=mof" --allow-unregistered-dialect 2>&1 | FileCheck %s
+// RUN: not mo-opt %s --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu" --allow-unregistered-dialect 2>&1 | FileCheck %s
 
 // NEGATIVE test (expected to FAIL compilation). `trait_fused_transform_host_negative`
 // transforms DIRECTLY on the fused-transform proxy at the host entry, with no

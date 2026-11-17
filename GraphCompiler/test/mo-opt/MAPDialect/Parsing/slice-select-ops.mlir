@@ -7,7 +7,7 @@
 // once as a slice of a slice, two nested selects.
 
 // map.call.opaque verifies its callee resolves to a mogg.kernel.decl.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 
 #stepSpec = #map.index.slice.spec<[8, 16] -> [4, 16], starts = [1, 0], stops = [8, 16], steps = [2, 1]>
 #windowSpec = #map.index.slice.spec<[N, 16] -> [4, 16], starts = [-4, 0], stops = [?, ?], steps = [1, 1]>

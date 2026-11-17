@@ -35,6 +35,7 @@ from collections.abc import Callable
 import numpy as np
 import pytest
 from max._core.dialects import mo
+from max._core.dialects.builtin import IntegerAttr, IntegerType
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -91,7 +92,7 @@ def device_graph(signals: Signals, shape: list[int | str]) -> Graph:
         in_chain = graph.device_chains.merge_for(DEVICES)
         outputs = []
         out_chains = []
-        for tensor in tensors:
+        for rank, tensor in enumerate(tensors):
             out, out_chain = graph._add_op_generated(
                 mo.BundledAllreduceSumOp,
                 tensor.type,
@@ -99,6 +100,8 @@ def device_graph(signals: Signals, shape: list[int | str]) -> Graph:
                 tensors,
                 signal_buffers,
                 in_chain,
+                IntegerAttr(IntegerType(64), 0),
+                IntegerAttr(IntegerType(64), rank),
             )
             outputs.append(out.tensor)
             out_chains.append(_ChainValue(out_chain._mlir_value))

@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/Driver/Common/DriverInputFormat.h"
-#include "Support/ML/CompiledFrameworkLabel.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBufferRef.h"
@@ -44,21 +43,11 @@ FileFormat M::sniffInputFormat(StringRef fileExtension,
       return FileFormat::kMODialect;
     if (size_t start = fileContents.find("mef.model");
         start != StringRef::npos) {
-      // Look for `mef.model @<name> : <framework>`.
+      // Look for `mef.model @<name>`.
       StringRef suffix = fileContents.drop_front(start);
-      std::regex regex(R"(mef\.model\s+@\w+\s*:\s*(\w+))");
-      std::match_results<StringRef::iterator> m;
-      std::regex_search(suffix.begin(), suffix.end(), m, regex);
-      if (!m.empty() && m.size() == 2) {
-        switch (CompiledFrameworkLabel::getLabelForOpName("mef.model",
-                                                          StringRef(m[1]))
-                    .value) {
-        case CompiledFrameworkLabel::kUnknown:
-          return FileFormat::kUnknown;
-        case CompiledFrameworkLabel::kModularModel:
-          return FileFormat::kMGPDialect;
-        }
-      }
+      std::regex regex(R"(mef\.model\s+@\w+)");
+      if (std::regex_search(suffix.begin(), suffix.end(), regex))
+        return FileFormat::kMGPDialect;
     }
   } else if (mlir::isBytecode(llvm::MemoryBufferRef(fileContents, ""))) {
     // Look for the dialect id on a word boundary.

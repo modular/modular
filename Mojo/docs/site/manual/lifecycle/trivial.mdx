@@ -7,14 +7,14 @@ description: >
 ---
 
 <!-- Compiler verified: 2026-10-16, Mojo 1.2.0.dev2026101520 (d2872eb2) -->
-<!-- Last updated: 2026-10-16 -->
+<!-- Last updated: 2026-11-03 -->
 
 Mojo values follow a common lifecycle, but different types participate in
 its stages differently. An initializer [creates a
 value](/docs/manual/lifecycle/life/). Code may copy it, move it, or
-[transfer it](/docs/manual/lifecycle/destruction-transfer/) to a new owner.
-Finally, Mojo [destroys it](/docs/manual/lifecycle/death/) after its last
-use. Most types let you customize these stages.
+transfer it to a new owner. Finally, Mojo [destroys
+it](/docs/manual/lifecycle/death/) after its last use. Most types let you
+customize these stages.
 
 Some values need almost none of that. An `Int` is eight bytes of integer
 and nothing more: no heap memory, no open file, no reference count. Copy
@@ -149,8 +149,9 @@ protect has no reason to stay in one place.
 The transfer sigil (`^`) offers a value's ownership to a new owner.
 
 For a register type, that works exactly as it does for an ordinary type.
-After `var keeper = log^`, the descriptor belongs to `keeper`, and `log` is
-finished. A `Descriptor` owns an open file, so ownership has real meaning.
+After `var keeper = log_fd^`, the descriptor belongs to `keeper`, and
+`log_fd` is finished. A file `Descriptor` owns an open file, so ownership
+has real meaning and responsibilities.
 
 A trivial value has nothing to hand over: no buffer, no file, no cleanup.
 So `^` on a trivial value makes a copy, and the original stays usable:
@@ -217,8 +218,10 @@ struct Pixel(Copyable):
 copies stay visible in code: `var backup = pixel.copy()`.
 
 Two things make a stage non-trivial. A field that isn't trivial, such as a
-`String`, makes copying and destruction non-trivial. A lifecycle method you
-write yourself does the same, even one that only prints a message.
+`String`, makes copying and destruction non-trivial. A hand-written
+`__deinit__()` method you create does the same, making destruction
+non-trivial but copying stays trivial. Only a non-trivial field, like
+`String`, breaks both the copy and destruction stages.
 
 ## Check a lifecycle in generic code
 

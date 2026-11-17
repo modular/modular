@@ -54,10 +54,12 @@ def _graph_state_dict() -> dict[str, WeightData]:
         f"{_NVFP4_EXPERT}.weight_scale": _data(
             np.zeros((2, 1), np.uint8), "ws"
         ),
-        f"{_NVFP4_EXPERT}.weight_scale_2": _data(
-            np.ones((1,), np.float32), "ws2"
+        f"{_NVFP4_EXPERT}.weight_global_scale": _data(
+            np.ones((1,), np.float32), "wg"
         ),
-        f"{_NVFP4_EXPERT}.input_scale": _data(np.ones((), np.float32), "is"),
+        f"{_NVFP4_EXPERT}.input_global_scale": _data(
+            np.ones((), np.float32), "ig"
+        ),
         f"{_BF16_EXPERT}.weight": _data(np.zeros((2, 16), np.float32), "b"),
     }
 
@@ -68,8 +70,8 @@ def test_nvfp4_projections_keep_their_checkpoint_names() -> None:
     assert {
         f"{proj}.weight",
         f"{proj}.weight_scale",
-        f"{proj}.weight_scale_2",
-        f"{proj}.input_scale",
+        f"{proj}.weight_global_scale",
+        f"{proj}.input_global_scale",
     } <= names
 
 
@@ -87,7 +89,7 @@ def test_unquantized_weights_keep_a_plain_weight() -> None:
 def test_global_scales_become_scalars() -> None:
     out = to_modulev3_names(_graph_state_dict())
     proj = f"language_model.{_NVFP4_EXPERT}"
-    for leaf in ("weight_scale_2", "input_scale"):
+    for leaf in ("weight_global_scale", "input_global_scale"):
         assert list(out[f"{proj}.{leaf}"].shape) == []
         # The loader re-exports every weight through DLPack.
         Buffer.from_dlpack(out[f"{proj}.{leaf}"])
@@ -111,8 +113,8 @@ def test_relabeled_block_scales_are_stored_as_float8() -> None:
 
 def test_a_non_scalar_global_scale_is_rejected() -> None:
     state_dict = _graph_state_dict()
-    state_dict[f"{_NVFP4_EXPERT}.weight_scale_2"] = _data(
-        np.ones((2,), np.float32), "ws2"
+    state_dict[f"{_NVFP4_EXPERT}.weight_global_scale"] = _data(
+        np.ones((2,), np.float32), "wg"
     )
     with pytest.raises(ValueError, match="single per-tensor scale"):
         to_modulev3_names(state_dict)

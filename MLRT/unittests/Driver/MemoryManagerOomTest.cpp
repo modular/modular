@@ -148,7 +148,7 @@ TEST_F(MemoryManagerOomTest, PendingMemoryBlocksUntilSync) {
 
   // Close the gate, THEN free: the free's flush-to-root event is ordered after
   // the gate and cannot fire, so the memory stays pending in the holder's list.
-  EXPECT_NO_ERR(holderStream->enqueueWaitOnHostValue(*gate, 1));
+  EXPECT_NO_ERR(holderStream->enqueueWaitOnFlag(*gate, 1));
   held.reset();
 
   // The allocator cannot reach the holder's gated (pending) physical. The miss
@@ -208,7 +208,7 @@ TEST_F(MemoryManagerOomTest, PendingMemoryRecoveredWithoutCallerSync) {
   gate->reset();
 
   ASSIGN_NO_ERR(DeviceBufferRef, held, holder->enqueueCreateBuffer(bufSize));
-  EXPECT_NO_ERR(holderStream->enqueueWaitOnHostValue(*gate, 1));
+  EXPECT_NO_ERR(holderStream->enqueueWaitOnFlag(*gate, 1));
   held.reset();
 
   // Counters live on the device's manager, which the whole suite shares.
@@ -270,7 +270,7 @@ TEST_F(MemoryManagerOomTest, DrainRetriesZeroDisablesTheRetry) {
   gate->reset();
 
   ASSIGN_NO_ERR(DeviceBufferRef, held, holder->enqueueCreateBuffer(bufSize));
-  EXPECT_NO_ERR(holderStream->enqueueWaitOnHostValue(*gate, 1));
+  EXPECT_NO_ERR(holderStream->enqueueWaitOnFlag(*gate, 1));
   held.reset();
 
   const size_t attemptsBefore = mm(*allocator).drainRetryAttempts();

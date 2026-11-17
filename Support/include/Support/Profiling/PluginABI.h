@@ -49,7 +49,11 @@
 
 // Filename the shim probes when MODULAR_PROFILER_PLUGIN does not name an
 // explicit path: next to the host DSO first, then the default dlopen search.
+#ifdef __APPLE__
+#define M_PROFILER_PLUGIN_SONAME "libMAXProfilerPlugin.dylib"
+#else
 #define M_PROFILER_PLUGIN_SONAME "libMAXProfilerPlugin.so"
+#endif
 #define M_PROFILER_PLUGIN_ENTRY_SYMBOL "M_profilerPluginGetAPI"
 
 #ifdef __cplusplus

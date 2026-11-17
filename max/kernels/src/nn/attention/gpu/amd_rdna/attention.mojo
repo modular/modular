@@ -36,7 +36,7 @@ from layout import (
     MixedLayout,
     TileTensor,
 )
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tensor_core import TiledTensorCore
 
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
@@ -56,7 +56,7 @@ from .config import (
     RDNA_MMA_K,
 )
 from .softmax import SoftmaxRDNA
-from .utils import get_warp_coords, pad
+from .utils import get_warp_coords, pad, wmma_acc_row
 
 # RDNA k_group_size is always 1 (full K per WMMA fragment).
 comptime RDNA_K_GROUP_SIZE = 1
@@ -102,7 +102,7 @@ def _mask_apply_rdna[
         and not mask_t.apply_log2e_after_mask else Scalar[accum_type](1)
     )
 
-    # RDNA WMMA C/D: lane l, elem v -> D[row=v*2+l//16, col=l%16].
+    # RDNA WMMA C/D: lane l, elem v -> D[row=wmma_acc_row(v, l//16), col=l%16].
     var lane_seq_offset = umod(lane, 16)
     var lane_key_group = ufloordiv(lane, 16)
 
@@ -130,7 +130,7 @@ def _mask_apply_rdna[
             comptime if masked:
                 comptime for j in range(output_frag_size):
                     var score_key = mma_key_base + UInt32(
-                        j * 2 + lane_key_group
+                        wmma_acc_row(j, Int(lane_key_group))
                     )
                     var score_key_with_cache_start_pos = (
                         score_key + cache_start_pos
@@ -174,7 +174,7 @@ def _mask_apply_rdna[
 
                 comptime for j in range(output_frag_size):
                     var score_key = mma_key_base + UInt32(
-                        j * 2 + lane_key_group
+                        wmma_acc_row(j, Int(lane_key_group))
                     )
                     if score_key >= bound_key:
                         p_reg_vectorized[mma_id, 0][j] = min_or_neg_inf[
@@ -732,7 +732,12 @@ struct AttentionRDNA[
         # Decode rows = heads in GQA group (stride=output_depth).
         # Prefill rows = seq positions (stride=num_heads*output_depth).
         comptime row_stride = Self.output_depth if Self.token_gen else Self.num_heads * Self.output_depth
-        var row_bound = Self.group if Self.token_gen else self.seq_len
+        # `output_tile` is already offset to this Q tile, so `global_seq` is
+        # tile-local: bound it by the rows left in this tile, not the full
+        # sequence length, or a partial last tile writes past the output.
+        var row_bound = Self.group if Self.token_gen else min(
+            Self.BM, self.seq_len - Self.q_tile_idx() * Self.BM
+        )
 
         comptime for depth_tile in range(Self.num_n_mmas_output):
             comptime for seq_tile in range(Self.num_m_mmas):
@@ -740,7 +745,7 @@ struct AttentionRDNA[
 
                 comptime for elem in range(Self.output_frag_size):
                     var seq_in_mma = col_within_mma
-                    var depth_in_mma = elem * 2 + row_group
+                    var depth_in_mma = wmma_acc_row(elem, Int(row_group))
 
                     var global_seq = (
                         warp_row * Self.WM

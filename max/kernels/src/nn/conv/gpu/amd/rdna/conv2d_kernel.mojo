@@ -34,7 +34,7 @@ from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
-from std.utils import IndexList
+from std.sys.info import _is_amd_rdna4
 from std.utils.numerics import get_accum_type
 
 from linalg.utils import (
@@ -321,7 +321,7 @@ def conv2d_kernel_rdna[
     comptime NUM_C_TILES = WARP_TILE_M * WARP_TILE_N
 
     # Block coordinates with swizzle for L2 locality
-    var grid_dim = IndexList[2](ceildiv(_N, BLOCK_N), ceildiv(_M, BLOCK_M))
+    var grid_dim = (ceildiv(_N, BLOCK_N), ceildiv(_M, BLOCK_M))
     var swizzled = block_swizzle((block_idx.x, block_idx.y), grid_dim)
     var block_n = swizzled[0]
     var block_m = swizzled[1]
@@ -475,7 +475,11 @@ def conv2d_kernel_rdna[
         barrier()
 
     # --- Store C results to global memory ---
+    # WMMA output mapping: lane l, element v -> C[row, col=l%16], with
+    # row = v*2 + l//16 on RDNA3 and row = v + 8*(l//16) on RDNA4.
     var lane_row_offset, lane_col = divmod(lid, 16)
+    comptime v_row_stride = 1 if _is_amd_rdna4() else 2
+    comptime half_row_stride = 8 if _is_amd_rdna4() else 1
 
     comptime for wm in range(WARP_TILE_M):
         comptime for wn in range(WARP_TILE_N):
@@ -486,8 +490,8 @@ def conv2d_kernel_rdna[
                     block_m_offset
                     + warp_m * WARP_TILE_M * MMA_M
                     + wm * MMA_M
-                    + v * 2
-                    + lane_row_offset
+                    + v * v_row_stride
+                    + lane_row_offset * half_row_stride
                 )
                 var global_col = (
                     block_n_offset

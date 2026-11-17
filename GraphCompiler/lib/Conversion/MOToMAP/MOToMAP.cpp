@@ -11,12 +11,16 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Lowers MO ops into `map` kernels. Each lowerable MO op with a registered
-// Mojo kernel becomes either a `map.iter.opaque` wrapping a `map.call.opaque`
-// to that kernel (with a trivial store epilogue per result), or, for
-// elementwise kernels, a `map.iter.elementwise` expressing the loop body
-// explicitly as scalar `map.load` / `map.call.elementwise` / `map.store` ops.
-// A reduction monoid becomes a `map.iter.rowwise`.
+// Lowers MO ops into `map` kernels. The views lower to a
+// `map.iter.elementwise` expressing their index map explicitly, or to a
+// `map.iter.opaque` calling a backend-registered whole-tensor kernel when
+// one exists; `mo.mutable.store` to a loop storing into its buffer input.
+// Every other lowerable MO op with a registered Mojo kernel becomes either a
+// `map.iter.opaque` wrapping a `map.call.opaque` to that kernel (with a
+// trivial store epilogue per result), or, for elementwise kernels, a
+// `map.iter.elementwise` expressing the loop body explicitly as scalar
+// `map.load` / `map.call.elementwise` / `map.store` ops. A reduction monoid
+// becomes a `map.iter.rowwise`.
 // Contexts, variadics and scalars are materialized after fusion, not here.
 //
 //===----------------------------------------------------------------------===//
@@ -37,6 +41,7 @@
 #include "GraphCompiler/MOSHDialect/MOSHAttrs.h"
 #include "Support/ML/TensorShape.h"
 #include "mlir/IR/Builders.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace mlir;
@@ -131,15 +136,29 @@ void stampAsyncLaunch(OpT iterOp, Operation *srcOp) {
                          : MOGG::DispatchKind::Deferred);
 }
 
-FailureOr<Operation *>
-lowerToOpaque(Operation *op, const MOGG::KernelDeclAdaptor &adaptor,
-              const MOGG::KernelDeclOperandMapping &mapping) {
+// Lowers `op` to a `map.iter.opaque` wrapping a `map.call.opaque` to its
+// kernel. The kernel must have an `execute` function, and `op`'s operands
+// must map onto it.
+FailureOr<Operation *> lowerToOpaque(Operation *op,
+                                     const MOGG::KernelDeclAdaptor &adaptor) {
+  if (!adaptor.executeFunction) {
+    op->emitOpError("MOToMAP: kernel has no execute function");
+    return failure();
+  }
+
+  ErrorOr<MOGG::KernelDeclOperandMapping> mapping =
+      MOGG::mapMOOpToKernelImplementation(op, *adaptor.executeFunction);
+  if (mapping.isError()) {
+    op->emitOpError("MOToMAP: failed to map operands to kernel");
+    return failure();
+  }
+
   llvm::DenseMap<uint64_t, bool> inputFusible;
-  for (const auto &[idx, arg] : mapping.operandMapping)
+  for (const auto &[idx, arg] : mapping->operandMapping)
     inputFusible[idx] = arg.isFusedTensorType();
 
   llvm::DenseMap<uint64_t, bool> outputFusible;
-  for (const auto &[idx, arg] : mapping.resultMapping)
+  for (const auto &[idx, arg] : mapping->resultMapping)
     outputFusible[idx] = arg.isFusedTensorType();
 
   OpBuilder builder(op);
@@ -701,64 +720,84 @@ LogicalResult lowerReductionToRowwise(Operation *op,
   return success();
 }
 
-// See `lowerMOOpToMAP`.
-FailureOr<Operation *> lowerOp(Operation *op, MOGG::MojoRegistry &registry) {
+// Wraps a lowering's `LogicalResult` in `lowerMOOpToMAP`'s contract: the op
+// was replaced in place, with no opaque op to return.
+FailureOr<Operation *> toLowerResult(LogicalResult result) {
+  if (failed(result))
+    return failure();
+  return nullptr;
+}
+
+// Returns `op`'s kernel adaptor, or emits an error: nothing after this pass
+// lowers an MO kernel op.
+FailureOr<MOGG::KernelDeclAdaptor>
+getKernelAdaptor(Operation *op, MOGG::MojoRegistry &registry) {
+  ErrorOr<MOGG::KernelDeclAdaptor> adaptor =
+      MOGG::getMojoKernelAdaptor(registry, op);
+  if (adaptor.isError()) {
+    op->emitOpError("MOToMAP: ") << adaptor.getError();
+    return failure();
+  }
+  return std::move(*adaptor);
+}
+
+// A view lowers to a `map.iter.elementwise` expressing its index map, which
+// fuses with its neighbors. A backend that registered a whole-tensor kernel
+// for it is called instead, like any other op's.
+template <typename ViewOp>
+FailureOr<Operation *> lowerView(ViewOp op, MOGG::MojoRegistry &registry,
+                                 LogicalResult (*lowerToForeach)(ViewOp)) {
   ErrorOr<MOGG::KernelDeclAdaptor> adaptor =
       MOGG::getMojoKernelAdaptor(registry, op);
   if (adaptor.isError())
-    return nullptr;
+    return toLowerResult(lowerToForeach(op));
+  return lowerToOpaque(op, *adaptor);
+}
 
-  if (auto mutableStoreOp = dyn_cast<MO::MutableStoreOp>(op)) {
-    if (failed(lowerMutableStoreToForeach(mutableStoreOp, *adaptor)))
-      return failure();
-    return nullptr;
-  }
-
-  // Reductions have no executeFunction either.
-  if (adaptor->isReduction()) {
-    if (failed(lowerReductionToRowwise(op, *adaptor)))
-      return failure();
-    return nullptr;
-  }
-
-  // Elementwise kernels have no executeFunction.
-  if (adaptor->isElementwise()) {
-    if (failed(lowerElementwiseToForeach(op, *adaptor)))
-      return failure();
-    return nullptr;
-  }
-
-  if (!adaptor->executeFunction) {
-    op->emitOpError("MOToMAP: kernel has no execute function");
+// `mo.mutable.store` lowers to a loop that stores into its buffer input,
+// through its kernel's elementwise symbol.
+FailureOr<Operation *> lowerMutableStore(MO::MutableStoreOp op,
+                                         MOGG::MojoRegistry &registry) {
+  FailureOr<MOGG::KernelDeclAdaptor> adaptor = getKernelAdaptor(op, registry);
+  if (failed(adaptor))
     return failure();
-  }
+  return toLowerResult(lowerMutableStoreToForeach(op, *adaptor));
+}
 
-  ErrorOr<MOGG::KernelDeclOperandMapping> mapping =
-      MOGG::mapMOOpToKernelImplementation(op, *adaptor->executeFunction);
-  if (mapping.isError()) {
-    op->emitOpError("MOToMAP: failed to map operands to kernel");
+// Every other op lowers through its kernel's kind: a reduction to a
+// `map.iter.rowwise`, an elementwise kernel to a `map.iter.elementwise`, and
+// anything else to a `map.iter.opaque`.
+FailureOr<Operation *> lowerThroughKernel(Operation *op,
+                                          MOGG::MojoRegistry &registry) {
+  FailureOr<MOGG::KernelDeclAdaptor> adaptor = getKernelAdaptor(op, registry);
+  if (failed(adaptor))
     return failure();
-  }
+  if (adaptor->isReduction())
+    return toLowerResult(lowerReductionToRowwise(op, *adaptor));
+  if (adaptor->isElementwise())
+    return toLowerResult(lowerElementwiseToForeach(op, *adaptor));
+  return lowerToOpaque(op, *adaptor);
+}
 
-  LogicalResult foreachResult = success();
-  if (isa<MO::InvokeShapeFuncOp>(op)) {
-    op->emitOpError("MOToMAP: shape-function kernels are not yet supported");
-    return failure();
-  } else if (auto sliceOp = dyn_cast<MO::SliceOp>(op)) {
-    foreachResult = lowerSliceToForeach(sliceOp);
-  } else if (auto broadcastOp = dyn_cast<MO::Static::BroadcastToOp>(op)) {
-    foreachResult = lowerBroadcastToForeach(broadcastOp);
-  } else if (auto reshapeOp = dyn_cast<MO::Static::ReshapeOp>(op)) {
-    foreachResult = lowerReshapeToForeach(reshapeOp);
-  } else if (auto transposeOp = dyn_cast<MO::TransposeOp>(op)) {
-    foreachResult = lowerTransposeToForeach(transposeOp);
-  } else {
-    return lowerToOpaque(op, *adaptor, *mapping);
-  }
-
-  if (failed(foreachResult))
-    return failure();
-  return nullptr;
+// See `lowerMOOpToMAP`.
+FailureOr<Operation *> lowerOp(Operation *op, MOGG::MojoRegistry &registry) {
+  return TypeSwitch<Operation *, FailureOr<Operation *>>(op)
+      .Case([&](MO::SliceOp view) {
+        return lowerView(view, registry, lowerSliceToForeach);
+      })
+      .Case([&](MO::TransposeOp view) {
+        return lowerView(view, registry, lowerTransposeToForeach);
+      })
+      .Case([&](MO::Static::BroadcastToOp view) {
+        return lowerView(view, registry, lowerBroadcastToForeach);
+      })
+      .Case([&](MO::Static::ReshapeOp view) {
+        return lowerView(view, registry, lowerReshapeToForeach);
+      })
+      .Case([&](MO::MutableStoreOp store) {
+        return lowerMutableStore(store, registry);
+      })
+      .Default([&](Operation *) { return lowerThroughKernel(op, registry); });
 }
 
 struct MOToMAPPass : public M::MO::impl::MOToMAPBase<MOToMAPPass> {

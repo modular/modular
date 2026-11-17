@@ -33,25 +33,16 @@ namespace {
 
 // Symbol path arrays for recognising known struct types. Components live in
 // MojoIdentifiers.h (`kPackage*`, `kLeaf*`).
-static constexpr std::array<llvm::StringLiteral, 3> kMaxManagedTensorSlice = {
+static constexpr std::array<llvm::StringRef, 3> kMaxManagedTensorSlice = {
     kPackageExtensibility, kPackageManagedTensorSlice, kLeafManagedTensorSlice};
-static constexpr std::array<llvm::StringLiteral, 3> kMaxVariadicTensors = {
+static constexpr std::array<llvm::StringRef, 3> kMaxVariadicTensors = {
     kPackageExtensibility, kPackageManagedTensorSlice, kLeafVariadicTensors};
-static constexpr std::array<llvm::StringLiteral, 3>
-    kMaxFusedInputVariadicTensors = {kPackageExtensibility,
-                                     kPackageManagedTensorSlice,
-                                     kLeafFusedInputVariadicTensors};
-static constexpr std::array<llvm::StringLiteral, 3>
-    kMaxFusedOutputVariadicTensors = {kPackageExtensibility,
-                                      kPackageManagedTensorSlice,
-                                      kLeafFusedOutputVariadicTensors};
-static constexpr std::array<llvm::StringLiteral, 3> kMaxStableTensor = {
-    kPackageExtensibility, kPackageStableTensor, kLeafStableTensor};
-static constexpr std::array<llvm::StringLiteral, 3> kMaxStableVariadicTensors =
-    {kPackageExtensibility, kPackageStableTensor, kLeafStableVariadicTensors};
-
-static constexpr llvm::StringLiteral kLeafDeviceContextBase =
-    "DeviceContextBase";
+static constexpr std::array<llvm::StringRef, 3> kMaxFusedInputVariadicTensors =
+    {kPackageExtensibility, kPackageManagedTensorSlice,
+     kLeafFusedInputVariadicTensors};
+static constexpr std::array<llvm::StringRef, 3> kMaxFusedOutputVariadicTensors =
+    {kPackageExtensibility, kPackageManagedTensorSlice,
+     kLeafFusedOutputVariadicTensors};
 
 // Dict keys shared by `tensorArgContractToDict` (writer) and
 // `dictToTensorArgContract` (reader).
@@ -75,7 +66,7 @@ static mlir::StringAttr buildOpaqueSymbol(mlir::MLIRContext *ctx,
 
 /// Check whether a symbol matches a dotted-path array (root + nested refs).
 static bool symbolMatches(mlir::SymbolRefAttr symbol,
-                          llvm::ArrayRef<llvm::StringLiteral> path) {
+                          llvm::ArrayRef<llvm::StringRef> path) {
   if (symbol.getNestedReferences().size() != path.size() - 1)
     return false;
   if (!symbol.getRootReference().strref().contains(path.front()))
@@ -92,140 +83,6 @@ static KGEN::LIT::StructType getAsStructType(mlir::Type t) {
   if (auto ref = KGEN::sugarDynCast<KGEN::LIT::RefType>(t))
     return KGEN::sugarDynCast<KGEN::LIT::StructType>(ref.getElementType());
   return KGEN::sugarDynCast<KGEN::LIT::StructType>(t);
-}
-
-/// Whether any parameter value of `structType` refers to a parameter of the
-/// enclosing signature, e.g. the unbound target of `DeviceContext.Generic`.
-///
-/// TODO(MSTDL-3265): Remove along with `genericTarget` once kernels no longer
-/// take a `target: StaticString` parameter, since every context is then generic
-/// over its target.
-static bool hasSignatureParameterValue(KGEN::LIT::StructType structType) {
-  mlir::AttrTypeWalker walker;
-  // Sugar keeps the written and partly expanded forms alongside the canonical
-  // one, and those can mention parameters, e.g. of the struct's own
-  // declaration, that the canonical form has already resolved. Only the
-  // canonical form says what the argument's type really is. Walking in
-  // pre-order lets this callback skip the other forms before they are visited.
-  constexpr mlir::WalkOrder order = mlir::WalkOrder::PreOrder;
-  walker.addWalk([&](KGEN::SugarAttr sugar) {
-    return walker.walk<order>(sugar.getCanonical()).wasInterrupted()
-               ? mlir::WalkResult::interrupt()
-               : mlir::WalkResult::skip();
-  });
-  walker.addWalk(
-      [](KGEN::ParamDeclRefAttr) { return mlir::WalkResult::interrupt(); });
-  walker.addWalk(
-      [](KGEN::ParamIndexRefAttr) { return mlir::WalkResult::interrupt(); });
-  return llvm::any_of(structType.getParamValues(), [&](mlir::Attribute value) {
-    return walker.walk<order>(value).wasInterrupted();
-  });
-}
-
-/// Extract the IOSpec encoded in the mut/input parameter values of a
-/// ManagedTensorSlice or VariadicTensors struct type.  Returns std::nullopt
-/// when the parameters are not yet bound.
-static std::optional<IOSpec>
-getIOSpecFromStructType(KGEN::LIT::StructType structType) {
-  // Fused variadic types carry their IOSpec in the symbol name alone.
-  if (symbolMatches(structType.getSymbol(), kMaxFusedInputVariadicTensors))
-    return IOSpec::FusedInputTensor;
-  if (symbolMatches(structType.getSymbol(), kMaxFusedOutputVariadicTensors))
-    return IOSpec::FusedOutputTensor;
-
-  // All other tensors (including the slot-backed `StableTensor` /
-  // `StableVariadicTensors`) encode mut and input as the first two param
-  // values.
-  auto sym = structType.getSymbol();
-  bool isTensorStruct = symbolMatches(sym, kMaxManagedTensorSlice) ||
-                        symbolMatches(sym, kMaxVariadicTensors) ||
-                        symbolMatches(sym, kMaxStableTensor) ||
-                        symbolMatches(sym, kMaxStableVariadicTensors);
-  if (!isTensorStruct)
-    return std::nullopt;
-
-  auto params = structType.getParamValues();
-  if (params.size() < 2)
-    return std::nullopt;
-
-  mlir::TypedAttr mutAttr =
-      KGEN::getCanonicalAttr(mlir::cast<mlir::TypedAttr>(params[0]));
-  mlir::TypedAttr rawInputAttr = mlir::cast<mlir::TypedAttr>(params[1]);
-
-  // mut is a Bool struct: { value: scalar<bool> }.
-  auto mutStruct = KGEN::sugarDynCast<KGEN::LIT::LITStructAttr>(mutAttr);
-  if (!mutStruct || mutStruct.getValues().empty())
-    return std::nullopt;
-  auto [_1, mutValueAttr] = mutStruct.getValues().front();
-  auto mutBoolAttr = KGEN::sugarDynCast<KGEN::SIMDAttr>(mutValueAttr);
-  if (!mutBoolAttr)
-    return std::nullopt;
-  bool mut = mutBoolAttr.getAsBool();
-
-  int64_t input = kIOSpecIOUnknown;
-
-  // In the primary module (no dep elaboration) the IO param is a
-  // SugarAttr(MemberAlias) whose member name encodes the IO variant. Check it
-  // before canonicalisation, which yields a ParamOperatorAttr like IO(3).
-  if (auto ioSugar = mlir::dyn_cast<KGEN::SugarAttr>(rawInputAttr)) {
-    if (ioSugar.getKind() == KGEN::SugarKind::MemberAlias) {
-      llvm::StringRef name = ioSugar.getMemberName().strref();
-      if (name == kIoOutput)
-        input = kIOSpecIOOutput;
-      else if (name == kIoInput)
-        input = kIOSpecIOInput;
-      else if (name == kIoFusedInput)
-        input = kIOSpecIOFusedInput;
-      else if (name == kIoFusedOutput)
-        input = kIOSpecIOFusedOutput;
-      else if (name == kIoFusedComputeOutput)
-        input = kIOSpecIOFusedComputeOutput;
-      else if (name == kIoFusedComputeOutputTile)
-        input = kIOSpecIOFusedComputeOutputTile;
-      else if (name == kIoFusedOutputTile)
-        input = kIOSpecIOFusedOutputTile;
-    }
-  }
-
-  // Fallback path: in elaborated bytecode the IO param is a fully-resolved
-  // LITStructAttr { value: SIMDLength { value: i64 } } (two levels of nesting).
-  if (input == kIOSpecIOUnknown) {
-    mlir::TypedAttr inputAttr = KGEN::getCanonicalAttr(rawInputAttr);
-    auto inputStruct = KGEN::sugarDynCast<KGEN::LIT::LITStructAttr>(inputAttr);
-    if (inputStruct && !inputStruct.getValues().empty()) {
-      auto [_2, inputValueAttr] = inputStruct.getValues().front();
-      auto innerStruct =
-          KGEN::sugarDynCast<KGEN::LIT::LITStructAttr>(inputValueAttr);
-      if (innerStruct && !innerStruct.getValues().empty()) {
-        auto [_3, inputIntValueAttr] = innerStruct.getValues().front();
-        auto inputIntAttr =
-            KGEN::sugarDynCast<mlir::IntegerAttr>(inputIntValueAttr);
-        if (inputIntAttr)
-          input = inputIntAttr.getValue().getSExtValue();
-      }
-    }
-  }
-
-  if (input == kIOSpecIOUnknown)
-    return std::nullopt;
-
-  if (mut == kIOSpecMutable && input == kIOSpecIOOutput)
-    return IOSpec::OutputTensor;
-  if (mut == kIOSpecImmutable && input == kIOSpecIOInput)
-    return IOSpec::InputTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOInput)
-    return IOSpec::MutableInputTensor;
-  if (mut == kIOSpecImmutable && input == kIOSpecIOFusedInput)
-    return IOSpec::FusedInputTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOFusedOutput)
-    return IOSpec::FusedOutputTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOFusedComputeOutput)
-    return IOSpec::FusedComputeOutputTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOFusedComputeOutputTile)
-    return IOSpec::FusedComputeOutputTileTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOFusedOutputTile)
-    return IOSpec::FusedOutputTileTensor;
-  return std::nullopt;
 }
 
 /// If `argType` is a trait-bound tensor argument, re-derive its
@@ -253,7 +110,8 @@ recoverTraitArgContract(mlir::Type argType) {
 /// contract, so isTensorType/isMutableTensorType/isDpsOutput behave as for the
 /// equivalent `IOSpec`: `output -> OutputTensor`, `mutable_input ->
 /// MutableInputTensor`, `input -> InputTensor`. Fusion isn't modeled
-/// (dense-only); `fused` stays false.
+/// (dense-only); `fused` stays false. `stable` follows the contract, which is
+/// what stable marking and the stable-argument checks read.
 static KernelDeclTensorAdaptor
 traitContractToTensorAdaptor(const TensorArgContract &contract) {
   KernelDeclTensorAdaptor adaptor;
@@ -271,6 +129,7 @@ traitContractToTensorAdaptor(const TensorArgContract &contract) {
     adaptor = KernelDeclTensorAdaptor{IOSpec::InputTensor};
     break;
   }
+  adaptor.stable = contract.stable;
   // Lets lowering route this arg to `mogg.tensor_arg.__init__`, unlike a
   // `ManagedTensorSlice` arg with the same `ioSpec`.
   adaptor.traitContract = contract;
@@ -283,6 +142,7 @@ static KernelDeclVariadicTensorAdaptor
 traitContractToVariadicAdaptor(const TensorArgContract &contract) {
   KernelDeclTensorAdaptor scalar = traitContractToTensorAdaptor(contract);
   KernelDeclVariadicTensorAdaptor adaptor{scalar.ioSpec};
+  adaptor.stable = scalar.stable;
   adaptor.traitContract = contract;
   return adaptor;
 }
@@ -332,47 +192,6 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
 
   auto sym = structType.getSymbol();
 
-  // --- Tensors ---
-  if (symbolMatches(sym, kMaxManagedTensorSlice)) {
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec)
-      return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
-    return KernelDeclTensorAdaptor{*ioSpec};
-  }
-
-  if (symbolMatches(sym, kMaxVariadicTensors)) {
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec)
-      return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
-    return KernelDeclVariadicTensorAdaptor{*ioSpec};
-  }
-
-  if (symbolMatches(sym, kMaxFusedInputVariadicTensors))
-    return KernelDeclVariadicTensorAdaptor{IOSpec::FusedInputTensor};
-
-  if (symbolMatches(sym, kMaxFusedOutputVariadicTensors))
-    return KernelDeclVariadicTensorAdaptor{IOSpec::FusedOutputTensor};
-
-  // Slot-backed views: same adaptor kinds as their pointer-backed siblings,
-  // flagged `stable` so emit and the verifier can tell them apart.
-  if (symbolMatches(sym, kMaxStableTensor)) {
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec)
-      return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
-    KernelDeclTensorAdaptor adaptor{*ioSpec};
-    adaptor.stable = true;
-    return adaptor;
-  }
-
-  if (symbolMatches(sym, kMaxStableVariadicTensors)) {
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec)
-      return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
-    KernelDeclVariadicTensorAdaptor adaptor{*ioSpec};
-    adaptor.stable = true;
-    return adaptor;
-  }
-
   // --- Scalar ---
   // SIMD may be re-exported at different depths (e.g. @std::@builtin::@SIMD vs
   // @std::@SIMD).
@@ -389,28 +208,22 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
   // --- Device context ---
   // Use root+leaf matching because DeviceContext lives under max::gpu::host
   // (depth varies across package exports).
-  // `DeviceContext` is an alias of the target-parameterized
-  // `DeviceContextBase`, which is the name the struct type carries.
-  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContext) ||
-      symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContextBase)) {
-    KernelDeclContextPtrAdaptor adaptor;
-    adaptor.genericTarget = hasSignatureParameterValue(structType);
-    return adaptor;
-  }
+  if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceContext))
+    return KernelDeclContextPtrAdaptor{};
 
-  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContextArray))
+  if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceContextArray))
     return KernelDeclContextPtrListAdaptor{};
 
   // --- Device graph builder (launch arg of build_graph) ---
-  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceGraphBuilder))
+  if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceGraphBuilder))
     return KernelDeclGraphBuilderAdaptor{};
 
   // --- Opaque: unrecognised struct ---
   return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
 }
 
-/// Count the number of leading DPS output arguments (output-IOSpec tensors
-/// that come before any input or non-tensor argument).
+/// Count the number of leading DPS output arguments: trait-bound tensors with
+/// the `output` role that come before any other argument.
 ///
 /// `tensorArgContracts` is the function's baked array (signature-arg order),
 /// or null/empty if none; it drives trait args' role via
@@ -423,24 +236,12 @@ static size_t countDPSOutputs(KGEN::LIT::FnTypeGeneratorType sig,
     if (sig.getArgConvention(i) == KGEN::ArgConvention::ByRefResult)
       break;
     mlir::Type argType = sig.getArgument(i);
-    KGEN::LIT::StructType structType = getAsStructType(argType);
-    if (!structType || getTensorArgTensorTupleTraitType(argType)) {
-      // A trait-bound tensor arg is non-struct and a trait variadic is a
-      // `TensorTuple`: an `output` contract role continues the count; any other
-      // role, or a non-trait non-struct arg, stops it.
-      mlir::Attribute bakedEntry =
-          (hasBakedArray && i < tensorArgContracts.size())
-              ? tensorArgContracts[i]
-              : mlir::Attribute();
-      std::optional<TensorArgContract> contract =
-          resolveTraitContract(argType, bakedEntry, hasBakedArray);
-      if (!contract || contract->role != TensorArgRole::output)
-        break;
-      ++count;
-      continue;
-    }
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec || !isOutputIOSpec(*ioSpec))
+    mlir::Attribute bakedEntry =
+        (hasBakedArray && i < tensorArgContracts.size()) ? tensorArgContracts[i]
+                                                         : mlir::Attribute();
+    std::optional<TensorArgContract> contract =
+        resolveTraitContract(argType, bakedEntry, hasBakedArray);
+    if (!contract || contract->role != TensorArgRole::output)
       break;
     ++count;
   }
@@ -530,8 +331,9 @@ public:
   }
 };
 
-// The tensor-argument trait vocabulary of `extensibility::tensor_arg_traits`.
-// Keep in sync with tensor_arg_traits.mojo, except `TileTransformAccess` /
+// The tensor-argument trait vocabulary of `extensibility::tensor_arg_traits`
+// and, for the four legacy tile rows, `extensibility::legacy_tile_traits`.
+// Keep in sync with both modules, except `TileTransformAccess` /
 // `TileTransformable`, reserved for the deferred tile-transform fusion traits
 // and not yet in the module (so the `deferred` rejection is unreachable).
 // Leaf constant for the `isPresentLeaf` lookups, so call sites can't drift
@@ -552,6 +354,15 @@ constexpr VocabEntry kTensorArgVocab[] = {
      TensorArgAccess::transform},
     {"_LegacyComputable", TraitCategory::accessCapability,
      TensorArgAccess::transform},
+    // TODO(GEX-4340): the interim legacy tile traits; remove with GEX-4467.
+    {"_LegacyTileStoreAccess", TraitCategory::accessMarker,
+     TensorArgAccess::legacyTileStore},
+    {"_LegacyTileStorable", TraitCategory::accessCapability,
+     TensorArgAccess::legacyTileStore},
+    {"_LegacyTileComputeOutput", TraitCategory::accessMarker,
+     TensorArgAccess::legacyTileTransform},
+    {"_LegacyTileComputable", TraitCategory::accessCapability,
+     TensorArgAccess::legacyTileTransform},
     {kTileTensorableLeaf, TraitCategory::dataCapability},
     {"Stable", TraitCategory::storage},
     {"TileTransformAccess", TraitCategory::deferred},
@@ -623,15 +434,22 @@ static_assert(accessFormsArePaired(),
 
 // Classify a trait symbol as a tensor-argument vocabulary trait, returning its
 // row, or nullptr if it is foreign or unrecognized. The module is pinned (root
-// contains "extensibility", a qualifier "tensor_arg_traits") and the leaf
-// matched exactly, so `Input` never matches `MutableInput`.
+// contains "extensibility", a qualifier naming a vocabulary module) and the
+// leaf matched exactly, so `Input` never matches `MutableInput`.
 static const VocabEntry *classifyVocabTrait(TraitSymbolAttr traitSymbol) {
+  // The modules that define vocabulary traits.
+  // TODO(GEX-4340): remove "legacy_tile_traits" when the legacy tile traits
+  // are deleted.
+  static constexpr StringLiteral kVocabModules[] = {"tensor_arg_traits",
+                                                    "legacy_tile_traits"};
   mlir::SymbolRefAttr sym = traitSymbol.getSymbol();
   if (!sym.getRootReference().strref().contains("extensibility"))
     return nullptr;
   bool inModule = false;
   for (mlir::FlatSymbolRefAttr ref : sym.getNestedReferences()) {
-    if (ref.getValue().contains("tensor_arg_traits")) {
+    if (llvm::any_of(kVocabModules, [&](StringLiteral module) {
+          return ref.getValue().contains(module);
+        })) {
       inModule = true;
       break;
     }
@@ -905,87 +723,66 @@ StringRef toString(IOSpec spec) {
     return kFusedInputTensor;
   case IOSpec::FusedOutputTensor:
     return kFusedOutputTensor;
-  case IOSpec::FusedComputeOutputTensor:
-    return kFusedComputeOutputTensor;
-  case IOSpec::FusedComputeOutputTileTensor:
-    return kFusedComputeOutputTileTensor;
-  case IOSpec::FusedOutputTileTensor:
-    return kFusedOutputTileTensor;
-  }
-}
-
-std::optional<IOSpec> toIOSpec(StringRef str) {
-  if (str == kInputTensor)
-    return IOSpec::InputTensor;
-  if (str == kOutputTensor)
-    return IOSpec::OutputTensor;
-  if (str == kMutableInputTensor)
-    return IOSpec::MutableInputTensor;
-  if (str == kFusedInputTensor)
-    return IOSpec::FusedInputTensor;
-  if (str == kFusedOutputTensor)
-    return IOSpec::FusedOutputTensor;
-  if (str == kFusedComputeOutputTensor)
-    return IOSpec::FusedComputeOutputTensor;
-  if (str == kFusedComputeOutputTileTensor)
-    return IOSpec::FusedComputeOutputTileTensor;
-  if (str == kFusedOutputTileTensor)
-    return IOSpec::FusedOutputTileTensor;
-  return std::nullopt;
-}
-
-std::pair<TypedAttr, TypedAttr> getParams(IOSpec ioSpec, Builder &builder) {
-  switch (ioSpec) {
-  case IOSpec::InputTensor:
-    return {builder.getBoolAttr(kIOSpecImmutable),
-            builder.getIndexAttr(kIOSpecIOInput)};
-
-  case IOSpec::OutputTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOOutput)};
-
-  case IOSpec::MutableInputTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOInput)};
-
-  case IOSpec::FusedInputTensor:
-    return {builder.getBoolAttr(kIOSpecImmutable),
-            builder.getIndexAttr(kIOSpecIOFusedInput)};
-
-  case IOSpec::FusedOutputTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOFusedOutput)};
-
-  case IOSpec::FusedComputeOutputTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOFusedComputeOutput)};
-
-  case IOSpec::FusedComputeOutputTileTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOFusedComputeOutputTile)};
-
-  case IOSpec::FusedOutputTileTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOFusedOutputTile)};
   }
 }
 
 bool isOutputIOSpec(IOSpec spec) {
-  return spec == IOSpec::OutputTensor || spec == IOSpec::FusedOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTileTensor ||
-         spec == IOSpec::FusedOutputTileTensor;
+  return spec == IOSpec::OutputTensor || spec == IOSpec::FusedOutputTensor;
 }
 
 bool isFusableIOSpec(IOSpec spec) {
-  return spec == IOSpec::FusedInputTensor ||
-         spec == IOSpec::FusedOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTileTensor ||
-         spec == IOSpec::FusedOutputTileTensor;
+  return spec == IOSpec::FusedInputTensor || spec == IOSpec::FusedOutputTensor;
 }
 
 bool isMutableIOSpec(IOSpec spec) { return spec == IOSpec::MutableInputTensor; }
+
+// TODO(GEX-4340): the execute-signature rules of the interim legacy tile
+// traits. Delete this function and its one call with them (GEX-4467).
+static mlir::LogicalResult applyLegacyTileTraitRules(
+    const TensorArgContract &contract, bool bindsTileTensorable,
+    llvm::function_ref<void(const llvm::Twine &)> emitError) {
+  bool isStore = contract.hasAccess(TensorArgAccess::legacyTileStore);
+  bool isCompute = contract.hasAccess(TensorArgAccess::legacyTileTransform);
+  if (!isStore && !isCompute)
+    return mlir::success();
+
+  if (!contract.fused) {
+    emitError("_LegacyTileStoreAccess and _LegacyTileComputeOutput are only "
+              "valid on a Fused tensor argument");
+    return mlir::failure();
+  }
+  if (contract.role != TensorArgRole::output) {
+    emitError("a legacy tile access form requires an Output argument");
+    return mlir::failure();
+  }
+  // The graph compiler hands the kernel a value whose capability is only
+  // usable on the device, so the signature names the marker.
+  if (contract.hasCapability(TensorArgAccess::legacyTileStore)) {
+    emitError("declare _LegacyTileStoreAccess on the kernel signature and "
+              "refine to _LegacyTileStorable in the body");
+    return mlir::failure();
+  }
+  if (contract.hasCapability(TensorArgAccess::legacyTileTransform)) {
+    emitError("declare _LegacyTileComputeOutput on the kernel signature and "
+              "refine to _LegacyTileComputable in the body");
+    return mlir::failure();
+  }
+  // The store fusion owns the write, so it has no buffer to project.
+  if (isStore && bindsTileTensorable) {
+    emitError("a _LegacyTileStoreAccess argument cannot require "
+              "TileTensorable; the tile store fusion owns the write");
+    return mlir::failure();
+  }
+  // The kernel stores the computed tile itself, through the projection.
+  if (isCompute && !bindsTileTensorable) {
+    emitError("a _LegacyTileComputeOutput argument must also require "
+              "TileTensorable on the kernel signature, as in "
+              "Some[Output & Fused & _LegacyTileComputeOutput & "
+              "TileTensorable]");
+    return mlir::failure();
+  }
+  return mlir::success();
+}
 
 mlir::FailureOr<TensorArgContract> distillTensorArgContract(
     llvm::ArrayRef<M::KGEN::TraitSymbolAttr> writtenSymbols,
@@ -1061,9 +858,9 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
         anyPresent(TraitCategory::deferred)) {
       emitError(
           "LoadAccess, Loadable, StoreAccess, Storable, _LegacyComputeOutput, "
-          "and _LegacyComputable are fusion machinery. They are not allowed "
-          "on a shape-function tensor argument. Conform to Tensor or "
-          "TileTensorable instead");
+          "_LegacyComputable, and the legacy tile traits are fusion "
+          "machinery. They are not allowed on a shape-function tensor "
+          "argument. Conform to Tensor or TileTensorable instead");
       return mlir::failure();
     }
     TensorArgContract contract;
@@ -1140,8 +937,9 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
   // A fused argument must declare exactly one access form.
   if (contract.fused && contract.accessCount() != 1) {
     emitError("a Fused tensor argument must declare exactly one access form "
-              "(one of LoadAccess/Loadable, StoreAccess/Storable, or "
-              "_LegacyComputeOutput)");
+              "(one of LoadAccess/Loadable, StoreAccess/Storable, "
+              "_LegacyComputeOutput, _LegacyTileStoreAccess, or "
+              "_LegacyTileComputeOutput)");
     return mlir::failure();
   }
 
@@ -1184,6 +982,10 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
     return mlir::failure();
   }
 
+  if (failed(applyLegacyTileTraitRules(
+          contract, isPresentLeaf(kTileTensorableLeaf), emitError)))
+    return mlir::failure();
+
   return contract;
 }
 
@@ -1195,9 +997,7 @@ KGEN::LIT::StructType getLegacyTensorArgType(mlir::Type argType) {
   if (symbolMatches(sym, kMaxManagedTensorSlice) ||
       symbolMatches(sym, kMaxVariadicTensors) ||
       symbolMatches(sym, kMaxFusedInputVariadicTensors) ||
-      symbolMatches(sym, kMaxFusedOutputVariadicTensors) ||
-      symbolMatches(sym, kMaxStableTensor) ||
-      symbolMatches(sym, kMaxStableVariadicTensors))
+      symbolMatches(sym, kMaxFusedOutputVariadicTensors))
     return structType;
   return {};
 }
@@ -1310,6 +1110,10 @@ StringRef toString(TensorArgAccess access) {
     return "store";
   case TensorArgAccess::transform:
     return "transform";
+  case TensorArgAccess::legacyTileStore:
+    return "legacy_tile_store";
+  case TensorArgAccess::legacyTileTransform:
+    return "legacy_tile_transform";
   }
   llvm_unreachable("bad TensorArgAccess");
 }

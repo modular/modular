@@ -23,7 +23,7 @@ import pytest
 from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
 from max.tensor import Tensor
 from max.tensor.executor import (
     InterpreterExecutor,

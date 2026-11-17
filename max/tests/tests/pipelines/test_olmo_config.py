@@ -20,7 +20,7 @@ from unittest.mock import NonCallableMock
 import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.llama3.decoder import Llama3Decoder
 from max.pipelines.architectures.olmo import OlmoConfig, olmo_arch
 from max.pipelines.lib import GraphRole

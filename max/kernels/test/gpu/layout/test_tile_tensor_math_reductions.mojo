@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from layout import TileTensor, coord, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.math import max, sum
 from max.gpu.host import DeviceContext

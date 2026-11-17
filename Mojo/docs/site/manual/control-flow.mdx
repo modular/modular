@@ -178,6 +178,10 @@ Cases are tested in order. When one matches, its code block runs and no further
 cases are tested, so there's no need for a `break`. If no case matches, no code
 block runs.
 
+When matching open-ended values such as `Int` or `String` with literal cases,
+include a `case _` catch-all. Use `case _: pass` when unmatched values should
+do nothing.
+
 ### Matching optional values
 
 Patterns can also look inside a value. An `Optional` holds either `.Some(value)`

@@ -13,11 +13,12 @@
 """The NextN head a DeepseekV3 checkpoint ships beside its trunk."""
 
 from .arch import mtp_deepseekV3_draft_arch
-from .model import MTPDeepseekV3DraftArchConfig
+from .model import MTPDeepseekV3DraftArchConfig, mtp_draft_registration
 from .weight_adapters import convert_mtp_safetensor_state_dict
 
 __all__ = [
     "MTPDeepseekV3DraftArchConfig",
     "convert_mtp_safetensor_state_dict",
     "mtp_deepseekV3_draft_arch",
+    "mtp_draft_registration",
 ]

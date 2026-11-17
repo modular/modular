@@ -676,6 +676,46 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
+    def device_kind(self) -> TargetDeviceKind:
+        """Returns the kind of device the target is, as its stdlib plugin's
+        hooks declare it.
+
+        Prefer `is_gpu()` and `is_accelerator()` for branching; this is for
+        code that needs the kind itself, such as a diagnostic.
+
+        Returns:
+            The target's device kind.
+        """
+        return Self.stdlib_plugin.device_kind
+
+    @staticmethod
+    def device_kind_label() -> StaticString:
+        """Returns the target's device kind as a label.
+
+        Unlike `device_kind()`, which returns the plugin's `TargetDeviceKind`,
+        this is a string usable as a `StaticString` parameter, such as a trace
+        target.
+
+        Returns:
+            "cpu" for a CPU target and "gpu" for any other accelerator.
+        """
+        comptime if Self().is_cpu():
+            return "cpu"
+        # TODO(MSTDL-3366): The label was previously set by the GraphCompiler,
+        #   which used "gpu" all non-CPU accelerators, including devices that
+        #   were not actually GPUs. Continue to label these as "gpu" for now to
+        #   avoid a behavior change. However, eventually this entire method
+        #   should simpler be unnecessary, and will be removed.
+        elif Self().is_accelerator():
+            return "gpu"
+        else:
+            Self.unsupported_target_error[
+                operation="target label",
+                note="target is not a recognized CPU or accelerator",
+            ]()
+
+    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
+    @inline(.nodebug)
     def is_cpu(self) -> Bool:
         """Returns True if the target is a recognized general-purpose CPU
         architecture (x86, ARM, or RISC-V), and False otherwise.
@@ -694,20 +734,6 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
-    def device_kind(self) -> TargetDeviceKind:
-        """Returns the kind of device the target is, as its stdlib plugin's
-        hooks declare it.
-
-        Prefer `is_gpu()` and `is_accelerator()` for branching; this is for
-        code that needs the kind itself, such as a diagnostic.
-
-        Returns:
-            The target's device kind.
-        """
-        return Self.stdlib_plugin.device_kind
-
-    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
-    @inline(.nodebug)
     def is_accelerator(self) -> Bool:
         """Returns True if the target is an accelerator, and False otherwise.
 
@@ -722,9 +748,8 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
                 return False
             case .gpu:
                 return True
-            case .other(other):
-                # The payload is the device's name and whether it accelerates.
-                return other[1]
+            case .other(_, accelerates):
+                return accelerates
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
@@ -742,7 +767,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
                 return False
             case .gpu:
                 return True
-            case .other(_):
+            case .other(_, _):
                 return False
 
     # NOTE: Uses a sentinel instead of Optional to avoid recursive elaboration.
@@ -945,10 +970,11 @@ def platform_map[
     ```
     """
 
-    comptime if CompilationTarget.is_macos() and macos:
-        return materialize[macos.value()]()
-    elif CompilationTarget.is_linux() and linux:
-        return materialize[linux.value()]()
+    comptime target_value = macos if CompilationTarget.is_macos() else (
+        linux if CompilationTarget.is_linux() else None
+    )
+    comptime if case .Some(value) = target_value:
+        return materialize[value]()
     else:
         CompilationTarget.unsupported_target_error[operation=operation]()
 
@@ -1330,13 +1356,6 @@ def _cdna_version() -> Int:
 
 
 @inline(.nodebug)
-def _cdna_3_or_newer() -> Bool:
-    comptime if _is_amd_cdna():
-        return _cdna_version() >= 3
-    return False
-
-
-@inline(.nodebug)
 def _cdna_4_or_newer() -> Bool:
     comptime if _is_amd_cdna():
         return _cdna_version() >= 4
@@ -1454,7 +1473,7 @@ struct Endian(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[
         AnyType
-    ] = TypeList.splat[2, NoneType].values
+    ] = TypeList.splat[2, Tuple[]].values
 
     @inline(.always)
     def _get_enum_discriminant(self) -> Int:
@@ -1594,15 +1613,13 @@ def size_of[
         `> : !kgen.type`,
     ]
     return Int(
-        SIMDLength(
-            mlir_value=__mlir_attr[
-                `#kgen.param.expr<get_sizeof, #kgen.type<`,
-                mlir_type,
-                `> : !kgen.type,`,
-                target._mlir_value,
-                `> : index`,
-            ]
-        )
+        mlir_value=__mlir_attr[
+            `#kgen.param.expr<get_sizeof, #kgen.type<`,
+            mlir_type,
+            `> : !kgen.type,`,
+            target._mlir_value,
+            `> : !kgen.scalar<index>`,
+        ]
     )
 
 
@@ -1625,7 +1642,7 @@ def size_of[
             Scalar[dtype]._mlir_type,
             `> : !kgen.type,`,
             target._mlir_value,
-            `> : index`,
+            `> : !kgen.scalar<index>`,
         ]
     )
 
@@ -1651,15 +1668,13 @@ def align_of[
         `> : !kgen.type`,
     ]
     return Int(
-        SIMDLength(
-            mlir_value=__mlir_attr[
-                `#kgen.param.expr<get_alignof, #kgen.type<`,
-                +mlir_type,
-                `> : !kgen.type,`,
-                target._mlir_value,
-                `> : index`,
-            ]
-        )
+        mlir_value=__mlir_attr[
+            `#kgen.param.expr<get_alignof, #kgen.type<`,
+            +mlir_type,
+            `> : !kgen.type,`,
+            target._mlir_value,
+            `> : !kgen.scalar<index>`,
+        ]
     )
 
 
@@ -1677,15 +1692,13 @@ def align_of[
         The alignment of the dtype in bytes.
     """
     return Int(
-        SIMDLength(
-            mlir_value=__mlir_attr[
-                `#kgen.param.expr<get_alignof, #kgen.type<`,
-                Scalar[dtype]._mlir_type,
-                `> : !kgen.type,`,
-                target._mlir_value,
-                `> : index`,
-            ]
-        )
+        mlir_value=__mlir_attr[
+            `#kgen.param.expr<get_alignof, #kgen.type<`,
+            Scalar[dtype]._mlir_type,
+            `> : !kgen.type,`,
+            target._mlir_value,
+            `> : !kgen.scalar<index>`,
+        ]
     )
 
 
@@ -1820,26 +1833,28 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
     # Truncate the string down to the actual length.
     osver.resize(buf_len)
 
+    # TODO: Parse the last component, which has no "." after it. Now "15.6"
+    # gives (15, 0, 0) and "15.6.1" gives (15, 6, 0).
     var major = 0
     var minor = 0
     var patch = 0
 
-    if "." in osver:
-        major = Int(osver[byte = : osver.find(".")])
+    if case .Some(dot) = osver.find("."):
+        major = Int(osver[byte=:dot])
         # TODO(MOCO-4373): split into two statements so the interior-origin
         # slice of `osver` is copied into a new String before `osver` is
         # reassigned; the single-statement form false-positives on
         # interior-origin invalidation.
-        var rest_major = String(osver[byte = osver.find(".") + 1 :])
+        var rest_major = String(osver[byte = dot + 1 :])
         osver = rest_major^
 
-    if "." in osver:
-        minor = Int(osver[byte = : osver.find(".")])
-        var rest_minor = String(osver[byte = osver.find(".") + 1 :])
+    if case .Some(dot) = osver.find("."):
+        minor = Int(osver[byte=:dot])
+        var rest_minor = String(osver[byte = dot + 1 :])
         osver = rest_minor^
 
-    if "." in osver:
-        patch = Int(osver[byte = : osver.find(".")])
+    if case .Some(dot) = osver.find("."):
+        patch = Int(osver[byte=:dot])
 
     return (major, minor, patch)
 

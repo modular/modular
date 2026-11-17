@@ -14,12 +14,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .batch_processor import MPNetBatchProcessor
-from .model import MPNetPipelineModel
+from .graph import MPNetModel
 from .model_config import MPNetConfig
 
 mpnet_arch = SupportedArchitecture(
@@ -30,7 +30,7 @@ mpnet_arch = SupportedArchitecture(
     ],
     default_encoding=MPNetConfig.DEFAULT_ENCODING,
     supported_encodings=MPNetConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=MPNetPipelineModel,
+    modules={GraphRole.ENCODER: MPNetModel},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,

@@ -130,7 +130,7 @@ class FakeContext(click.Context):
         self.obj: Dict[str, Any] = {"root": PROJECT_ROOT}
 
 
-class FakeParameter(click.Parameter):
+class FakeParameter(click.Option):
     """A fake click Parameter for when calling functions that need it."""
 
     def __init__(self) -> None:
@@ -138,10 +138,8 @@ class FakeParameter(click.Parameter):
 
 
 class BlackRunner(CliRunner):
-    """Make sure STDOUT and STDERR are kept separate when testing Black via its CLI."""
-
-    def __init__(self) -> None:
-        super().__init__(mix_stderr=False)
+    """Runs Black via its CLI; read `result.stdout`, since `result.output` also
+    includes stderr."""
 
 
 def invokeBlack(
@@ -224,10 +222,10 @@ class BlackTestCase(BlackBaseTestCase):
             input=BytesIO(source.encode("utf8")),
         )
         self.assertEqual(result.exit_code, 0)
-        self.assertFormatEqual(expected, result.output)
-        if source != result.output:
-            mblack.assert_equivalent(source, result.output)
-            mblack.assert_stable(source, result.output, DEFAULT_MODE)
+        self.assertFormatEqual(expected, result.stdout)
+        if source != result.stdout:
+            mblack.assert_equivalent(source, result.stdout)
+            mblack.assert_stable(source, result.stdout, DEFAULT_MODE)
 
     def test_piping_diff(self) -> None:
         diff_header = re.compile(
@@ -248,7 +246,7 @@ class BlackTestCase(BlackBaseTestCase):
         )
         self.assertEqual(result.exit_code, 0)
         # drop the first two lines because they include tempfile paths.
-        actual = "".join(result.output.splitlines(keepends=True)[2:])
+        actual = "".join(result.stdout.splitlines(keepends=True)[2:])
         actual = actual.rstrip() + "\n"  # the diff output has a trailing space
         self.assertEqual(expected, actual)
 
@@ -265,7 +263,7 @@ class BlackTestCase(BlackBaseTestCase):
         result = BlackRunner().invoke(
             mblack.main, args, input=BytesIO(source.encode("utf8"))
         )
-        actual = result.output
+        actual = result.stdout
         # Again, the contents are checked in a different test, so only look for colors.
         self.assertIn("\033[1m", actual)
         self.assertIn("\033[36m", actual)
@@ -326,7 +324,7 @@ class BlackTestCase(BlackBaseTestCase):
             self.assertEqual(result.exit_code, 0)
         finally:
             os.unlink(tmp_file)
-        actual = result.output
+        actual = result.stdout
         # drop the first two lines because they include tempfile paths.
         actual = "".join(actual.splitlines(keepends=True)[2:])
         if expected != actual:
@@ -354,7 +352,7 @@ class BlackTestCase(BlackBaseTestCase):
             )
         finally:
             os.unlink(tmp_file)
-        actual = result.output
+        actual = result.stdout
         # We check the contents of the diff in `test_expression_diff`. All
         # we need to check here is that color codes exist in the result.
         self.assertIn("\033[1m", actual)
@@ -444,7 +442,7 @@ class BlackTestCase(BlackBaseTestCase):
             self.assertEqual(result.exit_code, 0)
         finally:
             os.unlink(tmp_file)
-        actual = result.output
+        actual = result.stdout
         # drop the first two lines because they include tempfile paths.
         actual = "".join(actual.splitlines(keepends=True)[2:])
         actual = actual.rstrip() + "\n"  # the diff output has a trailing space
@@ -1149,7 +1147,7 @@ class BlackTestCase(BlackBaseTestCase):
             input=BytesIO(source.encode("utf8")),
         )
         self.assertEqual(result.exit_code, 0)
-        actual = result.output
+        actual = result.stdout
         self.assertFormatEqual(actual, expected)
 
     def test_single_file_force_py36(self) -> None:
@@ -1203,7 +1201,7 @@ class BlackTestCase(BlackBaseTestCase):
             input=BytesIO(source.encode("utf8")),
         )
         self.assertEqual(result.exit_code, 0)
-        actual = result.output
+        actual = result.stdout
         self.assertFormatEqual(actual, expected)
 
     # @pytest.mark.incompatible_with_mypyc
@@ -1464,30 +1462,6 @@ class BlackTestCase(BlackBaseTestCase):
         with self.assertRaises(AssertionError):
             mblack.assert_equivalent("{}", "None")
 
-    def test_shhh_click(self) -> None:
-        try:
-            from click import _unicodefun  # type: ignore
-        except ImportError:
-            self.skipTest("Incompatible Click version")
-
-        if not hasattr(_unicodefun, "_verify_python_env"):
-            self.skipTest("Incompatible Click version")
-
-        # First, let's see if Click is crashing with a preferred ASCII charset.
-        with patch("locale.getpreferredencoding") as gpe:
-            gpe.return_value = "ASCII"
-            with self.assertRaises(RuntimeError):
-                _unicodefun._verify_python_env()
-        # Now, let's silence Click...
-        mblack.patch_click()
-        # ...and confirm it's silent.
-        with patch("locale.getpreferredencoding") as gpe:
-            gpe.return_value = "ASCII"
-            try:
-                _unicodefun._verify_python_env()
-            except RuntimeError as re:
-                self.fail(f"`patch_click()` failed, exception still raised: {re}")
-
     def test_root_logger_not_used_directly(self) -> None:
         def fail(*args: Any, **kwargs: Any) -> None:
             self.fail("Record created with root logger")
@@ -1681,7 +1655,7 @@ class BlackTestCase(BlackBaseTestCase):
             self.assertEqual(result.exit_code, 0)
         finally:
             os.unlink(tmp_file)
-        actual = result.output
+        actual = result.stdout
         # drop the first two lines because they include tempfile paths.
         actual = "".join(actual.splitlines(keepends=True)[2:])
         self.assertEqual(actual, expected)
@@ -2045,7 +2019,7 @@ class TestCaching:
         runner = BlackRunner()
         result = runner.invoke(mblack.main, ["--print-cache-dir"])
         assert result.exit_code == 0
-        assert result.output.strip() == str(mblack.CACHE_DIR)
+        assert result.stdout.strip() == str(mblack.CACHE_DIR)
 
 
 def assert_collected_sources(

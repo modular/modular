@@ -15,7 +15,7 @@
 MiniMax-M3 sparse layers fuse the main-GQA and lightning-indexer per-head
 RMSNorm+RoPE + in-place paged K-cache update into one GPU launch
 (``fused_dual_qk_rms_norm_rope_ragged``, reaching
-``mo.fused_qk_rms_norm_rope.ragged.paged.dual``). The main GQA K cache can use
+``kv_cache.fused_qk_rms_norm_rope.ragged.paged.dual``). The main GQA K cache can use
 a scale-free FP8 e4m3 dtype with *no* per-block dequant scales while Q and the
 indexer's K cache stay BF16, so the op's two paged caches have independent
 dtypes.
@@ -39,13 +39,11 @@ import torch
 from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import fused_dual_qk_rms_norm_rope_ragged
-from max.nn.legacy.kv_cache import (
-    MHAKVCacheParams,
-)
-from max.nn.legacy.kv_cache.input_types import KVCacheInputsPerDevice
+from max.nn._graph_ops import fused_dual_qk_rms_norm_rope_ragged
+from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -147,24 +145,13 @@ def _extract_tokens(
     return out
 
 
-def _run_dual(
+def _load_dual(
     main_cache_dtype: DType,
     index_cache_dtype: DType,
-    q_main: torch.Tensor,
-    q_index: torch.Tensor,
-    raw_main_k: torch.Tensor,
-    raw_index_k: torch.Tensor,
-    gammas: dict[str, torch.Tensor],
     freqs_cis: torch.Tensor,
-    device: Accelerator,
     session: InferenceSession,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Runs one dual QK RMSNorm+RoPE + in-place paged K update.
-
-    Returns ``(q_main_out, q_index_out, main_k_out, index_k_out)``, all fp32
-    on CPU; the K tensors are per-token (``[total_seq_len, num_heads,
-    head_dim]``), extracted via each run's own page-table assignment.
-    """
+) -> Model:
+    """Compiles one dual QK RMSNorm+RoPE + in-place paged K update."""
     main_kv_params = _kv_params(main_cache_dtype, _MAIN_KV_HEADS)
     index_kv_params = _kv_params(index_cache_dtype, _INDEX_KV_HEADS)
     total_seq_len = sum(_PROMPT_LENS)
@@ -241,8 +228,29 @@ def _run_dual(
         )
         graph.output(q_main_out, q_index_out)
 
-    model = session.load(graph)
+    return session.load(graph)
 
+
+def _run_dual(
+    model: Model,
+    main_cache_dtype: DType,
+    index_cache_dtype: DType,
+    q_main: torch.Tensor,
+    q_index: torch.Tensor,
+    raw_main_k: torch.Tensor,
+    raw_index_k: torch.Tensor,
+    gammas: dict[str, torch.Tensor],
+    freqs_cis: torch.Tensor,
+    device: Accelerator,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Runs one dual QK RMSNorm+RoPE + in-place paged K update.
+
+    Returns ``(q_main_out, q_index_out, main_k_out, index_k_out)``, all fp32
+    on CPU; the K tensors are per-token (``[total_seq_len, num_heads,
+    head_dim]``), extracted via each run's own page-table assignment.
+    """
+    main_kv_params = _kv_params(main_cache_dtype, _MAIN_KV_HEADS)
+    index_kv_params = _kv_params(index_cache_dtype, _INDEX_KV_HEADS)
     main_kv_rt = paged_kv_cache_inputs(
         main_kv_params, _PROMPT_LENS, total_num_pages=8
     )
@@ -338,8 +346,13 @@ def test_dual_qk_fp8_main_cache_matches_bf16() -> None:
         for name in ("main_q", "main_k", "index_q", "index_k")
     }
     freqs_cis = _make_freqs_cis(_PAGE_SIZE, _HEAD_DIM)
+    bf16_model = _load_dual(DType.bfloat16, DType.bfloat16, freqs_cis, session)
+    mixed_model = _load_dual(
+        DType.float8_e4m3fn, DType.bfloat16, freqs_cis, session
+    )
 
     q_main_bf16, q_index_bf16, main_k_bf16, index_k_bf16 = _run_dual(
+        bf16_model,
         DType.bfloat16,
         DType.bfloat16,
         q_main,
@@ -349,9 +362,9 @@ def test_dual_qk_fp8_main_cache_matches_bf16() -> None:
         gammas,
         freqs_cis,
         device,
-        session,
     )
     q_main_mixed, q_index_mixed, main_k_fp8, index_k_mixed = _run_dual(
+        mixed_model,
         DType.float8_e4m3fn,
         DType.bfloat16,
         q_main,
@@ -361,7 +374,6 @@ def test_dual_qk_fp8_main_cache_matches_bf16() -> None:
         gammas,
         freqs_cis,
         device,
-        session,
     )
 
     assert torch.isfinite(main_k_fp8).all(), (

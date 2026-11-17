@@ -110,6 +110,11 @@ class MHAKVCache:
         scratch: Whether the cache is one block per request that is never
             published.
         kvcache_quant_config: How the values are quantized, or ``None``.
+        speculative_method: The speculative-decoding method whose draft
+            forward reads the cache, which then takes a draft dispatch
+            record, or ``None``.
+        num_draft_tokens: The draft width the cache is sized for, ``0``
+            without speculative decoding.
         leaves: The pool leaves the cache occupies.
     """
 
@@ -128,18 +133,31 @@ class MHAKVCache:
     stride_alignment: int | None
     scratch: bool
     kvcache_quant_config: KVCacheQuantization | None
+    speculative_method: str | None
+    num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
 
 
 @dataclass(frozen=True)
 class MSAKVCache(MHAKVCache):
-    """A multi-step attention cache.
+    """A MiniMax Sparse Attention (MSA) cache.
 
     It mirrors MAX's ``MSAKVCacheParams``: a multi-head attention cache read
     through its own attention key.
     """
 
     kind: ClassVar[str] = "msa"
+
+
+@dataclass(frozen=True)
+class MSAIndexKVCache(MHAKVCache):
+    """The index-K cache that MiniMax Sparse Attention's indexer reads.
+
+    It mirrors MAX's ``MSAIndexKVCacheParams``: one key head and no values,
+    whole on every tensor-parallel device, read through its own attention key.
+    """
+
+    kind: ClassVar[str] = "msa_index"
 
 
 @dataclass(frozen=True)
@@ -166,6 +184,10 @@ class MLAKVCache:
         scratch: Whether the cache is one block per request that is never
             published.
         kvcache_quant_config: How the values are quantized, or ``None``.
+        speculative_method: The speculative-decoding method whose draft
+            forward reads the cache, or ``None``.
+        num_draft_tokens: The draft width the cache is sized for, ``0``
+            without speculative decoding.
         leaves: The pool leaves the cache occupies.
     """
 
@@ -184,6 +206,8 @@ class MLAKVCache:
     stride_alignment: int | None
     scratch: bool
     kvcache_quant_config: KVCacheQuantization | None
+    speculative_method: str | None
+    num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
 
 
@@ -229,7 +253,9 @@ class RecurrentStateCache:
     leaves: tuple[KVPoolLeaf, ...]
 
 
-KVCache = MHAKVCache | MSAKVCache | MLAKVCache | RecurrentStateCache
+KVCache = (
+    MHAKVCache | MSAKVCache | MSAIndexKVCache | MLAKVCache | RecurrentStateCache
+)
 """A cache of any kind the ``kv_cache`` component records."""
 
 
@@ -306,6 +332,8 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
         "kvcache_quant_config": _serialize_quantization(
             cache.kvcache_quant_config
         ),
+        "speculative_method": cache.speculative_method,
+        "num_draft_tokens": cache.num_draft_tokens,
     }
     if isinstance(cache, MLAKVCache):
         return (
@@ -374,11 +402,16 @@ def _tuple(
     return lambda value: tuple(decoder(item) for item in expect(value, list))
 
 
+_MHA_KINDS: dict[str, type[MHAKVCache]] = {
+    cls.kind: cls for cls in (MHAKVCache, MSAKVCache, MSAIndexKVCache)
+}
+
+
 def _cache(value: ArtifactType) -> KVCache:
     obj = dict(expect(value, dict))
     kind = expect(obj.pop("kind"), str)
-    if kind in (MHAKVCache.kind, MSAKVCache.kind):
-        return _mha(obj, MSAKVCache if kind == MSAKVCache.kind else MHAKVCache)
+    if (cls := _MHA_KINDS.get(kind)) is not None:
+        return _mha(obj, cls)
     if kind == MLAKVCache.kind:
         return _mla(obj)
     if kind == RecurrentStateCache.kind:
@@ -408,6 +441,8 @@ def _mha(value: dict[str, ArtifactType], cls: type[MHAKVCache]) -> MHAKVCache:
         kvcache_quant_config=decode_optional(_quantization)(
             obj["kvcache_quant_config"]
         ),
+        speculative_method=decode_optional(_str)(obj["speculative_method"]),
+        num_draft_tokens=_int(obj["num_draft_tokens"]),
         leaves=_tuple(_leaf)(obj["leaves"]),
     )
 
@@ -431,6 +466,8 @@ def _mla(value: dict[str, ArtifactType]) -> MLAKVCache:
         kvcache_quant_config=decode_optional(_quantization)(
             obj["kvcache_quant_config"]
         ),
+        speculative_method=decode_optional(_str)(obj["speculative_method"]),
+        num_draft_tokens=_int(obj["num_draft_tokens"]),
         leaves=_tuple(_leaf)(obj["leaves"]),
     )
 

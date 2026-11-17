@@ -14,7 +14,7 @@
 from std.collections import OptionalReg
 from std.testing import assert_equal, assert_true
 from layout import Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from max.gpu.host import DeviceContext
 from linalg.swiglu_activation import swiglu
 from linalg.matmul.gpu.sm100_structured.fused_swiglu.config import (
@@ -66,14 +66,12 @@ def test_strided[has_bias: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_memset(out_dev, Scalar[dtype](-7))
 
     var a = TileTensor(
-        a_dev, TileLayout((m, Idx[k]), (Idx[stride], Idx[1]))
+        a_dev, Layout((m, Idx[k]), (Idx[stride], Idx[1]))
     ).as_imm()
     var w = TileTensor(
-        w_dev, TileLayout((Idx[2 * h], Idx[k]), (Idx[stride], Idx[1]))
+        w_dev, Layout((Idx[2 * h], Idx[k]), (Idx[stride], Idx[1]))
     ).as_imm()
-    var output = TileTensor(
-        out_dev, TileLayout((m, Idx[h]), (Idx[stride], Idx[1]))
-    )
+    var output = TileTensor(out_dev, Layout((m, Idx[h]), (Idx[stride], Idx[1])))
     var bias_ptr = ImmPointer[BFloat16, ImmutAnyOrigin](
         unsafe_from_address=Int(bias_dev.unsafe_ptr())
     )

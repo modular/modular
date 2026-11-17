@@ -14,6 +14,7 @@
 #include "CABIAAPCS.h"
 #include "LLVMLoweringUtils.h"
 #include "mlir/IR/Diagnostics.h"
+#include "llvm/ADT/STLExtras.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -23,8 +24,68 @@ using namespace M::KGEN;
 //===----------------------------------------------------------------------===//
 
 AAPCSABIInfo::AAPCSABIInfo(mlir::MLIRContext *ctx,
-                           const LLVMDataLayout &dataLayout, bool isDarwinOS)
-    : CABIInfo(ctx, dataLayout), isDarwin(isDarwinOS) {}
+                           const POPToLLVMTypeConverter &typeConverter,
+                           bool isDarwinOS)
+    : CABIInfo(ctx, typeConverter), isDarwin(isDarwinOS) {}
+
+//===----------------------------------------------------------------------===//
+// Homogeneous Aggregates
+//===----------------------------------------------------------------------===//
+
+std::optional<CoercionInfo> AAPCSABIInfo::classifyHomogeneousAggregate(
+    mlir::Type type, mlir::LLVM::LLVMStructType structType) const {
+  // The base type of a homogeneous aggregate: a float, or a short vector.
+  auto isBaseType = [&](mlir::Type member) {
+    if (isa<mlir::FloatType>(member))
+      return true;
+    int64_t size = dataLayout.getTypeAllocSize(member);
+    return isa<mlir::VectorType>(member) && (size == 8 || size == 16);
+  };
+  // Vectors of one size are the same base type, whatever their elements.
+  auto isSameBaseType = [&](mlir::Type a, mlir::Type b) {
+    return a == b ||
+           (isa<mlir::VectorType>(a) && isa<mlir::VectorType>(b) &&
+            dataLayout.getTypeAllocSize(a) == dataLayout.getTypeAllocSize(b));
+  };
+
+  // A member without size holds no data, so it does not count. The members of
+  // a union are at one offset, so count the offsets.
+  mlir::Type baseType;
+  bool isHomogeneous = true;
+  llvm::SmallVector<int64_t, 4> offsets;
+  CabiUtils::forEachMember(
+      type, /*offset=*/0, typeConverter,
+      [&](mlir::Type member, int64_t offset) {
+        if (dataLayout.getTypeAllocSize(member) == 0)
+          return;
+        if (!isBaseType(member) ||
+            (baseType && !isSameBaseType(baseType, member))) {
+          isHomogeneous = false;
+          return;
+        }
+        baseType = baseType ? baseType : member;
+        if (!llvm::is_contained(offsets, offset))
+          offsets.push_back(offset);
+      });
+  if (!isHomogeneous || !baseType || offsets.size() > 4)
+    return std::nullopt;
+
+  // There must be no padding.
+  int64_t numMembers = offsets.size();
+  if (numMembers * dataLayout.getTypeAllocSize(baseType) !=
+      dataLayout.getTypeAllocSize(structType))
+    return std::nullopt;
+
+  // Coerce to an array of the base type, as clang does. The backend keeps
+  // only an array argument in consecutive registers: if the free SIMD
+  // registers are too few, all of the array goes on the stack (AAPCS64 C.3).
+  // The members of a struct argument are separate, so the first members can
+  // go in registers and the remaining members on the stack.
+  CoercionInfo info;
+  info.argClass = ABIArgClass::SSE;
+  info.coercedType = mlir::LLVM::LLVMArrayType::get(baseType, numMembers);
+  return info;
+}
 
 //===----------------------------------------------------------------------===//
 // Argument Classification
@@ -34,35 +95,35 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
                                                 mlir::Location loc,
                                                 bool isVariadicArg) const {
   // Arrays should be passed indirectly, as per the C specification
-  if (isa<mlir::LLVM::LLVMArrayType>(type))
+  mlir::Type llvmType = convertType(type);
+  if (isa<mlir::LLVM::LLVMArrayType>(llvmType))
     return CoercionInfo::indirectArgument(/*useByval=*/false);
 
-  // Only LLVM struct types need C ABI classification
-  auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type);
+  // Only types that convert to an LLVM struct need C ABI classification
+  auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(llvmType);
   if (!structType) {
     // Non-struct (scalar, pointer, etc.): pass through directly, no coercion.
     // Apple's arm64 ABI, unlike AAPCS64, requires the caller to extend
     // narrow integers.
-    return isDarwin ? CabiUtils::classifyExtendedScalar(type) : CoercionInfo{};
+    return isDarwin ? CabiUtils::classifyExtendedScalar(type, typeConverter)
+                    : CoercionInfo{};
   }
 
-  // HFA (Homogeneous Float Aggregate) classification:
-  //
-  // Fixed args: always identity — HFA passes in SIMD registers (V0–V3).
-  //
-  // Variadic args depend on the OS ABI:
-  //   Darwin (macOS/iOS): va_list is flat (GP area only). HFA variadic args
-  //     must be coerced to integer so they land in GP registers where
-  //     va_arg reads them.
+  // A homogeneous aggregate goes in SIMD registers (V0-V3). For a variadic
+  // argument, this depends on the OS ABI:
+  //   Darwin (macOS/iOS): va_list has only a GP area, so the aggregate is
+  //     classified as a struct of integers and goes in GP registers, where
+  //     va_arg reads it.
   //   Linux AAPCS64: va_list has separate GP and VR save areas (AAPCS64 spec
-  //     IHI0055 §B.4). HFA variadic args remain identity so they land in VR
-  //     registers where va_arg for HFA structs reads them.
+  //     IHI0055 B.4), so the aggregate goes in SIMD registers, where va_arg
+  //     reads it.
   //
   // Reference implementation: clang/lib/CodeGen/Targets/AArch64.cpp,
   //   EmitDarwinVAArg() vs EmitAAPCSVAArg().
-  if (CabiUtils::isAllFloatStruct(structType) &&
-      (!isVariadicArg || !isDarwin)) {
-    return CoercionInfo{}; // Identity: defer to standard lowering (SIMD)
+  if (std::optional<CoercionInfo> info =
+          classifyHomogeneousAggregate(type, structType);
+      info && (!isVariadicArg || !isDarwin)) {
+    return *info;
   }
 
   // Get struct size in bytes
@@ -73,10 +134,8 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
     return CoercionInfo::indirectArgument(/*useByval=*/false);
   }
 
-  // ARM64 AAPCS: Non-HFA structs are always passed in GPRs (integer
-  // registers), regardless of whether fields are int, float, or mixed.
-  // HFA structs (all-float, same type, ≤4 fields) use SIMD registers,
-  // but those are handled above by the isAllFloatStruct early return.
+  // ARM64 AAPCS: A struct that is not a homogeneous aggregate goes in GPRs
+  // (integer registers), whatever the types of its fields.
 
   // RULE 2: 1-8 byte non-HFA structs → coerce to iN
   if (size <= 8) {
@@ -93,18 +152,19 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
 
 CoercionInfo AAPCSABIInfo::classifyReturnType(mlir::Type type,
                                               mlir::Location loc) const {
-  // Only LLVM struct types need C ABI classification
-  auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type);
+  // Only types that convert to an LLVM struct need C ABI classification
+  auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(convertType(type));
   if (!structType) {
     // Non-struct (scalar, pointer, etc.): return directly, no coercion.
     // On Darwin the callee extends a narrow integer result, as clang does.
-    return isDarwin ? CabiUtils::classifyExtendedScalar(type) : CoercionInfo{};
+    return isDarwin ? CabiUtils::classifyExtendedScalar(type, typeConverter)
+                    : CoercionInfo{};
   }
 
-  // All-float structs require HFA classification (not yet implemented).
-  if (CabiUtils::isAllFloatStruct(structType)) {
-    return CoercionInfo{}; // Identity: defer to standard lowering
-  }
+  // A homogeneous aggregate is returned in SIMD registers.
+  if (std::optional<CoercionInfo> info =
+          classifyHomogeneousAggregate(type, structType))
+    return *info;
 
   // Get struct size in bytes
   int64_t size = CabiUtils::getStructSize(structType, dataLayout);

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -32,8 +32,8 @@ from ..qwen3_5.reasoning import (
 from ..qwen3_5.tool_parser import (
     Qwen3_5ToolParser,  # noqa: F401  registers "qwen3_5"
 )
-from .model import NemotronHModel
 from .model_config import NemotronHConfig
+from .nemotron_h import NemotronH
 from .weight_adapters import convert_nemotron_h_state_dict
 
 nemotron_h_arch = SupportedArchitecture(
@@ -48,16 +48,14 @@ nemotron_h_arch = SupportedArchitecture(
     # modelopt per-tensor static FP8 on the (non-excluded) mamba in/out_proj and
     # MLP up/down projections; attention, conv1d, norms, lm_head stay bf16.
     supported_encodings=NemotronHConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=NemotronHModel,
+    modules={GraphRole.DECODER: NemotronH},
     tokenizer=ReasoningTextTokenizer,
     context_type=TextContext,
     # NoPE: attention adds no rotary embedding (position flows through the SSM).
     weight_adapters={
         WeightsFormat.safetensors: convert_nemotron_h_state_dict,
     },
-    # SSM recurrent state is not reconstructable from a token prefix, so prefix
-    # caching must be disabled.
-    required_arguments={"enable_prefix_caching": False},
+    checkpoints_recurrent_state=True,
     config=NemotronHConfig,
     multi_gpu_supported=False,
     # Reasoning opens implicitly (template pre-fills ``<think>``) and closes
@@ -66,13 +64,5 @@ nemotron_h_arch = SupportedArchitecture(
     # qwen3_5 parsers match Nemotron-3's Qwen-format template exactly.
     reasoning_parser="qwen3_5",
     tool_parser="qwen3_5",
-    # SSM conv and state pools are pre-allocated, fixed-address, full-pool
-    # buffers.  The in-place slot-indexed kernels (causal_conv1d_varlen_fwd,
-    # mamba2_ssd_chunk_scan_varlen_fwd_inplace) mutate them directly on the
-    # GPU via slot_idx — no host-device sync required.  ``inplace_copy_from``
-    # short-circuits when src-is-self (same Buffer object) so pool contents
-    # survive graph-capture replay unchanged.  NemotronHModel implements
-    # SupportsSSMStateWarmup so the overlap pipeline releases warmup slots
-    # after each (batch_size, cache_length) probe, preventing pool exhaustion.
     supports_device_graph_capture=True,
 )

@@ -31,7 +31,7 @@ import numpy as np
 import pytest
 from max.driver import CPU, Buffer, Usage
 from max.dtype import DType
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
     engram_lookback_token_ids,
 )
@@ -128,7 +128,8 @@ def test_extras_stage_the_static_inputs_in_abi_order() -> None:
     processor.bind_engram(static)
 
     extras = processor._extras(
-        [_context([5, 6, 7, 8], 0), _context([9, 9], 1)], np.array([0, 4, 6])
+        [_context([5, 6, 7, 8], 0), _context([9, 9, 9], 1)],
+        np.array([0, 4, 6]),
     )
 
     by_name = dict(zip(extra_input_names(config), extras, strict=True))

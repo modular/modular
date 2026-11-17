@@ -52,7 +52,7 @@ struct Host(not Copyable, Movable):
         return self.drivers[id]
 
     def accelerator_count(self) raises HALError -> Int64:
-        return Int64(self.driver(0)[].get_device_count())
+        return Int64(self.driver(0)[].device_count())
 
     def accelerator(
         self, id: Int64

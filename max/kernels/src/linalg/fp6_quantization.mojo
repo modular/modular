@@ -32,7 +32,7 @@ from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
 from max.gpu.primitives.warp import lane_group_max
 from layout import TensorEngine, TileTensor
 from layout.coord import Coord
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 
 from .fp6_utils import (
     FP6Format,

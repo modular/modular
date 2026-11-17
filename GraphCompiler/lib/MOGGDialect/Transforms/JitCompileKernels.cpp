@@ -118,20 +118,6 @@ struct JitCompileKernels
     return uniqueSymbols;
   }
 
-  SmallVector<StringAttr> collectStubSymbols(ModuleOp kgenModuleOp) {
-    SmallVector<StringAttr> stubs;
-    kgenModuleOp.walk<mlir::WalkOrder::PreOrder>(
-        [&](KGEN::GeneratorOp generator) {
-          // <input>:: is the prefix of all functions created by the GC because
-          // there is no input file (all in-memory).
-          if (generator.getSymName().contains("<input>::"))
-            stubs.emplace_back(generator.getSymNameAttr());
-          return mlir::WalkResult::skip();
-        });
-
-    return stubs;
-  }
-
   // Rename region functions with semantic naming
   DenseMap<StringAttr, KGEN::GeneratorOp>
   renameGenerators(ModuleOp kgenModuleOp,

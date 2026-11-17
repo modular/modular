@@ -62,7 +62,7 @@ def _check[
     output_dev.enqueue_fill(poison)
     ctx.enqueue_copy(input_dev, input_host)
 
-    cumsum[dtype, exclusive, reverse, axis=axis, target="gpu"](
+    cumsum[dtype, exclusive, reverse, axis=axis](
         TileTensor(output_dev, layout), TileTensor(input_dev, layout), ctx
     )
 

@@ -18,7 +18,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import NullableTileTensor
 from std.testing import (
     TestSuite,
@@ -73,7 +73,7 @@ def test_num_elements_nested_layout() raises:
     var nullable = NullableTileTensor(
         TileTensor(
             data,
-            TileLayout(
+            Layout(
                 Coord(coord[2, 16], Idx[32]),
                 Coord(coord[1, 64], Idx[2]),
             ),

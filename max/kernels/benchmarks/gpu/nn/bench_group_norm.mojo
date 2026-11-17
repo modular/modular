@@ -27,7 +27,7 @@ from std.utils.index import Index, IndexList
 def bench_group_norm_gpu[
     rank: Int, //, dtype: DType
 ](
-    ctx: DeviceContext, mut b: Bench, shape: IndexList[rank], num_groups: Int
+    ctx: DeviceContext[], mut b: Bench, shape: IndexList[rank], num_groups: Int
 ) raises:
     var C = shape[1]
     var total = shape.flattened_length()
@@ -74,8 +74,8 @@ def bench_group_norm_gpu[
         return beta.load[width=width](coords)
 
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {imm}:
-        group_norm[dtype, rank, target="gpu"](
+    def kernel_launch(ctx: DeviceContext[]) raises {imm}:
+        group_norm[dtype, rank](
             input_fn,
             gamma_fn,
             beta_fn,
@@ -109,7 +109,7 @@ def bench_group_norm_gpu[
     _ = beta_h^
 
 
-def bench_shapes[dtype: DType](ctx: DeviceContext, mut m: Bench) raises:
+def bench_shapes[dtype: DType](ctx: DeviceContext[], mut m: Bench) raises:
     # Warp-tiling dispatch (small groups).
     bench_group_norm_gpu[dtype](ctx, m, Index(4, 256, 16, 16), 32)
     bench_group_norm_gpu[dtype](ctx, m, Index(2, 128, 32, 32), 32)

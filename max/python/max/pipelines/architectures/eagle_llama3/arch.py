@@ -15,13 +15,15 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
+    GraphRole,
     SupportedArchitecture,
     TextTokenizer,
 )
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
-from .model import EagleLlama3ArchConfig
+from .eagle_llama3 import EagleLlama3Draft
+from .model_config import EagleLlama3Config, eagle_draft_registration
 
 eagle_llama_arch = SupportedArchitecture(
     name="LlamaForCausalLMEagle",
@@ -33,7 +35,8 @@ eagle_llama_arch = SupportedArchitecture(
         "bfloat16",
         "float32",
     },
-    pipeline_model=None,
+    modules={GraphRole.DRAFT: EagleLlama3Draft},
+    draft=eagle_draft_registration,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
@@ -43,7 +46,7 @@ eagle_llama_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
-    config=EagleLlama3ArchConfig,
+    config=EagleLlama3Config,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )
@@ -58,7 +61,8 @@ eagle3_llama_arch = SupportedArchitecture(
         "bfloat16",
         "float32",
     },
-    pipeline_model=None,
+    modules={GraphRole.DRAFT: EagleLlama3Draft},
+    draft=eagle_draft_registration,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
@@ -68,7 +72,7 @@ eagle3_llama_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
-    config=EagleLlama3ArchConfig,
+    config=EagleLlama3Config,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

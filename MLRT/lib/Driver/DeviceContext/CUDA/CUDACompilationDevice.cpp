@@ -39,7 +39,7 @@ using namespace llvm;
 namespace M::Driver {
 
 CUDACompilationDevice::CUDACompilationDevice(std::string targetArch)
-    : CompilationDevice(Device::cudaAPI, std::move(targetArch)) {}
+    : CompilationDevice("cuda", std::move(targetArch)) {}
 
 CUDACompilationDevice::~CUDACompilationDevice() = default;
 

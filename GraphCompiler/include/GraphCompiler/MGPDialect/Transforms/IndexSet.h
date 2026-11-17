@@ -113,6 +113,22 @@ public:
     return set;
   }
 
+  /// Returns the union of sets. `SparseBitVector::set` resumes its search
+  /// from the element it last touched, so setting the bits in sorted order is
+  /// linear; merging the sets one at a time re-walks the growing union.
+  template <typename Range>
+  static Set unionMany(Range &&sets) {
+    SmallVector<unsigned> bits;
+    for (const Set &set : sets)
+      for (unsigned bit : set)
+        bits.push_back(bit);
+    llvm::sort(bits);
+    Set result;
+    for (unsigned bit : bits)
+      result.set(bit);
+    return result;
+  }
+
   /// Returns the Vs in set, in index order.
   auto values(const Set &set) const {
     SmallVector<V> result;

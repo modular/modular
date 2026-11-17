@@ -21,6 +21,7 @@ a group into one CTA, which shrinks `BM_eff()` from 32 to 3 (group 9) or 5
 config and picks per launch from `max_prompt_len`:
 
 - `max_prompt_len <= fused BM_eff`   -> fused BM=32 (Layout-G)
+- `max_prompt_len <= 128 // group`   -> fused 1Q BM=128
 - `max_prompt_len <= 32`             -> unfused BM=32 (Layout-G)
 - otherwise                          -> Layout-E / 1Q-2Q carve
 
@@ -40,6 +41,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.dispatch import (
     WS_G_FUSED,
+    WS_G_FUSED_1Q,
     WS_G_NONE,
     WS_G_UNFUSED,
     _ws_g_route,
@@ -66,6 +68,14 @@ def _check_configs[group: Int, fused_bm_eff: Int]() raises:
     comptime base = _base_config[group]()
     comptime unfused = base.with_bm(32)
     comptime fused = base.with_bm(32, fuse_nondividing=True)
+    comptime fused_1q = base.with_bm(128, fuse_nondividing=True)
+
+    assert_true(fused_1q.fuse_gqa)
+    assert_true(fused_1q.fuse_nondividing)
+    assert_equal(fused_1q.num_q, 1)
+    assert_equal(fused_1q.BM_eff(), 128 // group)
+    assert_equal(fused_1q.gqa_pad_rows(), 128 % group)
+    assert_true(fused_1q.supported())
 
     assert_false(unfused.fuse_gqa)
     assert_false(unfused.fuse_nondividing)
@@ -81,6 +91,7 @@ def _check_configs[group: Int, fused_bm_eff: Int]() raises:
     # The knob must survive `with_splitk`: the dispatch builds the split-K
     # kernel from it, and a dropped flag changes BM_eff() and so the grid.
     comptime for p in _SPLITK_P:
+        assert_true(fused_1q.with_splitk(p).fuse_nondividing)
         comptime fused_sk = fused.with_splitk(p)
         comptime unfused_sk = unfused.with_splitk(p)
         assert_true(fused_sk.fuse_nondividing)
@@ -99,6 +110,7 @@ def _check_route[group: Int, fused_bm_eff: Int]() raises:
     comptime base = _base_config[group]()
     comptime unfused = base.with_bm(32)
     comptime fused = base.with_bm(32, fuse_nondividing=True)
+    comptime fused_1q = base.with_bm(128, fuse_nondividing=True)
     comptime layout_e = base.with_bm(64)
 
     for prompt in range(1, 129):
@@ -107,9 +119,12 @@ def _check_route[group: Int, fused_bm_eff: Int]() raises:
             fused.BM_eff(),
             unfused.BM_eff(),
             prompt,
+            fused_1q.BM_eff(),
         )
         if prompt <= fused_bm_eff:
             assert_equal(route, WS_G_FUSED, "prompt " + String(prompt))
+        elif prompt <= 128 // group:
+            assert_equal(route, WS_G_FUSED_1Q, "prompt " + String(prompt))
         elif prompt <= 32:
             assert_equal(route, WS_G_UNFUSED, "prompt " + String(prompt))
         else:
@@ -141,7 +156,8 @@ def _check_not_requested_or_not_eligible() raises:
             WS_G_UNFUSED if prompt <= 8 else WS_G_NONE,
         )
 
-    # Only the validated (BM=32, depth 128, group 9/6) set honors the request.
+    # Only the validated (BM=32 or 128, depth 128, group 9/6) set honors the
+    # request.
     comptime g9 = _base_config[9]()
     assert_false(g9.with_bm(32).fuse_nondividing)
     assert_false(g9.with_bm(64, fuse_nondividing=True).fuse_nondividing)

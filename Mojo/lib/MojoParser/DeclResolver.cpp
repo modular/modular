@@ -25,6 +25,7 @@
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
+#include "Support/LogicalResult.h"
 #include "Traits.h"
 
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -251,19 +252,34 @@ IRASTDecl &DeclResolver::createUnlistedDecl(CValue value, SMLoc loc,
   return *decl;
 }
 
+template <typename DeclT, typename... Args>
+DeclT &DeclResolver::createChildDecl(ASTDecl &parent, StringAttr name,
+                                     Args &&...args) {
+  if (!parent.declsInScope)
+    parent.declsInScope.reset(new ASTDecl::DeclInScopeType());
+
+  auto *decl = shared.persistentAllocator.create<DeclT>(
+      shared, std::forward<Args>(args)...);
+  parsedDeclList.push_back(decl);
+  (*parent.declsInScope)[name].push_back(decl);
+  return *decl;
+}
+
 WitnessASTDecl &
 DeclResolver::createWitnessDecl(WitnessASTDecl::UnresolvedDecls unresolvedDecls,
                                 TraitSymbolAttr traitSymbol, SMLoc loc,
                                 ASTDecl &traitDecl, StringAttr name) {
-  if (!traitDecl.declsInScope)
-    traitDecl.declsInScope.reset(new ASTDecl::DeclInScopeType());
-
-  auto *decl = shared.persistentAllocator.create<WitnessASTDecl>(
-      shared, std::move(unresolvedDecls), traitSymbol, loc, &traitDecl,
+  return createChildDecl<WitnessASTDecl>(
+      traitDecl, name, std::move(unresolvedDecls), traitSymbol, loc, &traitDecl,
       LexerCursor(), LexerCursor(), /*indentation=*/-1);
-  parsedDeclList.push_back(decl);
-  (*traitDecl.declsInScope)[name].push_back(decl);
-  return *decl;
+}
+
+ConformanceWitnessASTDecl &
+DeclResolver::createConformanceMemberDecl(ConformanceASTDecl &conformanceDecl,
+                                          ASTDecl &traitMember,
+                                          StringAttr witnessName) {
+  return createChildDecl<ConformanceWitnessASTDecl>(
+      conformanceDecl, witnessName, traitMember, witnessName, conformanceDecl);
 }
 
 // Check whether we're merging in a bunch of ASTDecls that could all contribute
@@ -546,8 +562,11 @@ void DeclResolver::eraseDecls(llvm::ArrayRef<ASTDecl *> seeds) {
   eraseMappings(declForFuncSymbol);
   eraseMappings(canonicalTraitCompositionDecls);
 
-  llvm::erase_if(parsedDeclList,
-                 [&](ASTDecl *decl) { return toErase.contains(decl); });
+  // During the sweep, erasing would shift entries the walk has not reached
+  // yet, so retired entries stay in place until it finishes.
+  if (!sweepingParsedDecls)
+    llvm::erase_if(parsedDeclList,
+                   [&](ASTDecl *decl) { return toErase.contains(decl); });
   for (ASTDecl *decl : toErase) {
     decl->retired = true;
     retiredDeclList.push_back(decl);
@@ -1565,6 +1584,12 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // If we are currently name binding this operation, we found a cycle, reject
   // it with an error.
   if (failed(declsCurrentlyProcessing.insert(&decl, loc))) {
+    // If this is a decl loaded from bytecode, just return, since we just need
+    // to deserialize the bytecode, the recursion is not a true parser cycle (as
+    // we already parsed the bytecode once).
+    if (decl.loadedFromBytecode)
+      return success();
+
     auto diag =
         emitError(decl.getLoc(),
                   "attempt to resolve a recursive reference to declaration");
@@ -1719,10 +1744,14 @@ void DeclResolver::resolveReferencedDecls() {
   // the main container (typically stdlib/library declarations).
   llvm::SetVector<ASTDecl *> deferredDecls;
   size_t parsedDeclIt = 0;
+  sweepingParsedDecls = true;
   do {
     // Resolve all of the newly parsed decls that got referenced.
     for (; parsedDeclIt != parsedDeclList.size(); ++parsedDeclIt) {
       ASTDecl &decl = *parsedDeclList[parsedDeclIt];
+      // See `eraseDecls`.
+      if (decl.isRetired())
+        continue;
 
       // If the decl was never touched and we pulled it in from bytecode, treat
       // it as unreachable and don't resolve it now.
@@ -1754,6 +1783,9 @@ void DeclResolver::resolveReferencedDecls() {
       }
     } while (resolvedAnything);
   } while (parsedDeclIt != parsedDeclList.size());
+  sweepingParsedDecls = false;
+  llvm::erase_if(parsedDeclList,
+                 [](ASTDecl *decl) { return decl->isRetired(); });
 }
 
 void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
@@ -2292,6 +2324,9 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {
     case ArgConvention::OwnedReg:
+    case ArgConvention::PackImmMem:
+    case ArgConvention::PackMut:
+    case ArgConvention::PackOwnedMem:
       llvm_unreachable("not used by the parser");
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:

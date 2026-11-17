@@ -96,6 +96,27 @@ struct StructWithMissingMethod(Movable where False):
         pass
 
 
+struct StructWithDocumentedSelf(Movable where False):
+    """Tests explicitly documenting a method's `self` argument."""
+
+    def method(self, arg: ArgStruct):
+        """Documents all method arguments.
+
+        Args:
+            self: The struct instance.
+            arg: The explicit argument.
+        """
+        pass
+
+    def method_without_self(self, arg: ArgStruct):
+        """Documents only the required method argument.
+
+        Args:
+            arg: The explicit argument.
+        """
+        pass
+
+
 # expected-warning @below {{public symbol 'fn_missing_doc_string' is missing a doc string}}
 def fn_missing_doc_string():
     pass

@@ -13,8 +13,8 @@
 """Execution config placeholder for NVIDIA Blackwell datacenter GPUs (B100, B200, B300)."""
 
 from max.gpu.host import ConstantMemoryMapping, Dim, LaunchAttribute
+from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from . import (
-    LaunchAttributeHolderExecutionConfig,
     _CudaExecutionConfigDelegator,
     _BaseCudaExecutionConfig,
     _BaseCudaExecutionConfiguration,

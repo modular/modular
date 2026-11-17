@@ -24,7 +24,7 @@ Q@K' consumer) against a host `S = Q @ Kᵀ` reference, validating that
   * the production `tile_layout_k_major[page_dense=True]` (Slice 1),
   * `smem_descriptor[is_k_major=True, page_dense=True]` (Slice 2), and
   * the accumulator's layout-DERIVED per-MMA_K advance (`b_layout` /
-    `build_mma`'s `b_offset = layout_b(IntTuple(0, mma_k*jj))`, Slice 3)
+    `build_mma`'s `b_offset = layout_b(Coord(0, mma_k*jj))`, Slice 3)
 
 agree end-to-end. `MMA_M = 128 > 64` so the struct auto-selects the NON-ws
 `bulk_mma` path — the same path real single-CTA Q@K' uses (use_ws is False for
@@ -47,7 +47,6 @@ from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
-    FuncAttribute,
     default_accelerator,
 )
 from max.gpu.memory import external_memory
@@ -363,9 +362,6 @@ def run_qk_consumer[
             grid_dim=(1, 1),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
     else:
         # Baseline arm: default box (BN, gran) -> chunk-outer.
@@ -391,9 +387,6 @@ def run_qk_consumer[
             grid_dim=(1, 1),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
 
     cpu_qk_naive(o_ref.host_tensor(), q.host_tensor(), k.host_tensor())

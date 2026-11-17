@@ -80,8 +80,8 @@ struct ImpliedMovable[n: Int](Movable where n > 0) where n > 5:
 # keeps `Deinitable`, and the struct is linear pending that condition);
 # the `Movable where False` slot is dropped, so no move ctor is synthesized.
 # CHECK-LABEL: lit.struct.decl @MixedInner<value: !Int>(!constrained_AnyType_Deinitable)
-# CHECK-SAME: does not conditionally conform to 'Deinitable' for these parameters
 # CHECK-NOT: __init__(move:
+# CHECK: } <{{.*}}does not conditionally conform to 'Deinitable' for these parameters
 struct MixedInner[value: Int](
     Deinitable where value >= 0, Movable where False,
 ):
@@ -102,8 +102,8 @@ struct NotCopyableKeepsMovable(not Copyable):
 # The `not` sibling of case 4: `not Movable` drops only the Movable slot, and
 # the conditional `Deinitable` conformance beside it survives verbatim.
 # CHECK-LABEL: lit.struct.decl @NotMixedInner<value: !Int>(!constrained_AnyType_Deinitable{{[0-9]*}})
-# CHECK-SAME: does not conditionally conform to 'Deinitable' for these parameters
 # CHECK-NOT: __init__(move:
+# CHECK: } <{{.*}}does not conditionally conform to 'Deinitable' for these parameters
 struct NotMixedInner[value: Int](
     Deinitable where value >= 0, not Movable,
 ):

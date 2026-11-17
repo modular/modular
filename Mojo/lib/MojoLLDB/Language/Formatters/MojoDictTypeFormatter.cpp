@@ -174,14 +174,11 @@ lldb::ChildCacheState MojoDictSyntheticFrontEnd::Update() {
 
 bool MojoDictSyntheticFrontEnd::MightHaveChildren() { return true; }
 
-llvm::Expected<size_t> MojoDictSyntheticFrontEnd::GetIndexOfChildWithName(
-    lldb_private::ConstString name) {
+llvm::Expected<size_t>
+MojoDictSyntheticFrontEnd::GetIndexOfChildWithName(llvm::StringRef name) {
   if (m_liveSlots.empty())
     return llvm::createStringError("no synthetic children");
-  const char *nameStr = name.GetCString();
-  if (!nameStr)
-    return llvm::createStringError("Invalid name");
-  std::optional<size_t> index = ExtractIndexFromString(nameStr);
+  std::optional<size_t> index = ExtractIndexFromString(name);
   if (!index)
     return llvm::createStringError("Invalid index format");
   size_t idx = *index;

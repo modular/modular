@@ -33,15 +33,15 @@ from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
-    IntTuple,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tensor_engine import DefaultEngine
 from layout.tile_io import copy_local_to_shared
 from layout.swizzle import Swizzle
-from layout.tensor_core_async import tile_layout_k_major
+from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -545,9 +545,9 @@ def produce[
     ]
     comptime persistent = SchedulerType.may_advance
 
-    comptime q_smem_layout_consumer = tile_layout_k_major[
-        qkv_type, BM, padded_depth, swizzle_mode=swizzle_mode
-    ]()
+    comptime q_smem_layout_consumer = tile_layout_k_major_typed[
+        qkv_type, BM, padded_depth, swizzle_mode
+    ]
 
     comptime q_size = q_smem_layout_consumer.size()
     comptime q_smem_size = (2 * q_size if persistent else q_size)
@@ -759,7 +759,7 @@ def produce[
 
         comptime for d_idx in range(ceildiv(depth, swizzle_granularity)):
             comptime d: Int = d_idx * swizzle_granularity
-            comptime smem_offset = q_smem_layout_consumer(IntTuple(0, d))
+            comptime smem_offset = Int(q_smem_layout_consumer(coord[0, d]))
 
             q_tma_op.async_copy_4d(
                 q_producer(q_idx, UInt32(smem_offset)),
@@ -865,10 +865,11 @@ def produce[
                 ](tile_summary, tile_state, q_idx_old)
                 # FIXME: persistent kernel that uses a counter
                 # must signal somehow
-                if not docontinue:
+                if case .Some(seq_info) = docontinue:
+                    position = get_position(seq_info)
+                else:
                     break
                 ref pq_mbar = produced_mbar_q.unsafe_value()[q_idx_old]
-                position = get_position(docontinue.value())
                 pq_mbar.expect_bytes(
                     Int32(q_copy_rows * padded_depth * size_of[qkv_type]())
                 )

@@ -5,6 +5,7 @@ package(default_visibility = ["//rust_kv:consumers"])
 package_group(
     name = "consumers",
     packages = [
+        "//mach/...",
         # max._kv_core is built there (see kv-core-pyo3/BUILD.bazel).
         "//max/python/max",
         "//max/tests/integration/accuracy/smoke_tests/...",

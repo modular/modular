@@ -35,6 +35,8 @@ def _stripped_config() -> PretrainedConfig:
 def _check(config: PretrainedConfig) -> None:
     assert config.model_type == "flint"
     assert config.num_hidden_layers == 49
+    assert config.vocab_size == 150144
+    assert config.eos_token_id == [150001, 150003, 150005, 150018]
     assert config.hidden_size == 2048
     assert config.num_attention_heads == 32
     assert config.num_key_value_heads == 4

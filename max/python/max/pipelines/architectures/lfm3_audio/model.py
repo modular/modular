@@ -34,7 +34,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import SafetensorWeights, WeightData
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,

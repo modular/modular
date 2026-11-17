@@ -30,6 +30,7 @@ modular_cc_library(
     strip_include_prefix = "WeightsRegistry",
     deps = [
         ":weights_registry_c_api",
+        "//Support:SymbolExport",
     ],
 )
 
@@ -58,8 +59,9 @@ modular_cc_library(
     strip_include_prefix = "Tracing",
     deps = [
         ":tracing_c_api",
+        "//Support:SymbolExport",
     ] + select({
-        "//:tracy_enabled": ["@tracy//:Tracy"],
+        "//:tracy_enabled": ["@tracy//:Tracy.import"],
         "//conditions:default": [],
     }),
 )

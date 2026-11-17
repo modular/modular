@@ -30,7 +30,6 @@ from std.sys import get_defined_int, size_of
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceBuffer,
     DeviceContext,
     DeviceGraph,
@@ -40,12 +39,12 @@ from max.gpu.host import (
 )
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_bf16_num_partitions,
     amd_sparse_mla_decode_num_partitions,
 )
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import AMDMLA, flare_mla_decoding
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
     _AMD_SPARSE_MLA_MAX_LAUNCH_TOKENS,
@@ -345,7 +344,7 @@ def stage_chunks(
         )
         var q_tokens = TileTensor(
             _mp(a.q).unsafe_offset(token0 * num_heads * k_cache_dim),
-            TileLayout(
+            Layout(
                 (tokens, Idx[1], Idx[num_heads], Idx[k_cache_dim]),
                 (
                     Idx[num_heads * k_cache_dim],
@@ -357,7 +356,7 @@ def stage_chunks(
         )
         var out_tokens = TileTensor(
             _mp(a.out).unsafe_offset(token0 * num_heads * kv_latent_dim),
-            TileLayout(
+            Layout(
                 (tokens, Idx[1], Idx[num_heads], Idx[kv_latent_dim]),
                 (
                     Idx[num_heads * kv_latent_dim],
@@ -374,6 +373,7 @@ def stage_chunks(
         flare_mla_decoding[
             config=MHAConfig[dtype](num_heads, k_cache_dim),
             decoding_warp_split_k=False,
+            kernels=AMDMLA,
         ](
             out_tokens,
             q_tokens,
@@ -386,9 +386,7 @@ def stage_chunks(
                 tokens,
                 indices_stride,
                 num_heads,
-                ctx.device().get_attribute(
-                    DeviceAttribute.MULTIPROCESSOR_COUNT
-                ),
+                ctx.device().multiprocessor_count(),
             ),
         )
 
@@ -500,7 +498,7 @@ def check_correctness[
         seq_len,
         stride,
         num_heads,
-        ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+        ctx.device().multiprocessor_count(),
     )
     if expect_np > 0:
         assert_equal(np, expect_np, "case does not reach the intended split")
@@ -606,7 +604,7 @@ def check_empty(
         seq_len,
         stride,
         num_heads,
-        ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+        ctx.device().multiprocessor_count(),
     )
     if seq_len == 257:
         assert_true(np == 1, "empty-row unsplit case must use one partition")
@@ -707,7 +705,7 @@ def main() raises:
             # The arm puts one query token per grid.z slice in each launch.
             assert_true(
                 _AMD_SPARSE_MLA_MAX_LAUNCH_TOKENS
-                <= ctx.device().get_attribute(DeviceAttribute.MAX_GRID_DIM_Z),
+                <= ctx.device().max_grid_dim_z(),
                 "the arm's tokens per launch exceed the device grid.z limit",
             )
             var b = Bench(ctx)
@@ -726,14 +724,18 @@ def main() raises:
             comptime assert (
                 num_heads == 32 or num_heads == 16
             ), "expected splits are pinned for 16 and 32 heads"
-            comptime split_np8 = 16 if num_heads == 32 else 32
-            comptime split_np32 = 4 if num_heads == 32 else 16
+            comptime split_np8 = 16 if num_heads == 32 else 17
+            comptime split_np32 = 4 if num_heads == 32 else 6
             check_correctness(
                 ctx, b, 8, 2, [0, 3, 7], "split_batch8", split_np8
             )
             check_correctness(
                 ctx, b, 32, 2, [0, 13, 31], "split_batch32", split_np32
             )
+            # MTP verify flattens 6 query tokens per sequence (5 drafts + 1)
+            # into rows, so 8 and 16 sequences give 48 and 96 rows.
+            check_correctness(ctx, b, 48, 2, [0, 5, 6, 47], "mtp_verify_batch8")
+            check_correctness(ctx, b, 96, 32, [0, 11, 95], "mtp_verify_batch16")
             var big: List[Int] = [
                 0,
                 255,

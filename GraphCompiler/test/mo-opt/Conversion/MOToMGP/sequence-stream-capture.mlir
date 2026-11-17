@@ -49,8 +49,8 @@ mo.graph @seqcap(%a: !mo.tensor<[2, 2], f32, gpu:0>, %b: !mo.tensor<[2, 2], f32,
 mo.graph @seq_chained(%flag: !mo.buffer<[2], si64>, %scratch: !mo.buffer<[4, 8], si32, gpu:0>, %pinned: !mo.tensor<[4, 8], si32>, %x: !mo.tensor<[2, 2], f32, gpu:0>) -> (!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[4, 8], si32, gpu:0>) {
   %c = mo.chain.create()
   %s = mo.sequence[2] (%x : !mo.tensor<[2, 2], f32, gpu:0>) (%unused) -> (!mo.tensor<[4, 8], si32, gpu:0>) {
-    %w = mo.custom [symbol = "mo.wait_host_value_with_dep", device = #M.device_ref<"gpu", 0>](%flag, %scratch, %c) : (!mo.buffer<[2], si64>, !mo.buffer<[4, 8], si32, gpu:0>, !mo.chain) -> !mo.chain
-    %m = mo.custom [symbol = "mo.inplace_memcpy", device = #M.device_ref<"gpu", 0>, parameters = {DstDevice = "gpu", SrcDevice = "cpu"}](%scratch, %pinned, %w) : (!mo.buffer<[4, 8], si32, gpu:0>, !mo.tensor<[4, 8], si32>, !mo.chain) -> !mo.chain
+    %w = mo.custom [symbol = "runtime.wait_host_value_with_dep", device = #M.device_ref<"gpu", 0>](%flag, %scratch, %c) : (!mo.buffer<[2], si64>, !mo.buffer<[4, 8], si32, gpu:0>, !mo.chain) -> !mo.chain
+    %m = mo.custom [symbol = "runtime.inplace_memcpy", device = #M.device_ref<"gpu", 0>, parameters = {DstDevice = "gpu", SrcDevice = "cpu"}](%scratch, %pinned, %w) : (!mo.buffer<[4, 8], si32, gpu:0>, !mo.tensor<[4, 8], si32>, !mo.chain) -> !mo.chain
     %t, %tc = mo.mutable.load(%scratch, %m) : (!mo.buffer<[4, 8], si32, gpu:0>, !mo.chain) -> (!mo.tensor<[4, 8], si32, gpu:0>, !mo.chain)
     mo.yield %t : !mo.tensor<[4, 8], si32, gpu:0>
   }

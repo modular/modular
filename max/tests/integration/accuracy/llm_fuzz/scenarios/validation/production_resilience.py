@@ -306,17 +306,17 @@ class ProductionResilience(BaseScenario):
         kwargs: dict[str, Any] = {"temperature": 0, "seed": 42}
 
         # Non-streaming
-        ns_resp = v.chat(messages, max_tokens=64, **kwargs)
+        ns_resp = v.chat(messages, max_tokens=2048, **kwargs)
         ns_content = ns_resp.choices[0].message.content or ""
         ns_fr = ns_resp.choices[0].finish_reason
 
         # Streaming
-        s_result = v.chat_stream(messages, max_tokens=64, **kwargs)
+        s_result = v.chat_stream(messages, max_tokens=2048, **kwargs)
         s_content = s_result["content"]
         s_fr = s_result["finish_reason"]
 
         issues: list[str] = []
-        # A reasoning model can spend the whole 64-token budget thinking and
+        # A reasoning model can spend the whole budget thinking and
         # return no content: a limit of this test, so INTERESTING. Empty
         # content after a plain truncation still fails.
         ns_message = ns_resp.choices[0].message

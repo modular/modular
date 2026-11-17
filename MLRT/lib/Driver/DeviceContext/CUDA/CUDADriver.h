@@ -21,6 +21,7 @@
 #include "MLRT/Driver/DeviceContext/KernelLoadGate.h"
 #include "Support/ErrorOr.h"
 #include "Support/Preprocessor.h"
+#include "Support/SymbolExport.h"
 #include "Support/max_license/Tracy/Tracy.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Process.h"
@@ -510,7 +511,7 @@ inline bool isCUDADebugLoggingEnabled() {
     llvm::errs() << "[CUDA] " << __FUNCTION__ << "\n";                         \
   }
 
-class CUDADriver {
+class MODULAR_CXX_EXPORT CUDADriver {
 
 public:
   enum Result : unsigned int {

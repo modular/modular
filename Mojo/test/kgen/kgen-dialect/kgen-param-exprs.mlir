@@ -66,11 +66,11 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   // CHECK: = kgen.param.constant: i1 = <1>
   %22 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> le(5, 9))>
 
-  // CHECK: = kgen.param.constant = <get_sizeof(mlirType, #kgen.target
-  %23 = kgen.param.constant = <get_sizeof(mlirType, #target)>
+  // CHECK: = kgen.param.constant: scalar<index> = <get_sizeof(mlirType, #kgen.target
+  %23 = kgen.param.constant: scalar<index> = <get_sizeof(mlirType, #target)>
 
-  // CHECK: = kgen.param.constant = <get_alignof(mlirType, #kgen.target
-  %24 = kgen.param.constant = <get_alignof(mlirType, #target)>
+  // CHECK: = kgen.param.constant: scalar<index> = <get_alignof(mlirType, #kgen.target
+  %24 = kgen.param.constant: scalar<index> = <get_alignof(mlirType, #target)>
 
   // CHECK: = kgen.param.constant = <to_builtin(:scalar<index> max(from_builtin(p1), 2))>
   %25 = kgen.param.constant = <max(p1, 2)>
@@ -500,30 +500,30 @@ kgen.generator @param_canonicalize<p1, p2>() {
 // CHECK-LABEL: kgen.generator @datalayout_operators()
 kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <4>
-  kgen.param.constant: index = <get_sizeof(si32, #target)>
+  kgen.param.constant: scalar<index> = <get_sizeof(si32, #target)>
   // i20 stores in 3 bytes but allocates 4: get_sizeof reports the alloc size.
   // CHECK-NEXT: <4>
-  kgen.param.constant: index = <get_sizeof(i20, #target)>
+  kgen.param.constant: scalar<index> = <get_sizeof(i20, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_sizeof(f64, #target)>
+  kgen.param.constant: scalar<index> = <get_sizeof(f64, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_sizeof(index, #target)>
+  kgen.param.constant: scalar<index> = <get_sizeof(index, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_sizeof(!kgen.generator<() -> ()>, #target)>
+  kgen.param.constant: scalar<index> = <get_sizeof(!kgen.generator<() -> ()>, #target)>
 
   // CHECK-NEXT: <4>
-  kgen.param.constant: index = <get_alignof(si32, #target)>
+  kgen.param.constant: scalar<index> = <get_alignof(si32, #target)>
   // CHECK-NEXT: <4>
-  kgen.param.constant: index = <get_alignof(i20, #target)>
+  kgen.param.constant: scalar<index> = <get_alignof(i20, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_alignof(f64, #target)>
+  kgen.param.constant: scalar<index> = <get_alignof(f64, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_alignof(index, #target)>
+  kgen.param.constant: scalar<index> = <get_alignof(index, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_alignof(!kgen.generator<() -> ()>, #target)>
+  kgen.param.constant: scalar<index> = <get_alignof(!kgen.generator<() -> ()>, #target)>
 
   // CHECK-NEXT: <1>
-  kgen.param.constant: index = <get_alignof(!kgen.simd<0, f32>, #target)>
+  kgen.param.constant: scalar<index> = <get_alignof(!kgen.simd<0, f32>, #target)>
 
   hlcf.return
 }
@@ -722,8 +722,8 @@ lit.struct.decl @B {}
 
 // CHECK-LABEL: @symbol_exprs
 kgen.generator @symbol_exprs() {
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:scalar<index> from_builtin(get_sizeof(!lit.struct<@A>, #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>)), from_builtin(get_sizeof(!lit.struct<@B>, #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>))))>
-  %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:index get_sizeof(@A, #target),
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:scalar<index> get_sizeof(!lit.struct<@A>, #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>), get_sizeof(!lit.struct<@B>, #kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>)))>
+  %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> get_sizeof(@A, #target),
                                   get_sizeof(@B, #target)))>
   hlcf.return
 }
@@ -877,6 +877,22 @@ kgen.generator @bindParams<c, d: type, fn: <index, type>(!pop.array<*(0,0), *(0,
       :!lit.generator<<type, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:3)>}>index>
         #kgen.bind_params<:!lit.generator<<index, type, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>, <true, loc("bind_params":3:3)>}>index> ?, 1, :type ? | "010">,
       :type i64 | "10">>
+  // A fully bound inner bind_params with an undischarged constraint is still
+  // its own generator, so a discharge-only binding flattens into it.
+  // CHECK: declare discharge_after_full_bind = <bind_params(:!lit.generator<<index, {<true, {{.*}}>, <true, {{.*}}>}>index> ?, 1 | "11")>
+  kgen.param.declare discharge_after_full_bind: index =
+    <#kgen.bind_params<
+      :!lit.generator<<{<true, loc("bind_params":4:2)>}>index>
+        #kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":4:1)>, <true, loc("bind_params":4:2)>}>index> ?, 1 | "10">
+      | "1">>
+  // A fully bound inner bind_params instantiates its generator's body, so new
+  // bindings bind that body instead of flattening into the outer generator.
+  // CHECK: declare bind_instantiated_body = <bind_params(:!lit.generator<<index>index> bind_params(:!lit.generator<<index>!lit.generator<<index>index>> ?, 1), 2)>
+  kgen.param.declare bind_instantiated_body: index =
+    <#kgen.bind_params<
+      :!lit.generator<<index>index>
+        #kgen.bind_params<:!lit.generator<<index>!lit.generator<<index>index>> ?, 1>,
+      2>>
   hlcf.return
 }
 

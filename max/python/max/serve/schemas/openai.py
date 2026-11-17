@@ -105,6 +105,7 @@ from pydantic import (
 from typing_extensions import NotRequired, TypedDict
 
 from max.serve.schemas._chat_template import (
+    thinking_disabled,
     thinking_requested,
 )
 
@@ -500,30 +501,55 @@ class CreateChatCompletionRequest(
     def _translate_thinking_to_standard(cls, data: Any) -> Any:
         # A vendor ``thinking`` control ({"type": enabled|disabled|adaptive})
         # is translated to the standard ``enable_thinking``/``thinking``
-        # chat-template booleans. ``adaptive`` leaves them unset: templates
-        # default to adaptive when no reasoning flag is given, so the two
-        # render identically. Client-set ``chat_template_kwargs`` win.
+        # chat-template booleans. ``adaptive``, or no ``type``, leaves them
+        # unset: templates default to adaptive when no reasoning flag is
+        # given, so the two render identically. Other members, such as
+        # Anthropic's ``budget_tokens``, are ignored, and so is a null
+        # ``thinking``, which the strict request model would otherwise refuse
+        # as an unknown field. Client-set ``chat_template_kwargs`` win.
+        #
+        # A request that closes thinking never renders its effort: the tokenizer
+        # discards it, and the orchestrator's parser does too, so the schema
+        # must not reject a word it would drop.
         if not isinstance(data, dict):
             return data
         thinking = data.get("thinking")
-        if thinking is None:
-            return data
-        if not isinstance(thinking, dict) or set(thinking) - {"type"}:
-            raise ValueError("`thinking` must be an object with a `type` field")
-        mode = thinking.get("type")
-        if mode not in ("enabled", "disabled", "adaptive"):
-            raise ValueError(
-                "`thinking.type` must be one of 'enabled', 'disabled', "
-                f"'adaptive'; got {mode!r}"
-            )
-        data = dict(data)
-        data.pop("thinking")
-        if mode != "adaptive":
-            enabled = mode == "enabled"
-            kwargs = dict(data.get("chat_template_kwargs") or {})
-            kwargs.setdefault("enable_thinking", enabled)
-            kwargs.setdefault("thinking", enabled)
-            data["chat_template_kwargs"] = kwargs
+        if thinking is not None:
+            if not isinstance(thinking, dict):
+                raise ValueError(
+                    "`thinking` must be an object with a `type` field"
+                )
+            mode = thinking.get("type")
+            if mode is None:
+                mode = "adaptive"
+            elif mode not in ("enabled", "disabled", "adaptive"):
+                raise ValueError(
+                    "`thinking.type` must be one of 'enabled', 'disabled', "
+                    f"'adaptive'; got {mode!r}"
+                )
+            data = dict(data)
+            data.pop("thinking")
+            if mode != "adaptive":
+                enabled = mode == "enabled"
+                kwargs = dict(data.get("chat_template_kwargs") or {})
+                # MiniMax's native mode outranks a stated effort, so ``enabled``
+                # still forces thinking beside one. Written only when the client
+                # set no switch itself.
+                if not {"thinking", "enable_thinking", "thinking_mode"} & set(
+                    kwargs
+                ):
+                    kwargs["thinking_mode"] = mode
+                kwargs.setdefault("enable_thinking", enabled)
+                kwargs.setdefault("thinking", enabled)
+                data["chat_template_kwargs"] = kwargs
+        if "thinking" in data:
+            data = dict(data)
+            data.pop("thinking")
+        if thinking_disabled(data.get("chat_template_kwargs")) and (
+            "reasoning_effort" in data
+        ):
+            data = dict(data)
+            data.pop("reasoning_effort")
         return data
 
     @model_validator(mode="after")

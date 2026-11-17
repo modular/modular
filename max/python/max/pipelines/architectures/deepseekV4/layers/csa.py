@@ -174,10 +174,26 @@ class CompressedStream:
         ) < ops.reshape(cutoff, [t, 1])
         return ops.concat([cached, fresh], axis=-1)
 
+    def live(self, cutoff: TensorValue) -> TensorValue:
+        """``[T]`` int64 count of :meth:`valid`'s true columns, in closed form.
+
+        A row-sum of the ``[T, n_cand]`` mask launches one warp per token,
+        a handful of CTAs in decode.
+
+        Args:
+            cutoff: As in :meth:`valid`.
+        """
+        device = cutoff.device
+        cap = scalar(self.cap, device)
+        base = self.token_base
+        cached = ops.min(base, cap)
+        fresh = ops.min(ops.max(cutoff - base, scalar(0, device)), cap)
+        return ops.cast(cached + fresh, DType.int64)
+
 
 def compressed_stream(
     compressor: DeepseekV4Compressor,
-    x32: TensorValue,
+    x: TensorValue,
     rows: RaggedRows,
     windows: WindowRows,
     freqs_table: TensorValue,
@@ -190,7 +206,7 @@ def compressed_stream(
 
     Args:
         compressor: The stream's compressor (attention's or the indexer's).
-        x32: ``[T, hidden]`` float32 block input.
+        x: ``[T, hidden]`` block input in the activation dtype.
         rows: The batch's token bookkeeping.
         windows: The candidate windows for ``compressor.compress_ratio``.
         freqs_table: The layer's full rotary table.
@@ -205,7 +221,7 @@ def compressed_stream(
     assert windows.ratio == ratio
     assert layer.zone is not None
 
-    kv_proj, score_proj = compressor.projections(x32)
+    kv_proj, score_proj = compressor.projections(x)
     cap = ceildiv(max_seq_len, ratio)
     if state_leaf is None:
         # Every position is in the chunk. Rows past a request's end are

@@ -46,7 +46,7 @@ from max import tree
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen2_5vl.nn.decoder import (
     Qwen25VLDecoderAttentionWithRope,

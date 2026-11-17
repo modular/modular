@@ -84,7 +84,10 @@ def _dir_of_current_file() raises -> Path:
 
 @inline(.never)
 def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
-    var i = String(file_name).rfind(DIR_SEPARATOR)
+    __guard case .Some(i) = file_name.rfind(DIR_SEPARATOR) else:
+        return Path(".")
+    if i == 0:
+        return Path(DIR_SEPARATOR)
     return Path(file_name[byte=0:i])
 
 
@@ -111,7 +114,7 @@ struct Path(
         self = cwd()
 
     # Note: Not @implicit so that allocation is not implicit.
-    def __init__(out self, path: StringSlice):
+    def __init__(out self, path: StringSpan):
         """Initializes a path with the provided path.
 
         Args:
@@ -146,9 +149,9 @@ struct Path(
         Returns:
           A new path with the suffix appended to the current path.
         """
-        return self.__truediv__(StringSlice(suffix.path))
+        return self.__truediv__(StringSpan(suffix.path))
 
-    def __truediv__(self, suffix: StringSlice) -> Self:
+    def __truediv__(self, suffix: StringSpan) -> Self:
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -161,7 +164,7 @@ struct Path(
         res /= suffix
         return res
 
-    def __itruediv__(mut self, suffix: StringSlice):
+    def __itruediv__(mut self, suffix: StringSpan):
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -223,7 +226,7 @@ struct Path(
         """
         return String(self) == String(other)
 
-    def __eq__(self, other: StringSlice) -> Bool:
+    def __eq__(self, other: StringSpan) -> Bool:
         """Returns True if the two paths are equal.
 
         Args:
@@ -232,7 +235,7 @@ struct Path(
         Returns:
           True if the String and Path are equal, and False otherwise.
         """
-        return StringSlice(self.path) == other
+        return StringSpan(self.path) == other
 
     @inline(.always)
     def __lt__(self, other: Self) -> Bool:
@@ -505,17 +508,21 @@ struct Path(
         assert_true(p.suffix() == "") # No suffix
         ```
         """
-        # +2 to skip both `DIR_SEPARATOR` and the first ".".
-        # For example /a/.foo's suffix is "" but /a/b.foo's suffix is .foo.
-        var start = self.path.rfind(DIR_SEPARATOR) + 2
-        var i = self.path.rfind(".", start)
-        if 0 < i < (self.path.byte_length() - 1):
-            return String(self.path[byte=i:])
+        # Skip the first character of the file name, so a leading "." doesn't
+        # count. For example /a/.foo's suffix is "" but /a/b.foo's suffix is
+        # .foo.
+        var start = 1
+        if case .Some(last_sep) = self.path.rfind(DIR_SEPARATOR):
+            # +2 to skip both `DIR_SEPARATOR` and the first character.
+            start = last_sep + 2
+        if case .Some(i) = self.path.rfind(".", start):
+            if 0 < i < (self.path.byte_length() - 1):
+                return String(self.path[byte=i:])
 
         return ""
 
     # TODO(MOCO-1532):
-    #   Use StringSlice here once param inference bug for empty variadic
+    #   Use StringSpan here once param inference bug for empty variadic
     #   list of parameterized types is fixed.
     def joinpath(self, *pathsegments: String) -> Path:
         """Joins the Path using the pathsegments.
@@ -597,7 +604,7 @@ struct Path(
 
     def parts(
         self,
-    ) -> List[StringSlice[origin_of(self.path)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[String._InteriorOrigin[origin_of(self.path)]]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
         Returns:

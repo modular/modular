@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """The compressor's host-side helpers against the reference's formulas.
 
-The pooling itself runs in the registered ``mo.csa.compress`` ops and is
+The pooling itself runs in the registered ``attention.csa.compress`` ops and is
 executed on a B200 by the cache-op suite; these tests pin the two helpers
 the host runs around it: ``compressed_visibility`` (the reference's
 ``compress_lens`` mask, one expression) and ``validate_chunk`` (the

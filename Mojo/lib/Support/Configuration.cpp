@@ -113,6 +113,21 @@ StringRef MojoConfig::getCompilerRTPath() {
                  "lib/libKGENCompilerRTShared" EXT);
 }
 
+StringRef MojoConfig::getCompilerRTTSanPath() {
+  return getPath(STRINGIFY_MOJO_CONFIG(".compilerrt_tsan_path"),
+                 "lib/tsan/libKGENCompilerRTShared" EXT);
+}
+
+StringRef MojoConfig::getMDriverTSanPath() {
+  return getPath(STRINGIFY_MOJO_CONFIG(".mdriver_tsan_path"),
+                 "lib/tsan/libMDriver" EXT);
+}
+
+StringRef MojoConfig::getRuntimeGlobalsTSanPath() {
+  return getPath(STRINGIFY_MOJO_CONFIG(".runtime_globals_tsan_path"),
+                 "lib/tsan/libAsyncRTRuntimeGlobals" EXT);
+}
+
 StringRef MojoConfig::getMGPRTPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".mgprt_path"), "lib/libMGPRT" EXT);
 }
@@ -123,11 +138,6 @@ StringRef MojoConfig::getMGPRTPath() {
 
 StringRef MojoConfig::getDriverPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".driver_path"), "bin/mojo");
-}
-
-StringRef MojoConfig::getJupyterPath() {
-  return getPath(STRINGIFY_MOJO_CONFIG(".jupyter_path"),
-                 "lib/libMojoJupyter" EXT);
 }
 
 StringRef MojoConfig::getLSPServerPath() {

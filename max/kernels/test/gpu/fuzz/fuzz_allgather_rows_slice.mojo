@@ -107,7 +107,7 @@ def fill_bits(
         ptr[unsafe_offset=i] = bits
 
 
-def run_one_case(contexts: List[DeviceContext], spec: CaseSpec) raises:
+def run_one_case(contexts: List[DeviceContext[]], spec: CaseSpec) raises:
     if not (
         0 <= spec.rows_per_rank <= 64
         and 0 <= spec.col_units <= 4096
@@ -240,7 +240,7 @@ def main() raises:
         raise Error("not enough visible GPUs for sliced allgather")
     if not enable_p2p():
         raise Error("sliced allgather fuzzing requires P2P access")
-    var contexts = List[DeviceContext](capacity=ngpus)
+    var contexts = List[DeviceContext[]](capacity=ngpus)
     for d in range(ngpus):
         contexts.append(DeviceContext(device_id=d))
     if mode == "single":

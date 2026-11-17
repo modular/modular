@@ -10,65 +10,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Maps the MTP draft's checkpoint names onto the MAX tree."""
+"""Maps a GLM-5 checkpoint onto the unified MTP module."""
 
-from max.graph.weights import WeightData, Weights
-from transformers.configuration_utils import PretrainedConfig
+from __future__ import annotations
 
-from ..deepseekV3.weight_adapters import DEEPSEEK_SAFETENSOR_MAP
+from collections.abc import Sequence
 
-# MTP layer key mappings: from checkpoint MTP-layer suffix to draft module path.
-# The MTP layer in the GLM-5.2 checkpoint is at index ``num_hidden_layers``.
-# ``embed_tokens`` and ``shared_head.head`` (lm_head) are shared with the target
-# and are not emitted under the MTP layer in this checkpoint, so they need no
-# mapping here.
-_MTP_LAYER_MAP = {
-    "shared_head.norm.": "draft.shared_head_norm.",
-    "enorm.": "draft.enorm.",
-    "hnorm.": "draft.hnorm.",
-    "eh_proj.": "draft.eh_proj.",
-}
+from max.pipelines.lib import WeightRenaming, WeightRule
+from transformers import PretrainedConfig
+
+from ..glm5_1.weight_adapters import GLM5_1_RENAMES
 
 
-def convert_with_mtp_state_dict(
-    state_dict: dict[str, Weights],
+def unified_mtp_glm5_2_weight_rules(
     huggingface_config: PretrainedConfig,
-    **unused_kwargs,
-) -> dict[str, WeightData]:
-    """Convert safetensor weights for the unified GLM-5.2 MTP model.
+) -> Sequence[WeightRule]:
+    """Returns the rules that name a checkpoint for the unified MTP module.
 
-    Produces keys prefixed with ``target.*`` and ``draft.*`` to match the
-    composed :class:`UnifiedMTPGlm5_2` module hierarchy. Shared weights
-    (``embed_tokens``, ``lm_head``) appear only under ``target.*`` — weight
-    sharing via module aliasing causes ``state_dict()`` to deduplicate them.
+    The target's weights go under ``target.`` and the NextN layer's under
+    ``draft.``. The checkpoint holds no copy of the embedding and head under
+    the NextN layer: the draft shares the target's.
+
+    Args:
+        huggingface_config: The checkpoint's config.
     """
-    new_state_dict: dict[str, WeightData] = {}
-    mtp_layer_idx = huggingface_config.num_hidden_layers
-
-    for name, value in state_dict.items():
-        max_name = name
-        for before, after in DEEPSEEK_SAFETENSOR_MAP.items():
-            max_name = max_name.replace(before, after)
-
-        # Drop FP8 KV-cache static scales emitted by some checkpoints; MAX
-        # reads KV cache scales from a separate configuration path.
-        if max_name.endswith((".k_scale", ".v_scale")):
-            continue
-
-        mtp_prefix = f"layers.{mtp_layer_idx}."
-        if max_name.startswith(mtp_prefix):
-            suffix = max_name[len(mtp_prefix) :]
-
-            mapped = False
-            for before, after in _MTP_LAYER_MAP.items():
-                if suffix.startswith(before):
-                    new_state_dict[after + suffix[len(before) :]] = value.data()
-                    mapped = True
-                    break
-
-            if not mapped:
-                new_state_dict[f"draft.decoder_layer.{suffix}"] = value.data()
-        else:
-            new_state_dict[f"target.{max_name}"] = value.data()
-
-    return new_state_dict
+    nextn = rf"^layers\.{huggingface_config.num_hidden_layers}\."
+    return (
+        *GLM5_1_RENAMES,
+        WeightRenaming(
+            nextn + r"shared_head\.norm\.", "draft.shared_head_norm."
+        ),
+        WeightRenaming(nextn + r"(enorm|hnorm|eh_proj)\.", r"draft.\1."),
+        WeightRenaming(nextn, "draft.decoder_layer."),
+        WeightRenaming.prefix("target."),
+        WeightRenaming(r"^target\.draft\.", "draft."),
+    )

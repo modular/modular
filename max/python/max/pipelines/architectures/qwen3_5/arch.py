@@ -16,20 +16,17 @@ import dataclasses
 from pathlib import Path
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-)
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Qwen3_5BatchProcessor
-from .memory_planner import Qwen3_5MemoryPlanner
+from .context import Qwen3_5TextAndVisionContext
 from .model import Qwen3_5Model
 from .model_config import Qwen3_5Config
 from .reasoning import Qwen3_5ReasoningParser  # noqa: F401  registers "qwen3_5"
 from .tokenizer import Qwen3_5Tokenizer
 from .tool_parser import Qwen3_5ToolParser  # noqa: F401  registers "qwen3_5"
-from .weight_adapters import convert_qwen3_5_state_dict
+from .weight_adapters import qwen3_5_weight_rules
 
 qwen3_5_arch = SupportedArchitecture(
     name="Qwen3_5ForConditionalGeneration",
@@ -40,15 +37,14 @@ qwen3_5_arch = SupportedArchitecture(
     supported_encodings=Qwen3_5Config.SUPPORTED_ENCODINGS,
     pipeline_model=Qwen3_5Model,
     tokenizer=Qwen3_5Tokenizer,
-    context_type=Qwen3VLTextAndVisionContext,
+    context_type=Qwen3_5TextAndVisionContext,
     input_modalities={
         InputModality.TEXT,
         InputModality.IMAGE,
         InputModality.VIDEO,
     },
-    weight_adapters={
-        WeightsFormat.safetensors: convert_qwen3_5_state_dict,
-    },
+    weight_rules=qwen3_5_weight_rules,
+    use_weight_rules=True,
     # Declaring the state leaves is what selects the Jenga pool.
     checkpoints_recurrent_state=True,
     config=Qwen3_5Config,
@@ -57,7 +53,6 @@ qwen3_5_arch = SupportedArchitecture(
     tool_parser="qwen3_5",
     format_spec=Path(__file__).parent / "formatspec.json",
     reasoning_parser="qwen3_5",
-    memory_planner=Qwen3_5MemoryPlanner,
     # A warmup probe's state pages are freed with its KV, so a sweep of probes
     # cannot exhaust them.
     supports_device_graph_capture=True,

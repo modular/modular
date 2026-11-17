@@ -23,18 +23,23 @@ table to bf16 pre-rounded cos/sin and shifted every cached key).
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.pipelines.architectures.dflash_mimo_v2 import DFlashMiMoV2Config
 from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.context_writer import (
     DFlashContextWriter,
 )
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.model_config import (
+    DFlashMiMoV2Config,
+)
 from max.tensor import Tensor, default_device, default_dtype
 from mimo_dflash_v3_fixtures import (
     BLOCK,
+    DFLASH_CONFIG,
     adapted_draft,
     draft_kv_params,
     mask_embedding,
@@ -49,6 +54,44 @@ def _devices() -> list[DeviceRef]:
 def _config() -> DFlashMiMoV2Config:
     devices = _devices()
     return tiny_draft_config(devices, draft_kv_params(devices))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        # 100 head dims with 40 rotated: the head check alone can refuse this,
+        # as the rotated width is aligned and the product is whole.
+        (
+            {"head_dim": 100, "v_head_dim": 100, "partial_rotary_factor": 0.4},
+            "head_dim 100 is not a multiple of 8",
+        ),
+        # 36 of 128 head dims: even, but not an 8-element vector.
+        ({"partial_rotary_factor": 36 / 128}, "not a multiple of 8"),
+        # 32.064 of 128, which int() would silently truncate to 32 and accept.
+        ({"partial_rotary_factor": 0.2505}, "not a whole number"),
+    ],
+    ids=["unaligned-head", "unaligned-rotary", "fractional-rotary"],
+)
+def test_a_width_off_the_eight_element_grid_is_refused(
+    overrides: dict[str, Any], match: str
+) -> None:
+    """A width the fused RoPE store cannot write fails at the config.
+
+    The store writes 8-element vectors over a head whose width it takes from
+    the cache row, so a 100-wide head fails there exactly as a 36-of-128
+    rotated prefix does, and a partial factor that leaves a fraction of an
+    element fails before either. None has a path back to the unfused store.
+    Shipped checkpoints are 128-wide and rotate 64, and are unaffected.
+    """
+    dflash = {**DFLASH_CONFIG, **overrides}
+    devices = _devices()
+    with pytest.raises(ValueError, match=match):
+        DFlashMiMoV2Config.from_dflash_config(
+            dflash,
+            devices=devices,
+            kv_params=draft_kv_params(devices),
+            max_seq_len=4096,
+        )
 
 
 @pytest.fixture(scope="module")

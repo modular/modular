@@ -202,11 +202,3 @@ M_driver_status_t M_driver_queue_launch_host_func(M_driver_queue_t queue,
     return M_DRIVER_STATUS_BAD_QUEUE;
   return queue->launchHostFunc(fn, user_data);
 }
-
-M_driver_status_t M_driver_queue_wait_value64(M_driver_queue_t queue,
-                                              uint64_t device_address,
-                                              uint64_t value) {
-  if (queue == nullptr)
-    return M_DRIVER_STATUS_BAD_QUEUE;
-  return queue->waitValue64(device_address, value);
-}

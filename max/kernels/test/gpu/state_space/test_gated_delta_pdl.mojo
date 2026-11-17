@@ -203,7 +203,8 @@ def _offsets(lengths: List[Int]) -> List[UInt32]:
 def run_conv_recurrence_arm[
     pdl_level: PDLLevel
 ](ctx: DeviceContext, lengths: List[Int], nk: Int, nv: Int) raises -> Outputs:
-    """Runs conv1d then the recurrence from a seeded input at one PDL level."""
+    """Runs conv1d then the recurrence from a seeded input with one launch
+    PDL level."""
     var batch_size = len(lengths)
     var offsets_h = _offsets(lengths)
     var total = Int(offsets_h[batch_size])
@@ -287,13 +288,15 @@ def run_conv_recurrence_arm[
         type_of(conv_offsets_tt).LayoutType,
         type_of(conv_out_tt).LayoutType,
         type_of(qkv_tt).Engine,
-        pdl_level=pdl_level,
     ]
     ctx.enqueue_function[conv_kernel](
         Int32(batch_size),
         Int32(total),
         Int32(conv_dim),
         Int32(tokens_per_block),
+        # Read only under CAPTURE_INPUT.
+        Int32(0),
+        Int32(0),
         qkv_tt,
         weight_tt,
         conv_state_tt,
@@ -345,7 +348,6 @@ def run_conv_recurrence_arm[
         type_of(rec_slots_tt).LayoutType,
         type_of(rec_offsets_tt).LayoutType,
         type_of(out_tt).Engine,
-        pdl_level=pdl_level,
     ]
     ctx.enqueue_function[rec_kernel](
         Int32(batch_size),
@@ -384,8 +386,8 @@ def run_conv_recurrence_arm[
 def run_verify_fold_arm[
     pdl_level: PDLLevel
 ](ctx: DeviceContext, lengths: List[Int], nk: Int, nv: Int) raises -> Outputs:
-    """Runs verify-ring then the state fold from a seeded input at one PDL level.
-    """
+    """Runs verify-ring then the state fold from a seeded input with one
+    launch PDL level."""
     var batch_size = len(lengths)
     var offsets_h = _offsets(lengths)
     var total = Int(offsets_h[batch_size])
@@ -471,13 +473,15 @@ def run_verify_fold_arm[
         type_of(ring_slots_tt).LayoutType,
         type_of(out_tt).Engine,
         True,
-        pdl_level=pdl_level,
     ]
     ctx.enqueue_function[verify_kernel](
         Int32(batch_size),
         Int32(nv),
         Int32(nk),
         Int32(key_dim),
+        # A full window is one real token and its drafts, so every row
+        # records and RECORDS_ONLY holds.
+        Int32(RING_LEN - 1),
         out_tt,
         rec_state_tt,
         slots_tt,
@@ -520,7 +524,6 @@ def run_verify_fold_arm[
         type_of(ring_slots_2d).LayoutType,
         type_of(accepted_tt).LayoutType,
         type_of(rec_state_tt).Engine,
-        pdl_level=pdl_level,
     ]
     ctx.enqueue_function[fold_kernel](
         Int32(batch_size),

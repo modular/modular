@@ -18,6 +18,8 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Support/DebugStringHelper.h"
 
+#include <cstring>
+
 using namespace M;
 using namespace KGEN;
 
@@ -722,6 +724,39 @@ SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// UntaggedUnionInitOp
+//===----------------------------------------------------------------------===//
+
+static ErrorTreeOrSuccess initializeUnion(Location loc, Attribute operand,
+                                          InterpreterState &state) {
+  auto pointer = cast<PointerAttr>(operand);
+  auto type = cast<UntaggedUnionType>(
+      cast<PointerType>(pointer.getType()).getElementType());
+  auto size = type.getTypeSize(state.getTarget());
+  if (!size)
+    return ErrorTree(loc, "cannot initialize unresolved untagged union field");
+  if (*size == 0)
+    return success();
+  auto memory = state.getWritableMemory(pointer.getAddr(), *size);
+  if (memory.isError())
+    return ErrorTree(loc, memory.takeError());
+  memset(*memory, 0, *size);
+  return success();
+}
+
+ErrorTreeOrSuccess UntaggedUnionInitOp::interpret(ArrayRef<Attribute> operands,
+                                                  InterpreterState &state) {
+  return initializeUnion(getLoc(), operands.front(), state);
+}
+
+ErrorTreeOrSuccess
+UntaggedUnionInitOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                          ParametricInterpreterState &state) {
+  return initializeUnion(getLoc(), state.getReboundAttribute(operands.front()),
+                         state);
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
@@ -878,6 +913,49 @@ StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
   }
 
   return ErrorTree(getLoc(), "can't interpret POP::StructCreateOp");
+}
+
+//===----------------------------------------------------------------------===//
+// StructConcatOp
+//===----------------------------------------------------------------------===//
+
+static StructAttr foldStructConcatConstant(StructType resultType,
+                                           ArrayRef<Attribute> operands) {
+  SmallVector<TypedAttr> values;
+  for (Attribute operand : operands) {
+    auto value = dyn_cast_if_present<StructAttr>(operand);
+    if (!value)
+      return {};
+    llvm::append_range(values, value.getValues());
+  }
+  return StructAttr::get(values, resultType);
+}
+
+OpFoldResult StructConcatOp::fold(FoldAdaptor adaptor) {
+  if (getNumOperands() == 1 && getStructs().front().getType() == getType()) {
+    if (Attribute operand = adaptor.getStructs().front())
+      return operand;
+    return getStructs().front();
+  }
+  if (!getType().getVariadicIfResolved())
+    return {};
+  return foldStructConcatConstant(getType(), adaptor.getOperands());
+}
+
+ErrorTreeOrSuccess StructConcatOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
+ErrorTreeOrSuccess
+StructConcatOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  auto resultType = cast<StructType>(state.getReboundType(getType()));
+  if (resultType.getVariadicIfResolved()) {
+    if (StructAttr cst = foldStructConcatConstant(resultType, operands))
+      return state.mapResults(cst);
+  }
+  return ErrorTree(getLoc(), "can't interpret KGEN::StructConcatOp");
 }
 
 //===----------------------------------------------------------------------===//

@@ -13,7 +13,7 @@
 """Online softmax for gfx950 attention kernels.
 
 Score, warp_scratch, and output are TileTensors. Warp + fragment geometry is
-expressed via TileLayout / `Coord`: `WarpLayoutT` is the col-major
+expressed via Layout / `Coord`: `WarpLayoutT` is the col-major
 (warp_rows, warp_cols) lane layout, and `FragmentLayoutT` describes the
 per-lane MMA fragment shape. All lane decomposition / stride queries go
 through `Layout` methods rather than hand-rolled integer arithmetic.
@@ -26,7 +26,7 @@ from std.bit import log2_floor
 from max.gpu import lane_id, warp_id as get_warp_id
 from max.gpu.sync import barrier
 from layout import TileTensor, row_major, stack_allocation
-from layout.tile_layout import col_major
+from layout.layout import col_major
 from nn.softmax import _exp2_concrete, _exp_concrete
 
 
@@ -41,6 +41,12 @@ struct Softmax[
     # MMA M extent (32 or 16 on gfx950) — selects lane + fragment geometry.
     mma_m: Int,
     use_exp2: Bool = False,
+    # Reduce each row's P values with packed adds (vector accumulate plus a
+    # log-depth halving tree) instead of a per-element scalar add chain. The
+    # tree reorders the fp32 sum (~1e-7 relative), far below the e4m3 P
+    # quantization. Off by default so the kernels sharing this struct keep
+    # their exact scalar order.
+    packed_row_sum: Bool = False,
 ]:
     """Maintains online-softmax state and operations for gfx950 attention kernels.
 
@@ -63,10 +69,12 @@ struct Softmax[
             fragment geometry.
         use_exp2: Use `exp2` instead of `exp` for the exponential
             (defaults to False).
+        packed_row_sum: Sum each row with packed `v_pk_add_f32` and a
+            log-depth tree, reordering the fp32 sum (defaults to False).
     """
 
     # Warp lane layout (col-major (warp_rows, warp_cols)) as a proper
-    # TileLayout. `static_shape` / `static_stride` expose geometry; `idx2crd`
+    # Layout. `static_shape` / `static_stride` expose geometry; `idx2crd`
     # decomposes a lane index into (lane_row, lane_col).
     comptime _warp_rows = 32 if Self.mma_m == 32 else 16
     comptime _warp_cols = 2 if Self.mma_m == 32 else 4
@@ -222,25 +230,49 @@ struct Softmax[
         var lane_contains_first_column = lane_col == 0
 
         # Per-thread fragment reduction + warp-level lane shuffle.
+        # gfx950 MFMA fragments are always row-vectors (shape[0]=1), so a
+        # row's fragment lanes are walked contiguously with row fixed at 0.
+        comptime assert Self.frag_is_row_vector
         comptime for col_tile in range(Self.num_colwise_tiles):
-            comptime for row_tile in range(Self.num_rowwise_tiles):
-                comptime tile_id = (
-                    col_tile + row_tile * Self.num_colwise_tiles
-                )
-                var frag = score_reg_tile[tile_id, 0]
-
-                # gfx950 MFMA fragments are always row-vectors (shape[0]=1);
-                # the outer loop iterates once with row=0, then `col` walks
-                # the frag_size register lanes contiguously.
-                comptime assert Self.frag_is_row_vector
-                comptime for row in range(Self.frag_num_rows):
-                    comptime for col in range(Self.frag_size):
-                        comptime if is_max:
+            comptime if is_max:
+                comptime for row_tile in range(Self.num_rowwise_tiles):
+                    comptime tile_id = (
+                        col_tile + row_tile * Self.num_colwise_tiles
+                    )
+                    var frag = score_reg_tile[tile_id, 0]
+                    comptime for row in range(Self.frag_num_rows):
+                        comptime for col in range(Self.frag_size):
                             self.score_frag_rowmax[col_tile, row] = max(
                                 self.score_frag_rowmax[col_tile, row],
                                 frag[col],
                             )
-                        else:
+            elif Self.packed_row_sum:
+                comptime assert (
+                    Self.frag_size == 16
+                ), "packed_row_sum expects the 32x32 P fragment (16 fp32/lane)"
+                # Accumulate the row's fragments as fp32 vectors, then halve
+                # the 16 lanes down a tree: 8 packed adds per row tile plus
+                # 4+2+1 packed and 1 scalar, instead of a frag_size-deep
+                # scalar chain. Seeded from the first tile so the accumulate
+                # never adds 0.0, which fp arithmetic forbids folding away.
+                var lanes = score_reg_tile[col_tile, 0]
+                comptime for row_tile in range(1, Self.num_rowwise_tiles):
+                    comptime tile_id = (
+                        col_tile + row_tile * Self.num_colwise_tiles
+                    )
+                    lanes += score_reg_tile[tile_id, 0]
+                var halves = lanes.slice[8]() + lanes.slice[8, offset=8]()
+                var quarters = halves.slice[4]() + halves.slice[4, offset=4]()
+                var pairs = quarters.slice[2]() + quarters.slice[2, offset=2]()
+                self.score_frag_rowsum[col_tile, 0] = pairs[0] + pairs[1]
+            else:
+                comptime for row_tile in range(Self.num_rowwise_tiles):
+                    comptime tile_id = (
+                        col_tile + row_tile * Self.num_colwise_tiles
+                    )
+                    var frag = score_reg_tile[tile_id, 0]
+                    comptime for row in range(Self.frag_num_rows):
+                        comptime for col in range(Self.frag_size):
                             self.score_frag_rowsum[col_tile, row] += frag[col]
 
             comptime for row in range(Self.frag_num_rows):
@@ -434,7 +466,7 @@ struct Softmax[
 
     @inline(.always)
     def exp_pkfma[
-        start: Int = 0, stride: Int = 1
+        start: Int = 0, stride: Int = 1, arg_bias_log2: Int = 0
     ](
         self,
         score: TileTensor[mut=True, Self.dtype, ...],
@@ -458,6 +490,10 @@ struct Softmax[
                 (defaults to 0).
             stride: Step between consecutive row-tile indices
                 (defaults to 1).
+            arg_bias_log2: Shifts the exponent argument by `arg_bias_log2`,
+                i.e. pre-scales the result by `2**arg_bias_log2`. Only for the
+                exp2 softmax, where an integer argument shift is an exact
+                power-of-two scale (defaults to 0 = no shift).
 
         Args:
             score: Score tile in registers to exponentiate in place.
@@ -472,10 +508,18 @@ struct Softmax[
 
         var scale_vec = SIMD[Self.dtype, Self.frag_size](scale)
 
+        comptime assert (
+            arg_bias_log2 == 0 or Self.use_exp2
+        ), "arg_bias_log2 needs the exp2 softmax"
+
         comptime for col_tile in range(Self.num_colwise_tiles):
             var neg_scaled_max = SIMD[Self.dtype, Self.frag_size](
                 -self.score_frag_rowmax[col_tile, 0][0] * scale
             )
+            comptime if arg_bias_log2 != 0:
+                neg_scaled_max += SIMD[Self.dtype, Self.frag_size](
+                    Float32(arg_bias_log2)
+                )
             comptime for row_tile in range(
                 start, Self.num_rowwise_tiles, stride
             ):

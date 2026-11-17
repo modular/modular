@@ -83,7 +83,10 @@ _GPU_MEMORY = {
     "test_scatter.mojo": "3",
     "test_broadcast_subgroup.mojo": "2",
     "test_ep_ord_r_completion.mojo": "2",
+    # MXFP8 rows at 8 ranks x 8,168 tokens need about 2.6 GB.
+    "test_ep_dispatch_prefill_send.mojo": "4",
     "test_kernel_load_gate.mojo": "2",
+    "test_ep_p2p_small_path.mojo": "2",
 }
 
 # Platform constraints for tests that do not run on every multi-GPU host; the
@@ -100,6 +103,11 @@ _TARGET_COMPATIBLE_WITH = {
     # quantize needs SM100.
     "test_ep_dispatch_prefill_send.mojo": select({
         "//:b200_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The P2P small EP path it tests is AMD-only.
+    "test_ep_p2p_small_path.mojo": select({
+        "//:amd_gpu": ["//:has_multi_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 }
@@ -137,8 +145,8 @@ mojo_test(
     ],
 )
 
-# Standalone multi-GPU test: the bundled allreduce kernel's `build_graph` entry
-# point over stable address slots. Needs the graph-compiler kernel package.
+# Standalone multi-GPU test: the bundled allreduce's recording path, the
+# allreduce over stable address slots recorded into a collective device graph.
 mojo_test(
     name = "test_bundled_allreduce_build_graph.mojo.test",
     size = "large",
@@ -153,7 +161,6 @@ mojo_test(
         "//:has_multi_gpu",
     ],
     deps = [
-        "//max:builtin_kernels",
         "//max:comm",
         "//max:extensibility",
         "//max:layout",
@@ -200,6 +207,7 @@ mojo_test(
             "test_multimem_reducescatter.mojo",
             "test_allreduce_residual_rmsnorm.mojo",  # Has its own standalone rule above
             "test_enum_like_conformance.mojo",  # Has its own standalone rule below
+            "test_allreduce_peer_load_codegen.mojo",  # Host-only rule below
             "test_bundled_allreduce_build_graph.mojo",  # Has its own standalone rule above
             "test_blocking_driver_calls.mojo",  # One rule per round, below
         ],
@@ -268,6 +276,27 @@ mojo_test(
         "//max:linalg",
         "//max:nn",
         "//max:pipeline",
+        "@mojo//:std",
+    ],
+)
+
+# Host-only: compiles the allreduce peer-load helper for gfx950 and checks the
+# asm, so it needs no GPU. Under ASan the test is compiled by the instrumented
+# Mojo compiler, whose gfx950 backend overruns the 900 s compile timeout even
+# for one kernel (all eight take about 5 s uninstrumented). The test checks
+# codegen, not host memory, so ASan has nothing to add. A `skip-ci-asan` tag is
+# not enough: the asan job builds with `--build_tests_only`, which ignores
+# `--build_tag_filters`, so the compile still runs.
+mojo_test(
+    name = "test_allreduce_peer_load_codegen.mojo.test",
+    srcs = ["test_allreduce_peer_load_codegen.mojo"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:comm",
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

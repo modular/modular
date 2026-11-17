@@ -119,7 +119,7 @@ def bench_grapheme_slice[
 
     @inline(.always)
     def call_fn() {imm}:
-        var slice = StringSlice(black_box(items))
+        var slice = StringSpan(black_box(items))
         var s = slice[grapheme=start:end]
         keep(s.byte_length())
 

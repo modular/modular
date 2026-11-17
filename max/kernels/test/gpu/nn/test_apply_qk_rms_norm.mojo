@@ -79,7 +79,7 @@ def run_apply_qk_rms_norm_gpu[
     ctx.enqueue_copy(gk_d, gk_h)
     ctx.enqueue_copy(var_d, var_h)
 
-    apply_qk_rms_norm[target="gpu",](
+    apply_qk_rms_norm(
         qo_buf,
         ko_buf,
         gq_buf,

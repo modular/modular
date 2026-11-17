@@ -60,6 +60,18 @@ class CoordinateTransformModeAttr;
 
 namespace M::MO {
 
+/// Name of the optional attribute holding a graph's `TargetInfoAttr`.
+inline constexpr StringRef kGraphTargetInfoAttrName = "target_info";
+
+/// Derives the per-launch device list from each bundle element's deviceRef.
+/// `BundleType::verify` guarantees every element is a TensorType.
+SmallVector<DeviceRefAttr> deriveLaunchDevicesFromBundle(BundleType bundle);
+
+/// Emits the `kgen` call that an `mo.assert` turns into: `operands` are the
+/// call's operands and `message` becomes its message attribute.
+TypedAttr emitStaticCallImpl(MLIRContext *ctx, ArrayRef<TypedAttr> operands,
+                             const Twine &message);
+
 ParseResult parseParamDecls(OpAsmParser &p,
                             KGEN::ParamDeclArrayAttr &paramDecls);
 
@@ -126,11 +138,12 @@ void printMatmulReduceScatterSumAttrs(OpAsmPrinter &p, Operation *,
 
 ParseResult parseReduceScatterRMSNormAttrs(OpAsmParser &p,
                                            IntegerAttr &groupSize,
-                                           BoolAttr &hasResidual);
+                                           BoolAttr &hasResidual,
+                                           IntegerAttr &quantBits);
 
 void printReduceScatterRMSNormAttrs(OpAsmPrinter &p, Operation *,
-                                    IntegerAttr groupSize,
-                                    BoolAttr hasResidual);
+                                    IntegerAttr groupSize, BoolAttr hasResidual,
+                                    IntegerAttr quantBits);
 
 ParseResult parseAllGatherRMSNormQuantMXFP6Attrs(OpAsmParser &p,
                                                  IntegerAttr &groupSize,
@@ -140,17 +153,15 @@ void printAllGatherRMSNormQuantMXFP6Attrs(OpAsmPrinter &p, Operation *,
                                           IntegerAttr groupSize,
                                           IntegerAttr fp6Format);
 
-ParseResult parseGroupedMatmulSwigluNvfp4Attrs(OpAsmParser &p,
-                                               StringAttr &activation,
-                                               ElementsAttr &swigluAlpha,
-                                               ElementsAttr &swigluLimit,
-                                               BoolAttr &hasARowScales);
+ParseResult parseGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmParser &p, StringAttr &activation, ElementsAttr &swigluAlpha,
+    ElementsAttr &swigluLimit, BoolAttr &hasARowScales, IntegerAttr &maxTotalM,
+    BoolAttr &prefillDynamicClaim);
 
-void printGroupedMatmulSwigluNvfp4Attrs(OpAsmPrinter &p, Operation *,
-                                        StringAttr activation,
-                                        ElementsAttr swigluAlpha,
-                                        ElementsAttr swigluLimit,
-                                        BoolAttr hasARowScales);
+void printGroupedMatmulSwigluNvfp4Attrs(
+    OpAsmPrinter &p, Operation *, StringAttr activation,
+    ElementsAttr swigluAlpha, ElementsAttr swigluLimit, BoolAttr hasARowScales,
+    IntegerAttr maxTotalM, BoolAttr prefillDynamicClaim);
 
 ParseResult parseCustomAttrs(OpAsmParser &p, StringAttr &symbol,
                              DeviceRefAttr &device, DictionaryAttr &parameters);
@@ -228,8 +239,6 @@ std::optional<SmallVector<bool>> tryGetConstantBoolVector(TensorValue val);
 /// If `val` comes from a list.create op whose inputs are all scalar
 /// constants, return their values, else None.
 std::optional<SmallVector<int64_t>> tryGetConstantIntVector(ListValue val);
-std::optional<SmallVector<APFloat>> tryGetConstantAPFloatVector(ListValue val);
-std::optional<SmallVector<APInt>> tryGetConstantAPIntVector(ListValue val);
 
 /// Extract the `MOSH::ShapeAttr` represented by `val` if possible, else return
 /// `null`.
@@ -242,13 +251,6 @@ TypedAttr tryGetDimAttr(Value val);
 /// If any of the input/output tensor type's metadata changed, update the given
 /// GraphOp's function type and signature to reflect those changes as well.
 void synchronizeMetadataUpdates(GraphOp op);
-
-/// Return the set of MO ops which are expected to only run on host.
-///
-/// TODO: Temporary deny-list of ops without CUDA kernels and MOGG entry
-/// points; remove entries as ops gain kernels or
-/// MODeviceConstraintsInterface.
-const llvm::DenseSet<mlir::TypeID> &getHostOnlyMOOps();
 } // namespace M::MO
 
 #endif // GENERICML_GRAPHCOMPILER_MODIALECT_MOOPS_H

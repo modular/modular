@@ -45,15 +45,12 @@ struct TypeTraits {
 
   // Takes an element type, not a tensor type.
   static ErrorOr<TypeTraits> lookupType(Type);
-  static ErrorOr<TypeTraits> lookupDType(DType);
   static bool isSupportedMOGGType(Type);
 
   TypeTraits(llvm::StringLiteral mojoTypeName, KGEN::KGENDType kgenType,
              DType moggType)
       : mojoTypeName(mojoTypeName), kgenType(kgenType), moggType(moggType) {}
 };
-
-llvm::SmallVector<TypeTraits> allTypeTraits();
 
 } // namespace M::MOGG
 

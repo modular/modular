@@ -121,7 +121,7 @@ def augment_samples_with_response_format(
             logger.warning(
                 "Structured-output mixing: --response-format-turn first loses"
                 " the constraint on any session that starts mid-conversation"
-                " (--warmup-to-steady-state, on by default); use 'last' or"
+                " (--warmup-multiturn, on by default); use 'last' or"
                 " 'every' to constrain a turn the driver is guaranteed to send."
             )
         constrained = 0

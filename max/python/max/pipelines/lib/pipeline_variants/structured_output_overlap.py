@@ -26,8 +26,8 @@ The state is consumed at iteration boundaries:
     exit (signalling even on exception, per
     ``Device.cpp:asyncHostFuncTrampoline``).
   * The captured model graph waits on ``bitmask_flag`` via
-    ``mo.wait_host_value_with_dep`` (keyed off :attr:`wait_payload`),
-    then ``mo.inplace_memcpy`` copies :attr:`pinned_bitmask` into
+    ``runtime.wait_host_value_with_dep`` (keyed off :attr:`wait_payload`),
+    then ``runtime.inplace_memcpy`` copies :attr:`pinned_bitmask` into
     :attr:`device_bitmask_scratch` for the sampler.
   * Cold-start paths (prefill -> decode boundary, capture-time warmup,
     first iter after a new-context join) use :meth:`prime` to pre-fill
@@ -134,7 +134,7 @@ class StructuredOutputOverlapState:
         self.bitmask_flag: CompletionFlag = CompletionFlag(device)
         """The 64-bit device-mapped pinned flag the callback signals. Single process-lifetime flag."""
 
-        # Payload consumed by the in-graph `mo.wait_host_value_with_dep`
+        # Payload consumed by the in-graph `runtime.wait_host_value_with_dep`
         # op. Contract: CPU int64[2] = [flag._unsafe_ptr,
         # expected_value]. Allocated as pinned host memory so the
         # engine's input binding sees a pinned -> CPU-graph-input
@@ -147,7 +147,7 @@ class StructuredOutputOverlapState:
             device=device,
             usage=Usage.STAGING | Usage.UNTRACKED,
         )
-        """A CPU-resident ``int64[2]`` buffer holding ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload consumed by the in-graph ``mo.wait_host_value_with_dep`` op. Allocated once; contents written once at construction."""
+        """A CPU-resident ``int64[2]`` buffer holding ``[bitmask_flag._unsafe_ptr, 1]``. This is the payload consumed by the in-graph ``runtime.wait_host_value_with_dep`` op. Allocated once; contents written once at construction."""
         payload_np = self.wait_payload.to_numpy()
         payload_np[0] = self.bitmask_flag._unsafe_ptr
         payload_np[1] = 1
@@ -302,11 +302,11 @@ class StructuredOutputOverlapState:
         """Pre-fills the pinned bitmask and signals the flag.
 
         Writes into :attr:`pinned_bitmask` and then release-stores
-        ``1`` to the flag so the next replay's ``mo.wait_host_value_with_dep``
+        ``1`` to the flag so the next replay's ``runtime.wait_host_value_with_dep``
         passes immediately.
 
         Used at cold-start sites where no prior async callback has
-        run and the next replay's ``mo.wait_host_value_with_dep`` would
+        run and the next replay's ``runtime.wait_host_value_with_dep`` would
         otherwise block forever:
 
           * Before the first decode iteration post-prefill.
@@ -422,7 +422,7 @@ class StructuredOutputOverlapState:
         Posts the kickoff host node on the **device default stream**, not
         a side stream. This is intentional: the trampoline's
         ``flag.reset()`` and the next iter's captured-graph
-        ``mo.wait_host_value_with_dep`` end up serialised on the same stream, so
+        ``runtime.wait_host_value_with_dep`` end up serialised on the same stream, so
         the wait can never observe a stale ``1`` left over from a prior
         iter's prime / worker signal. The trampoline body is small
         (atomic store + heap alloc + dispatch + return -- microseconds),

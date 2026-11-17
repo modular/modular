@@ -38,11 +38,6 @@ from collections.abc import Coroutine, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
-# TODO(MXF-897): Remove once device discovery stops depending on import
-# order. A plugin-backed accelerator only registers if max.engine loads
-# before max._mlir_context; this package is usually the first max module a
-# tensor program imports, so it loads max.engine first.
-from max import engine as _engine
 from max._mlir_context import MLIRThreadPoolExecutor
 from max.driver import Device
 from max.dtype import DType
@@ -58,8 +53,11 @@ from max.tensor.realization_context import (
 from max.tensor.tensor import Tensor
 
 from .collective_ops import (
+    all_to_all,
     allgather,
+    allgather_gated_residual_rms_norm,
     allgather_rms_norm,
+    allreduce_post_norm_residual_rms_norm,
     allreduce_rms_norm,
     allreduce_sum,
     distributed_broadcast,
@@ -214,8 +212,11 @@ __all__ = [
     "abs",
     "acos",
     "add",
+    "all_to_all",
     "allgather",
+    "allgather_gated_residual_rms_norm",
     "allgather_rms_norm",
+    "allreduce_post_norm_residual_rms_norm",
     "allreduce_rms_norm",
     "allreduce_sum",
     "arange",

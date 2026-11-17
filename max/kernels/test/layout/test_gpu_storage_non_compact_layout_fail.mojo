@@ -15,7 +15,7 @@
 
 from layout import Coord, Idx
 from layout.owned_tensor import OwnedGPUTensor
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 
 def main():

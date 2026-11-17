@@ -15,7 +15,9 @@
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Target/TargetLowering.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/Threading.h"
 #include "mlir/IR/Verifier.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/MathExtras.h"
@@ -98,24 +100,45 @@ struct KGENVerifierPass : public impl::KGENVerifierPassBase<KGENVerifierPass> {
   void runOnOperation() override {
     Operation *op = getOperation();
 
-    size_t numErrors = 0;
+    std::atomic<size_t> numErrors = 0;
     const size_t maxErrors = *KGENPassCLOptions::kgenVerifierMaxErrors();
 
     // Per-op (non-recursive): skips off-allowlist ops; structural/dominance
     // checks come from the PM verifier (off in MODULAR_PRODUCTION).
     // SIMD lengths are checked on every op regardless of dialect, since
     // mid-lowering ops can still carry KGEN types.
-    DenseSet<Type> checkedTypes;
-    if (op->walk([&](Operation *operation) {
-            if (failed(verifySIMDLengths(operation, checkedTypes)))
-              ++numErrors;
-            if (shouldVerifyOp(operation) &&
-                failed(mlir::verify(operation, /*verifyRecursively=*/false)))
-              ++numErrors;
-            if (numErrors >= maxErrors)
-              return WalkResult::interrupt();
-            return WalkResult::advance();
-          }).wasInterrupted()) {
+    auto verifyOp = [&](Operation *operation, DenseSet<Type> &checkedTypes) {
+      if (failed(verifySIMDLengths(operation, checkedTypes)))
+        ++numErrors;
+      if (shouldVerifyOp(operation) &&
+          failed(mlir::verify(operation, /*verifyRecursively=*/false)))
+        ++numErrors;
+    };
+    auto verifyTree = [&](Operation *root) {
+      DenseSet<Type> checkedTypes;
+      return root->walk([&](Operation *operation) {
+        verifyOp(operation, checkedTypes);
+        return numErrors >= maxErrors ? WalkResult::interrupt()
+                                      : WalkResult::advance();
+      });
+    };
+
+    if (auto module = dyn_cast<mlir::ModuleOp>(op)) {
+      // Dominance checks renumber a block's ops on first use, so workers must
+      // not share a block. The module's block is safe because its ops take no
+      // operands.
+      SmallVector<Operation *> children;
+      for (Operation &child : *module.getBody())
+        children.push_back(&child);
+      mlir::parallelForEach(&getContext(), children,
+                            [&](Operation *child) { (void)verifyTree(child); });
+      if (numErrors < maxErrors) {
+        DenseSet<Type> checkedTypes;
+        verifyOp(op, checkedTypes);
+      }
+      if (numErrors >= maxErrors)
+        signalPassFailure();
+    } else if (verifyTree(op).wasInterrupted()) {
       signalPassFailure();
     }
 

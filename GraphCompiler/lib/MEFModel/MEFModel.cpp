@@ -126,8 +126,7 @@ void Model::initializeSignature(ArrayRef<QuantTensorSpec> inputSpecs,
 }
 
 Model::Model(std::string name, SmallVector<DeviceRef> devices,
-             CompiledFrameworkLabel frameworkLabel, const MEFInvokable *initFn,
-             const MEFInvokable *executeFn,
+             const MEFInvokable *initFn, const MEFInvokable *executeFn,
              ArrayRef<QuantTensorSpec> inputSpecs,
              ArrayRef<QuantTensorSpec> outputSpecs,
              SmallVector<DeviceRef> inputDevices,
@@ -135,16 +134,11 @@ Model::Model(std::string name, SmallVector<DeviceRef> devices,
     : name(std::move(name)), initFn(initFn), executeFn(executeFn),
       devices(std::move(devices)), inputDevices(std::move(inputDevices)),
       outputDevices(std::move(outputDevices)), location(std::move(location)) {
-  ASSERT_STREAM(frameworkLabel == kFrameworkLabel,
-                << "Expected '" << kFrameworkLabel.getAsString()
-                << "' label for model, but got '"
-                << frameworkLabel.getAsString() << "'");
   initializeSignature(inputSpecs, outputSpecs, {}, {});
 }
 
 Model::Model(std::string name, SmallVector<DeviceRef> devices,
-             CompiledFrameworkLabel frameworkLabel, const MEFInvokable *initFn,
-             const MEFInvokable *executeFn,
+             const MEFInvokable *initFn, const MEFInvokable *executeFn,
              ArrayRef<QuantTensorSpec> inputSpecs,
              ArrayRef<QuantTensorSpec> outputSpecs,
              ArrayRef<StringRef> inputNames, ArrayRef<StringRef> outputNames,
@@ -153,10 +147,6 @@ Model::Model(std::string name, SmallVector<DeviceRef> devices,
     : name(std::move(name)), initFn(initFn), executeFn(executeFn),
       devices(std::move(devices)), inputDevices(std::move(inputDevices)),
       outputDevices(std::move(outputDevices)), location(std::move(location)) {
-  ASSERT_STREAM(frameworkLabel == kFrameworkLabel,
-                << "Expected " << kFrameworkLabel.getAsString()
-                << " label for model, but got "
-                << frameworkLabel.getAsString());
   initializeSignature(inputSpecs, outputSpecs, inputNames, outputNames);
 }
 
@@ -249,7 +239,6 @@ Model::setup(CPUDevice &cpuDevice, const WeightsRegistry *weightsRegistry,
 ErrorOr<std::unique_ptr<Model>>
 Model::getFromDescriptor(const PrimitiveDescriptor &desc) {
   constexpr size_t devicesAttrIdx = 0;
-  constexpr size_t frameworkNameAttrIdx = 1;
   constexpr size_t modelFnTypeAttrIdx = 4;
   constexpr size_t inputDeviceIndicesIdx = 5;
   constexpr size_t resultDeviceIndicesIdx = 6;
@@ -261,10 +250,6 @@ Model::getFromDescriptor(const PrimitiveDescriptor &desc) {
   constexpr size_t executeFnIdx = 1;
 
   StringRef modelName = *desc.getAttr<StringRef>(modelNameAttrIdx);
-  StringRef frameworkName = *desc.getAttr<StringRef>(frameworkNameAttrIdx);
-
-  CompiledFrameworkLabel frameworkLabel =
-      CompiledFrameworkLabel::getLabelForOpName(getEntityName(), frameworkName);
 
   MEFFunctionType signature = desc.getAttr<MEFFunctionType>(modelFnTypeAttrIdx);
 
@@ -316,8 +301,8 @@ Model::getFromDescriptor(const PrimitiveDescriptor &desc) {
   SmallVector<StringRef> inputNames = getNames(desc, argumentNamesIdx);
   SmallVector<StringRef> outputNames = getNames(desc, resultNamesIdx);
 
-  return std::make_unique<Model>(modelName.str(), devices, frameworkLabel, init,
-                                 execute, inputSpecs, outputSpecs, inputNames,
+  return std::make_unique<Model>(modelName.str(), devices, init, execute,
+                                 inputSpecs, outputSpecs, inputNames,
                                  outputNames, inputDevices, outputDevices,
                                  desc.copyLocation());
 }

@@ -120,6 +120,10 @@ struct M_driver_context {
   std::mutex mutex;
   M_driver_device_t device;
   std::map<uint64_t, NS::SharedPtr<MTL::Buffer>> allocations;
+
+  // Compiled on the first fill whose pattern bytes differ.
+  std::mutex patternFillMutex;
+  NS::SharedPtr<MTL::ComputePipelineState> patternFill;
 };
 
 #endif // TARGET_LIB_METAL_CONTEXT_H

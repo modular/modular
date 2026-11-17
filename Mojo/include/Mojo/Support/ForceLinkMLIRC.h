@@ -14,6 +14,8 @@
 #ifndef KGEN_SUPPORT_FORCELINKMLIRC_H
 #define KGEN_SUPPORT_FORCELINKMLIRC_H
 
+#include "Support/SymbolExport.h"
+
 namespace M::KGEN {
 
 //===----------------------------------------------------------------------===//
@@ -23,7 +25,7 @@ namespace M::KGEN {
 /// Calling this function forces the linking of MLIR C API symbols. This allows
 /// JIT'ed Mojo code to use the same MLIR C API symbols as the current process,
 /// which is necessary to avoid conflicting TypeIDs.
-void forceLinkMLIRC();
+MODULAR_CXX_EXPORT void forceLinkMLIRC();
 
 } // namespace M::KGEN
 

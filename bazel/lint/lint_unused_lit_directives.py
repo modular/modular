@@ -56,7 +56,9 @@ def _bazelw() -> Path:
 
 def _label_to_path(label: str) -> Path:
     assert label.startswith("//")
-    return Path(label[2:].replace(":", "/"))
+    # A root-package label is "//:path/file", so the colon must not become a
+    # leading slash.
+    return Path(label[2:].replace(":", "/").lstrip("/"))
 
 
 def _get_files(bazel: Path, query: str) -> set[Path]:
@@ -73,8 +75,9 @@ def _get_files(bazel: Path, query: str) -> set[Path]:
     }
 
 
-# Add more binary suffixes here if needed
-_BINARY_SUFFIXES = {
+# Files lit never reads: binaries, and sources whose syntax can look like a
+# directive (Rust's `const UNSUPPORTED: [...]`). Add more here if needed.
+_IGNORED_SUFFIXES = {
     ".elf",
     ".eot",
     ".gif",
@@ -85,6 +88,8 @@ _BINARY_SUFFIXES = {
     ".mp4",
     ".otf",
     ".png",
+    ".rs",
+    ".safetensors",
     ".ttf",
     ".webp",
     ".woff",
@@ -93,7 +98,7 @@ _BINARY_SUFFIXES = {
 
 
 def _get_lit_directives(file: Path) -> set[str]:
-    if file.suffix in _BINARY_SUFFIXES:
+    if file.suffix in _IGNORED_SUFFIXES:
         return set()
     with file.open() as f:
         try:

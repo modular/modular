@@ -58,6 +58,23 @@ class Liveness:
     def __init__(self, ctx: BaseContext) -> None:
         self._ready = ctx.Event()
         self._beats = ctx.RawValue(ctypes.c_uint64)
+        # The max length and batch size the subprocess settled on; 0 is
+        # unreported.
+        self._plan = ctx.RawArray(ctypes.c_int64, 2)
+
+    def report_plan(self, max_length: int | None, max_batch_size: int) -> None:
+        """Records the bounds the subprocess sized its KV cache for.
+
+        A model worker measures its memory once it has loaded, so the max
+        length and batch size it serves can be lower than the ones the
+        parent planned. Called before :py:meth:`set_ready`.
+        """
+        self._plan[0] = max_length or 0
+        self._plan[1] = max_batch_size
+
+    def reported_plan(self) -> tuple[int | None, int | None]:
+        """The max length and batch size :py:meth:`report_plan` recorded."""
+        return (self._plan[0] or None, self._plan[1] or None)
 
     def set_ready(self) -> None:
         """Marks the process as ready to serve."""

@@ -234,6 +234,12 @@ of 6K tokens overflow it. Without a connector those follow-ups report
 statistical version of that comparison, with a connector-off control, is
 the dKV needle-recall harness.
 
+A tier that saves asynchronously can still be writing the end of a long
+prompt when the next turn arrives, and that turn recomputes the unsaved
+pages, which reads as a partial hit. `--needle-settle-seconds` waits
+before each follow-up turn so the strict check counts blocks the tier lost,
+not blocks it had not finished saving.
+
 ### Model-specific scenarios
 
 Run with `--model-profile kimi-k2.5` or `--model-profile glm-5.1`.

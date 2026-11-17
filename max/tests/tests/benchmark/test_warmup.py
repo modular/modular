@@ -78,7 +78,7 @@ def test_pick_warmup_off_returns_unchanged() -> None:
     sessions, report = pick_warmup_population(
         pool,
         warmup_count=2,
-        warmup_to_steady_state=False,
+        warmup_multiturn=False,
         warmup_oversample_factor=8,
         main_pool_target=4,
         rng=np.random.default_rng(0),
@@ -93,7 +93,7 @@ def test_pick_warmup_zero_count_returns_unchanged() -> None:
     sessions, report = pick_warmup_population(
         pool,
         warmup_count=0,
-        warmup_to_steady_state=True,
+        warmup_multiturn=True,
         warmup_oversample_factor=8,
         main_pool_target=3,
         rng=np.random.default_rng(0),
@@ -109,7 +109,7 @@ def test_pick_warmup_factor_one_uniform_emits_report() -> None:
     sessions, report = pick_warmup_population(
         pool,
         warmup_count=2,
-        warmup_to_steady_state=True,
+        warmup_multiturn=True,
         warmup_oversample_factor=1,
         main_pool_target=3,
         rng=np.random.default_rng(0),
@@ -129,7 +129,7 @@ def test_pick_warmup_factor_zero_uniform_emits_report() -> None:
     sessions, report = pick_warmup_population(
         pool,
         warmup_count=2,
-        warmup_to_steady_state=True,
+        warmup_multiturn=True,
         warmup_oversample_factor=0,
         main_pool_target=5,
         rng=np.random.default_rng(0),
@@ -150,7 +150,7 @@ def test_pick_warmup_length_biased_basic() -> None:
     sessions, report = pick_warmup_population(
         pool,
         warmup_count=M,
-        warmup_to_steady_state=True,
+        warmup_multiturn=True,
         warmup_oversample_factor=factor,
         main_pool_target=main,
         rng=rng,
@@ -184,7 +184,7 @@ def test_pick_warmup_length_biased_matches_size_biased_target() -> None:
         _, report = pick_warmup_population(
             pool,
             warmup_count=M,
-            warmup_to_steady_state=True,
+            warmup_multiturn=True,
             warmup_oversample_factor=factor,
             main_pool_target=main,
             rng=rng,
@@ -207,7 +207,7 @@ def test_pick_warmup_sufficient_dataset_no_shrink() -> None:
     _, report = pick_warmup_population(
         pool,
         warmup_count=M,
-        warmup_to_steady_state=True,
+        warmup_multiturn=True,
         warmup_oversample_factor=factor,
         main_pool_target=main,
         rng=np.random.default_rng(0),
@@ -229,7 +229,7 @@ def test_pick_warmup_mild_underproduction_shrinks_both_pools() -> None:
     _, report = pick_warmup_population(
         pool,
         warmup_count=M,
-        warmup_to_steady_state=True,
+        warmup_multiturn=True,
         warmup_oversample_factor=factor,
         main_pool_target=main,
         rng=np.random.default_rng(0),
@@ -254,7 +254,7 @@ def test_pick_warmup_raises_when_dataset_smaller_than_warmup_count() -> None:
         pick_warmup_population(
             pool,
             warmup_count=4,
-            warmup_to_steady_state=True,
+            warmup_multiturn=True,
             warmup_oversample_factor=8,
             main_pool_target=20,
             rng=np.random.default_rng(0),
@@ -270,7 +270,7 @@ def test_pick_warmup_severe_underproduction_floors_warmup() -> None:
     _, report = pick_warmup_population(
         pool,
         warmup_count=M,
-        warmup_to_steady_state=True,
+        warmup_multiturn=True,
         warmup_oversample_factor=factor,
         main_pool_target=main,
         rng=np.random.default_rng(0),
@@ -298,7 +298,7 @@ def test_pick_warmup_realized_mean_stdev_brackets_observed_spread() -> None:
         _, report = pick_warmup_population(
             pool,
             warmup_count=M,
-            warmup_to_steady_state=True,
+            warmup_multiturn=True,
             warmup_oversample_factor=factor,
             main_pool_target=main,
             rng=rng,
@@ -326,7 +326,8 @@ def test_log_warmup_sampling_report_no_caps_no_warning(
     with caplog.at_level("WARNING"):
         log_warmup_sampling_report(report)
     assert not any(
-        "Could not warmup to steady state" in r.message for r in caplog.records
+        "Could not warm up multi-turn sessions evenly" in r.message
+        for r in caplog.records
     )
 
 
@@ -337,7 +338,8 @@ def test_log_warmup_sampling_report_caps_warn(
     with caplog.at_level("WARNING"):
         log_warmup_sampling_report(report)
     assert any(
-        "Could not warmup to steady state" in r.message for r in caplog.records
+        "Could not warm up multi-turn sessions evenly" in r.message
+        for r in caplog.records
     )
 
 

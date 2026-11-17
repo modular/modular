@@ -31,9 +31,11 @@ from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
     TextAndVisionTokenizer,
     _render_custom_chat_template,
+    checked_token_ids,
     encode_dkv_cache_hint,
     max_tokens_to_generate,
     open_image,
+    replace_unpaired_surrogates,
     resolve_eos_token_ids,
     resolve_token_id_bound,
     run_with_default_executor,
@@ -47,10 +49,11 @@ from max.pipelines.modeling.types import (
 )
 from max.support.image import hash_image
 from PIL import Image
-from transformers import AutoTokenizer
+from tokenizers import Encoding
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from .batch_vision_inputs import IMAGE_GRIDS
-from .encoding_dsv41 import encode_messages
+from .encoding_dsv41 import IMAGE_PLACEHOLDER, ImageSlot, encode_messages
 from .image_processor import (
     DeepseekV41ImageProcessor,
     ImageGrid,
@@ -66,6 +69,35 @@ if TYPE_CHECKING:
 # The encoder only needs an image block to have a source; the pixels come
 # from the request's images, in the same order.
 _IMAGE_BLOCK = {"type": "image", "data": "request.images"}
+
+
+def encode_literal_text(
+    delegate: PreTrainedTokenizerFast, text: str, add_special_tokens: bool
+) -> list[int]:
+    """Encodes text in which every image placeholder is text.
+
+    The tokenizer cannot leave out a single added token, so each
+    placeholder's final character is encoded on its own, which keeps the
+    placeholder from matching. The pieces go to the tokenizer as one batch,
+    so a placeholder costs no tokenizer call of its own.
+    """
+    *placeholder_ends, rest = replace_unpaired_surrogates(text).split(
+        IMAGE_PLACEHOLDER
+    )
+    if not placeholder_ends:
+        return delegate.encode(rest, add_special_tokens=add_special_tokens)
+    backend = delegate.backend_tokenizer
+    *heads, tail, close = backend.encode_batch(
+        [piece + IMAGE_PLACEHOLDER[:-1] for piece in placeholder_ends]
+        + [rest, IMAGE_PLACEHOLDER[-1]],
+        add_special_tokens=False,
+    )
+    merged = Encoding.merge(
+        [encoding for head in heads for encoding in (head, close)] + [tail]
+    )
+    return backend.post_process(
+        merged, add_special_tokens=add_special_tokens
+    ).ids
 
 
 def _flatten_message(message: TextGenerationRequestMessage) -> dict[str, Any]:
@@ -106,6 +138,37 @@ def _flatten_message(message: TextGenerationRequestMessage) -> dict[str, Any]:
     return flattened
 
 
+def _encode_conversation(
+    messages: Sequence[Mapping[str, Any]],
+    tools: Sequence[TextGenerationRequestTool] | None,
+    chat_template_options: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    thinking_mode, reasoning_effort = resolve_reasoning_effort(
+        chat_template_options
+    )
+
+    conversation = [dict(m) for m in messages]
+    if tools:
+        if not conversation or conversation[0].get("role") != "system":
+            conversation.insert(0, {"role": "system", "content": ""})
+        conversation[0]["tools"] = list(tools)
+
+    try:
+        return encode_messages(
+            conversation,
+            thinking_mode=thinking_mode,
+            drop_thinking=bool(
+                chat_template_options.get("drop_thinking", True)
+            ),
+            reasoning_effort=reasoning_effort,
+            return_multi_modal_data=True,
+        )
+    except (AssertionError, NotImplementedError, ValueError) as e:
+        # The encoder signals unsupported input with these; InputError
+        # carries the message to the client as an HTTP 400.
+        raise InputError(f"DeepSeek-V4.1 prompt encoding failed: {e}") from e
+
+
 def render_prompt(
     messages: Sequence[Mapping[str, Any]],
     tools: Sequence[TextGenerationRequestTool] | None,
@@ -132,36 +195,35 @@ def render_prompt(
             int in [1, 100], or a named effort, or if the encoder rejects
             the conversation.
     """
-    thinking_mode, reasoning_effort = resolve_reasoning_effort(
-        chat_template_options
-    )
+    prompt, _ = _encode_conversation(messages, tools, chat_template_options)
+    return prompt
 
-    conversation = [dict(m) for m in messages]
-    if tools:
-        if not conversation or conversation[0].get("role") != "system":
-            conversation.insert(0, {"role": "system", "content": ""})
-        conversation[0]["tools"] = list(tools)
 
-    try:
-        return encode_messages(
-            conversation,
-            thinking_mode=thinking_mode,
-            drop_thinking=bool(
-                chat_template_options.get("drop_thinking", True)
-            ),
-            reasoning_effort=reasoning_effort,
-        )
-    except (AssertionError, NotImplementedError, ValueError) as e:
-        # The encoder signals unsupported input with these; InputError
-        # carries the message to the client as an HTTP 400.
-        raise InputError(f"DeepSeek-V4.1 prompt encoding failed: {e}") from e
+def render_prompt_with_image_slots(
+    messages: Sequence[Mapping[str, Any]],
+    tools: Sequence[TextGenerationRequestTool] | None,
+    chat_template_options: Mapping[str, Any],
+) -> tuple[str, list[ImageSlot]]:
+    """Renders a prompt as :func:`render_prompt` does, with its image slots.
+
+    Returns:
+        The prompt and the slot of each placeholder the encoder inserted for
+        an image block, in prompt order. A slot's ``image_index`` counts the
+        image blocks in message order, as the request lists its images.
+
+    Raises:
+        InputError: As :func:`render_prompt` does.
+    """
+    prompt, media = _encode_conversation(messages, tools, chat_template_options)
+    return prompt, media["image_slots"]
 
 
 class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
     """Tokenizer for DeepSeek-V4.1 that renders chat with the V4.1 encoder.
 
-    A custom ``--chat-template``, when given, replaces the encoder. Each image
-    placeholder in the encoded prompt grows into the image's span.
+    A custom ``--chat-template``, when given, replaces the encoder for
+    text-only requests. Each image placeholder the encoder inserts grows into
+    the image's span; a placeholder from caller text stays text.
     """
 
     def __init__(
@@ -219,37 +281,82 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
     ) -> str:
         """Renders messages with the DeepSeek-V4.1 encoder.
 
-        A custom ``--chat-template`` replaces the encoder. It sees each image
-        as an ``{"type": "image"}`` content block, and text-only messages as
-        the shared text path flattens them.
+        A custom ``--chat-template`` replaces the encoder for text-only
+        requests. Template code cannot say which placeholder stands for which
+        image, so a request with images needs the encoder.
 
         Raises:
-            InputError: If the encoder rejects the conversation.
-            ValueError: If a custom template fails to render.
+            InputError: If the encoder rejects the conversation, or a custom
+                template is set and the messages carry images or the template
+                fails to render.
         """
+        prompt, _ = self._render_chat(messages, tools, **chat_template_options)
+        return prompt
+
+    def _render_chat(
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None,
+        /,
+        **chat_template_options: Any,
+    ) -> tuple[str, list[ImageSlot]]:
         if self._chat_template is None:
-            return render_prompt(
+            return render_prompt_with_image_slots(
                 [_flatten_message(message) for message in messages],
                 tools,
                 chat_template_options,
             )
-        return _render_custom_chat_template(
-            self.delegate,
-            self._chat_template,
-            [
-                _flatten_message(message)
-                if message.number_of_images
-                else message.flatten_content()
-                for message in messages
-            ],
-            tools,
-            **{"add_generation_prompt": True, **chat_template_options},
+        if any(message.number_of_images for message in messages):
+            raise InputError(
+                "DeepSeek-V4.1 does not support image inputs with a custom"
+                " chat template; use the built-in template."
+            )
+        try:
+            prompt = _render_custom_chat_template(
+                self.delegate,
+                self._chat_template,
+                [message.flatten_content() for message in messages],
+                tools,
+                **{"add_generation_prompt": True, **chat_template_options},
+            )
+        except ValueError as e:
+            # InputError carries the message to the client as an HTTP 400.
+            raise InputError(str(e)) from e
+        return prompt, []
+
+    async def encode(
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Encodes a prompt in which every image placeholder is text.
+
+        Only the image slots the chat renderer places become the image
+        token, so a prompt given as text or ids never holds one.
+
+        Raises:
+            InputError: If a token-id prompt holds the image token.
+            PromptTooLongError: If the prompt is longer than the context.
+        """
+        if not isinstance(prompt, str):
+            ids = checked_token_ids(prompt, self._token_id_bound)
+            if np.any(ids == self.image_token_id):
+                raise InputError(
+                    f"The prompt holds the image token {self.image_token_id};"
+                    " images can only be given in chat messages."
+                )
+            return ids
+        encoded = await run_with_default_executor(
+            encode_literal_text, self.delegate, prompt, add_special_tokens
         )
+        max_length = self.max_length or self.delegate.model_max_length
+        if max_length and len(encoded) > max_length:
+            raise PromptTooLongError(len(encoded), max_length)
+        return np.array(encoded)
 
     def _expand_images(
         self,
         token_ids: npt.NDArray[np.integer[Any]],
         images: Sequence[bytes | Image.Image],
+        image_positions: Sequence[int],
     ) -> tuple[npt.NDArray[np.int64], list[ImageMetadata], list[ImageGrid]]:
         opened = [open_image(image) for image in images]
         # Checked before patchifying: images below min_pixels are upscaled,
@@ -266,6 +373,7 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
             token_ids.tolist(),
             [grid for _, grid in processed],
             self.image_token_id,
+            image_positions,
         )
         metadata = [
             ImageMetadata(
@@ -289,27 +397,39 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
 
         Raises:
             InputError: If the request carries a video, an image cannot be
-                decoded, or the prompt's placeholder count differs from the
-                image count.
+                decoded, the image count differs from the messages' image
+                parts, or images come with a custom chat template.
         """
         if request.videos:
             raise InputError("DeepSeek-V4.1 does not support video inputs.")
+        images = request.images_for_processing()
+        image_positions: list[int] = []
         if request.prompt is not None:
             text_ids = await self.encode(request.prompt)
         elif request.messages:
             # Off the event loop: the render is pure Python over the whole
             # conversation.
-            prompt = await run_with_default_executor(
-                self.apply_chat_template,
+            prompt, slots = await run_with_default_executor(
+                self._render_chat,
                 request.messages,
                 request.tools,
                 **(request.chat_template_options or {}),
             )
-            text_ids = await self.encode(prompt, add_special_tokens=False)
+            if len(slots) != len(images):
+                raise InputError(
+                    f"The messages have {len(slots)} image part(s) but"
+                    f" {len(images)} image(s) were given."
+                )
+            images = [images[slot.image_index] for slot in slots]
+            text_ids, image_positions = await run_with_default_executor(
+                self._encode_chat_prompt,
+                prompt,
+                [slot.offset for slot in slots],
+            )
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
-        token_ids, images, grids = await run_with_default_executor(
-            self._expand_images, text_ids, request.images_for_processing()
+        token_ids, image_metadata, grids = await run_with_default_executor(
+            self._expand_images, text_ids, images, image_positions
         )
 
         max_gen_tokens = max_tokens_to_generate(
@@ -318,9 +438,14 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
             request.sampling_params.max_new_tokens,
         )
         extra_model_args: dict[str, npt.NDArray[Any]] = {}
-        if images:
-            extra_model_args["image_token_indices"] = np.flatnonzero(
-                token_ids == self.image_token_id
+        if image_metadata:
+            # Only the image spans scatter image features; a placeholder from
+            # caller text stays a text token.
+            extra_model_args["image_token_indices"] = np.concatenate(
+                [
+                    np.arange(image.start_idx, image.end_idx, dtype=np.int64)
+                    for image in image_metadata
+                ]
             )
             extra_model_args[IMAGE_GRIDS] = np.array(
                 [(grid.n_vit_h, grid.n_vit_w) for grid in grids], np.int64
@@ -348,7 +473,30 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
             target_endpoint=request.target_endpoint,
             dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
             cache_salt=request.cache_salt,
-            images=images,
+            images=image_metadata,
             vision_token_ids=[self.image_token_id],
             extra_model_args=extra_model_args,
         )
+
+    def _encode_chat_prompt(
+        self, prompt: str, image_offsets: Sequence[int]
+    ) -> tuple[npt.NDArray[np.int64], list[int]]:
+        """Encodes a prompt with the image token only at ``image_offsets``.
+
+        Returns:
+            The ids and the token position of each image token.
+        """
+        ids: list[int] = []
+        positions: list[int] = []
+        cursor = 0
+        for offset in image_offsets:
+            ids += encode_literal_text(
+                self.delegate, prompt[cursor:offset], add_special_tokens=False
+            )
+            positions.append(len(ids))
+            ids.append(self.image_token_id)
+            cursor = offset + len(IMAGE_PLACEHOLDER)
+        ids += encode_literal_text(
+            self.delegate, prompt[cursor:], add_special_tokens=False
+        )
+        return np.asarray(ids, dtype=np.int64), positions

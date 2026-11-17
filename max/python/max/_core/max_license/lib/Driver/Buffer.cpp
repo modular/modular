@@ -526,6 +526,12 @@ bool Python::Buffer::isPinned() const { return storage->isPinned(); }
 
 Python::Usage Python::Buffer::getUsage() const { return storage->usage; }
 
+bool Python::Buffer::isByteAligned() const {
+  size_t bits = spec.getEltType().getWidthInBits();
+  return bits >= 8 ||
+         ((startOffset * bits) % 8 == 0 && (getNumElements() * bits) % 8 == 0);
+}
+
 bool Python::Buffer::isHostHazardTracked() const {
   auto usage = getUsage();
   bool isStaging = usageContains(usage, Usage::Staging);
@@ -651,9 +657,7 @@ void Python::Buffer::memset(int64_t value) {
     throw nb::value_error("memset value must be between 0 and 255");
   if (!isContiguous())
     throw nb::value_error("memset requires a contiguous buffer");
-  // A packed slice that starts or ends mid-byte shares bytes with neighbours.
-  size_t bits = spec.getEltType().getWidthInBits();
-  if (bits < 8 && ((startOffset * bits) % 8 || (getNumElements() * bits) % 8))
+  if (!isByteAligned())
     throw nb::value_error("memset requires a byte-aligned sub-byte slice");
   if (spec.getSizeInBytes() == 0)
     return;

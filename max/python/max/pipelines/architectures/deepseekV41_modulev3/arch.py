@@ -10,23 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Registers text generation through the DeepSeek-V4.1 ModuleV3 trunk."""
+"""Registers DeepSeek-V4.1 ModuleV3 text and image generation."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.lib import GraphRole, SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 # Registers the ``deepseekv4`` reasoning parser at import.
 from .. import deepseekV4 as _deepseekV4  # noqa: F401
 
 # Registers the ``deepseekv41`` tool parser at import.
 from ..deepseekV41 import tool_parser as _v41_tool_parser  # noqa: F401
+from ..deepseekV41.arch import deepseekV41_arch
 from . import weight_adapters
-from .batch_processor import DeepseekV41BatchProcessor
-from .memory_planner import DeepseekV41MemoryPlanner
-from .model import DeepseekV41Model
-from .model_config import DeepseekV41Config
+from .registration import (
+    DeepseekV41VisionEncoder,
+    RegisteredDeepseekV41BatchProcessor,
+    RegisteredDeepseekV41Config,
+    RegisteredDeepseekV41Decoder,
+)
 from .tokenizer import DeepseekV41Tokenizer
 
 deepseekV41_modulev3_arch = SupportedArchitecture(
@@ -35,8 +38,8 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     example_repo_ids=[
         "nvidia/DeepSeek-V4.1-Flash-NVFP4",
     ],
-    default_encoding=DeepseekV41Config.DEFAULT_ENCODING,
-    supported_encodings=DeepseekV41Config.SUPPORTED_ENCODINGS,
+    default_encoding=RegisteredDeepseekV41Config.DEFAULT_ENCODING,
+    supported_encodings=RegisteredDeepseekV41Config.SUPPORTED_ENCODINGS,
     # Multi-GPU serves the data-parallel attention + expert-parallel MoE
     # shapes this trunk wires (dp == ep_size == the device count, the
     # full attention heads once per rank); plain tensor parallelism
@@ -45,9 +48,13 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     supports_device_graph_capture=False,
     supports_empty_batches=False,
     requires_max_batch_context_length=True,
-    pipeline_model=DeepseekV41Model,
+    modules={
+        GraphRole.DECODER: RegisteredDeepseekV41Decoder,
+        GraphRole.VISION: DeepseekV41VisionEncoder,
+    },
     tokenizer=DeepseekV41Tokenizer,
-    context_type=TextContext,
+    context_type=TextAndVisionContext,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
@@ -58,11 +65,11 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     # blocks the cached prefix shares with other sessions. Prefix caching
     # stays off until resuming from cached pages is supported.
     required_arguments={"enable_prefix_caching": False},
-    config=DeepseekV41Config,
-    batching=DeepseekV41BatchProcessor,
-    memory_planner=DeepseekV41MemoryPlanner,
+    config=RegisteredDeepseekV41Config,
+    batching=RegisteredDeepseekV41BatchProcessor,
     reasoning_parser="deepseekv4",
     tool_parser="deepseekv41",
+    format_spec=deepseekV41_arch.format_spec,
     checkpoint_drafts={"dspark": "DSparkDeepseekV41DraftModel"},
     # The serving engine boots the fused graph by this name.
     spec_decode_graph_names={"dspark": "UnifiedDSparkDeepseekV41ModuleV3"},

@@ -50,7 +50,7 @@ def bench_shape[
     NType: CoordLike,
     KType: CoordLike,
     //,
-](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+](ctx: DeviceContext[], m: MType, n: NType, k: KType) raises:
     comptime input_type = DType.float8_e4m3fn
     comptime c_type = DType.bfloat16
     comptime transpose_b = True
@@ -102,14 +102,14 @@ def bench_shape[
         row_major(Coord(ceildiv(N, BLOCK_SCALE_N), ceildiv(K, BLOCK_SCALE_K))),
     )
 
-    def run_mine(c: DeviceContext) raises {imm}:
+    def run_mine(c: DeviceContext[]) raises {imm}:
         blockwise_scaled_fp8_matmul_amd[
             transpose_b=transpose_b,
             N_SCALE=BLOCK_SCALE_N,
             K_SCALE=BLOCK_SCALE_K,
         ](c_my_dev, a_dev, b_dev, as_dev, bs_dev, c)
 
-    def run_naive(c: DeviceContext) raises {imm}:
+    def run_naive(c: DeviceContext[]) raises {imm}:
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,

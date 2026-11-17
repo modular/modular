@@ -1209,8 +1209,8 @@ void ComptimeIfOp::getEntryTargets(
       continue;
     }
     // Non-constant condition: either this then or later arms may run.
-    targets.emplace_back(idx);
-    targets.emplace_back(getNumRegions() - 1);
+    for (unsigned arm = idx, e = getNumRegions(); arm != e; ++arm)
+      targets.emplace_back(arm);
     return;
   }
   // Every condition was a constant false — take else.

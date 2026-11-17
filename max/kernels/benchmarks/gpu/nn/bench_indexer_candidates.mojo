@@ -24,7 +24,7 @@ from nn.indexer_candidates import (
 
 def bench_candidates[
     ratio: Int
-](ctx: DeviceContext, mut bench: Bench, rows: Int) raises:
+](ctx: DeviceContext[], mut bench: Bench, rows: Int) raises:
     comptime candidates = 2048
     comptime size = candidates * ratio
     comptime block_kv = 8
@@ -56,7 +56,7 @@ def bench_candidates[
     var output = TileTensor(d_output, row_major(rows, selected))
     var blocks_imm = blocks.as_imm()
 
-    def launch(c: DeviceContext) raises {imm}:
+    def launch(c: DeviceContext[]) raises {imm}:
         indexer_expand_candidates[candidates, ratio, block_kv](
             TileTensor(d_input, row_major(rows, candidates)),
             TileTensor(d_starts, row_major(rows, 1)),

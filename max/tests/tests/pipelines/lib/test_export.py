@@ -21,24 +21,34 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
+from unittest.mock import Mock
 
+import huggingface_hub
 import pytest
-from max._artifact import ArtifactError
+from max import tree
+from max._artifact import ArtifactError, HuggingFaceRef
+from max._artifact import export as export_module
 from max._artifact.batch_processor import BatchProcessorDims
 from max._artifact.engine_config import (
     EngineConfig,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
+    SpecGraphFacts,
 )
 from max._artifact.export import (
     SupportsCompiledModules,
+    _takes_mrope_positions,
+    _verify_facts,
     batch_processor_dims,
     checkpoint_format_spec,
+    checkpoint_tokenizer,
     model_artifact,
     pipeline_engine_config,
     pipeline_kv_cache,
     pipeline_modules,
+    pipeline_sampling_defaults,
+    ships_overlap_helpers,
     vision_preprocess_modules,
 )
 from max._artifact.kv_cache import (
@@ -46,13 +56,15 @@ from max._artifact.kv_cache import (
     KVPoolLeaf,
     MHAKVCache,
     MLAKVCache,
-    MSAKVCache,
+    MSAIndexKVCache,
     RecurrentStateCache,
     StateRegion,
 )
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
+from max._artifact.sampling_defaults import SamplingDefaults
 from max._artifact.serialization import deserialize, serialize
+from max._artifact.tokenizer import Tokenizer
 from max._artifact.vision import (
     AspectRatioPreserving,
     ModalityLayout,
@@ -60,23 +72,28 @@ from max._artifact.vision import (
     Span,
     VisionMetadata,
 )
-from max.driver import CPU, DeviceSpec
+from max.driver import CPU, Device, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
-from max.nn.legacy import Module
-from max.nn.legacy.graph_groups import Logits
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
     MLAKVCacheParams,
+    MSAIndexKVCacheParams,
     MSAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import Logits, MRoPEPositions, RaggedBatch
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.outputs import ReturnLogits
 from max.pipelines import lib as pipelines_lib
+from max.pipelines.architectures.gemma4.arch import gemma4_arch
+from max.pipelines.architectures.llama3.arch import llama_arch
+from max.pipelines.context import SamplingParamsGenerationConfigDefaults
 from max.pipelines.lib import (
     GraphRole,
     GraphSpec,
@@ -88,11 +105,19 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
     PipelineRuntimeConfig,
+    SupportedArchitecture,
     compile_and_init_graphs,
 )
 from max.pipelines.lib.graph_specs import compile_roles_separately
 from max.pipelines.lib.interfaces import BatchProcessorRuntime
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.module_registration import DecoderBatchProcessor
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    SpecDecodePipelineModel,
+)
+from max.pipelines.lib.pipeline_variants.text_generation import (
+    TextGenerationPipelineInterface,
+)
 from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative import SpeculativeConfig
 from max.tensor.compilation import CompiledCallable
@@ -209,12 +234,46 @@ class _LoadsItsOwnGraphs(PipelineModelWithKVCache[Any, Any, Any]):
         raise NotImplementedError
 
 
+def test_only_an_accelerator_export_ships_the_overlap_helpers() -> None:
+    accelerator = Mock(spec=Device)
+    accelerator.is_host = False
+    assert not ships_overlap_helpers([CPU()])
+    assert ships_overlap_helpers([accelerator])
+    assert ships_overlap_helpers([CPU(), accelerator])
+
+
+def test_only_a_graph_with_mrope_positions_takes_the_positions_feed() -> None:
+    # The serving engine stages M-RoPE positions by this group's kind, so the
+    # export ships the positions feed exactly when the signature holds it.
+    tokens = TensorType(DType.int64, ["total_seq_len"], device=DeviceRef.CPU())
+    positions = TensorType(
+        DType.int64, [3, "total_seq_len"], device=DeviceRef.CPU()
+    )
+
+    def graph(inputs: object) -> CompiledCallable[..., Any]:
+        signature: tuple[list[Any], tree.TreeDef] = (
+            [],
+            tree.flatten(inputs)[1],
+        )
+        return cast(
+            CompiledCallable[..., Any], _fake(graph_signature=lambda: signature)
+        )
+
+    plain = OrderedDict(batch=RaggedBatch(tokens=tokens))
+    assert not _takes_mrope_positions(graph(plain))
+    nested = OrderedDict(
+        batch=RaggedBatch(tokens=tokens),
+        rope=OrderedDict(positions=MRoPEPositions(position_ids=positions)),
+    )
+    assert _takes_mrope_positions(graph(nested))
+
+
 def test_a_model_that_loads_its_own_graphs_is_refused() -> None:
     model = _LoadsItsOwnGraphs.__new__(_LoadsItsOwnGraphs)
     model.load_graphs(InferenceSession(devices=[CPU()]))
     pipeline = _Pipeline(
         {
-            **model.compiled_modules,
+            **model.compiled_graphs,
             **_compile(_specs({GraphRole.SAMPLER: None})),
         }
     )
@@ -305,6 +364,40 @@ def test_export_adds_the_vision_preprocess_roles(tmp_path: Path) -> None:
     )
 
 
+def test_a_vision_graph_needs_its_metadata_and_preprocessing_together(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A serving engine needs both the media layout and the image
+    preprocessing graph to serve a vision graph, so a model that declares
+    only one of them is refused. A model that declares neither exports its
+    vision graph alone."""
+    graphs = PipelineModules({"decoder": _fake(), "vision": _fake()})
+    no_preprocessing = _fake(
+        vision_preprocess_spec=lambda: None,
+        vision_preprocess_video_spec=lambda: None,
+        vision_metadata=lambda: _VISION,
+    )
+    with pytest.raises(ArtifactError, match="no vision_preprocess graph"):
+        model_artifact(graphs, no_preprocessing, None)
+
+    no_metadata = _fake(vision_metadata=lambda: None)
+    monkeypatch.setattr(
+        export_module,
+        "vision_preprocess_modules",
+        lambda model: {"vision_preprocess": _fake()},
+    )
+    with pytest.raises(ArtifactError, match="no vision metadata"):
+        model_artifact(graphs, no_metadata, None)
+
+    monkeypatch.setattr(
+        export_module, "vision_preprocess_modules", lambda model: {}
+    )
+    artifact = model_artifact(graphs, no_metadata, None)
+    assert artifact.vision is None
+    assert artifact.model is not None
+    assert set(artifact.model.roles) == {"decoder", "vision"}
+
+
 def test_spec_decoder_pipeline_is_exported() -> None:
     pipeline = _Pipeline(_compile(_specs({GraphRole.SPEC_DECODER: None})))
     assert set(pipeline_modules(pipeline, "Fake").roles) == {"spec_decoder"}
@@ -318,6 +411,77 @@ def test_no_roles_are_refused() -> None:
 def _fake(**attrs: object) -> Any:
     """Stands in for an object that exposes only ``attrs``."""
     return SimpleNamespace(**attrs)
+
+
+@pytest.mark.parametrize(
+    ("published", "server", "expected"),
+    [
+        # Nemotron: sampled, with MAX's default top-k (none).
+        (
+            {"do_sample": True, "temperature": 1.0, "top_p": 0.95},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=0.95, repetition_penalty=1.0
+            ),
+        ),
+        # Gemma 4: no do_sample, each value applies.
+        (
+            {"temperature": 1.0, "top_k": 64, "top_p": 0.95},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=64, top_p=0.95, repetition_penalty=1.0
+            ),
+        ),
+        # do_sample false is greedy whatever else the file sets.
+        (
+            {"do_sample": False, "temperature": 0.6},
+            {},
+            SamplingDefaults(
+                temperature=0.0, top_k=1, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+        # A published repetition penalty carries through.
+        (
+            {"repetition_penalty": 1.05},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=1.0, repetition_penalty=1.05
+            ),
+        ),
+        # Nothing published: MAX's own defaults.
+        (
+            {},
+            {},
+            SamplingDefaults(
+                temperature=1.0, top_k=None, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+        # The server's --temperature and --top-k override the checkpoint.
+        (
+            {"temperature": 1.0, "top_k": 64},
+            {"temperature": 0.3, "top_k": 8},
+            SamplingDefaults(
+                temperature=0.3, top_k=8, top_p=1.0, repetition_penalty=1.0
+            ),
+        ),
+    ],
+)
+def test_pipeline_sampling_defaults_resolve_as_max_serve_does(
+    published: dict[str, Any],
+    server: dict[str, Any],
+    expected: SamplingDefaults,
+) -> None:
+    config = _fake(
+        runtime=_fake(
+            temperature=server.get("temperature"), top_k=server.get("top_k")
+        ),
+        model=_fake(
+            sampling_params_defaults=SamplingParamsGenerationConfigDefaults(
+                **published
+            )
+        ),
+    )
+    assert pipeline_sampling_defaults(config) == expected
 
 
 def test_checkpoint_format_spec_is_the_architectures_document() -> None:
@@ -337,16 +501,143 @@ def test_checkpoint_format_spec_is_picked_per_checkpoint() -> None:
     assert checkpoint_format_spec(arch, _fake(repo_id="org/old")) is None
 
 
+def test_checkpoint_tokenizer_is_the_checkpoints_own(tmp_path: Path) -> None:
+    (tmp_path / "tokenizer.json").write_text("{}")
+    (tmp_path / "tokenizer_config.json").write_text("{}")
+    (tmp_path / "chat_template.jinja").write_text("{{ checkpoint }}")
+    repo = _fake(repo_type="local", local_path=str(tmp_path), revision="main")
+    named = {"default": "{{ messages }}", "tool_use": "{{ tools }}"}
+    tokenizer = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0, "b": 9}, chat_template=named),
+        eos_token_ids={9, 3},
+    )
+    config = _fake(model=_fake(huggingface_config=_fake(vocab_size=16)))
+    arch = _fake(tokenizer_family=lambda repo: ("gemma4", "thinking"))
+
+    assert checkpoint_tokenizer(arch, repo, tokenizer, config) == Tokenizer(
+        family="gemma4",
+        flavor="thinking",
+        files={
+            name: HuggingFaceRef(str(tmp_path), "main", name)
+            for name in ("tokenizer.json", "tokenizer_config.json")
+        },
+        chat_templates=named,
+        vocab_size=16,
+        sampleable_vocab_size=10,
+        eos_token_ids=(3, 9),
+    )
+
+    served = _fake(
+        delegate=_fake(
+            get_vocab=lambda: {"a": 0}, chat_template="{{ served }}"
+        ),
+        eos_token_ids={0},
+    )
+    unnamed = checkpoint_tokenizer(None, repo, served, config)
+    assert unnamed is not None
+    assert (unnamed.family, unnamed.flavor) == (None, None)
+    assert unnamed.chat_templates == {"default": "{{ served }}"}
+    untemplated = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0}, chat_template=None),
+        eos_token_ids={0},
+    )
+    result = checkpoint_tokenizer(None, repo, untemplated, config)
+    assert result is not None and result.chat_templates == {}
+    assert checkpoint_tokenizer(arch, repo, _fake(), config) is None
+
+
+def test_checkpoint_tokenizer_files_are_referenced_at_the_cached_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cached = "a" * 40
+    downloaded = "b" * 40
+    fetched: list[str] = []
+
+    def from_cache(repo_id: str, name: str, revision: str) -> str | None:
+        assert (repo_id, revision) == ("org/model", "main")
+        if name != "tokenizer.json":
+            return None
+        return str(tmp_path / "snapshots" / cached / name)
+
+    def download(repo_id: str, name: str, revision: str) -> str:
+        fetched.append(name)
+        if name == "tiktoken.model":
+            raise huggingface_hub.errors.EntryNotFoundError(name)
+        return str(tmp_path / "snapshots" / downloaded / name)
+
+    monkeypatch.setattr(huggingface_hub, "try_to_load_from_cache", from_cache)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    repo = _fake(repo_type="online", repo_id="org/model", revision="main")
+    tokenizer = _fake(
+        delegate=_fake(get_vocab=lambda: {"a": 0}, chat_template=None),
+        eos_token_ids={0},
+    )
+    config = _fake(model=_fake(huggingface_config=_fake(vocab_size=1)))
+
+    result = checkpoint_tokenizer(None, repo, tokenizer, config)
+
+    assert result is not None
+    assert result.files == {
+        "tokenizer.json": HuggingFaceRef("org/model", cached, "tokenizer.json"),
+        "tokenizer_config.json": HuggingFaceRef(
+            "org/model", downloaded, "tokenizer_config.json"
+        ),
+    }
+    assert fetched == ["tokenizer_config.json", "tiktoken.model"]
+
+
+@pytest.mark.parametrize(
+    ("arch", "repo_id", "family"),
+    [
+        (gemma4_arch, "google/gemma-4-31B-it", ("gemma4", "thinking")),
+        (gemma4_arch, "google/gemma-4-E4B-it", ("gemma4", "nonthinking")),
+        (
+            llama_arch,
+            "meta-llama/Llama-3.1-8B-Instruct",
+            ("llama3", "standard"),
+        ),
+        (llama_arch, "meta-llama/Llama-3.2-1B-Instruct", ("llama3", "lite")),
+        (llama_arch, "deepseek-ai/DeepSeek-R1-Distill-Llama-8B", None),
+        (
+            llama_arch,
+            "myorg/Llama-3.1-8B-Instruct-v3.2",
+            ("llama3", "standard"),
+        ),
+        (llama_arch, "mlabonne/Meta-Llama-3-120B-Instruct", None),
+        (
+            gemma4_arch,
+            "/hub/models--google--gemma-4-31B-it/snapshots/0e2b4e4b",
+            ("gemma4", "thinking"),
+        ),
+        (
+            gemma4_arch,
+            "/hub/models--google--gemma-4-E2B-it/snapshots/0e2b4e4b",
+            ("gemma4", "nonthinking"),
+        ),
+    ],
+)
+def test_architecture_names_the_checkpoints_tokenizer_family(
+    arch: SupportedArchitecture,
+    repo_id: str,
+    family: tuple[str, str | None] | None,
+) -> None:
+    assert callable(arch.tokenizer_family)
+    assert arch.tokenizer_family(_fake(repo_id=repo_id)) == family
+
+
 @pytest.mark.parametrize(
     "architecture",
     [
+        "beam_modulev3",
         "deepseekV41",
         "gemma4",
         "glm5_1",
+        "inkling",
         "laguna",
         "lfm3",
-        "mimo_v2",
+        "mimo_v2_modulev3",
         "muse_glimmer",
+        "nemotron_h_modulev3",
         "qwen3_5",
     ],
 )
@@ -364,7 +655,8 @@ def test_batch_processor_dims_bound_a_bound_decoders_per_step_dims() -> None:
         max_seq_len=256,
         max_batch_input_tokens=64,
     )
-    processor = _fake(input_tree=OrderedDict(), runtime=runtime)
+    processor = DecoderBatchProcessor(_fake(), runtime)
+    processor.bind_input_tree(OrderedDict())
     model = _fake(
         batch_processor=processor,
         kv_params=_fake(page_size=128, num_draft_tokens=0),
@@ -445,11 +737,14 @@ def test_engine_config_copies_the_planned_settings() -> None:
     )
 
 
-def test_engine_config_copies_the_speculative_settings() -> None:
+@pytest.mark.parametrize("greedy", [False, True])
+def test_engine_config_copies_the_speculative_settings(greedy: bool) -> None:
     config = _pipeline_config(
         sampling=SamplingConfig.model_construct(),
         speculative=SpeculativeConfig.model_construct(
-            speculative_method="mtp", num_speculative_tokens=3
+            speculative_method="mtp",
+            num_speculative_tokens=3,
+            use_greedy_acceptance=greedy,
         ),
         reasoning_parser="gemma4",
     )
@@ -458,9 +753,145 @@ def test_engine_config_copies_the_speculative_settings() -> None:
             speculative_method="mtp",
             num_speculative_tokens=3,
             draft_proposal="argmax",
+            acceptance_mode="greedy" if greedy else "stochastic",
             reasoning_parser="gemma4",
         )
     )
+
+
+def test_engine_config_records_the_verify_facts() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    # Mixed values, so a swapped field cannot pass.
+    facts = SpecGraphFacts(
+        verify_takes_prefill_rows=True,
+        verify_commits_long_rows=False,
+        successor_replay=True,
+    )
+    speculative = pipeline_engine_config(
+        config, _PLAN, verify_facts=facts
+    ).speculative
+    assert speculative is not None
+    assert speculative.verify_takes_prefill_rows
+    assert not speculative.verify_commits_long_rows
+    assert speculative.successor_replay
+
+
+def test_engine_config_records_the_reversed_verify_facts() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    # The reverse mix, so the two keys cannot be swapped anywhere.
+    facts = SpecGraphFacts(
+        verify_takes_prefill_rows=False,
+        verify_commits_long_rows=True,
+        successor_replay=True,
+    )
+    speculative = pipeline_engine_config(
+        config, _PLAN, verify_facts=facts
+    ).speculative
+    assert speculative is not None
+    assert not speculative.verify_takes_prefill_rows
+    assert speculative.verify_commits_long_rows
+    assert speculative.successor_replay
+
+
+def test_engine_config_without_verify_facts_reads_all_false() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    speculative = pipeline_engine_config(config, _PLAN).speculative
+    assert speculative is not None
+    assert not speculative.verify_takes_prefill_rows
+    assert not speculative.verify_commits_long_rows
+    assert not speculative.successor_replay
+
+
+def test_verify_facts_read_the_spec_pipeline_model() -> None:
+    class _SpecModel(SpecDecodePipelineModel):
+        def __init__(self) -> None:
+            # The export reads only the three fact properties.
+            pass
+
+        @property
+        def verify_takes_prefill_rows(self) -> bool:
+            return True
+
+        @property
+        def verify_commits_long_rows(self) -> bool:
+            return False
+
+        @property
+        def successor_replay(self) -> bool:
+            return True
+
+    class _SpecPipeline(TextGenerationPipelineInterface[Any]):
+        _pipeline_model = _SpecModel()
+
+        @property
+        def max_batch_size(self) -> int:
+            return 1
+
+        @property
+        def kv_manager(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def pipeline_config(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def tokenizer(self) -> Any:
+            raise NotImplementedError
+
+        def execute(self, inputs: Any) -> Any:
+            raise NotImplementedError
+
+        def release(self, request_id: Any) -> None:
+            raise NotImplementedError
+
+    class _PlainPipeline(TextGenerationPipelineInterface[Any]):
+        _pipeline_model = cast(PipelineModelWithKVCache[Any], object())
+
+        @property
+        def max_batch_size(self) -> int:
+            return 1
+
+        @property
+        def kv_manager(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def pipeline_config(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def tokenizer(self) -> Any:
+            raise NotImplementedError
+
+        def execute(self, inputs: Any) -> Any:
+            raise NotImplementedError
+
+        def release(self, request_id: Any) -> None:
+            raise NotImplementedError
+
+    assert _verify_facts(_SpecPipeline()) == SpecGraphFacts(
+        verify_takes_prefill_rows=True,
+        verify_commits_long_rows=False,
+        successor_replay=True,
+    )
+    # A pipeline whose model is not a fused spec-decode one has no facts.
+    assert _verify_facts(_PlainPipeline()) is None
 
 
 def _mha(num_layers: int, window_size: int | None = None) -> MHAKVCacheParams:
@@ -485,7 +916,14 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
             scale_dtype=DType.float8_e8m0fnu, quantization_granularity=32
         ),
     )
-    msa = MSAKVCacheParams(
+    sparse = MSAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+    )
+    index = MSAIndexKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=1,
         head_dim=128,
@@ -521,7 +959,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
                     "full_attention": quantized,
                 }
             ),
-            "indexer": msa,
+            "sparse": sparse,
+            "indexer": index,
             "latent": mla,
             "state": state,
         }
@@ -531,7 +970,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
     assert [(cache.name, cache.kind) for cache in layout.caches] == [
         ("target.sliding_attention", "mha"),
         ("target.full_attention", "mha"),
-        ("indexer", "msa"),
+        ("sparse", "msa"),
+        ("indexer", "msa_index"),
         ("latent", "mla"),
         ("state", "recurrent"),
     ]
@@ -549,6 +989,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=None,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(
             KVPoolLeaf(
                 leaf_id=sliding_id,
@@ -581,7 +1023,7 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
             stride_alignment=region.stride_alignment,
         )
 
-    assert layout.caches[2] == MSAKVCache(
+    assert layout.caches[3] == MSAIndexKVCache(
         name="indexer",
         dtype=DType.bfloat16,
         num_layers=1,
@@ -594,9 +1036,11 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=512,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(full_leaf("indexer"),),
     )
-    assert layout.caches[3] == MLAKVCache(
+    assert layout.caches[4] == MLAKVCache(
         name="latent",
         dtype=DType.bfloat16,
         num_layers=1,
@@ -609,9 +1053,11 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         stride_alignment=None,
         scratch=False,
         kvcache_quant_config=None,
+        speculative_method=None,
+        num_draft_tokens=0,
         leaves=(full_leaf("latent"),),
     )
-    assert layout.caches[4] == RecurrentStateCache(
+    assert layout.caches[5] == RecurrentStateCache(
         name="state",
         regions=(
             StateRegion(

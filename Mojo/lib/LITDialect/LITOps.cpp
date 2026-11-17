@@ -719,28 +719,9 @@ TypedAttr FnOp::getFuncLiteralGenerator(
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
                                        fullSig.getParamListAttrs());
-  if (!bindings || llvm::all_of(bindings, llvm::IsaPred<UnboundAttr>)) {
-    // If all the provided bindings are unbound, return the original generator.
-    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
-    // type dependencies, which results in BindParamsAttr being folded in a
-    // wrong way.
-    //
-    // E.g.,
-    //
-    // def takeClosure[
-    //     origins: OriginSet,
-    //     //,
-    //     f: def() capturing[origins] -> None,
-    // ]():
-    //     pass
-    //
-    // where
-    //
-    // `f: def() capturing[origins]` will be replaced to
-    // `f: def() capturing[  ?    ]`. This will make the type dependency on
-    // `origins` unrecoverable.
+  if (!bindings)
     return unboundGen;
-  }
+
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       unboundGen.getContext(), dischargedBodyConstraints);
   return BindParamsAttr::get(unboundGen.getContext(), unboundGen, bindings,
@@ -1292,25 +1273,38 @@ bool StructDeclOp::isSynthetic() { return getSynthetic(); }
 
 ArrayRef<ParamDeclAttr> StructDeclOp::getInputParams() { return getParams(); }
 
-LIT::StructType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
-  SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
+TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
+                                      ArrayRef<TypedAttr> paramValues) {
   TypeSignatureType sig = getSignature();
+  // create a list of forwarded parameter
+  SmallVector<TypedAttr> forwardParams;
+  for (auto [idx, t] : llvm::enumerate(sig.getParamTypes()))
+    forwardParams.push_back(ParamIndexRefAttr::get(0, idx, t));
 
-  if (paramValues.empty()) {
-    // Create a fully unbound reference to the type.
-    SmallVector<TypedAttr> unbound;
-    ParameterEvaluator evaluator;
-    for (Type type : sig.getParamTypes()) {
-      auto canonical = getCanonicalType(type);
-      unbound.push_back(UnboundAttr::get(evaluator.getReboundType(canonical)));
-      evaluator.appendIndexBinding(unbound.back());
-    }
-    return LIT::StructType::get(symbol, unbound, sig);
-  }
+  auto st =
+      LIT::StructType::get(getFullyResolvedSymbolRef(*this), forwardParams);
 
-  // Compute the resultant signature.
-  auto newSig = sig.bind(paramValues);
-  return LIT::StructType::get(symbol, paramValues, newSig);
+  auto genBody = TypeParamAttr::get(st, StructMetaType::get(st));
+  // A simple type without parameters.
+  if (forwardParams.empty())
+    return genBody;
+
+  auto typeExpr =
+      GeneratorAttr::get(sig.getParamTypes(), genBody, sig.getParamListAttrs());
+  if (paramValues.empty())
+    return typeExpr;
+
+  // TODO: maybe worth a cache here?
+  return BindParamsAttr::get(typeExpr.getContext(), typeExpr, paramValues,
+                             evalCtx);
+}
+
+LIT::StructType
+StructDeclOp::bindAllReferences(ParameterEvaluationContext *evalCtx,
+                                ArrayRef<TypedAttr> paramValues) {
+  TypedAttr typeVal = this->bindReference(evalCtx, paramValues);
+  // must be fully resolved to a struct type.
+  return cast<LIT::StructType>(ParamType::get(typeVal));
 }
 
 std::optional<size_t> StructDeclOp::findFieldIndex(StringRef name) {
@@ -1620,6 +1614,47 @@ void ExtensionDeclOp::build(OpBuilder &builder, OperationState &result,
 }
 
 //===----------------------------------------------------------------------===//
+// RefUnionCastOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+RefUnionCastOp::inferReturnTypes(MLIRContext *context,
+                                 std::optional<Location> loc, Adaptor adaptor,
+                                 SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto ref = dyn_cast<RefType>(adaptor.getContainer().getType());
+  auto storage = ref ? sugarDynCast<UntaggedUnionType>(ref.getElementType())
+                     : UntaggedUnionType();
+  if (!storage)
+    return mlir::emitOptionalError(
+        loc, "container must reference untagged union storage");
+  auto index = dyn_cast<TypedAttr>(adaptor.getIndexAttr());
+  if (!index || !index.getType().isIndex())
+    return mlir::emitOptionalError(loc, "member index must have index type");
+  if (auto constant = dyn_cast<IntegerAttr>(index)) {
+    if (constant.getInt() < 0)
+      return mlir::emitOptionalError(loc, "member index must be nonnegative");
+    if (auto members = dyn_cast<ParamListAttr>(storage.getVariadic());
+        members && uint64_t(constant.getInt()) >= members.getValues().size())
+      return mlir::emitOptionalError(loc, "member index out of range");
+  }
+  auto member = ParamListGetAttr::get(storage.getVariadic(), index);
+  inferredReturnTypes.push_back(RefType::get(
+      ParamType::get(member), ref.getOrigin(), ref.getAddressSpace()));
+  return success();
+}
+
+LogicalResult RefUnionCastOp::verify() {
+  SmallVector<Type> inferred;
+  if (failed(
+          inferReturnTypes(getContext(), getLoc(), Adaptor(*this), inferred)))
+    return failure();
+  if (!isEqualCanon(getType(), inferred.front()))
+    return emitOpError("result must preserve the member type, container origin "
+                       "and address space");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 
@@ -1654,8 +1689,10 @@ RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
-                           Value structBaseRef, StructFieldOp field) {
-  auto resultType = getFieldType(cast<RefType>(structBaseRef.getType()), field);
+                           Value structBaseRef, StructFieldOp field,
+                           ParameterEvaluationContext *ctx) {
+  auto resultType =
+      getFieldType(cast<RefType>(structBaseRef.getType()), field, ctx);
   result.addTypes(resultType);
   result.addAttribute("field", field.getNameAttr());
   // Don't add index attribute for field access
@@ -1774,8 +1811,11 @@ struct ResolveIndexToFieldName : public mlir::OpRewritePattern<RefStructGEROp> {
       return op.emitOpError("field index ") << index << " is out of bounds";
 
     // Replace with field name access
-    rewriter.replaceOpWithNewOp<RefStructGEROp>(op, op.getContainer(),
-                                                targetField);
+    RefType fieldRefType = RefStructGEROp::getReboundFieldType(
+        op.getContainer().getType(), targetField.getNameAttr(),
+        op.getType().getElementType());
+    rewriter.replaceOpWithNewOp<RefStructGEROp>(
+        op, fieldRefType, targetField.getNameAttr(), op.getContainer());
     return success();
   }
 };
@@ -2313,12 +2353,15 @@ void VarDeclOp::walkDefinitions(
 }
 
 void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
-                      StringRef name, StringRef originName, VarDeclKind kind) {
+                      StringRef name, StringRef originName, VarDeclKind kind,
+                      TypedAttr addressSpace) {
   auto originType = b.getType<OriginType>(/*isMutable=*/true);
   auto originNameAttr = b.getAttr<StringAttr>(originName);
   auto originDecl = ParamDeclAttr::get(originNameAttr, originType);
-  auto resultType = RefType::get(
-      elementType, ParamDeclRefAttr::get(originNameAttr, originType));
+  auto origin = ParamDeclRefAttr::get(originNameAttr, originType);
+  auto resultType = addressSpace
+                        ? RefType::get(elementType, origin, addressSpace)
+                        : RefType::get(elementType, origin);
   build(b, state, resultType, name, kind, originDecl);
 }
 
@@ -2515,6 +2558,59 @@ LogicalResult RefPackCreateOp::verify() {
                          << " but got " << provided;
   }
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// RefPackConcatOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult RefPackConcatOp::verify() {
+  if (getPacks().empty())
+    return emitOpError() << "expected at least one operand";
+
+  RefPackType resultType = getType();
+  SmallVector<TypedAttr> operandLists;
+  for (auto [i, operandType] : llvm::enumerate(getPacks().getTypes())) {
+    auto packType = cast<RefPackType>(operandType);
+    if (!isEqualCanon(packType.getParamListElementType(),
+                      resultType.getParamListElementType())) {
+      return emitOpError() << "operand #" << i << " has element type "
+                           << packType.getParamListElementType()
+                           << " but the result has "
+                           << resultType.getParamListElementType();
+    }
+    if (!isEqualCanon(packType.getAddressSpace(),
+                      resultType.getAddressSpace())) {
+      return emitOpError() << "operand #" << i << " has address space "
+                           << packType.getAddressSpace()
+                           << " but the result has "
+                           << resultType.getAddressSpace();
+    }
+    // The rule is the same as for lit.ref.pack.create. A change of origin must
+    // be an explicit rebind.
+    if (!isEqualCanon(packType.getOrigin(), resultType.getOrigin())) {
+      return emitOpError() << "operand #" << i << " has origin "
+                           << packType.getOrigin() << " but the result has "
+                           << resultType.getOrigin();
+    }
+    operandLists.push_back(packType.getVariadic());
+  }
+
+  // A concat of one parametric list does not fold to that list. Thus, a
+  // one-operand result can also have the list of the operand.
+  TypedAttr expected = ParamListConcatAttr::get(operandLists);
+  if (isEqualCanon(expected, resultType.getVariadic()) ||
+      (operandLists.size() == 1 &&
+       isEqualCanon(operandLists.front(), resultType.getVariadic())))
+    return success();
+  return emitOpError() << "result element list should be " << expected
+                       << " but got " << resultType.getVariadic();
+}
+
+OpFoldResult RefPackConcatOp::fold(FoldAdaptor adaptor) {
+  if (getPacks().size() == 1 && getPacks().front().getType() == getType())
+    return getPacks().front();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

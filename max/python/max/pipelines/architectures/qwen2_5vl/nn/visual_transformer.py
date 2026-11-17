@@ -49,7 +49,7 @@ from max.nn.legacy.graph_groups import (
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 from ..model_config import VisionConfig
 from .vision_attention import DistributedVisionWindowAttention

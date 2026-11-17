@@ -36,7 +36,11 @@ from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.nn.legacy.graph_groups import GraphGroup
 from max.tensor import Tensor
-from max.tensor.compilation import CompiledCallable, compile
+from max.tensor.compilation import (
+    CompiledCallable,
+    _with_signal_inputs,
+    compile,
+)
 from max.tensor.sharding import (
     BufferLayout,
     DeviceMapping,
@@ -296,3 +300,91 @@ def test_malformed_tree_is_rejected(tmp_path: Path) -> None:
                 "in_tree": {"kind": "nope"},
             }
         )
+
+
+class _Signals(GraphGroup[str, tuple[TensorLayout, ...]]):
+    """Stands in for the serving engine's allreduce signal group."""
+
+    kind = "_test_signals"
+
+
+class _Inputs(GraphGroup[str, Any]):
+    """Stands in for a decoder's named input tree."""
+
+    kind = "_test_inputs"
+
+
+def _cpu(name: str) -> TensorLayout:
+    return TensorLayout(DType.int64, [name], DeviceRef.CPU())
+
+
+_SIGNALS = _Signals(
+    signal=(
+        BufferLayout(DType.uint8, [64], DeviceRef.CPU()),
+        BufferLayout(DType.uint8, [64], DeviceRef.CPU()),
+    )
+)
+
+
+def _call(*args: Any) -> tuple[list[TensorLayout], tree.TreeDef]:
+    return tree.flatten((args, {}), leaf=TensorLayout)
+
+
+def _signature(
+    args: tuple[Any, ...], at: int | None
+) -> tuple[list[TensorLayout], Any]:
+    layouts, treedef = _with_signal_inputs(*_call(*args), _SIGNALS, at)
+    rebuilt, _ = tree.unflatten(treedef, layouts)
+    return layouts, rebuilt
+
+
+@pytest.mark.parametrize(
+    ("at", "keys"),
+    [
+        (None, ["tokens", "offsets", "kv", "signals"]),
+        (2, ["tokens", "offsets", "signals", "kv"]),
+        (0, ["signals", "tokens", "offsets", "kv"]),
+    ],
+)
+def test_signals_join_a_named_root_where_the_graph_takes_them(
+    at: int | None, keys: list[str]
+) -> None:
+    root = _Inputs(tokens=_cpu("a"), offsets=_cpu("b"), kv=_cpu("c"))
+    layouts, (rebuilt,) = _signature((root,), at)
+    assert type(rebuilt) is _Inputs
+    assert list(rebuilt) == keys
+    assert rebuilt["signals"] == _SIGNALS
+    index = len(tree.leaves(root, leaf=TensorLayout)) if at is None else at
+    assert layouts[index : index + 2] == list(_SIGNALS["signal"])
+    assert len(layouts) == 5
+
+
+def test_signals_keep_a_plain_dict_roots_key_order() -> None:
+    _, (rebuilt,) = _signature(({"b": _cpu("b"), "a": _cpu("a")},), 1)
+    assert list(rebuilt) == ["a", "signals", "b"]
+
+
+def test_signals_are_a_positional_argument_of_a_positional_call() -> None:
+    layouts, args = _signature((_cpu("a"), _cpu("b")), 1)
+    assert args[1] == _SIGNALS
+    assert layouts[1:3] == list(_SIGNALS["signal"])
+
+
+def test_signals_that_split_an_argument_are_refused() -> None:
+    with pytest.raises(ArtifactError, match="split an argument"):
+        _signature(((_cpu("a"), _cpu("b")),), 1)
+
+
+def test_signals_group_survives_serialization() -> None:
+    layouts, treedef = _with_signal_inputs(
+        *_call(_Inputs(tokens=_cpu("a"))), _SIGNALS, None
+    )
+    assert treedef_from_json(treedef_to_json(treedef)) == treedef
+    assert len(layouts) == 3
+
+
+def test_a_graph_without_signal_buffers_keeps_its_signature(
+    session: InferenceSession,
+) -> None:
+    run = _wrap(session, _graph("scale", 3.0))
+    assert run.graph_signature() == (run.in_layouts, run.in_tree)

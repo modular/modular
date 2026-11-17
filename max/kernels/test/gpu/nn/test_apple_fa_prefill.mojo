@@ -34,7 +34,7 @@ from layout import (
     Idx,
     TileTensor,
 )
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.apple.fa_prefill import fa_prefill_apple
 from nn.attention.gpu.nvidia.common import (

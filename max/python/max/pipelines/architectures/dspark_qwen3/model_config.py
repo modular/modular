@@ -10,21 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The ``Qwen3DSparkModel`` draft's config, which builds its module."""
+"""Configuration for the registered Nemotron-H DSpark draft."""
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, fields
 from typing import Any
 
-from max import functional as F
 from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import load_weights
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.graph.weights import WeightData
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.config import (
     MAXModelConfig,
@@ -32,17 +31,13 @@ from max.pipelines.lib.config import (
     SpeculativeConfig,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.tensor import default_device, default_dtype
-from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 from ..nemotron_h_modulev3.model_config import is_sm100
 from .dspark_qwen3 import (
-    DSparkQwen3,
     DSparkQwen3DraftConfig,
     parse_dspark_draft_config,
 )
-from .weight_adapters import convert_draft_state_dict
 
 logger = logging.getLogger("max.pipelines")
 
@@ -51,10 +46,6 @@ __all__ = [
     "check_draft_runs_on",
     "dspark_nemotron_draft_width",
 ]
-
-TARGET_EMBEDDING = "backbone.embeddings.weight"
-"""The target checkpoint's embedding, which the draft's table must equal
-but for the mask token's row."""
 
 
 def check_draft_runs_on(
@@ -128,12 +119,11 @@ def dspark_nemotron_draft_width(
 
 @dataclass
 class Qwen3DSparkDraftArchConfig:
-    """The config of the ``Qwen3DSparkModel`` draft, which builds its module.
+    """The planning config of the ``Qwen3DSparkModel`` draft.
 
     A DSpark checkpoint is only ever served as ``--draft-model`` next to a
-    Nemotron-H target, in the unified spec-decode graph, so this builds the
-    draft's module and KV leaf for that graph and clamps the draft side's
-    maximum sequence length.
+    Nemotron-H target, in the unified spec-decode graph. It records the
+    draft checkpoint's maximum sequence length for planning.
     """
 
     max_position_embeddings: int = 1 << 20
@@ -168,69 +158,6 @@ class Qwen3DSparkDraftArchConfig:
         return int(huggingface_config.max_position_embeddings)
 
     @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[DSparkQwen3, DSparkQwen3DraftConfig]:
-        """Builds the DSpark draft for the draft checkpoint ``context`` names.
-
-        The module holds no weights: it compiles with those
-        :meth:`checkpoint_weights` returns.
-
-        Raises:
-            ValueError: If the method isn't ``dspark``, or the draft is NVFP4
-                and a device is not SM100.
-        """
-        pipeline_config = context.pipeline_config
-        speculative = pipeline_config.speculative
-        draft_model = pipeline_config.draft_model
-        assert speculative is not None and draft_model is not None
-        if not speculative.is_dspark():
-            raise ValueError(
-                "The Qwen3DSparkModel draft is a DSpark draft and requires"
-                " --speculative-method dspark, got"
-                f" {speculative.speculative_method!r}."
-            )
-        config = parse_dspark_draft_config(draft_model.huggingface_config)
-        check_draft_runs_on(pipeline_config.model.device_specs, config)
-        kv_params = context.kv_params
-        assert isinstance(kv_params, KVCacheParams)
-        devices = [ref.to_device() for ref in kv_params.devices]
-        mesh = DeviceMesh(tuple(devices), (len(devices),), ("tp",))
-        with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
-            draft = DSparkQwen3(
-                config,
-                kv_params,
-                num_devices=len(devices),
-                max_seq_len=context.max_seq_len,
-                device=devices[0],
-            )
-        return draft, config
-
-    @classmethod
-    def checkpoint_weights(
-        cls, context: ModelLoadContext, config: DSparkQwen3DraftConfig
-    ) -> dict[str, Any]:
-        """Returns the weights the built draft compiles with.
-
-        The draft embeds through its target's table, all but the mask
-        token's trained row, so its own table is checked against the target
-        checkpoint's.
-
-        Raises:
-            ValueError: If the checkpoint doesn't match the module or the
-                target's table.
-        """
-        pipeline_config = context.pipeline_config
-        target = dict(
-            load_weights(pipeline_config.model.resolved_weight_paths()).items()
-        )
-        return convert_draft_state_dict(
-            {name: weight.data() for name, weight in context.weights.items()},
-            config,
-            target_embedding=target[TARGET_EMBEDDING].data(),
-        )
-
-    @classmethod
     def construct_kv_params(
         cls,
         huggingface_config: AutoConfig,
@@ -259,3 +186,29 @@ class Qwen3DSparkDraftArchConfig:
             speculative_method=speculative.speculative_method,
             num_draft_tokens=speculative.draft_width,
         )
+
+
+@dataclass(frozen=True, kw_only=True)
+class DSparkQwen3Config(DSparkQwen3DraftConfig):
+    """Adds the planned cache and sequence bound to the checkpoint config."""
+
+    kv_params: KVCacheParams
+    max_seq_len: int
+
+
+def configure_dspark_draft(
+    context: ModelLoadContext, state_dict: Mapping[str, WeightData]
+) -> DSparkQwen3Config:
+    """Finalizes the draft config without constructing or loading its module."""
+    del state_dict
+    pipeline_config = context.pipeline_config
+    draft_model = pipeline_config.draft_model
+    assert draft_model is not None
+    config = parse_dspark_draft_config(draft_model.huggingface_config)
+    check_draft_runs_on(pipeline_config.model.device_specs, config)
+    assert isinstance(context.kv_params, KVCacheParams)
+    return DSparkQwen3Config(
+        **{field.name: getattr(config, field.name) for field in fields(config)},
+        kv_params=context.kv_params,
+        max_seq_len=context.max_seq_len,
+    )

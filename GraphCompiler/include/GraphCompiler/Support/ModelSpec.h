@@ -63,11 +63,6 @@ public:
   /// formats with named inputs or outputs.
   struct NameSubstitutions {
     llvm::StringMap<std::string> preferredToNativeMap;
-
-    /// Returns the 'native' name for `preferredName`, which must come from the
-    /// model spec; the result then lives as long as the spec and is
-    /// null-terminated.
-    StringRef getPreferredName(StringRef preferredName) const;
   };
 
   /// Describes how to fetch the model in its native binary format.
@@ -98,9 +93,6 @@ public:
   ModelSpec &operator=(ModelSpec &&) = default;
 
   ~ModelSpec();
-
-  /// Returns the model binary corresponding to the given format.
-  ErrorOr<const ModelBinary *> getModelBinary(StringRef format) const;
 
   std::string name;
   std::string task;

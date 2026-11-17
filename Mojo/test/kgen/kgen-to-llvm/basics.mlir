@@ -218,8 +218,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: llvm.func internal @coro
 // CHECK-SAME: coroutineType = !llvm.struct<(i64, ptr, ptr, ptr, ptr, ptr, ptr)>
-kgen.func @coro() attributes {coroutineType = !kgen.struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>} {
+kgen.func @coro() {
   hlcf.return
-}
+} <coroutineType = !kgen.struct<(index, (!kgen.pointer<none>) -> (), (!kgen.pointer<none>) -> !kgen.none, pointer<none>, pointer<none>, pointer<none>, pointer<none>)>>
 
 }

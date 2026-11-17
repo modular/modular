@@ -13,7 +13,7 @@
 """Validates the fused apply_qk_rms_norm graph op against a float64 reference.
 
 Mirrors the kernel-level Mojo test (test_apply_qk_rms_norm.mojo) but exercises
-the full graph-op path: ops.custom -> mo.norm.apply_qk_rms_norm ->
+the full graph-op path: ops.custom -> norm.apply_qk_rms_norm ->
 apply_qk_rms_norm_gpu. The reference is computed in float64 so the only error is
 the inputs' representational error (bf16) plus the output downcast. Also
 cross-checks against the unfused graph (cast/rsqrt/mul) this op replaces.
@@ -28,7 +28,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import apply_qk_rms_norm
+from max.nn._graph_ops import apply_qk_rms_norm
 
 _EPS = 1e-6
 

@@ -175,9 +175,6 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     static TypeSignatureType remapToSignature(
       function_ref<InFlightDiagnostic()> emitError,
       ParamDeclArrayAttr paramDecls, PogListAttr paramListAttrs);
-
-    /// Bind parameter values to the signature, returning a new one.
-    TypeSignatureType bind(ArrayRef<TypedAttr> values) const;
   }];
 }
 
@@ -205,28 +202,21 @@ def LIT_StructType : LITType<"Struct", "struct", [
   let parameters = (ins
     "SymbolAttr":$value,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-    DefaultValuedParameter<"TypeSignatureType",
-                           "TypeSignatureType::get($_ctxt)">:$signature,
     // Canonical type or null if already canonical.
     OptionalParameter<"StructType">:$canonical
   );
   let assemblyFormat = [{
-    `<` custom<StructTypeBody>($value, $paramValues) ``
-        (`,` $signature^)? `>`
+    `<` custom<StructTypeBody>($value, $paramValues) `>`
   }];
 
   let skipDefaultBuilders = 1;
   let builders = [
     TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "TypeSignatureType":$signature)>,
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$name,
-                                        "ArrayRef<TypedAttr>":$paramValues,
-                                        "TypeSignatureType":$signature)>,
+                                        CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues)>,
     // Override the default builder used by the generated parser so we can
     // make sure the canonical field is set right when the elements are changed.
     AttrBuilder<(ins "SymbolAttr":$name,
                      "ArrayRef<TypedAttr>":$paramValues,
-                     "TypeSignatureType":$signature,
                      "StructType":$canonical)>
   ];
 
@@ -241,16 +231,6 @@ def LIT_StructType : LITType<"Struct", "struct", [
 
     /// Return an alias name if the StructType should be printed with an alias.
     static std::optional<StringRef> getAliasName(SymbolRefAttr symbol);
-
-    /// Bind parameter values to the struct type, returning a new struct type.
-    /// Expects the number of values to match the number of param values. Only
-    /// positions that are currently unbound can be updated.
-    StructType bindAll(ArrayRef<TypedAttr> values) const;
-
-    /// Bind parameter values to the struct type, returning a new struct type.
-    /// Expects the number of values to match the number of unbound parameters
-    /// in the current param values list.
-    StructType bindUnbound(ArrayRef<TypedAttr> values) const;
 
     /// Return the metatype of the type it has one.
     MetaType getMetaType();
@@ -335,6 +315,8 @@ def LIT_TraitType: LITType<"Trait", "trait",
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+
     // Canonicalizing builder helper - declared here, implemented in LITTypes.cpp.
     // Performs canonicalization:
     // - False constraints (proposition = 0) remove the trait slot entirely
@@ -395,6 +377,8 @@ def LIT_MetaType : LITType<"Meta", "meta",
   ];
 
   let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+
     // Sugar support: non-parameterized types get aliases.
     mlir::OpAsmAliasResult getAlias(raw_ostream &os) const;
 
@@ -426,6 +410,8 @@ def LIT_OriginType : LITType<"Origin", "origin",
   ];
 
   let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+
     /// Return true if the mutable attribute is known to be the specific
     /// constant.  This returns false if parametric or if the other value.
     bool isMutableKnown(bool value);

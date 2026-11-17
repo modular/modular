@@ -503,8 +503,8 @@ kgen.generator @pop_simd_extractelement<size, type: dtype>(
     %b: !kgen.simd<size, f32>,
     %c: !kgen.simd<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  index.constant
-  %idx = index.constant 2
+  // CHECK: %[[IDX:.*]] = kgen.param.constant: scalar<index> = <2>
+  %idx = kgen.param.constant: scalar<index> = <2>
   // CHECK: %[[U:.*]] = pop.simd.extractelement %[[A]][%[[IDX]]] : !kgen.simd<size, type>
   %u = pop.simd.extractelement %a[%idx] : !kgen.simd<size, type>
   // CHECK: %[[V:.*]] = pop.simd.extractelement %[[B]][%[[IDX]]] : !kgen.simd<size, f32>
@@ -529,8 +529,8 @@ kgen.generator @pop_simd_insertelement<size, DT: dtype>(
     %b: !kgen.simd<size, f32>,
     %c: !kgen.simd<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  index.constant
-  %idx = index.constant 2
+  // CHECK: %[[IDX:.*]] = kgen.param.constant: scalar<index> = <2>
+  %idx = kgen.param.constant: scalar<index> = <2>
   // CHECK: %[[U:.*]] = pop.simd.insertelement %[[V0]], %[[A]][%[[IDX]]] : !kgen.simd<size, DT>
   %u = pop.simd.insertelement %v0, %a[%idx] : !kgen.simd<size, DT>
   // CHECK: %[[V:.*]] = pop.simd.insertelement %[[V1]], %[[B]][%[[IDX]]] : !kgen.simd<size, f32>
@@ -622,7 +622,7 @@ kgen.generator @pop_load_alignment_generator<alignment>(%ptr: !kgen.pointer<scal
 }
 
 // CHECK-LABEL: @pop_offset
-kgen.generator @pop_offset<type: dtype>(%p: !kgen.pointer<scalar<f32>>, %idx: index) {
+kgen.generator @pop_offset<type: dtype>(%p: !kgen.pointer<scalar<f32>>, %idx: !kgen.scalar<index>) {
   // pop.offset %{{.*}}[{{.*}}] : !kgen.pointer<scalar<f32>>
   %0 = pop.offset %p[%idx] : !kgen.pointer<scalar<f32>>
   hlcf.return
@@ -660,7 +660,7 @@ kgen.generator @pop_generic_load_store<ty: type, dt: dtype, size>(
 kgen.generator @pop_generic_offset<ty: type>(
     %p0: !kgen.pointer<ty>,
     %p1: !kgen.pointer<simd<4, f32>>,
-    %i: index) {
+    %i: !kgen.scalar<index>) {
   // CHECK: pop.offset %{{.*}} : !kgen.pointer<ty>
   %0 = pop.offset %p0[%i] : !kgen.pointer<ty>
   // CHECK: pop.offset %{{.*}} : !kgen.pointer<simd<4, f32>>
@@ -703,12 +703,11 @@ kgen.generator @external_call<ty: type, dt: dtype>(%a: !kgen.param<ty>, %b: !kge
   // CHECK: pop.external_call @foo(%{{.*}}, %{{.*}})
   %0 = pop.external_call @foo(%a, %b) : (!kgen.param<ty>, !kgen.scalar<dt>) -> !kgen.simd<4, f32>
   // CHECK: pop.external_call @bar(%arg0, %arg1)
-  // CHECK-SAME: attributes {funcAttrs = ["noinline", ["alignstack", "16"]],
-  // CHECK-SAME: numFixedArgs = 1 : index}
+  // CHECK-SAME: <numFixedArgs = 1 : index,
+  // CHECK-SAME: funcAttrs = ["noinline", ["alignstack", "16"]]>
   pop.external_call @bar(%a, %b)
-    attributes {funcAttrs = ["noinline", ["alignstack", "16"]],
-                numFixedArgs = 1 : index}
     : (!kgen.param<ty>, !kgen.scalar<dt>) -> ()
+    <numFixedArgs = 1 : index, funcAttrs = ["noinline", ["alignstack", "16"]]>
   hlcf.return
 }
 
@@ -853,8 +852,8 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.param<T>)
 
   // CHECK: %[[ARR_PTR:.*]] = pop.stack_allocation 1 x array<4, T>
   %5 = pop.stack_allocation 1 x !pop.array<4, T>
-  // CHECK: %[[IDX:.*]] = index.constant
-  %6 = index.constant 2
+  // CHECK: %[[IDX:.*]] = kgen.param.constant: scalar<index> = <2>
+  %6 = kgen.param.constant: scalar<index> = <2>
   // CHECK: pop.array.gep %[[ARR_PTR]][%[[IDX]]] : <array<4, T>>
   %7 = pop.array.gep %5[%6] : <array<4, T>>
 
@@ -963,15 +962,15 @@ kgen.generator @atomic_rmw<scope: string>(%ptr: !kgen.pointer<scalar<index>>,
   hlcf.return
 }
 
-// CHECK-LABEL: kgen.func @string_ops(%arg0: !kgen.string, %arg1: !kgen.string, %arg2: !kgen.string) -> index
+// CHECK-LABEL: kgen.func @string_ops(%arg0: !kgen.string, %arg1: !kgen.string, %arg2: !kgen.string) -> !kgen.scalar<index>
 kgen.func @string_ops(%a: !kgen.string,
                       %src: !kgen.string,
-                      %target: !kgen.string) ->  index {
+                      %target: !kgen.string) ->  !kgen.scalar<index> {
   // CHECK: pop.string.address %arg0
   %0 = pop.string.address %a
   // CHECK: pop.string.size %arg0
   %1 = pop.string.size %a
-  hlcf.return %1: index
+  hlcf.return %1: !kgen.scalar<index>
 }
 
 // CHECK-LABEL: kgen.generator @dtype_utils
@@ -994,7 +993,7 @@ kgen.generator @dtype_utils<DT: dtype>(%arg0: !kgen.dtype) {
 
 
 // CHECK-LABEL: @aligned_alloc
-kgen.func @aligned_alloc(%arg0: index, %arg1: index) {
+kgen.func @aligned_alloc(%arg0: !kgen.scalar<index>, %arg1: !kgen.scalar<index>) {
   // CHECK-NEXT: %0 = pop.aligned_alloc %arg0, %arg1 : <index>
   %0 = pop.aligned_alloc %arg0, %arg1 : <index>
   // CHECK-NEXT: pop.aligned_free %0 : <index>

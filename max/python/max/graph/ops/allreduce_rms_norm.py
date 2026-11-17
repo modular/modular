@@ -20,11 +20,17 @@ from max._core.dialects import mo
 from max._core.dialects.builtin import BoolAttr
 from max.dtype import DType
 
+from ..dim import StaticDim
 from ..graph import Graph
 from ..type import _ChainType
 from ..value import BufferValueLike, TensorValue, TensorValueLike
 from .rms_norm import _float32_attr
 from .utils import _buffer_values, _tensor_values
+
+# The post-norm residual kernel runs a row in one block of at most 1024
+# threads, each holding one 128-bit pack of 8 bfloat16 values.
+_POST_NORM_RESIDUAL_PACK_COLS = 8
+_POST_NORM_RESIDUAL_MAX_COLS = 1024 * _POST_NORM_RESIDUAL_PACK_COLS
 
 
 def allreduce_rms_norm(
@@ -172,3 +178,154 @@ def allreduce_rms_norm(
     normed = [res.tensor for res in results[:num_devices]]
     summed = [res.tensor for res in results[num_devices:]]
     return normed, summed
+
+
+def allreduce_post_norm_residual_rms_norm(
+    inputs: Iterable[TensorValueLike],
+    signal_buffers: Iterable[BufferValueLike],
+    residuals: Iterable[TensorValueLike],
+    gammas: Iterable[TensorValueLike],
+    gamma2s: Iterable[TensorValueLike],
+    mixes: Iterable[TensorValueLike],
+    epsilon: float,
+) -> tuple[list[TensorValue], list[TensorValue]]:
+    """Fused allreduce sum + a post-norm residual join (bf16 in/out).
+
+    For a transformer block's branch output, one launch per device runs the
+    branch's post-norm, its scaled join to the residual stream and the next
+    pre-norm:
+
+    .. code-block:: text
+
+        joined = mix[0] * rms_norm(sum(inputs), gamma) + mix[1] * residual
+        normed = rms_norm(joined, gamma2)
+
+    Each product and the sum round to bfloat16 on their own, as the unfused
+    ops do, and both norms multiply by their weight in float32 before the
+    cast. A Lamport kernel runs it, in row chunks that each fit its 1 MiB
+    workspace, with one thread block per row: ``cols`` must be a multiple
+    of 8 and at most 8192. A static ``cols`` outside that range raises here;
+    a symbolic one raises when the graph runs. The kernel stores straight
+    into the peers' signal buffers, so it raises at run time on a host
+    without P2P access between the GPUs.
+
+    Args:
+        inputs: The ``[rows, cols]`` partial sums to reduce, one per device.
+        signal_buffers: Device buffer values used for synchronization.
+        residuals: Each device's residual stream ``[rows, cols]``.
+        gammas: Each device's post-norm weight ``[cols]``.
+        gamma2s: Each device's next pre-norm weight ``[cols]``.
+        mixes: Each device's ``[2]`` float32 weights of the normed sum and
+            of the residual.
+        epsilon: Both norms' epsilon.
+
+    Returns:
+        ``(joined, normed)``, each one ``[rows, cols]`` tensor per device.
+
+    Raises:
+        ValueError: If the operand lists differ in length, the inputs are
+            not same-shaped 2-D bfloat16 tensors on distinct devices, a
+            static ``cols`` does not fit the kernel, a weight does not match
+            its input, or a mix is not a ``[2]`` float32 tensor.
+    """
+    inputs = _tensor_values(inputs)
+    signal_buffers = _buffer_values(signal_buffers)
+    per_device = [
+        _tensor_values(v) for v in (residuals, gammas, gamma2s, mixes)
+    ]
+    num_devices = len(inputs)
+    if num_devices < 2:
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm requires at least two "
+            f"inputs, one per device. Got: {num_devices}"
+        )
+    if len(signal_buffers) != num_devices or any(
+        len(v) != num_devices for v in per_device
+    ):
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm takes one signal buffer, "
+            "residual, pair of norm weights and mix per input."
+        )
+    first = inputs[0]
+    if first.dtype != DType.bfloat16 or first.shape.rank != 2:
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm takes 2-D bfloat16 inputs. "
+            f"Got: {first.type}"
+        )
+    if any(
+        t.type.dtype != first.dtype or t.shape != first.shape for t in inputs
+    ):
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm requires same-shaped "
+            f"inputs. Got: {inputs=}"
+        )
+    cols = first.shape[-1]
+    if isinstance(cols, StaticDim) and (
+        int(cols) % _POST_NORM_RESIDUAL_PACK_COLS != 0
+        or int(cols) > _POST_NORM_RESIDUAL_MAX_COLS
+    ):
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm runs a row in one thread "
+            "block, so cols must be a multiple of "
+            f"{_POST_NORM_RESIDUAL_PACK_COLS} and at most "
+            f"{_POST_NORM_RESIDUAL_MAX_COLS}. Got: {cols}"
+        )
+    residual_list, gamma_list, gamma2_list, mix_list = per_device
+    for i, t in enumerate(inputs):
+        if residual_list[i].type != t.type:
+            raise ValueError(
+                f"residual on device {i} must match its input: "
+                f"{residual_list[i].type} vs {t.type}"
+            )
+        for name, weight in (
+            ("gamma", gamma_list[i]),
+            ("gamma2", gamma2_list[i]),
+        ):
+            if (
+                weight.dtype != t.dtype
+                or weight.shape != t.shape[-1:]
+                or weight.device != t.device
+            ):
+                raise ValueError(
+                    f"{name} on device {i} must be [cols] {t.dtype} on "
+                    f"{t.device}. Got: {weight.type}"
+                )
+        mix = mix_list[i]
+        # The kernel reads both weights, so a shorter mix reads past its end.
+        if (
+            mix.dtype != DType.float32
+            or mix.shape != [2]
+            or mix.device != t.device
+        ):
+            raise ValueError(
+                f"mix on device {i} must be [2] float32 on {t.device}. "
+                f"Got: {mix.type}"
+            )
+    devices = [t.device for t in inputs]
+    if len(set(devices)) < num_devices:
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm requires unique devices "
+            f"across its input tensors. Got: {devices=}"
+        )
+
+    graph = Graph.current
+    in_chain = graph.device_chains.merge_for(devices)
+    output_types = [t.type for t in inputs]
+    *results, out_chain = graph._add_op_generated(
+        mo.CompositeDistributedAllreducePostNormResidualRmsNormOp,
+        output_types,
+        output_types,
+        _ChainType(),
+        inputs,
+        signal_buffers,
+        *per_device,
+        in_chain,
+        _float32_attr(epsilon),
+    )
+    graph._update_chain(out_chain)
+    for device in devices:
+        graph.device_chains[device] = out_chain
+    return (
+        [res.tensor for res in results[:num_devices]],
+        [res.tensor for res in results[num_devices:]],
+    )

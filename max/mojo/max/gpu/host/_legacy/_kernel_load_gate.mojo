@@ -42,7 +42,7 @@ struct CollectiveGate:
     Keep it alive until the fan-out has finished: the enqueues reference it.
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext.Unknown
     var _remaining: Atomic[Int]
     var grant: _Chain
     """The pending grant when `try_acquire` returned False; empty otherwise."""
@@ -50,7 +50,7 @@ struct CollectiveGate:
     def __init__(out self, ctx: DeviceContext, num_enqueues: Int):
         # Any participating context resolves the same gate: it belongs to the
         # backend's driver, which every device in the collective shares.
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._remaining = Atomic[Int](num_enqueues)
         self.grant = _Chain()
 
@@ -67,7 +67,7 @@ struct CollectiveGate:
         """
         return external_call[
             "AsyncRT_KernelLoadGate_tryAcquireCollective", Bool
-        ](self._ctx._handle, Pointer(to=self.grant))
+        ](self._ctx._handle_ptr(), Pointer(to=self.grant))
 
     @inline(.always)
     def __await__(self):
@@ -93,7 +93,7 @@ struct CollectiveGate:
         """Records one per-device enqueue as finished; the last releases."""
         if self._remaining.fetch_sub(1) == 1:
             external_call["AsyncRT_KernelLoadGate_releaseCollective", NoneType](
-                self._ctx._handle
+                self._ctx._handle_ptr()
             )
 
 
@@ -105,19 +105,19 @@ struct CollectiveEnqueueScope:
     a per-device launch body never suspends.
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext.Unknown
 
     def __init__(out self, ctx: DeviceContext):
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
 
     def __enter__(self):
         external_call["AsyncRT_KernelLoadGate_beginEnqueue", NoneType](
-            self._ctx._handle
+            self._ctx._handle_ptr()
         )
 
     def __exit__(self):
         external_call["AsyncRT_KernelLoadGate_endEnqueue", NoneType](
-            self._ctx._handle
+            self._ctx._handle_ptr()
         )
 
 
@@ -131,17 +131,17 @@ struct KernelLoadScope:
     but does not wait.
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext.Unknown
 
     def __init__(out self, ctx: DeviceContext):
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
 
     def __enter__(self):
         external_call["AsyncRT_KernelLoadGate_beginLoad", NoneType](
-            self._ctx._handle
+            self._ctx._handle_ptr()
         )
 
     def __exit__(self):
         external_call["AsyncRT_KernelLoadGate_endLoad", NoneType](
-            self._ctx._handle
+            self._ctx._handle_ptr()
         )

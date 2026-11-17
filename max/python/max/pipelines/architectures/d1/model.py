@@ -30,7 +30,7 @@ from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import ModelInputs, ModuleV3Outputs
 from max.tensor import Tensor

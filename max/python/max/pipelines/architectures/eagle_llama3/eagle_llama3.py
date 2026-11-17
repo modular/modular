@@ -15,11 +15,17 @@
 from __future__ import annotations
 
 from max.graph import TensorValue, TensorValueLike, ops
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.identity import Identity
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.transformer import DecoderOutputs, TransformerBlock
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.pipelines.speculative.draft_contracts import (
+    DraftPhase,
+    EagleDraftInputs,
+    EagleDraftOutputs,
+)
 
 from ..llama3.llama3 import Llama3
 from ..llama3.model_config import Llama3Config
@@ -70,4 +76,38 @@ class EagleLlama3(Llama3):
 
         return self._process_hidden_states(
             h, kv_collection, return_n_logits, input_row_offsets
+        )
+
+
+class EagleLlama3Draft(EagleLlama3):
+    """The registered EAGLE component, with trace-time output selection."""
+
+    # The draft computes in its checkpoint's own precision.
+    override_quantization_encoding = True
+
+    def draft_forward(
+        self, inputs: EagleDraftInputs, *, phase: DraftPhase
+    ) -> EagleDraftOutputs:
+        """Runs the draft without mutating its output modes."""
+        h = self.embed_tokens(inputs.tokens)
+        if self.embedding_multiplier != 1.0:
+            h = h * float(self.embedding_multiplier)
+        h = self.fc(ops.concat([h, inputs.hidden_states], axis=-1))
+        initial = phase is DraftPhase.INITIAL
+        outputs = self._process_hidden_states(
+            h,
+            inputs.kv,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
+            return_logits=ReturnLogits.VARIABLE
+            if initial
+            else ReturnLogits.LAST_TOKEN,
+            return_hidden_states=ReturnHiddenStates.ALL
+            if initial
+            else ReturnHiddenStates.LAST,
+        )
+        (hidden,) = outputs.hidden_states.tensors()
+        return EagleDraftOutputs(
+            logits=outputs.logits["logits" if initial else "next_token_logits"],
+            hidden_states=hidden,
         )

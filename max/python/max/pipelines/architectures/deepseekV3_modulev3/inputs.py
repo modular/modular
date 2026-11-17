@@ -39,11 +39,27 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        """Flat graph inputs in compile ABI order."""
+        """Flat graph inputs in compile ABI order.
+
+        A vision-capable model's graph declares the image-embedding and
+        scatter-index inputs after the EP buffers, and the pipeline's vision
+        seam finalizes those two fields on every prepared batch -- so they
+        ride the ABI tail here whenever they are set. A text-only
+        architecture never sets them, and its ABI is unchanged.
+        """
         dp_inputs: tuple[Buffer, ...] = ()
         if self.data_parallel_splits is not None:
             assert self.input_row_offsets_i64 is not None
             dp_inputs = (self.data_parallel_splits, self.input_row_offsets_i64)
+        vision_inputs: tuple[Buffer, ...] = ()
+        if self.vision_embeddings:
+            assert self.vision_scatter_indices
+            # The graph declares the merge inputs on device 0 and broadcasts
+            # them in-graph; every device's copy holds the same rows.
+            vision_inputs = (
+                self.vision_embeddings[0],
+                self.vision_scatter_indices[0],
+            )
         return (
             self.tokens,
             self.return_n_logits,
@@ -56,4 +72,5 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
                 else ()
             ),
             *self.ep_inputs,
+            *vision_inputs,
         )

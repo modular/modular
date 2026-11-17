@@ -1,4 +1,4 @@
-// RUN: mo-opt %s -o %t.mlir --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu compiled-framework-label=mof" --allow-unregistered-dialect
+// RUN: mo-opt %s -o %t.mlir --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu" --allow-unregistered-dialect
 // RUN: mt --execute %t.mlir --result-output-style=full --input-shapes=10x20 --input-shapes=20x30 --model-inputs=random | FileCheck %s
 
 // Golden output generated from disabling the pattern.

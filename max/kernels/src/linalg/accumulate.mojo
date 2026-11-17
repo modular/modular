@@ -27,8 +27,6 @@ from linalg.utils import (
 )
 from std.memory import unsafe_stack_allocation
 
-from std.utils.index import IndexList
-
 
 # ===-----------------------------------------------------------------------===#
 # Helper Functions
@@ -182,7 +180,7 @@ struct _Accumulator[
         c_ptr: ImmPointer[Scalar[Self.dtype], _],
         c_stride: Int,
         tile_n_idx: Int,
-        c_bound: IndexList[2],
+        c_bound: Tuple[Int, Int],
         skip_boundary_check: Bool = False,
     ):
         self._transfer[True](
@@ -195,7 +193,7 @@ struct _Accumulator[
         c_ptr: MutPointer[Scalar[Self.dtype], _],
         c_stride: Int,
         tile_n_idx: Int,
-        c_bound: IndexList[2],
+        c_bound: Tuple[Int, Int],
         skip_boundary_check: Bool = False,
     ):
         self._transfer[False](
@@ -210,7 +208,7 @@ struct _Accumulator[
         c_ptr: Pointer[Scalar[Self.dtype], _],
         c_stride: Int,
         tile_n_idx: Int,
-        c_bound: IndexList[2],
+        c_bound: Tuple[Int, Int],
         skip_boundary_check: Bool,
     ):
         comptime assert is_load or c_ptr.mut, "ahhh"

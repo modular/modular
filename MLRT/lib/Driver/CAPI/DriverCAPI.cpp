@@ -27,18 +27,29 @@
 
 #include "MLRT/Driver/CAPI/DriverCAPI.h"
 
+#include "MLRT/Driver/CAPI/ArchitectureVersion.h"
+#include "MLRT/Driver/CAPI/DriverCAPIHandles.h"
+#include "MLRT/Driver/DeviceContext/ChunkedStagingRegion.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
+
+#include <algorithm>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
+using llvm::StringRef;
+using llvm::Twine;
 using M::ErrorOr;
 using M::Driver::Device;
 using M::Driver::DeviceBuffer;
@@ -66,8 +77,8 @@ M_DriverStatus succeed() {
   return M_DRIVER_OK;
 }
 
-M_DriverStatus fail(M_DriverStatus status, const std::string &message) {
-  lastErrorMessage() = message;
+M_DriverStatus fail(M_DriverStatus status, const Twine &message) {
+  lastErrorMessage() = message.str();
   return status;
 }
 
@@ -167,8 +178,11 @@ struct M_DriverEvent {
   M::Driver::DeviceEventRef event;
 };
 
-struct M_DriverBuffer {
-  M::Driver::DeviceBufferRef buffer;
+struct M_DriverCompletionFlag {
+  M::Driver::CompletionFlagRef flag;
+  /// The context the flag was created on, so a wait from another backend's
+  /// stream is refused rather than misread.
+  M::Driver::DeviceContextRef ctx;
 };
 
 namespace {
@@ -187,6 +201,11 @@ struct Service {
 struct M_DriverMapping {
   M::Driver::DeviceBufferRef buffer;
   Service *service;
+};
+
+struct M_DriverHostRegion {
+  std::unique_ptr<M::Driver::ChunkedStagingRegion> region;
+  std::vector<uintptr_t> chunks;
 };
 
 namespace {
@@ -218,25 +237,28 @@ bool isExternal(const M_DriverStream &stream) {
   return stream.external.getPointer() != nullptr;
 }
 
-/// True when both handles name the same device (same api and ordinal).
+/// True when both name the same device (same api and ordinal).
+bool sameDevice(const Device &a, const Device &b) {
+  return a.api() == b.api() && a.id() == b.id();
+}
+
 bool sameDevice(const M_DriverDevice &a, const M_DriverDevice &b) {
-  return a.ctx->device().api().str() == b.ctx->device().api().str() &&
-         a.ctx->device().id() == b.ctx->device().id();
+  return sameDevice(a.ctx->device(), b.ctx->device());
 }
 
 /// True when both objects belong to the same backend. Every backend casts the
 /// objects it is handed to its own types without checking, so a mix is
 /// refused here, where it can be a status, rather than misread there.
 bool sameApi(const DeviceContext &a, const DeviceContext &b) {
-  return a.device().api().str() == b.device().api().str();
+  return a.device().api() == b.device().api();
 }
 
 bool sameApi(const DeviceContext &context, const DeviceEvent &event) {
-  return context.device().api().str() == event.device().api().str();
+  return context.device().api() == event.device().api();
 }
 
 bool sameApi(const DeviceEvent &a, const DeviceEvent &b) {
-  return a.device().api().str() == b.device().api().str();
+  return a.device().api() == b.device().api();
 }
 
 M_DriverStatus mixedBackends(const char *what) {
@@ -346,6 +368,37 @@ size_t M_DriverDeviceArchitectureName(const M_DriverDevice *device,
                              buffer, capacity);
 }
 
+M_DriverStatus M_DriverDeviceArchitectureVersion(const M_DriverDevice *device,
+                                                 uint32_t *out_major,
+                                                 uint32_t *out_minor,
+                                                 uint32_t *out_stepping) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+  const Device &d = contextOf(*device).device();
+  if (d.api() == Device::cpuAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceArchitectureVersion: the CPU device has no "
+                "architecture version");
+  // Failing to read the name is a driver error. A name that does not parse is
+  // a gap in this library, so it is NOT_SUPPORTED.
+  ErrorOr<const char *> name = d.getArchName();
+  if (name.isError())
+    return fail(name, "M_DriverDeviceArchitectureVersion");
+  ErrorOr<M::Driver::ArchitectureVersion> version =
+      M::Driver::parseArchitectureVersion(d.api(), name.get());
+  if (version.isError())
+    return fail(version, "M_DriverDeviceArchitectureVersion",
+                M_DRIVER_NOT_SUPPORTED);
+  const M::Driver::ArchitectureVersion &v = version.get();
+  if (out_major != nullptr)
+    *out_major = v.major;
+  if (out_minor != nullptr)
+    *out_minor = v.minor;
+  if (out_stepping != nullptr)
+    *out_stepping = v.stepping;
+  return succeed();
+}
+
 size_t M_DriverDeviceModelName(const M_DriverDevice *device, char *buffer,
                                size_t capacity) {
   if (device == nullptr) {
@@ -411,17 +464,9 @@ M_DriverStatus M_DriverDeviceEnablePeerAccess(const M_DriverDevice *device,
     return fail(M_DRIVER_INVALID_ARGUMENT, "device or peer is null");
   if (!sameApi(contextOf(*device), contextOf(*peer)))
     return mixedBackends("M_DriverDeviceEnablePeerAccess");
-#if MODULAR_HAL_DEVICE_CONTEXT
-  // The HAL shim enables peer access for every pair at once and has no per
-  // pair entry point, so callers use M_DriverEnableAllPeerAccess there.
-  return fail(M_DRIVER_NOT_SUPPORTED,
-              "M_DriverDeviceEnablePeerAccess is not available in a HAL "
-              "device context build");
-#else
   return reportIfError(
       contextOf(*device).device().enablePeerAccess(contextOf(*peer).device()),
       "M_DriverDeviceEnablePeerAccess");
-#endif
 }
 
 M_DriverStatus M_DriverDeviceCanAccess(const M_DriverDevice *device,
@@ -474,6 +519,125 @@ M_DriverStatus M_DriverDeviceMemoryInfo(const M_DriverDevice *device,
   return succeed();
 }
 
+M_DriverStatus M_DriverDeviceAllocatorMemoryInfo(const M_DriverDevice *device,
+                                                 uint64_t *out_budget,
+                                                 uint64_t *out_allocatable) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+  // The context's query, not the device's, because it is the one that answers
+  // from the memory manager when the device has one.
+  ErrorOr<Device::MemInfo> info = contextOf(*device).getMemoryInfo();
+  if (info.isError())
+    return fail(info, "M_DriverDeviceAllocatorMemoryInfo");
+  if (out_budget != nullptr)
+    *out_budget = static_cast<uint64_t>(info.get().total);
+  if (out_allocatable != nullptr) {
+    const std::optional<size_t> free = info.get().free;
+    *out_allocatable = free.has_value() ? static_cast<uint64_t>(*free)
+                                        : M_DRIVER_MEMORY_UNKNOWN;
+  }
+  return succeed();
+}
+
+M_DriverStatus
+M_DriverDeviceAllocatorStats(const M_DriverDevice *device, uint64_t *out_live,
+                             uint64_t *out_peak, uint64_t *out_max_request,
+                             uint64_t *out_driver_fallbacks,
+                             uint64_t *out_driver_fallback_bytes) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  (void)out_live;
+  (void)out_peak;
+  (void)out_max_request;
+  (void)out_driver_fallbacks;
+  (void)out_driver_fallback_bytes;
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceAllocatorStats is not available in a HAL device "
+              "context build");
+#else
+  const DeviceContext::MemoryManagerStats stats =
+      contextOf(*device).getMemoryManagerStats();
+  if (out_live != nullptr)
+    *out_live = stats.liveBytes;
+  if (out_peak != nullptr)
+    *out_peak = stats.peakLiveBytes;
+  if (out_max_request != nullptr)
+    *out_max_request = stats.maxRequestBytes;
+  if (out_driver_fallbacks != nullptr)
+    *out_driver_fallbacks = stats.driverFallbacks;
+  if (out_driver_fallback_bytes != nullptr)
+    *out_driver_fallback_bytes = stats.driverFallbackBytes;
+  return succeed();
+#endif
+}
+
+M_DriverStatus M_DriverDeviceAllocatorRequestSizes(const M_DriverDevice *device,
+                                                   uint64_t *sizes,
+                                                   size_t capacity,
+                                                   size_t *out_count) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  (void)sizes;
+  (void)capacity;
+  (void)out_count;
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceAllocatorRequestSizes is not available in a HAL "
+              "device context build");
+#else
+  const DeviceContext::MemoryManagerStats stats =
+      contextOf(*device).getMemoryManagerStats();
+  if (sizes != nullptr) {
+    const size_t n = std::min(capacity, stats.requestSizes.size());
+    std::copy_n(stats.requestSizes.begin(), n, sizes);
+  }
+  if (out_count != nullptr)
+    *out_count = stats.requestSizes.size();
+  return succeed();
+#endif
+}
+
+M_DriverStatus M_DriverDeviceResetAllocatorPeaks(const M_DriverDevice *device) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceResetAllocatorPeaks is not available in a HAL "
+              "device context build");
+#else
+  contextOf(*device).resetMemoryManagerPeaks();
+  return succeed();
+#endif
+}
+
+M_DriverStatus M_DriverDeviceGetAttribute(const M_DriverDevice *device,
+                                          M_DriverDeviceAttribute attribute,
+                                          int64_t *out) {
+  if (device == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
+  // The CPU device answers every attribute with 0 rather than refusing it.
+  if (contextOf(*device).device().api() == Device::cpuAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceGetAttribute: the CPU device reports no "
+                "device attributes");
+  // A caller built against a newer header can pass a value this library does
+  // not know, so the mapping refuses anything it does not name.
+  if (attribute != M_DRIVER_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceGetAttribute: unknown attribute " +
+                    std::to_string(static_cast<int>(attribute)));
+  ErrorOr<int> value = contextOf(*device).device().getAttribute(
+      Device::Attribute::MULTIPROCESSOR_COUNT);
+  if (value.isError())
+    return fail(value, "M_DriverDeviceGetAttribute");
+  *out = static_cast<int64_t>(value.get());
+  return succeed();
+}
+
 M_DriverStatus M_DriverDeviceAllocationRange(const M_DriverDevice *device,
                                              const void *address,
                                              void **out_base,
@@ -500,19 +664,11 @@ M_DriverStatus M_DriverEnableAllPeerAccess(void) {
 M_DriverStatus M_DriverAllPeerAccessEnabled(bool *out) {
   if (out == nullptr)
     return fail(M_DRIVER_INVALID_ARGUMENT, "out is null");
-#if MODULAR_HAL_DEVICE_CONTEXT
-  // The HAL shim keeps no record of which pairs are enabled.
-  *out = false;
-  return fail(M_DRIVER_NOT_SUPPORTED,
-              "M_DriverAllPeerAccessEnabled is not available in a HAL device "
-              "context build");
-#else
   ErrorOr<bool> enabled = Device::allPeerAccessEnabled();
   if (enabled.isError())
     return fail(enabled, "M_DriverAllPeerAccessEnabled");
   *out = enabled.get();
   return succeed();
-#endif
 }
 
 M_DriverStatus M_DriverDeviceContextHandle(const M_DriverDevice *device,
@@ -579,6 +735,28 @@ M_DriverStatus M_DriverStreamCreate(const M_DriverDevice *device,
   }
 #endif
   *out = new M_DriverStream{std::move(streamCtx), DeviceStreamRef(),
+                            DeviceContextRef::copy(device->ctx.getPointer())};
+  return succeed();
+}
+
+M_DriverStatus M_DriverDeviceStream(const M_DriverDevice *device,
+                                    M_DriverStream **out) {
+  if (out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "out is null");
+  *out = nullptr;
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+  // MAX builds its CPU contexts with DeviceContext::create, never the shared
+  // map this handle came from, so a CPU stream here would not be MAX's queue.
+  if (contextOf(*device).device().api() == Device::cpuAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceStream: MAX does not run CPU work on the "
+                "device's shared context");
+  // The device's process-wide context is the one MAX enqueues on, so a stream
+  // over it is MAX's queue. Unlike adopting the context by address, this
+  // needs no stable context address, which the HAL build cannot give.
+  *out = new M_DriverStream{DeviceContextRef::copy(device->ctx.getPointer()),
+                            DeviceStreamRef(),
                             DeviceContextRef::copy(device->ctx.getPointer())};
   return succeed();
 }
@@ -684,6 +862,21 @@ M_DriverStatus M_DriverStreamSynchronize(const M_DriverStream *stream) {
     return reportIfError(stream->external->synchronize(),
                          "M_DriverStreamSynchronize");
   return reportIfError(stream->ctx->synchronize(), "M_DriverStreamSynchronize");
+}
+
+M_DriverStatus M_DriverStreamIsCapturing(const M_DriverStream *stream,
+                                         bool *out) {
+  if (stream == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or out is null");
+  *out = false;
+  // The context beside a native queue runs its own stream, not the adopted
+  // one, so it cannot say whether that queue is capturing.
+  if (isExternal(*stream))
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverStreamIsCapturing: the stream was created from a "
+                "native handle, and no context of ours runs that queue");
+  *out = stream->ctx->isGraphCapturing();
+  return succeed();
 }
 
 /// Waits on `event` at `stream`, whichever kind of queue `stream` is.
@@ -814,6 +1007,29 @@ M_DriverStatus M_DriverStreamRecordNewEvent(const M_DriverStream *stream,
   return succeed();
 }
 
+M_DriverStatus M_DriverStreamEnqueueHostFunction(const M_DriverStream *stream,
+                                                 void (*fn)(void *),
+                                                 void *user_data) {
+  if (stream == nullptr || fn == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or fn is null");
+  // Checked here rather than left to the backend, because the CPU and Metal
+  // backends refuse with a runtime error the caller could not tell from a
+  // driver fault.
+  const Device::API api = stream->ctx->device().api();
+  if (api != Device::cudaAPI && api != Device::hipAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverStreamEnqueueHostFunction: host functions run on "
+                "CUDA and HIP streams only");
+  if (isExternal(*stream))
+    return reportIfError(stream->external->enqueueHostFunc(fn, user_data),
+                         "M_DriverStreamEnqueueHostFunction");
+  ErrorOr<DeviceStreamRef> active = stream->ctx->stream();
+  if (active.isError())
+    return fail(active, "M_DriverStreamEnqueueHostFunction");
+  return reportIfError(active.get()->enqueueHostFunc(fn, user_data),
+                       "M_DriverStreamEnqueueHostFunction");
+}
+
 //===----------------------------------------------------------------------===//
 // Events
 //===----------------------------------------------------------------------===//
@@ -873,6 +1089,99 @@ M_DriverStatus M_DriverEventElapsedTimeMs(const M_DriverEvent *start,
   if (elapsed.isError())
     return fail(elapsed, "M_DriverEventElapsedTimeMs");
   *out_ms = static_cast<double>(elapsed.get());
+  return succeed();
+}
+
+//===----------------------------------------------------------------------===//
+// Completion flags
+//===----------------------------------------------------------------------===//
+
+M_DriverStatus M_DriverCompletionFlagCreate(const M_DriverDevice *device,
+                                            M_DriverCompletionFlag **out) {
+  if (device == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
+  *out = nullptr;
+#if MODULAR_HAL_DEVICE_CONTEXT
+  if (!contextOf(*device).supportsCompletionFlags())
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverCompletionFlagCreate: this device's HAL plugin has "
+                "no completion flags");
+#endif
+  ErrorOr<M::Driver::CompletionFlagRef> flag =
+      contextOf(*device).allocateCompletionFlag();
+  if (flag.isError())
+    return fail(flag, "M_DriverCompletionFlagCreate");
+  *out = new M_DriverCompletionFlag{flag.takeValue(), device->ctx};
+  return succeed();
+}
+
+M_DriverStatus M_DriverCompletionFlagDestroy(M_DriverCompletionFlag *flag) {
+  if (flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  delete flag;
+  return succeed();
+}
+
+M_DriverStatus M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag,
+                                            uint64_t value) {
+  if (flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  // HAL Metal aborts on a lower value, and this entry point can report it.
+  if (value < flag->flag->load())
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "M_DriverCompletionFlagSignal: value is lower than the flag's "
+                "current value");
+  flag->flag->signal(value);
+  return succeed();
+}
+
+// Callers reset from host-function callbacks, so nothing is added around the
+// driver's reset: no context binding, no lock, no pending-error check.
+M_DriverStatus M_DriverCompletionFlagReset(M_DriverCompletionFlag *flag) {
+  if (flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  flag->flag->reset();
+  // Legacy Metal returns from a failed reset with the old value in place and
+  // only records a pending context error. A plain load is cheap on every
+  // backend and safe in a callback.
+  if (flag->flag->load() != 0)
+    return fail(M_DRIVER_RUNTIME_ERROR,
+                "M_DriverCompletionFlagReset: the flag was not reset");
+  return succeed();
+}
+
+M_DriverStatus M_DriverStreamWaitFlag(const M_DriverStream *stream,
+                                      const M_DriverCompletionFlag *flag,
+                                      uint64_t value) {
+  if (stream == nullptr || flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or flag is null");
+  if (!sameApi(*stream->ctx, *flag->ctx))
+    return mixedBackends("M_DriverStreamWaitFlag");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  if (!stream->ctx->supportsCompletionFlags())
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverStreamWaitFlag: this stream's HAL plugin has no "
+                "completion flags");
+#endif
+  if (isExternal(*stream))
+    return reportIfError(
+        stream->external->enqueueWaitOnFlag(*flag->flag, value),
+        "M_DriverStreamWaitFlag");
+  ErrorOr<DeviceStreamRef> queue = stream->ctx->stream();
+  if (queue.isError())
+    return fail(queue, "M_DriverStreamWaitFlag");
+  return reportIfError((*queue)->enqueueWaitOnFlag(*flag->flag, value),
+                       "M_DriverStreamWaitFlag");
+}
+
+M_DriverStatus
+M_DriverCompletionFlagGraphHandle(const M_DriverCompletionFlag *flag,
+                                  uint64_t *out) {
+  if (out != nullptr)
+    *out = 0;
+  if (flag == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag or out is null");
+  *out = reinterpret_cast<uint64_t>(flag->flag.getPointer());
   return succeed();
 }
 
@@ -1016,6 +1325,231 @@ M_DriverStatus M_DriverMappingByteSize(const M_DriverMapping *mapping,
   return succeed();
 }
 
+M_DriverStatus M_DriverHostRegionCreate(const M_DriverDevice *device,
+                                        uint64_t byte_size, uint64_t row_bytes,
+                                        uint64_t chunk_bytes, bool driver_alloc,
+                                        bool mlock_pages,
+                                        uint32_t touch_threads,
+                                        M_DriverHostRegion **out) {
+  if (device == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
+  *out = nullptr;
+  if (contextOf(*device).device().api() == Device::cpuAPI)
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "M_DriverHostRegionCreate: the CPU device has no pinned host "
+                "memory; pass an accelerator");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  if (driver_alloc)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverHostRegionCreate: driver_alloc is not available under "
+                "the HAL device context");
+#endif
+  // A context of the region's own, rather than the shared service context:
+  // creation can run for minutes, and the region's drains must neither wait
+  // on nor clear anything MAX or another registration left there.
+  ErrorOr<DeviceContextRef> ctx = contextOf(*device).device().createContext();
+  if (ctx.isError())
+    return fail(ctx, "M_DriverHostRegionCreate");
+  M::Driver::ChunkedStagingRegionError error;
+  std::unique_ptr<M::Driver::ChunkedStagingRegion> region =
+      M::Driver::ChunkedStagingRegion::create(
+          *ctx, byte_size, row_bytes,
+          touch_threads == 0 ? M::Driver::kDefaultTouchThreads : touch_threads,
+          chunk_bytes == 0 ? M::Driver::kDefaultChunkBytes : chunk_bytes,
+          driver_alloc, mlock_pages, error);
+  if (!region) {
+    M_DriverStatus status = error.invalidArgument ? M_DRIVER_INVALID_ARGUMENT
+                                                  : M_DRIVER_OUT_OF_MEMORY;
+#if MODULAR_HAL_DEVICE_CONTEXT
+    // The HAL context cannot wrap host memory, so every registered chunk
+    // fails and the cause is the build, not memory pressure.
+    if (!error.invalidArgument)
+      status = M_DRIVER_NOT_SUPPORTED;
+#endif
+    return fail(status, "M_DriverHostRegionCreate failed: " + error.message);
+  }
+  std::vector<uintptr_t> chunks = region->chunkAddresses();
+  *out = new M_DriverHostRegion{std::move(region), std::move(chunks)};
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionDestroy(M_DriverHostRegion *region) {
+  if (region == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "region is null");
+  delete region;
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionChunkCount(const M_DriverHostRegion *region,
+                                            uint64_t *out) {
+  if (region == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "region or out is null");
+  *out = static_cast<uint64_t>(region->chunks.size());
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionChunkAddress(const M_DriverHostRegion *region,
+                                              uint64_t index, void **out) {
+  if (region == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "region or out is null");
+  if (index >= region->chunks.size())
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "index is out of range: expected index < " +
+                    std::to_string(region->chunks.size()));
+  *out = reinterpret_cast<void *>(region->chunks[index]);
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionChunkBytes(const M_DriverHostRegion *region,
+                                            uint64_t *out) {
+  if (region == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "region or out is null");
+  *out = static_cast<uint64_t>(region->region->chunkBytes());
+  return succeed();
+}
+
+namespace {
+
+// The enqueue half of each copy and fill, shared by the address entry points
+// and the buffer view entry points so both reach the driver through the same
+// calls. Each caller has already checked its own arguments.
+
+M_DriverStatus enqueueHostToDevice(const char *what,
+                                   const M_DriverStream &stream, void *dst,
+                                   const void *src, uint64_t byte_size) {
+  if (isExternal(stream))
+    return notSupportedForExternalStream(what);
+  return reportIfError(stream.ctx->enqueueCopyToDevice(dst, src, byte_size),
+                       what);
+}
+
+M_DriverStatus enqueueDeviceToHost(const char *what,
+                                   const M_DriverStream &stream, void *dst,
+                                   const void *src, uint64_t byte_size) {
+  if (isExternal(stream))
+    return notSupportedForExternalStream(what);
+  return reportIfError(stream.ctx->enqueueCopyFromDevice(dst, src, byte_size),
+                       what);
+}
+
+M_DriverStatus enqueueDeviceToDevice(const char *what,
+                                     const M_DriverStream &stream, void *dst,
+                                     const void *src, uint64_t byte_size) {
+  if (isExternal(stream))
+    return notSupportedForExternalStream(what);
+  DeviceContext &ctx = *stream.ctx;
+  // The copy is issued on the context that owns the destination, which is what
+  // the driver checks; these handles only describe the two ranges.
+  DeviceBufferRef dstBuffer =
+      ctx.createBufferOwning(dst, byte_size, /*owning=*/false);
+  DeviceBufferRef srcBuffer = ctx.createBufferOwning(
+      const_cast<void *>(src), byte_size, /*owning=*/false);
+  return reportIfError(
+      ctx.enqueueCopyDeviceToDevice(*dstBuffer, *srcBuffer, /*srcByteOffset=*/0,
+                                    byte_size, /*crossStreamSync=*/true),
+      what);
+}
+
+M_DriverStatus enqueueFill(const char *what, const M_DriverStream &stream,
+                           void *dst, uint8_t value, uint64_t byte_size) {
+  if (isExternal(stream))
+    return notSupportedForExternalStream(what);
+  return reportIfError(
+      stream.ctx->enqueueSetMemory(dst, byte_size, value, /*valSize=*/1), what);
+}
+
+/// The batch behind `M_DriverCopyBatch` and `M_DriverCopyBufferBatch`, for
+/// pieces already checked and a stream that is not adopted.
+M_DriverStatus enqueueBatch(const char *what, const M_DriverStream &stream,
+                            M_DriverCopyDirection direction,
+                            llvm::ArrayRef<void *> dsts,
+                            llvm::ArrayRef<const void *> srcs,
+                            llvm::ArrayRef<uint64_t> sizes) {
+  // Borrowed wrappers, so dropping them neither frees nor unregisters the
+  // caller's memory; on the stream's context, so the batch orders only there.
+  // A device-to-device source on a peer is stamped with the stream's context
+  // too: a source on another context would make the driver bracket the batch
+  // against that context's stream, and the address reaches the vendor's copy
+  // unchanged, where peer access resolves it.
+  const bool dstHost = direction == M_DRIVER_COPY_DEVICE_TO_HOST;
+  const bool srcHost = direction == M_DRIVER_COPY_HOST_TO_DEVICE;
+  DeviceContext &ctx = *stream.ctx;
+  auto borrow = [&](const void *address, uint64_t size, bool host) {
+    void *ptr = const_cast<void *>(address);
+    return host ? ctx.createHostBufferOwning(ptr, size, /*owning=*/false)
+                : ctx.createBufferOwning(ptr, size, /*owning=*/false);
+  };
+  const size_t count = sizes.size();
+  llvm::SmallVector<DeviceBufferRef, 16> keepAlive;
+  llvm::SmallVector<DeviceBuffer *, 16> dstBuffers;
+  llvm::SmallVector<DeviceBuffer *, 16> srcBuffers;
+  keepAlive.reserve(2 * count);
+  dstBuffers.reserve(count);
+  srcBuffers.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    DeviceBufferRef dst = borrow(dsts[i], sizes[i], dstHost);
+    DeviceBufferRef src = borrow(srcs[i], sizes[i], srcHost);
+    if (!dst || !src)
+      return fail(M_DRIVER_RUNTIME_ERROR,
+                  "piece " + Twine(i) + " could not be wrapped");
+    dstBuffers.push_back(dst.getPointer());
+    srcBuffers.push_back(src.getPointer());
+    keepAlive.push_back(std::move(dst));
+    keepAlive.push_back(std::move(src));
+  }
+  return reportIfError(ctx.enqueueBatchCopy(dstBuffers, srcBuffers), what);
+}
+
+/// The peer copy behind `M_DriverCopyPeerToPeer`, `M_DriverCopyBufferPeer` and
+/// their unordered variants, which differ only in whether the driver brackets
+/// the copy with waits on the source context's stream. The caller has checked
+/// that nothing is null and that `byte_size` is not 0.
+M_DriverStatus enqueuePeerCopy(const char *what, const M_DriverStream &stream,
+                               const M_DriverDevice &dst_device, void *dst,
+                               const M_DriverDevice &src_device,
+                               const void *src, uint64_t byte_size,
+                               bool crossStreamSync) {
+  if (isExternal(stream))
+    return notSupportedForExternalStream(what);
+  // The copy is enqueued on the destination's context; a stream that runs on
+  // another device would enqueue it against the wrong memory.
+  M_DriverDevice streamDevice{DeviceContextRef::copy(stream.ctx.getPointer())};
+  if (!sameDevice(streamDevice, dst_device))
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "the stream does not run on dst_device; a peer copy is "
+                "enqueued on the destination's own context");
+  if (!sameApi(*stream.ctx, contextOf(src_device)))
+    return mixedBackends(what);
+  // The destination is stamped with the copy stream's own context, because
+  // the driver waits for the source and records the copy's completion on the
+  // destination buffer's context, so the device's shared context there would
+  // bracket MAX's compute stream instead of this stream. The ordered variant
+  // stamps the source with its device's shared context, which is the context
+  // it waits on. The unordered variant orders nothing there, so it stamps the
+  // source with the context this interface owns on that device and the
+  // backend's pending error check on the source reads that slot instead of
+  // MAX's. Either way the two contexts sit on different devices, which is
+  // what makes the driver emit a direct peer copy rather than staging
+  // through host memory.
+  DeviceContextRef srcCtx = DeviceContextRef::copy(src_device.ctx.getPointer());
+  if (!crossStreamSync) {
+    ErrorOr<Service *> service = serviceFor(*src_device.ctx);
+    if (service.isError())
+      return fail(service, what);
+    srcCtx = DeviceContextRef::copy((*service)->ctx.getPointer());
+  }
+  DeviceBufferRef dstBuffer =
+      stream.ctx->createBufferOwning(dst, byte_size, /*owning=*/false);
+  DeviceBufferRef srcBuffer = srcCtx->createBufferOwning(
+      const_cast<void *>(src), byte_size, /*owning=*/false);
+  return reportIfError(stream.ctx->enqueueCopyDeviceToDevice(
+                           *dstBuffer, *srcBuffer, /*srcByteOffset=*/0,
+                           byte_size, crossStreamSync),
+                       what);
+}
+
+} // namespace
+
 M_DriverStatus M_DriverCopyHostToDevice(const M_DriverStream *stream,
                                         void *dst_device, const void *src_host,
                                         uint64_t byte_size) {
@@ -1024,11 +1558,8 @@ M_DriverStatus M_DriverCopyHostToDevice(const M_DriverStream *stream,
                 "stream, dst_device or src_host is null");
   if (byte_size == 0)
     return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  if (isExternal(*stream))
-    return notSupportedForExternalStream("M_DriverCopyHostToDevice");
-  return reportIfError(
-      stream->ctx->enqueueCopyToDevice(dst_device, src_host, byte_size),
-      "M_DriverCopyHostToDevice");
+  return enqueueHostToDevice("M_DriverCopyHostToDevice", *stream, dst_device,
+                             src_host, byte_size);
 }
 
 M_DriverStatus M_DriverCopyDeviceToHost(const M_DriverStream *stream,
@@ -1039,11 +1570,8 @@ M_DriverStatus M_DriverCopyDeviceToHost(const M_DriverStream *stream,
                 "stream, dst_host or src_device is null");
   if (byte_size == 0)
     return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  if (isExternal(*stream))
-    return notSupportedForExternalStream("M_DriverCopyDeviceToHost");
-  return reportIfError(
-      stream->ctx->enqueueCopyFromDevice(dst_host, src_device, byte_size),
-      "M_DriverCopyDeviceToHost");
+  return enqueueDeviceToHost("M_DriverCopyDeviceToHost", *stream, dst_host,
+                             src_device, byte_size);
 }
 
 M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
@@ -1053,7 +1581,8 @@ M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
   if (stream == nullptr)
     return fail(M_DRIVER_INVALID_ARGUMENT, "stream is null");
   if (direction != M_DRIVER_COPY_HOST_TO_DEVICE &&
-      direction != M_DRIVER_COPY_DEVICE_TO_HOST)
+      direction != M_DRIVER_COPY_DEVICE_TO_HOST &&
+      direction != M_DRIVER_COPY_DEVICE_TO_DEVICE)
     return fail(M_DRIVER_INVALID_ARGUMENT, "direction is not a copy direction");
   if (isExternal(*stream))
     return notSupportedForExternalStream("M_DriverCopyBatch");
@@ -1072,35 +1601,9 @@ M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
       return fail(M_DRIVER_INVALID_ARGUMENT,
                   "piece " + std::to_string(i) + " has a size of 0");
   }
-
-  // Borrowed wrappers, so dropping them neither frees nor unregisters the
-  // caller's memory; on the stream's context, so the batch orders only there.
-  const bool toDevice = direction == M_DRIVER_COPY_HOST_TO_DEVICE;
-  DeviceContext &ctx = *stream->ctx;
-  auto borrow = [&](const void *address, uint64_t size, bool host) {
-    void *ptr = const_cast<void *>(address);
-    return host ? ctx.createHostBufferOwning(ptr, size, /*owning=*/false)
-                : ctx.createBufferOwning(ptr, size, /*owning=*/false);
-  };
-  llvm::SmallVector<DeviceBufferRef, 16> keepAlive;
-  llvm::SmallVector<DeviceBuffer *, 16> dstBuffers;
-  llvm::SmallVector<DeviceBuffer *, 16> srcBuffers;
-  keepAlive.reserve(2 * count);
-  dstBuffers.reserve(count);
-  srcBuffers.reserve(count);
-  for (size_t i = 0; i < count; ++i) {
-    DeviceBufferRef dst = borrow(dsts[i], sizes[i], /*host=*/!toDevice);
-    DeviceBufferRef src = borrow(srcs[i], sizes[i], /*host=*/toDevice);
-    if (!dst || !src)
-      return fail(M_DRIVER_RUNTIME_ERROR,
-                  "piece " + std::to_string(i) + " could not be wrapped");
-    dstBuffers.push_back(dst.getPointer());
-    srcBuffers.push_back(src.getPointer());
-    keepAlive.push_back(std::move(dst));
-    keepAlive.push_back(std::move(src));
-  }
-  return reportIfError(ctx.enqueueBatchCopy(dstBuffers, srcBuffers),
-                       "M_DriverCopyBatch");
+  return enqueueBatch("M_DriverCopyBatch", *stream, direction,
+                      llvm::ArrayRef(dsts, count), llvm::ArrayRef(srcs, count),
+                      llvm::ArrayRef(sizes, count));
 }
 
 M_DriverStatus M_DriverCopyDeviceToDevice(const M_DriverStream *stream,
@@ -1112,26 +1615,22 @@ M_DriverStatus M_DriverCopyDeviceToDevice(const M_DriverStream *stream,
                 "stream, dst_device or src_device is null");
   if (byte_size == 0)
     return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  if (isExternal(*stream))
-    return notSupportedForExternalStream("M_DriverCopyDeviceToDevice");
-  DeviceContext &ctx = *stream->ctx;
-  // The copy is issued on the context that owns the destination, which is what
-  // the driver checks; these handles only describe the two ranges.
-  DeviceBufferRef dst = ctx.createBufferOwning(dst_device, byte_size,
-                                               /*owning=*/false);
-  DeviceBufferRef src = ctx.createBufferOwning(const_cast<void *>(src_device),
-                                               byte_size, /*owning=*/false);
-  return reportIfError(
-      ctx.enqueueCopyDeviceToDevice(*dst, *src, /*srcByteOffset=*/0, byte_size,
-                                    /*crossStreamSync=*/true),
-      "M_DriverCopyDeviceToDevice");
+  return enqueueDeviceToDevice("M_DriverCopyDeviceToDevice", *stream,
+                               dst_device, src_device, byte_size);
+}
+
+M_DriverStatus M_DriverMemset(const M_DriverStream *stream, void *dst_device,
+                              uint8_t value, uint64_t byte_size) {
+  if (stream == nullptr || dst_device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or dst_device is null");
+  if (byte_size == 0)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
+  return enqueueFill("M_DriverMemset", *stream, dst_device, value, byte_size);
 }
 
 namespace {
 
-/// The peer copy behind `M_DriverCopyPeerToPeer` and its unordered variant,
-/// which differ only in whether the driver brackets the copy with waits on the
-/// source context's stream.
+/// The address-taking peer copies' argument checks, ahead of the shared body.
 M_DriverStatus copyPeerToPeer(const char *what, const M_DriverStream *stream,
                               const M_DriverDevice *dst_device, void *dst,
                               const M_DriverDevice *src_device, const void *src,
@@ -1142,44 +1641,8 @@ M_DriverStatus copyPeerToPeer(const char *what, const M_DriverStream *stream,
                 "stream, device or address argument is null");
   if (byte_size == 0)
     return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  if (isExternal(*stream))
-    return notSupportedForExternalStream(what);
-  // The copy is enqueued on the destination's context; a stream that runs on
-  // another device would enqueue it against the wrong memory.
-  M_DriverDevice streamDevice{DeviceContextRef::copy(stream->ctx.getPointer())};
-  if (!sameDevice(streamDevice, *dst_device))
-    return fail(M_DRIVER_INVALID_ARGUMENT,
-                "the stream does not run on dst_device; a peer copy is "
-                "enqueued on the destination's own context");
-  if (!sameApi(*stream->ctx, contextOf(*src_device)))
-    return mixedBackends(what);
-  // The destination is stamped with the copy stream's own context, because
-  // the driver waits for the source and records the copy's completion on the
-  // destination buffer's context, so the device's shared context there would
-  // bracket MAX's compute stream instead of this stream. The ordered variant
-  // stamps the source with its device's shared context, which is the context
-  // it waits on. The unordered variant orders nothing there, so it stamps the
-  // source with the context this interface owns on that device and the
-  // backend's pending error check on the source reads that slot instead of
-  // MAX's. Either way the two contexts sit on different devices, which is
-  // what makes the driver emit a direct peer copy rather than staging
-  // through host memory.
-  DeviceContextRef srcCtx =
-      DeviceContextRef::copy(src_device->ctx.getPointer());
-  if (!crossStreamSync) {
-    ErrorOr<Service *> service = serviceFor(*src_device->ctx);
-    if (service.isError())
-      return fail(service, what);
-    srcCtx = DeviceContextRef::copy((*service)->ctx.getPointer());
-  }
-  DeviceBufferRef dstBuffer =
-      stream->ctx->createBufferOwning(dst, byte_size, /*owning=*/false);
-  DeviceBufferRef srcBuffer = srcCtx->createBufferOwning(
-      const_cast<void *>(src), byte_size, /*owning=*/false);
-  return reportIfError(stream->ctx->enqueueCopyDeviceToDevice(
-                           *dstBuffer, *srcBuffer, /*srcByteOffset=*/0,
-                           byte_size, crossStreamSync),
-                       what);
+  return enqueuePeerCopy(what, *stream, *dst_device, dst, *src_device, src,
+                         byte_size, crossStreamSync);
 }
 
 } // namespace
@@ -1199,4 +1662,309 @@ M_DriverStatus M_DriverCopyPeerToPeerUnordered(
   return copyPeerToPeer("M_DriverCopyPeerToPeerUnordered", stream, dst_device,
                         dst, src_device, src, byte_size,
                         /*crossStreamSync=*/false);
+}
+
+//===----------------------------------------------------------------------===//
+// Copies through buffer views
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+DeviceContext &contextOf(const M_DriverBufferView &view) {
+  return view.buffer->buffer->context();
+}
+
+/// The address a view resolves to, which stays inside this library: the view
+/// entry points hand it to the same enqueue bodies the address entry points
+/// use, so the ordering and the contexts they stamp are the same.
+void *addressOf(const M_DriverBufferView &view) {
+  return static_cast<uint8_t *>(view.buffer->buffer->ptr()) + view.offset;
+}
+
+/// Which argument a view is, spelled out only when a check refuses it, so a
+/// batch formats no message for the pieces that pass.
+struct ViewName {
+  static constexpr size_t kNoPiece = SIZE_MAX;
+  const char *role;
+  size_t piece = kNoPiece;
+
+  std::string str() const {
+    if (piece == kNoPiece)
+      return role;
+    return "piece " + std::to_string(piece) + " " + role;
+  }
+};
+
+/// Where a view's buffer must sit relative to the stream.
+enum class Placement {
+  StreamDevice,
+  /// Any device of the stream's backend, as for the source of a peer copy.
+  StreamBackend,
+};
+
+/// Refuses an adopted stream before any view is checked, so every view entry
+/// point reports the same refusal for the same arguments.
+M_DriverStatus checkStream(const char *what, const M_DriverStream *stream) {
+  if (stream == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "stream is null");
+  if (isExternal(*stream))
+    return notSupportedForExternalStream(what);
+  return M_DRIVER_OK;
+}
+
+/// Refuses a view that does not name a range of device memory placed as
+/// `placement` asks, before anything is enqueued. Leaves the error message
+/// alone on success; the entry point's own success clears it. Inlined
+/// because a batch runs it on every piece of both sides.
+LLVM_ATTRIBUTE_ALWAYS_INLINE M_DriverStatus
+checkView(StringRef what, const ViewName &name, const M_DriverStream &stream,
+          Placement placement, const M_DriverBufferView &view) {
+  auto refuse = [&](const Twine &why) {
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                what + ": " + name.str() + " " + why);
+  };
+  if (view.buffer == nullptr || !view.buffer->buffer.getPointer())
+    return refuse("has a null buffer");
+  if (view.size == 0)
+    return refuse("has a size of 0");
+  // Written as a subtraction so that an offset near UINT64_MAX cannot wrap
+  // the sum back into range.
+  const DeviceBuffer &buffer = *view.buffer->buffer;
+  const uint64_t byteSize = buffer.byteSize();
+  if (view.offset > byteSize || view.size > byteSize - view.offset)
+    return refuse("runs past the end of its buffer: offset " +
+                  Twine(view.offset) + " + size " + Twine(view.size) + " > " +
+                  Twine(byteSize));
+  if (buffer.isHost())
+    return refuse("is host memory, where device memory is wanted");
+  // Most buffers sit on the shared context of the stream's device, which
+  // settles both placements without comparing devices.
+  const DeviceContext &context = buffer.context();
+  if (&context == stream.device.getPointer())
+    return M_DRIVER_OK;
+  const Device &device = context.device();
+  if (placement == Placement::StreamDevice &&
+      !sameDevice(device, stream.ctx->device()))
+    return refuse("is not on the device the stream runs on");
+  if (device.api() != stream.ctx->device().api())
+    return refuse("belongs to a different backend than the stream");
+  return M_DRIVER_OK;
+}
+
+/// `name` is the destination's.
+M_DriverStatus checkSameSize(StringRef what, const ViewName &name,
+                             const M_DriverBufferView &dst,
+                             const M_DriverBufferView &src) {
+  if (dst.size == src.size)
+    return M_DRIVER_OK;
+  return fail(M_DRIVER_INVALID_ARGUMENT,
+              what + ": " + name.str() + ".size " + Twine(dst.size) +
+                  " differs from src.size " + Twine(src.size));
+}
+
+/// One side of a view batch: device memory as views, or host memory as
+/// pointers. Exactly one of `views` and `hosts` is set by the entry point, and
+/// it is null only when the caller passed a null array.
+struct BatchSide {
+  const char *role;
+  const char *array;
+  const M_DriverBufferView *views = nullptr;
+  const void *const *hosts = nullptr;
+  Placement placement = Placement::StreamDevice;
+};
+
+/// The batch behind the three view batch entry points: every piece is checked
+/// before anything is enqueued, then the batch reaches the driver as the
+/// address batch in the same direction.
+M_DriverStatus copyViewBatch(const char *what, const M_DriverStream *stream,
+                             M_DriverCopyDirection direction,
+                             const BatchSide &dst, const BatchSide &src,
+                             size_t count) {
+  if (M_DriverStatus status = checkStream(what, stream); status != M_DRIVER_OK)
+    return status;
+  if (count == 0)
+    return succeed();
+  if ((dst.views == nullptr && dst.hosts == nullptr) ||
+      (src.views == nullptr && src.hosts == nullptr))
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                Twine(what) + ": " + dst.array + " or " + src.array +
+                    " is null with a non zero count");
+
+  auto resolve = [&](const BatchSide &side, size_t i, const void *&address) {
+    const ViewName name{side.role, i};
+    if (side.views == nullptr) {
+      address = side.hosts[i];
+      if (address == nullptr)
+        return fail(M_DRIVER_INVALID_ARGUMENT,
+                    Twine(what) + ": " + name.str() + "_host is null");
+      return M_DRIVER_OK;
+    }
+    if (M_DriverStatus status =
+            checkView(what, name, *stream, side.placement, side.views[i]);
+        status != M_DRIVER_OK)
+      return status;
+    address = addressOf(side.views[i]);
+    return M_DRIVER_OK;
+  };
+  llvm::SmallVector<void *, 16> dstAddresses;
+  llvm::SmallVector<const void *, 16> srcAddresses;
+  llvm::SmallVector<uint64_t, 16> sizes;
+  dstAddresses.reserve(count);
+  srcAddresses.reserve(count);
+  sizes.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    const void *dstAddress = nullptr;
+    const void *srcAddress = nullptr;
+    if (M_DriverStatus status = resolve(dst, i, dstAddress);
+        status != M_DRIVER_OK)
+      return status;
+    if (M_DriverStatus status = resolve(src, i, srcAddress);
+        status != M_DRIVER_OK)
+      return status;
+    if (dst.views != nullptr && src.views != nullptr)
+      if (M_DriverStatus status =
+              checkSameSize(what, {dst.role, i}, dst.views[i], src.views[i]);
+          status != M_DRIVER_OK)
+        return status;
+    dstAddresses.push_back(const_cast<void *>(dstAddress));
+    srcAddresses.push_back(srcAddress);
+    sizes.push_back(dst.views != nullptr ? dst.views[i].size
+                                         : src.views[i].size);
+  }
+  return enqueueBatch(what, *stream, direction, dstAddresses, srcAddresses,
+                      sizes);
+}
+
+M_DriverStatus copyBufferPeer(const char *what, const M_DriverStream *stream,
+                              const M_DriverBufferView &dst,
+                              const M_DriverBufferView &src,
+                              bool crossStreamSync) {
+  if (M_DriverStatus status = checkStream(what, stream); status != M_DRIVER_OK)
+    return status;
+  if (M_DriverStatus status =
+          checkView(what, {"dst"}, *stream, Placement::StreamDevice, dst);
+      status != M_DRIVER_OK)
+    return status;
+  if (M_DriverStatus status =
+          checkView(what, {"src"}, *stream, Placement::StreamBackend, src);
+      status != M_DRIVER_OK)
+    return status;
+  if (M_DriverStatus status = checkSameSize(what, {"dst"}, dst, src);
+      status != M_DRIVER_OK)
+    return status;
+  // The source is stamped with the context its buffer was allocated on, which
+  // is its device's shared context for memory from this interface's device
+  // handles and from MAX's accelerators, without a lookup per copy.
+  const M_DriverDevice dstDevice{
+      DeviceContextRef::copy(stream->device.getPointer())};
+  const M_DriverDevice srcDevice{DeviceContextRef::copy(&contextOf(src))};
+  return enqueuePeerCopy(what, *stream, dstDevice, addressOf(dst), srcDevice,
+                         addressOf(src), dst.size, crossStreamSync);
+}
+
+} // namespace
+
+M_DriverStatus M_DriverCopyHostToBuffer(const M_DriverStream *stream,
+                                        M_DriverBufferView dst,
+                                        const void *src_host) {
+  constexpr const char *what = "M_DriverCopyHostToBuffer";
+  if (M_DriverStatus status = checkStream(what, stream); status != M_DRIVER_OK)
+    return status;
+  if (src_host == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "src_host is null");
+  if (M_DriverStatus status =
+          checkView(what, {"dst"}, *stream, Placement::StreamDevice, dst);
+      status != M_DRIVER_OK)
+    return status;
+  return enqueueHostToDevice(what, *stream, addressOf(dst), src_host, dst.size);
+}
+
+M_DriverStatus M_DriverCopyBufferToHost(const M_DriverStream *stream,
+                                        void *dst_host,
+                                        M_DriverBufferView src) {
+  constexpr const char *what = "M_DriverCopyBufferToHost";
+  if (M_DriverStatus status = checkStream(what, stream); status != M_DRIVER_OK)
+    return status;
+  if (dst_host == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "dst_host is null");
+  if (M_DriverStatus status =
+          checkView(what, {"src"}, *stream, Placement::StreamDevice, src);
+      status != M_DRIVER_OK)
+    return status;
+  return enqueueDeviceToHost(what, *stream, dst_host, addressOf(src), src.size);
+}
+
+M_DriverStatus M_DriverCopyBufferToBuffer(const M_DriverStream *stream,
+                                          M_DriverBufferView dst,
+                                          M_DriverBufferView src) {
+  constexpr const char *what = "M_DriverCopyBufferToBuffer";
+  if (M_DriverStatus status = checkStream(what, stream); status != M_DRIVER_OK)
+    return status;
+  if (M_DriverStatus status =
+          checkView(what, {"dst"}, *stream, Placement::StreamDevice, dst);
+      status != M_DRIVER_OK)
+    return status;
+  if (M_DriverStatus status =
+          checkView(what, {"src"}, *stream, Placement::StreamDevice, src);
+      status != M_DRIVER_OK)
+    return status;
+  if (M_DriverStatus status = checkSameSize(what, {"dst"}, dst, src);
+      status != M_DRIVER_OK)
+    return status;
+  return enqueueDeviceToDevice(what, *stream, addressOf(dst), addressOf(src),
+                               dst.size);
+}
+
+M_DriverStatus M_DriverCopyBufferPeer(const M_DriverStream *stream,
+                                      M_DriverBufferView dst,
+                                      M_DriverBufferView src) {
+  return copyBufferPeer("M_DriverCopyBufferPeer", stream, dst, src,
+                        /*crossStreamSync=*/true);
+}
+
+M_DriverStatus M_DriverCopyBufferPeerUnordered(const M_DriverStream *stream,
+                                               M_DriverBufferView dst,
+                                               M_DriverBufferView src) {
+  return copyBufferPeer("M_DriverCopyBufferPeerUnordered", stream, dst, src,
+                        /*crossStreamSync=*/false);
+}
+
+M_DriverStatus M_DriverCopyBufferBatch(const M_DriverStream *stream,
+                                       const M_DriverBufferView *dsts,
+                                       const M_DriverBufferView *srcs,
+                                       size_t count) {
+  return copyViewBatch("M_DriverCopyBufferBatch", stream,
+                       M_DRIVER_COPY_DEVICE_TO_DEVICE, {"dst", "dsts", dsts},
+                       {"src", "srcs", srcs, nullptr, Placement::StreamBackend},
+                       count);
+}
+
+M_DriverStatus M_DriverCopyHostToBufferBatch(const M_DriverStream *stream,
+                                             const M_DriverBufferView *dsts,
+                                             const void *const *srcs_host,
+                                             size_t count) {
+  return copyViewBatch("M_DriverCopyHostToBufferBatch", stream,
+                       M_DRIVER_COPY_HOST_TO_DEVICE, {"dst", "dsts", dsts},
+                       {"src", "srcs_host", nullptr, srcs_host}, count);
+}
+
+M_DriverStatus M_DriverCopyBufferToHostBatch(const M_DriverStream *stream,
+                                             void *const *dsts_host,
+                                             const M_DriverBufferView *srcs,
+                                             size_t count) {
+  return copyViewBatch(
+      "M_DriverCopyBufferToHostBatch", stream, M_DRIVER_COPY_DEVICE_TO_HOST,
+      {"dst", "dsts_host", nullptr, dsts_host}, {"src", "srcs", srcs}, count);
+}
+
+M_DriverStatus M_DriverFillBuffer(const M_DriverStream *stream,
+                                  M_DriverBufferView dst, uint8_t value) {
+  constexpr const char *what = "M_DriverFillBuffer";
+  if (M_DriverStatus status = checkStream(what, stream); status != M_DRIVER_OK)
+    return status;
+  if (M_DriverStatus status =
+          checkView(what, {"dst"}, *stream, Placement::StreamDevice, dst);
+      status != M_DRIVER_OK)
+    return status;
+  return enqueueFill(what, *stream, addressOf(dst), value, dst.size);
 }

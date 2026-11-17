@@ -32,7 +32,7 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     ](coords: Coord) {var}:
         print(tensor.load(coords))
 
-    elementwise[1](print_elements_lambda, shape, DeviceContext(api="cpu"))
+    elementwise[1](print_elements_lambda, shape, DeviceContext.cpu())
 
 
 # slice_dim
@@ -113,7 +113,7 @@ def test_slice[
             start_tensor,
             end_tensor,
             step_tensor,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
 
         print_elements(output_buffer)

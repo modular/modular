@@ -31,7 +31,6 @@ from .pipeline_config import (
     mock_huggingface_hub_repo_exists_with_retry,
     mock_pipeline_config_hf_dependencies,
     mock_pipeline_config_resolve,
-    mock_plan_from_sizes,
     patched_hf_construction,
 )
 from .pipeline_model import MOCK_MODEL_MAX_SEQ_LEN, MockPipelineModel
@@ -110,7 +109,6 @@ __all__ = [
     "mock_huggingface_hub_repo_exists_with_retry",
     "mock_pipeline_config_hf_dependencies",
     "mock_pipeline_config_resolve",
-    "mock_plan_from_sizes",
     "patched_hf_construction",
     "retrieve_mock_text_generation_pipeline",
 ]

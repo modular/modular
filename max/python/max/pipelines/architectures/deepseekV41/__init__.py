@@ -18,11 +18,24 @@ package that reuses V4's unchanged layers.
 """
 
 from .arch import deepseekV41_arch
-from .model import DeepseekV41Model
-from .model_config import DeepseekV41Config
+from .model import (
+    DeepseekV41BatchProcessor,
+    DeepseekV41Inputs,
+    DeepseekV41Model,
+    EngramPlan,
+    EngramTableInputs,
+    ExpertStreaming,
+)
+from .model_config import DeepseekV41Config, RoutedExpertFormat
 
 __all__ = [
+    "DeepseekV41BatchProcessor",
     "DeepseekV41Config",
+    "DeepseekV41Inputs",
     "DeepseekV41Model",
+    "EngramPlan",
+    "EngramTableInputs",
+    "ExpertStreaming",
+    "RoutedExpertFormat",
     "deepseekV41_arch",
 ]

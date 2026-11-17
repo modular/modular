@@ -25,7 +25,7 @@ from typing import Any
 from max import functional as F
 from max.graph import TensorValue
 from max.nn import Module as ModuleV3
-from max.nn.legacy._identity import IdentitySet
+from max.nn._identity import IdentitySet
 from max.nn.legacy.layer import Layer, add_layer_hook, clear_hooks
 from max.tensor import Tensor
 

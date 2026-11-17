@@ -4,7 +4,7 @@
 // rebuilds the shape from the create's runtime dims. A dim computed by a
 // kernel on the producing device never exists in the consumer's region.
 
-mgp.model @dynamic_stable_crosses_devices device_graph : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+mgp.model @dynamic_stable_crosses_devices device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
@@ -71,7 +71,7 @@ mgp.model @dynamic_stable_crosses_devices device_graph : mof devices [#M.device_
 
 // A device kernel that reads another device's result directly, with no stable
 // slot in between, cannot be placed: the value never exists in its region.
-mgp.model @device_reads_remote_without_slot device_graph : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+mgp.model @device_reads_remote_without_slot device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2

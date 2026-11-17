@@ -21,9 +21,65 @@ Matches amd/mha.mojo config target:
             shared_kv only at depth>256 (SMEM budget).
 """
 
+from std.math import align_up
 from std.math.uutils import umod, ufloordiv
+from std.sys import size_of
 from max.gpu import block_idx, lane_id
+from max.gpu.host.info import MI355X
+from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
+
+
+@inline(.always)
+def mla_decode_dma_warp[
+    q_type: DType,
+    k_t: MHAOperand,
+    mask_t: MHAMask,
+    BM: Int,
+    BN: Int,
+    WM: Int,
+    WN: Int,
+    depth: Int,
+    q_seq_len: Int,
+]() -> Bool:
+    """Returns whether the FP8 MLA decode fold adds a DMA producer warp.
+
+    The warp-local fold (`WN == BN`) runs one 16-row warp per SIMD, so a CTA of
+    at most 3 compute warps leaves a SIMD free. A producer warp there streams
+    the next KV tile into a second LDS stage for a whole tile ahead, so the
+    compute warps never issue or wait on a DMA of their own. The two K stages
+    and the P tile must fit one CU's LDS.
+
+    Parameters:
+        q_type: The query dtype.
+        k_t: The K operand type.
+        mask_t: The mask type.
+        BM: Rows of the CTA's M tile.
+        BN: Keys of the KV tile.
+        WM: Rows per warp.
+        WN: Keys per warp.
+        depth: The head depth.
+        q_seq_len: Query rows per request.
+
+    Returns:
+        True when the launch adds the producer warp.
+    """
+    comptime lds_bytes_per_cu = MI355X.shared_memory_per_multiprocessor
+    comptime lds_bytes = (
+        2 * BN * align_up(depth, 64) * size_of[k_t.dtype]()
+        + BM * BN * size_of[q_type]()
+    )
+    return (
+        k_t.dtype.is_float8()
+        and q_seq_len > 1
+        and WN == BN
+        and 1 < BM // WM <= 3
+        and not k_t.rows_indexed
+        and not k_t.rows_predicated
+        and not mask_t.check_mask_during_decoding
+        and lds_bytes <= lds_bytes_per_cu
+    )
 
 
 # M (and N) of the wide decode MFMA, and the fold's `WM` on that arm: one 32-row

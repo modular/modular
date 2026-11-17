@@ -30,9 +30,16 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import Accelerator, Buffer, Device, accelerator_api
+from _moe_test_utils import assign_experts
+from max.driver import (
+    Accelerator,
+    Buffer,
+    Device,
+    accelerator_api,
+    accelerator_architecture_name,
+)
 from max.dtype import DType
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
 )
@@ -201,7 +208,6 @@ def _build(
     *,
     mxfp4: dict[str, npt.NDArray[np.uint8]] | None = None,
     decoded: dict[str, np.ndarray] | None = None,
-    device: Device,
 ) -> KimiK3LatentMoE:
     layer = KimiK3LatentMoE(
         hidden_size=_HIDDEN,
@@ -222,6 +228,9 @@ def _build(
             QuantConfig.mxfp4(mlp_quantized_layers=[0]) if mxfp4 else None
         ),
         amd_w4a8=True if mxfp4 else None,
+        # The chain under test; the MegaFFN covers only the full-size
+        # experts, against this chain, in test_moe_latent_megaffn_gpu.py.
+        amd_mega_ffn=False,
     )
     layer.gate.gate_score.weight = Tensor(
         weights["gate_score_weight"], dtype=DType.float32
@@ -247,22 +256,27 @@ def _build(
     )
     layer.shared_experts.down_proj.weight = bf16(weights["shared_down_weight"])
     if mxfp4 is not None:
-        layer.experts_gate_up_proj = _packed_tensor(
-            mxfp4["gate_up"], DType.uint8, device
+        assign_experts(
+            layer,
+            mxfp4["gate_up"],
+            mxfp4["down"],
+            lambda a, device: _packed_tensor(a, DType.uint8, device),
         )
-        layer.experts_gate_up_proj_scale = _packed_tensor(
-            mxfp4["gate_up_scale"], DType.float8_e8m0fnu, device
-        )
-        layer.experts_down_proj = _packed_tensor(
-            mxfp4["down"], DType.uint8, device
-        )
-        layer.experts_down_proj_scale = _packed_tensor(
-            mxfp4["down_scale"], DType.float8_e8m0fnu, device
+        assign_experts(
+            layer,
+            mxfp4["gate_up_scale"],
+            mxfp4["down_scale"],
+            lambda a, device: _packed_tensor(a, DType.float8_e8m0fnu, device),
+            leaf="weight_scale",
         )
     else:
         assert decoded is not None
-        layer.experts_gate_up_proj = bf16(decoded["experts_gate_up_proj"])
-        layer.experts_down_proj = bf16(decoded["experts_down_proj"])
+        assign_experts(
+            layer,
+            decoded["experts_gate_up_proj"],
+            decoded["experts_down_proj"],
+            lambda a, device: bf16(a).to(device),
+        )
     return layer
 
 
@@ -271,7 +285,7 @@ def _build(
     reason="MXFP4 W4A8 AMD grouped matmul is CDNA4-only",
 )
 @pytest.mark.compile_on_gpu(
-    "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
+    "moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_amd_w4a8_matches_dense_from_decoded_weights() -> None:
     """The MXFP4 dispatch must match a dense run of what it is supposed to
@@ -292,7 +306,7 @@ def test_amd_w4a8_matches_dense_from_decoded_weights() -> None:
     with default_device(device):
         x_bf16 = Tensor(x_np, dtype=DType.float32).cast(DType.bfloat16)
 
-        dense_layer = _build(weights, decoded=decoded, device=device)
+        dense_layer = _build(weights, decoded=decoded)
         dense_out = (
             dense_layer(x_bf16)
             .cast(DType.float32)
@@ -300,7 +314,7 @@ def test_amd_w4a8_matches_dense_from_decoded_weights() -> None:
             .astype(np.float64)
         )
 
-        mxfp4_layer = _build(weights, mxfp4=mxfp4, device=device)
+        mxfp4_layer = _build(weights, mxfp4=mxfp4)
         mxfp4_out = (
             mxfp4_layer(x_bf16)
             .cast(DType.float32)
@@ -339,13 +353,12 @@ def test_amd_w4a8_matches_dense_from_decoded_weights() -> None:
 
 
 @pytest.mark.skipif(
-    accelerator_api() != "hip",
+    accelerator_api() != "hip"
+    or not accelerator_architecture_name().startswith("gfx95"),
     reason="MXFP4 W4A8 AMD grouped matmul is CDNA4-only",
 )
-def test_amd_w4a8_disabled_without_opt_in() -> None:
-    """``amd_w4a8=None`` (the serving default) stays off the env var's
-    absence, even with an MXFP4 ``quant_config`` and CDNA4 hardware --
-    opt-in is explicit, matching V2's own gate."""
+def test_amd_w4a8_selected_by_default() -> None:
+    """``amd_w4a8=None`` selects W4A8 for MXFP4 experts on CDNA4."""
     device = Accelerator()
     with default_device(device):
         layer = KimiK3LatentMoE(
@@ -366,4 +379,4 @@ def test_amd_w4a8_disabled_without_opt_in() -> None:
             quant_config=QuantConfig.mxfp4(mlp_quantized_layers=[0]),
         )
     assert layer.mxfp4
-    assert not layer.amd_tp_w4a8
+    assert layer.amd_tp_w4a8

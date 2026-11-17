@@ -49,7 +49,7 @@ comptime page_size = 128
 comptime full_group = 16
 comptime swa_group = 8
 comptime window = 128
-comptime sm_count = DeviceContext.default_device_info.sm_count
+comptime sm_count = DeviceContext[].default_device_info.sm_count
 
 
 def _ints(text: String) raises -> List[Int]:
@@ -67,7 +67,7 @@ def run[
     planes: Int,
     swa: Bool,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     batch: Int,
     seq_len: Int,
@@ -181,7 +181,7 @@ def run[
         imm,
     }:
         @inline(.always)
-        def launch(ctx: DeviceContext) raises {imm}:
+        def launch(ctx: DeviceContext[]) raises {imm}:
             comptime if swa:
                 flash_attention[ragged=True, sink=True](
                     o,
@@ -242,7 +242,7 @@ def run[
 def native[
     kvh: Int, swa: Bool
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     batch: Int,
     q: Int,
@@ -255,7 +255,7 @@ def native[
 
 def padded[
     kvh: Int, swa: Bool
-](ctx: DeviceContext, mut m: Bench, batch: Int, q: Int, cache: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, batch: Int, q: Int, cache: Int) raises:
     # The padded route ignores the metadata's count; it is handed metadata
     # because the graph op always passes it.
     comptime group = swa_group if swa else full_group
@@ -266,7 +266,7 @@ def padded[
 def shape[
     kvh: Int, swa: Bool
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     mode: String,
     batch: Int,
@@ -289,7 +289,7 @@ def shape[
 
 def grid[
     kvh: Int, swa: Bool
-](ctx: DeviceContext, mut m: Bench, mode: String) raises:
+](ctx: DeviceContext[], mut m: Bench, mode: String) raises:
     var sweep = _ints(arg_parse("p", "1,2,4,8"))
     if mode == "prefill":
         for chunk in _ints(arg_parse("chunks", "2048,8192")):

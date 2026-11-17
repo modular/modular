@@ -124,7 +124,7 @@ def execute_cross_attention_zero_rows[
         UInt32(max_kv_length),
     )
 
-    generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+    generic_cross_attention_kv_cache[mask_str="causal"](
         TileTensor(q.device_tensor().as_imm().unsafe_ptr(), zero_row),
         q_offsets.device_tensor().as_imm(),
         TileTensor(q_max_seq_len, row_major[1]()),

@@ -312,7 +312,7 @@ def main() raises:
 
         # Qwen3.8 shape (24 q / 4 kv, group 6): every token count x every
         # page-boundary cache length, batch 1.
-        comptime for t in range(1, 5):
+        for t in range(1, 5):
             for c in [1, 255, 256, 257, 4096]:
                 execute_pack_gqa_test[
                     CausalMask,

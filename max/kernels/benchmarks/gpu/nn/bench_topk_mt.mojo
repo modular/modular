@@ -242,7 +242,7 @@ def execute_topk_bitonic[
     phi_dtype: DType = _hsel_phi_dtype[in_dtype](),
     scan_items: Int = _hsel_prefetch_scan_items[in_dtype, phi_dtype](),
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     rows: Int,
     N: Int,
@@ -304,7 +304,7 @@ def execute_topk_bitonic[
     ctx.synchronize()
 
     @inline(.always)
-    def kernel_launch(c: DeviceContext) raises {mut idxs_t, imm}:
+    def kernel_launch(c: DeviceContext[]) raises {mut idxs_t, imm}:
         var row_bounds = Optional[RowBoundsPtr]()
         if use_bounds:
             row_bounds = Optional(
@@ -361,7 +361,7 @@ def execute_topk_bitonic[
 def _bf16_arms[
     ordered: Bool, deterministic: Bool
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     rows: Int,
     N: Int,
@@ -405,7 +405,7 @@ def _bf16_arms[
         )
 
 
-def _sweep(ctx: DeviceContext, mut m: Bench, dist: String) raises:
+def _sweep(ctx: DeviceContext[], mut m: Bench, dist: String) raises:
     """The production grid, four arms per cell, interleaved within the cell.
 
     The contract is `unord_nd` with `K = 2048`, which is what `mla_index_fp8`
@@ -442,7 +442,7 @@ def _sweep(ctx: DeviceContext, mut m: Bench, dist: String) raises:
                 )
 
 
-def _sweep_m0(ctx: DeviceContext, mut m: Bench, dist: String) raises:
+def _sweep_m0(ctx: DeviceContext[], mut m: Bench, dist: String) raises:
     """The M0 baseline grid of the cluster-cooperative top-k plan: the
     pre-port numbers the port's own milestones are measured against.
 

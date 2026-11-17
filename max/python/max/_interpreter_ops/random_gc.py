@@ -17,8 +17,8 @@ Covers ``mo.random.normal`` and ``mo.random.uniform``. Two compile modes,
 selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
 :func:`gc_compile.should_precompile`). Must not import from ``handlers.py``.
 
-Graphs are flat rank 1, with the output shape a runtime operand. Emission
-goes directly through ``rmo`` because the public ``ops.random`` helpers
+Graphs are flat rank 1, with the output shape a runtime operand. The op is
+built directly because the public ``ops.random`` helpers
 derive their shape operand from a ``TensorType`` this graph can't
 materialize, and rotate the seed.
 
@@ -38,7 +38,7 @@ compiled graph for the same seed.
 from dataclasses import dataclass
 
 from max import _core, engine
-from max._core.dialects import kgen, mo, rmo
+from max._core.dialects import kgen, mo
 from max._interpreter_ops import gc_compile
 from max.driver import Device
 from max.dtype import DType
@@ -49,9 +49,9 @@ _GRAPH_BASE_NAME = "random"
 
 @dataclass(frozen=True)
 class _RandomSpec:
-    """Per-op differences: which ``rmo`` op, and its two scalar operands."""
+    """Per-op differences: which op, and its two scalar operands."""
 
-    rmo_cls: type
+    op_cls: type
     scalar_names: tuple[str, str]
     scalars_are_float32: bool
     """Normal's mean/variance are always float32; uniform's bounds are not."""
@@ -59,10 +59,10 @@ class _RandomSpec:
 
 _RANDOM_OPS: dict[type[_core.Operation], _RandomSpec] = {
     mo.RandomNormalOp: _RandomSpec(
-        rmo.MoRandomNormalOp, ("mean", "variance"), True
+        mo.RandomNormalOp, ("mean", "variance"), True
     ),
     mo.RandomUniformOp: _RandomSpec(
-        rmo.MoRandomUniformOp, ("lower_bound", "upper_bound"), False
+        mo.RandomUniformOp, ("lower_bound", "upper_bound"), False
     ),
 }
 
@@ -85,8 +85,7 @@ def scalars_are_float32(op_type: type[_core.Operation]) -> bool:
     """Returns whether *op_type*'s two scalar operands are always float32.
 
     Resolves through :func:`_spec_for` (that is, ``gc_compile.canonical_op_name``),
-    so this answers correctly for an op arriving via either the ``mo`` or
-    ``rmo`` spelling -- unlike an ``isinstance(op, mo.RandomNormalOp)`` check,
+    so this answers correctly for an op arriving by name -- unlike an ``isinstance(op, mo.RandomNormalOp)`` check,
     which only matches the ``mo`` type object and would silently disagree
     with :func:`random_model` for an op reached through the name-based
     handler fallback (see ``handlers.register_op_handler``).
@@ -175,7 +174,7 @@ def _random_graph(module: Module, target: CompilationTarget) -> None:
             "output_param_decls": kgen.ParamDeclArrayAttr([]),
         }
         graph.output(
-            Graph.current._add_op_generated(spec.rmo_cls, **kwargs)[0].tensor
+            Graph.current._add_op_generated(spec.op_cls, **kwargs)[0].tensor
         )
 
 

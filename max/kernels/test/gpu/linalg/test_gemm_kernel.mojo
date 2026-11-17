@@ -141,7 +141,7 @@ def gemm_kernel[
     copy_local_to_dram[thread_layout=warp_layout](c_warp_tile, c_reg)
 
 
-def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
+def test_gemm_kernel_dynamic(ctx: DeviceContext[]) raises:
     comptime NUM_THREADS = 256
     comptime BM = 64
     comptime BN = 64
@@ -246,7 +246,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         comptime nwarmup = 2
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
+        def run_func(ctx: DeviceContext[]) raises {imm}:
             ctx.enqueue_function[kernel](
                 mat_c,
                 mat_a.as_imm(),
@@ -276,7 +276,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     _ = b_device
 
 
-def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
+def test_gemm_kernel_minimal(ctx: DeviceContext[]) raises:
     """Minimal debug test with small dimensions to isolate bugs.
 
     Uses single block (64x64) and single K-tile (16) for easier debugging.

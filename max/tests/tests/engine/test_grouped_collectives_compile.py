@@ -41,7 +41,7 @@ set_virtual_device_count(NUM_GPUS)
 
 import pytest
 from max._core.dialects import mo
-from max._core.dialects.builtin import IntegerAttr, IntegerType
+from max._core.dialects.builtin import BoolAttr, IntegerAttr, IntegerType
 from max.driver import CPU, Accelerator, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -270,6 +270,8 @@ def _allgather_rms_norm_graph_unvalidated(cols_per_device: list[int]) -> Graph:
             _float32_attr(EPS),
             _float32_attr(WEIGHT_OFFSET),
             IntegerAttr(IntegerType(64), GROUP_SIZE),
+            IntegerAttr(IntegerType(64), 0),
+            BoolAttr(False),
         )
         assert isinstance(out_chain, _ChainValue)
         graph._update_chain(out_chain)

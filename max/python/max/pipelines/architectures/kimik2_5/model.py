@@ -32,14 +32,11 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph import Module as GraphModule
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-    KVCacheParams,
-)
-from max.nn.legacy.quant_config import (
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface, KVCacheParams
+from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -47,7 +44,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -57,6 +53,9 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
+    WeightEntry,
+    WeightRenaming,
+    WeightTransform,
 )
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.eplb_runtime import EplbRuntime
@@ -70,7 +69,7 @@ from max.pipelines.lib.graph_specs import (
     compile_and_init_graphs,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.config_enums import is_float4_encoding
 from max.pipelines.weights.quant import parse_quant_config
@@ -89,7 +88,7 @@ from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
 from .layers.vision.transformer import Transformer
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
-from .weight_adapters import _VISION_PREFIXES
+from .weight_adapters import _VISION_PREFIXES, kimik2_5_weight_entry
 
 logger = logging.getLogger("max.pipelines")
 
@@ -354,6 +353,26 @@ class KimiK2_5Model(
         return module, config
 
     @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: KimiK2_5TextConfig
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the modules this class builds alone.
+
+        :meth:`build_module` and :meth:`build_vision_graph` load the language
+        model and the vision encoder without the prefixes ``KimiK2_5`` nests
+        them under.
+        """
+        del config
+        entry = kimik2_5_weight_entry(context.adapter)
+        unnested = WeightRenaming(r"^(?:language_model|vision_encoder)\.", "")
+        return [
+            WeightEntry(
+                entry.checkpoint,
+                WeightTransform([*entry.transform.rules, unnested]),
+            )
+        ]
+
+    @classmethod
     def build_vision_graph(
         cls, context: ModelLoadContext
     ) -> tuple[Graph, dict[str, Any]]:
@@ -556,17 +575,13 @@ class KimiK2_5Model(
         return model_config
 
     def _load_state_dict(self) -> dict[str, Any]:
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=self.huggingface_config.text_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        return state_dict
+        # One entry names the whole checkpoint; each graph binds its part.
+        entry = kimik2_5_weight_entry(self.adapter)
+        self.weight_naming = {
+            GraphRole.VISION: (entry,),
+            GraphRole.DECODER: (entry,),
+        }
+        return entry.transform(dict(self.weights.items()))
 
     @override
     @traced
@@ -597,11 +612,10 @@ class KimiK2_5Model(
         with CompilationTimer("model") as timer:
             specs = self.graph_specs(config)
             timer.mark_build_complete()
-            self.compiled_modules = compile_and_init_graphs(session, specs)
-        return {
-            role: compiled.engine_model
-            for role, compiled in self.compiled_modules.items()
-        }
+            compiled = compile_and_init_graphs(session, specs)
+        # Keeps the ep_init graph that _init_distributed_runtime compiled.
+        self.compiled_modules = {**self.compiled_modules, **compiled}
+        return {role: module.engine_model for role, module in compiled.items()}
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the vision and language graphs.
@@ -645,8 +659,9 @@ class KimiK2_5Model(
         # since NVSHMEM functions cannot be linked without real GPU devices.
         # We still keep ep_config to generate the correct graph structure.
         if config.ep_config is not None and not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
+            self.ep_comm_initializer = self._init_ep_comm(
+                session, config.ep_config
+            )
             if config.ep_config.node_id == -1:
                 raise ValueError(
                     "EP node ID is not set. Please check if the EP initialization is successful."
@@ -827,13 +842,10 @@ def _state_dict_under(
     context: ModelLoadContext, prefixes: tuple[str, ...]
 ) -> dict[str, WeightData]:
     """Adapts only the checkpoint's weights whose names start with ``prefixes``."""
-    assert context.adapter is not None
-    return context.adapter(
+    return kimik2_5_weight_entry(context.adapter).transform(
         {
             name: weight
             for name, weight in context.weights.items()
             if name.startswith(prefixes)
-        },
-        huggingface_config=context.huggingface_config,
-        pipeline_config=context.pipeline_config,
+        }
     )

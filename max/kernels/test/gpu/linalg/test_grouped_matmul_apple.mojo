@@ -271,7 +271,7 @@ def main() raises:
             [70, 130, 1, 64], [3, 1, 0, 2], ctx, atol=1e-3, rtol=1e-4
         )
 
-        # LoRA SGMV (`mo.lora_sgmv.ragged`): 4 adapters of rank 16 on a
+        # LoRA SGMV (`matmul.lora_sgmv.ragged`): 4 adapters of rank 16 on a
         # 4096-wide layer, shrink `[4, 16, 4096]` and expand `[4, 4096, 16]`.
         # Id -1 is a request without an adapter. Decode, then prefill.
         var lora_ids: List[Int] = [1, -1, 3, 0]

@@ -81,7 +81,6 @@ from layout.tma_async import PipelineState
 from layout import (
     Coord,
     Idx,
-    Layout,
     DefaultEngine,
     RowMajorLayout,
     TensorLayout,
@@ -94,9 +93,9 @@ from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
 )
-from layout.tile_layout import Layout as TileLayout, _IntToComptimeInt
+from layout.layout import Layout, _IntToComptimeInt
+from layout.layout import row_major as tt_row_major
 
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from std.math import recip
@@ -732,7 +731,7 @@ struct Grouped1D1DMatmulKernel[
         cluster_shape: 3D `(x, y, z)` cluster shape passed to the
             `nvvm.cluster_dim` metadata (defaults to `(1, 1, 1)`).
         pdl_level: Programmatic dependent launch level controlling
-            cross-grid ordering fences (defaults to `PDLLevel()`). Every
+            cross-grid ordering fences (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`). Every
             level above `OFF` waits on the previous grid before reading any
             tensor, routing included, and releases the next grid right
             after the wait.
@@ -914,18 +913,10 @@ struct Grouped1D1DMatmulKernel[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        IndexList[2](
-            Self.SmemType.Core.BM, Self.SmemType.Core.BK
-        ),  # A tile shape
-        IndexList[2](
-            Self.SmemType.Core.BN, Self.SmemType.Core.BK
-        ),  # B tile shape
-        IndexList[2](
-            Self.SmemType.Core.SFA_DIM0, Self.SmemType.Core.SFA_DIM1
-        ),  # SFA shape
-        IndexList[2](
-            Self.SmemType.Core.SFB_DIM0, Self.SmemType.Core.SFB_DIM1
-        ),  # SFB shape
+        (Self.SmemType.Core.BM, Self.SmemType.Core.BK),  # A tile shape
+        (Self.SmemType.Core.BN, Self.SmemType.Core.BK),  # B tile shape
+        (Self.SmemType.Core.SFA_DIM0, Self.SmemType.Core.SFA_DIM1),  # SFA shape
+        (Self.SmemType.Core.SFB_DIM0, Self.SmemType.Core.SFB_DIM1),  # SFB shape
         Self.SmemType.Core.num_pipeline_stages,
     ]
 
@@ -1046,10 +1037,10 @@ struct Grouped1D1DMatmulKernel[
     comptime b_expected_bytes = Self.BN * Self.BK * size_of[
         Self.b_type
     ]() // Self.b_gmem_bytes_per_elem_recip
-    comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.size() * size_of[
+    comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.static_product * size_of[
         Self.sfa_dtype
     ]()
-    comptime sfb_expected_bytes = Self.SmemType.Core.sfb_smem_layout.size() * size_of[
+    comptime sfb_expected_bytes = Self.SmemType.Core.sfb_smem_layout.static_product * size_of[
         Self.sfb_dtype
     ]()
 
@@ -3279,9 +3270,10 @@ struct Grouped1D1DMatmulKernel[
         ) * SF_MN_GROUP_SIZE
         var m_local_base = Int(m_start)
 
-        comptime _accum_tile_layout = Layout.row_major(BM, stageN)
+        comptime _accum_tile_layout = tt_row_major[BM, stageN]()
         comptime AccumTmemArrayLocal = TmemArrayType[
             Self.accum_type,
+            type_of(_accum_tile_layout),
             _accum_tile_layout,
             num_stages,
             cta_group=Self.cta_group,
@@ -3542,7 +3534,8 @@ struct Grouped1D1DMatmulKernel[
             comptime ip_num_stages = num_stages * stageN // ip_stageN
             comptime IpTmemArray = TmemArrayType[
                 Self.accum_type,
-                Layout.row_major(BM, ip_stageN),
+                type_of(tt_row_major[BM, ip_stageN]()),
+                tt_row_major[BM, ip_stageN](),
                 ip_num_stages,
                 cta_group=Self.cta_group,
             ]

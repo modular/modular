@@ -33,12 +33,13 @@
 #include <string>
 #include <vector>
 
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace M::Profiling {
 
 namespace Detail {
-std::atomic<int> &getActiveCaptures() noexcept;
+MODULAR_CXX_EXPORT std::atomic<int> &getActiveCaptures() noexcept;
 } // namespace Detail
 
 // True while at least one device-graph capture is in progress.
@@ -48,14 +49,14 @@ inline bool isCaptureLabelingActive() noexcept {
 
 // Bracket a device-graph capture. Nestable and callable from any thread;
 // the recorded op list is cleared when the outermost capture ends.
-void beginCaptureLabeling();
-void endCaptureLabeling();
+MODULAR_CXX_EXPORT void beginCaptureLabeling();
+MODULAR_CXX_EXPORT void endCaptureLabeling();
 
 // Push an op label on the calling thread. Returns true iff it was pushed
 // (a capture is in progress); the caller pops exactly the pushes that
 // returned true, on the same thread.
-bool pushCaptureLabel(llvm::StringRef label);
-void popCaptureLabel();
+MODULAR_CXX_EXPORT bool pushCaptureLabel(llvm::StringRef label);
+MODULAR_CXX_EXPORT void popCaptureLabel();
 
 // The innermost label on the calling thread and its op sequence number, or
 // an empty label and 0 when none is pushed.
@@ -64,21 +65,21 @@ struct CaptureLabel {
   uint64_t opSeq = 0;
   uint64_t thread = 0;
 };
-CaptureLabel currentCaptureLabel();
+MODULAR_CXX_EXPORT CaptureLabel currentCaptureLabel();
 
 // Carry the calling thread's innermost op to work it hands to other threads:
 // read a token here, and adopt it on the worker for the work's duration. A
 // launch recorded under an adopted op is attributed to that op exactly as if
 // the original thread had made it. The token is 0 when no op is pushed.
-uint64_t currentCaptureOp();
+MODULAR_CXX_EXPORT uint64_t currentCaptureOp();
 // Returns true iff the op was adopted (a capture is in progress and the token
 // names one of its ops); the caller pops exactly the adoptions that returned
 // true with popCaptureLabel(), on the same thread.
-bool adoptCaptureOp(uint64_t opSeq);
+MODULAR_CXX_EXPORT bool adoptCaptureOp(uint64_t opSeq);
 
 // The sequence number the next pushed op will receive. Bracketing a capture
 // with two reads bounds the ops pushed during it.
-uint64_t nextCaptureOpSeq();
+MODULAR_CXX_EXPORT uint64_t nextCaptureOpSeq();
 
 // One pushed op: `parentSeq` is the op enclosing it on the same thread (0 at
 // the top level), `thread` a small process-unique id for the pushing thread,
@@ -92,8 +93,8 @@ struct CaptureOp {
 
 // The ops pushed on `thread` with sequence numbers in [minSeq, maxSeq], in
 // push order.
-std::vector<CaptureOp> capturedOps(uint64_t thread, uint64_t minSeq,
-                                   uint64_t maxSeq);
+MODULAR_CXX_EXPORT std::vector<CaptureOp>
+capturedOps(uint64_t thread, uint64_t minSeq, uint64_t maxSeq);
 
 } // namespace M::Profiling
 

@@ -53,7 +53,7 @@ from std.sys import llvm_intrinsic
 from std.utils.numerics import get_accum_type
 
 from layout import TensorEngine, TileTensor
-from layout.tile_layout import (
+from layout.layout import (
     TensorLayout,
     row_major,
 )

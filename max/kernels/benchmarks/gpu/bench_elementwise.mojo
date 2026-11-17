@@ -78,7 +78,7 @@ def run_elementwise[
     dims: IndexList[rank],
     *,
     name: StaticString,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # Blackwell support 32B ld/st, see KERN-2037
     comptime pack_size = 32 // size_of[dtype]() if _is_sm10x_gpu(
@@ -113,7 +113,7 @@ def run_elementwise[
     ctx.enqueue_copy(cb_in.device_buffer(), in_host.ptr)
 
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_in, mut cb_out, imm}:
         var in_tensor = TileTensor(
             cb_in.offset_ptr(iteration), row_major(Coord(dims))
@@ -134,7 +134,7 @@ def run_elementwise[
                 ),
             )
 
-        elementwise[pack_size, target="gpu"](
+        elementwise[pack_size](
             func,
             Coord(dims),
             ctx,
@@ -226,4 +226,6 @@ def main() raises:
                 run_elementwise[dtype, copy_fn](
                     m, "copy", dims, name=dims_str, ctx=ctx
                 )
+            case _:
+                pass
     m.dump_report()

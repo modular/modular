@@ -21,7 +21,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 

@@ -85,9 +85,7 @@ def test_simd_f32_to_e2m1_ptx_kernel[
         var x_slice = x.slice[8, offset=iter * 8]()
         var x_casted = cast_fp32_to_fp4e2m1(x_slice)
 
-        comptime for shift in range(
-            0, bit_width_of[DType.uint32](), FP4_E2M1_WIDTH
-        ):
+        for shift in range(0, bit_width_of[DType.uint32](), FP4_E2M1_WIDTH):
             comptime BitsType = type_of(x_casted.to_bits())
             var x = (x_casted.to_bits() >> BitsType(shift)) & BitsType(
                 FP4_E2M1_MASK

@@ -1,6 +1,6 @@
 // RUN: mt --execute --default-device-label=gpu --model-inputs=ones --result-output-style=compact %s | FileCheck %s
 
-// RUN: mo-opt %s -o %t.mlir --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu compiled-framework-label=mof" --allow-unregistered-dialect
+// RUN: mo-opt %s -o %t.mlir --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu" --allow-unregistered-dialect
 // RUN: mt --execute --default-device-label=gpu --model-inputs=ones --result-output-style=compact %t.mlir | FileCheck %s
 
 // CHECK-LABEL: --- Running 'graph':

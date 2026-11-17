@@ -18,10 +18,22 @@ Submodules
    :nosignatures:
 
    max.pipelines.lib.arch_lookup
+   max.pipelines.lib.auto_processor
+   max.pipelines.lib.decoder_scratch
+   max.pipelines.lib.generate
+   max.pipelines.lib.generate_images
    max.pipelines.lib.graph_specs
    max.pipelines.lib.interfaces
    max.pipelines.lib.log_probabilities
+   max.pipelines.lib.module_registration
    max.pipelines.lib.pipeline_parallel
+   max.pipelines.lib.registration_draft
+   max.pipelines.lib.registration_encoder
+   max.pipelines.lib.registration_graph_api
+   max.pipelines.lib.registration_runtime
+   max.pipelines.lib.registry
+   max.pipelines.lib.request_state
+   max.pipelines.lib.role_contracts
 
 .. toctree::
    :maxdepth: 1
@@ -29,12 +41,21 @@ Submodules
 
    pipelines.lib.arch_lookup
    pipelines.lib.auto_processor
+   pipelines.lib.decoder_scratch
    pipelines.lib.generate
    pipelines.lib.generate_images
    pipelines.lib.graph_specs
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
+   pipelines.lib.module_registration
    pipelines.lib.pipeline_parallel
+   pipelines.lib.registration_draft
+   pipelines.lib.registration_encoder
+   pipelines.lib.registration_graph_api
+   pipelines.lib.registration_runtime
+   pipelines.lib.registry
+   pipelines.lib.request_state
+   pipelines.lib.role_contracts
 
 Configuration
 -------------

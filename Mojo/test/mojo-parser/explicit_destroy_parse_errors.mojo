@@ -38,7 +38,7 @@ trait ExplicitDestroyEmptyMsgOnDeinitable(Deinitable):
 
 
 # expected-error @+2 {{@explicit_destroy requires an argument: `@explicit_destroy("...")`}}
-# expected-note @+2 {{Use a `not Deinitable` conformance to opt out of implicit deletion. `@explicit_destroy` is deprecated.}}
+# expected-note @+2 {{Use a `not Deinitable` conformance on struct declarations instead. `@explicit_destroy` on traits is deprecated.}}
 @explicit_destroy
 trait BareExplicitDestroyTrait:
     def consume(deinit self):

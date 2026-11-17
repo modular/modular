@@ -51,10 +51,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
-    MHAKVCacheParams,
-)
+from max.nn.common_layers.kv_cache import kv_input_values
+from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 from max.tensor import Tensor, default_dtype
@@ -150,7 +148,7 @@ class _Step(LanguageModel):
         *cache: Tensor,
     ) -> tuple[Tensor, ...]:
         kv_inputs = self.kv_params.unflatten_kv_inputs(
-            iter(tensor._graph_value for tensor in cache)
+            iter(kv_input_values(cache))
         )
         assert (
             isinstance(kv_inputs, tuple)

@@ -1,7 +1,7 @@
 // RUN: mo-opt %s --split-input-file --allow-unregistered-dialect --canonicalize | FileCheck %s
 
 // CHECK-LABEL: mgp.model @chain_empty
-mgp.model @chain_empty : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @chain_empty devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -18,7 +18,7 @@ mgp.model @chain_empty : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
 // -----
 
 // CHECK-LABEL: mgp.model @fold_true_assert
-mgp.model @fold_true_assert : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @fold_true_assert devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %2 = mgp.runtime.create %0, %1[1]
@@ -35,7 +35,7 @@ mgp.model @fold_true_assert : mof devices [#M.device_ref<"cpu", 0>] init (%arg0:
 // -----
 
 // CHECK-LABEL: mgp.model @fold_buffer_get_size_constant
-mgp.model @fold_buffer_get_size_constant : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @fold_buffer_get_size_constant devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %2 = mgp.runtime.create %0, %1[1]
@@ -52,7 +52,7 @@ mgp.model @fold_buffer_get_size_constant : mof devices [#M.device_ref<"cpu", 0>]
 // -----
 
 // CHECK-LABEL: mgp.model @fold_buffer_get_size_alloc
-mgp.model @fold_buffer_get_size_alloc : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @fold_buffer_get_size_alloc devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %2 = mgp.runtime.create %0, %1[1]
@@ -70,7 +70,7 @@ mgp.model @fold_buffer_get_size_alloc : mof devices [#M.device_ref<"cpu", 0>] in
 // -----
 
 // CHECK-LABEL: mgp.model @buffer_plan_extract_constants
-mgp.model @buffer_plan_extract_constants : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_plan_extract_constants devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 0
   mef.output %ch0, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -113,7 +113,7 @@ mgp.model @buffer_plan_extract_constants : mof devices [#M.device_ref<"cpu", 0>]
 //   -> [0,1,0, 1,0,0, 0,0,0]
 //
 // CHECK-LABEL: mgp.model @buffer_plan_extract_constants_with_sharing
-mgp.model @buffer_plan_extract_constants_with_sharing : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_plan_extract_constants_with_sharing devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 0
   mef.output %ch0, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -138,7 +138,7 @@ mgp.model @buffer_plan_extract_constants_with_sharing : mof devices [#M.device_r
 // -----
 
 // CHECK-LABEL: mgp.model @buffer_plan_all_constants
-mgp.model @buffer_plan_all_constants : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_plan_all_constants devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 0
   mef.output %ch0, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -163,7 +163,7 @@ mgp.model @buffer_plan_all_constants : mof devices [#M.device_ref<"cpu", 0>] ini
 // -----
 
 // CHECK-LABEL: mgp.model @buffer_plan_no_constants
-mgp.model @buffer_plan_no_constants : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_plan_no_constants devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 0
   mef.output %ch0, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -187,7 +187,7 @@ mgp.model @buffer_plan_no_constants : mof devices [#M.device_ref<"cpu", 0>] init
 // No canonicalization should fire.
 //
 // CHECK-LABEL: mgp.model @already_canonical_buffer_plan
-mgp.model @already_canonical_buffer_plan : mof devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @already_canonical_buffer_plan devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>

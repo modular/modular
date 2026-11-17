@@ -8,7 +8,8 @@
 // RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%tensor_arg_trait_pkg" 2>&1 | grep 'registration = "trait_' | FileCheck %s --check-prefix=IMPORT
 
 // Verify rejects two input-side tuples (`trait_tensor_tuple`), which the import
-// run above accepts, and the `mut` convention of `trait_bad_convention`.
+// run above accepts, the `mut` convention of `trait_bad_convention`, and the
+// `Stable` stubs below.
 // RUN: not mo-opt %s --mogg-import-packages="mojo-pkg-paths=%tensor_arg_trait_pkg" --mogg-verify-kernels 2>&1 | FileCheck %s --check-prefix=VERIFY
 // VERIFY-DAG: Kernel function can have at most one variadic input tensors
 // VERIFY-DAG: Only the borrowed argument (read) convention is supported for trait-bound tensor arguments
@@ -66,7 +67,11 @@
 
 // `Stable` sets the contract's `stable` key (elided when false, so every other
 // row above is unchanged). Input and mutable input both distill with it, as
-// does an input bound by only `Tensor`.
+// does an input bound by only `Tensor`. The stubs take it on `execute`, which
+// the VERIFY run rejects: only `build_graph` may.
+// VERIFY-DAG: error: Stable trait arguments are only supported on build_graph functions (argument at position 1 of the execute function)
+// VERIFY-DAG: error: Stable trait arguments are only supported on build_graph functions (argument at position 0 of the execute function)
+// VERIFY-DAG: error: Stable trait arguments are only supported on build_graph functions (argument at position 1 of the execute function)
 // IMPORT-DAG: registration = "trait_stable_input"{{.*}}[{access = 0 : i32, capabilities = 0 : i32, fused = false, role = "output"}, {access = 0 : i32, capabilities = 0 : i32, fused = false, role = "input", stable = true}, unit, unit, unit]
 // IMPORT-DAG: registration = "trait_stable_mutable_input"{{.*}}[{access = 0 : i32, capabilities = 0 : i32, fused = false, role = "mutable_input", stable = true}, unit, unit, unit]
 // IMPORT-DAG: registration = "trait_stable_tensor_input"{{.*}}[{access = 0 : i32, capabilities = 0 : i32, fused = false, role = "output"}, {access = 0 : i32, capabilities = 0 : i32, fused = false, role = "input", stable = true}, unit, unit, unit]
@@ -123,7 +128,7 @@
 // `Some[TileTensorable]` (`trait_tile_tensorable_shape_fn`) -> bound = "tile".
 // IMPORT-DAG: mogg.shape_func.decl{{.*}}registration = "trait_tile_tensorable_shape_fn"{{.*}}[{access = 0 : i32, bound = "tile", capabilities = 0 : i32, fused = false, role = "none"}]
 
-// === LOWERING (dense-only): mogg.trait.create + the legacy lane ========== //
+// === LOWERING (dense-only): mogg.trait.create ============================ //
 
 // Dense CPU emit: the stub takes raw pointer args and reconstructs each tensor
 // via `mogg_tensor_init`, then assembles `_MoggDenseTensorArg` before
@@ -153,18 +158,16 @@
 // EMIT-DAG: _MoggTensorIO.MUTABLE_INPUT
 //
 // The trait kernel's `execute` is called with the assembled dense values.
-// EMIT-DAG: TraitAddSome.execute[target = "cpu"]
+// EMIT-DAG: TraitAddSome.execute
 //
 // Fused-store trait kernel (full pipeline): stub builds fusion wrapper from capture.
 // EMIT-DAG: _MoggOutputStoreFusionTensor[
-// EMIT-DAG: TraitFusedStoreDouble.execute[target = "cpu"]
+// EMIT-DAG: TraitFusedStoreDouble.execute
 
 // A trait kernel's tensor arguments lower to `mogg.tensor_arg.__init__`
-// carrying the distilled `#mogg.tensor_arg` contract, while a legacy
-// `ManagedTensorSlice` kernel still lowers to `mogg.tensor.__init__`. The op
-// + its attribute must be observable in the dumped IR after MOGG->MGP
-// lowering (the stage where `buildMojoIOTensorObject` runs) but before
-// emit-mojo. The contract is derived from the kernel declaration at boundary
+// carrying the distilled `#mogg.tensor_arg` contract. The op + its attribute
+// must be observable in the dumped IR after MOGG->MGP lowering (the stage
+// where `buildMojoIOTensorObject` runs) but before emit-mojo. The contract is derived from the kernel declaration at boundary
 // lowering (GEX-4071), so it appears only on the per-arg init ops.
 
 // A pure trait kernel: a dense output and two dense inputs (`trait_add_some`).
@@ -215,61 +218,16 @@ mo.graph @trait_multi(%x: !mo.tensor<[5], f32>) -> (!mo.tensor<[5], f32>, !mo.te
   mo.output %a, %b : !mo.tensor<[5], f32>, !mo.tensor<[5], f32>
 }
 
-// A mixed legacy+trait kernel (`trait_mixed_legacy`): a trait dense output
-// alongside two legacy `ManagedTensorSlice` inputs. The trait output lowers to
-// `mogg.tensor_arg.__init__` (with the `output` contract); the legacy inputs
-// lower to `mogg.tensor.__init__`. Both lanes coexist in the same kernel.
-// CHECK-LABEL: mgp.model @mixed_legacy_trait
-// CHECK-DAG: mogg.trait.create
+// Fused-load trait arg (`trait_dense_and_fused_inputs`): a dense output, a
+// dense input, and a fused/loadable input. The fused input's contract must
+// carry `fused = true`, `access = load`, `capabilities = load` onto the op,
+// distinguishing it from the dense `fused = false, access = none` cases.
+// CHECK-LABEL: mgp.model @trait_fused_input
 // CHECK-DAG: <{role = output, fused = false, access = none, capabilities = none}>
-// CHECK-DAG: mogg.tensor.create
-mo.graph @mixed_legacy_trait(%x: !mo.tensor<[2, 3], f32>, %y: !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32> {
-  %0 = mo.custom [symbol = "trait_mixed_legacy", device = #M.device_ref<"cpu", 0>] {target = "cpu"}(%x, %y) : (!mo.tensor<[2, 3], f32>, !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32>
-  mo.output %0 : !mo.tensor<[2, 3], f32>
-}
-
-// Reverse mixed lane (`trait_mixed_legacy_out`): a LEGACY `OutputTensor`
-// alongside two TRAIT `Input & TileTensorable` inputs. The legacy output lowers to
-// `mogg.tensor.__init__`; the trait inputs lower to `mogg.tensor_arg.__init__`
-// with `role = input`. Covers the legacy-output / trait-input coexistence
-// direction (the mirror of `mixed_legacy_trait`).
-// CHECK-LABEL: mgp.model @mixed_legacy_out
-// CHECK-DAG: mogg.tensor.create
-// CHECK-DAG: mogg.trait.create{{.*}}<{role = input, fused = false, access = none, capabilities = none}>
-// CHECK-DAG: mogg.trait.create{{.*}}<{role = input, fused = false, access = none, capabilities = none}>
-// CHECK-NOT: <{role = output
-mo.graph @mixed_legacy_out(%x: !mo.tensor<[2, 3], f32>, %y: !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32> {
-  %0 = mo.custom [symbol = "trait_mixed_legacy_out", device = #M.device_ref<"cpu", 0>] {target = "cpu"}(%x, %y) : (!mo.tensor<[2, 3], f32>, !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32>
-  mo.output %0 : !mo.tensor<[2, 3], f32>
-}
-
-// Mixed lane with a legacy MUTABLE arg (`trait_mixed_legacy_mut`): a trait dense
-// output `z` alongside a legacy `MutableInputTensor` `x` (a buffer operand). The
-// legacy mutable input must still lower to `mogg.tensor.__init__` (the legacy
-// `mut=true` lane is unchanged when a trait arg is present); the trait output
-// lowers to `mogg.tensor_arg.__init__` with `role = output`.
-// CHECK-LABEL: mgp.model @mixed_legacy_mut
-// CHECK-DAG: mogg.trait.create
-// CHECK-DAG: <{role = output, fused = false, access = none, capabilities = none}>
-// CHECK-DAG: mogg.tensor.create
-mo.graph @mixed_legacy_mut(%x: !mo.buffer<[6], f32>) -> !mo.tensor<[6], f32> {
-  %c = mo.chain.create()
-  %0, %outch = mo.custom [symbol = "trait_mixed_legacy_mut", device = #M.device_ref<"cpu", 0>] {target = "cpu"}(%x, %c) : (!mo.buffer<[6], f32>, !mo.chain) -> (!mo.tensor<[6], f32>, !mo.chain)
-  mo.output %0 : !mo.tensor<[6], f32>
-}
-
-// Fused-load trait arg (`trait_mixed_legacy_fused`): a trait dense output, a
-// legacy `InputTensor` (`mogg.tensor.__init__`), and a TRAIT fused/loadable
-// input. The fused trait input's contract must FAITHFULLY carry `fused = true`,
-// `access = load`, `capabilities = load` onto the op -- distinguishing it from
-// the dense `fused = false, access = none` cases and catching any dropped/
-// swapped boolean or mis-mapped access enum in `tensorArgContractToAttr`.
-// CHECK-LABEL: mgp.model @mixed_legacy_fused
-// CHECK-DAG: <{role = output, fused = false, access = none, capabilities = none}>
+// CHECK-DAG: <{role = input, fused = false, access = none, capabilities = none}>
 // CHECK-DAG: <{role = input, fused = true, access = load, capabilities = load}>
-// CHECK-DAG: mogg.tensor.create
-mo.graph @mixed_legacy_fused(%x: !mo.tensor<[2, 3], f32>, %y: !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32> {
-  %0 = mo.custom [symbol = "trait_mixed_legacy_fused", device = #M.device_ref<"cpu", 0>] {target = "cpu"}(%x, %y) : (!mo.tensor<[2, 3], f32>, !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32>
+mo.graph @trait_fused_input(%x: !mo.tensor<[2, 3], f32>, %y: !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32> {
+  %0 = mo.custom [symbol = "trait_dense_and_fused_inputs", device = #M.device_ref<"cpu", 0>] {target = "cpu"}(%x, %y) : (!mo.tensor<[2, 3], f32>, !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32>
   mo.output %0 : !mo.tensor<[2, 3], f32>
 }
 
@@ -288,20 +246,4 @@ mo.graph @trait_fused_store(%x: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
 mo.graph @trait_dense_dyn<D0>(%x: !mo.tensor<[2, D0], f32>, %y: !mo.tensor<[2, D0], f32>) -> !mo.tensor<[2, D0], f32> {
   %0 = mo.custom [symbol = "trait_add_some", device = #M.device_ref<"cpu", 0>] {target = "cpu"}(%x, %y) : (!mo.tensor<[2, D0], f32>, !mo.tensor<[2, D0], f32>) -> !mo.tensor<[2, D0], f32>
   mo.output %0 : !mo.tensor<[2, D0], f32>
-}
-
-// A pure-legacy control kernel (`legacy_only_control`): a legacy `OutputTensor`
-// `z`, a legacy `InputTensor` `x`, and a legacy `MutableInputTensor` `w` (a
-// buffer operand) -- NO trait args at all. It must lower to
-// `mogg.tensor.__init__` only, with NO `mogg.tensor_arg.__init__` and NO
-// `#mogg.tensor_arg` attribute anywhere -- the legacy lane is byte-for-byte
-// unchanged.
-// CHECK-LABEL: mgp.model @legacy_only
-// CHECK: mogg.tensor.create
-// CHECK-NOT: mogg.trait.create
-// CHECK-NOT: #mogg.tensor_arg
-mo.graph @legacy_only(%x: !mo.tensor<[8], f32>, %w: !mo.buffer<[8], f32>) -> !mo.tensor<[8], f32> {
-  %c = mo.chain.create()
-  %0, %outch = mo.custom [symbol = "legacy_only_control", device = #M.device_ref<"cpu", 0>] {target = "cpu"}(%x, %w, %c) : (!mo.tensor<[8], f32>, !mo.buffer<[8], f32>, !mo.chain) -> (!mo.tensor<[8], f32>, !mo.chain)
-  mo.output %0 : !mo.tensor<[8], f32>
 }

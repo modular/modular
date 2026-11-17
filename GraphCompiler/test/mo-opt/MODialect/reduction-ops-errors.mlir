@@ -10,10 +10,10 @@ mo.graph @input_res_rank_mismatch(%input: !mo.tensor<[?, ?, 5], f32>) -> !mo.ten
 
 // -----
 
-mo.graph @axis_too_big(%input: !mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, ?], f32> {
-  // expected-error @below {{'mo.reduce.mul' op axis must be between [-3, 2] found 3}}
-  %output = mo.reduce.mul(%input) [axis = 3] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, ?], f32>
-  mo.output %output : !mo.tensor<[?, ?, ?], f32>
+mo.graph @axis_too_big(%input: !mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, ?], si64> {
+  // expected-error @below {{'mo.reduce.arg_min' op axis must be between [-3, 2] found 3}}
+  %output = mo.reduce.arg_min(%input) [axis = 3] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, ?], si64>
+  mo.output %output : !mo.tensor<[?, ?, ?], si64>
 }
 
 // -----
@@ -62,4 +62,12 @@ mo.graph @mixed_dtypes_float_to_float(%input: !mo.tensor<[?, ?, 5], f32>) -> !mo
   // expected-error @below {{'mo.reduce.max' op failed to verify that all of {input, result} have same dtype}}
   %output = mo.reduce.max(%input) : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f16>
   mo.output %output : !mo.tensor<[?, ?, 1], f16>
+}
+
+// -----
+
+mo.graph @rms_norm_weight_rank(%x: !mo.tensor<[8, 128], f32>, %w: !mo.tensor<[1, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  // expected-error @below {{'mo.composite.reduce.rms_norm' op weight must be rank 1}}
+  %y = mo.composite.reduce.rms_norm(%x, %w) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[8, 128], f32>, !mo.tensor<[1, 128], f32>) -> !mo.tensor<[8, 128], f32>
+  mo.output %y : !mo.tensor<[8, 128], f32>
 }

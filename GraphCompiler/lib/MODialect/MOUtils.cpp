@@ -27,13 +27,16 @@ using namespace MO;
 bool M::MO::kernelRequiresSyncLaunch(Operation *op) {
   return isa<TransposeOp>(op) || (isOnHost(op) && isa<LayoutTransformOp>(op)) ||
          isa<AllReduceSumOp>(op) || isa<ReduceScatterSumOp>(op) ||
+         isa<AllToAllOp>(op) ||
          isa<Composite::AllReduceAddRMSNormQuantFP8Op>(op) ||
          isa<Composite::DistributedMatmulReduceScatterSumOp>(op) ||
          isa<Composite::DistributedReduceScatterRMSNormOp>(op) ||
          isa<Composite::DistributedAllGatherRMSNormOp>(op) ||
+         isa<Composite::DistributedAllGatherGatedResidualRMSNormOp>(op) ||
          isa<Composite::DistributedAllGatherRMSNormQuantMXFP8Op>(op) ||
          isa<Composite::DistributedAllGatherRMSNormQuantMXFP6Op>(op) ||
          isa<Composite::DistributedAllReduceRMSNormOp>(op) ||
+         isa<Composite::DistributedAllReducePostNormResidualRMSNormOp>(op) ||
          isa<DistributedBroadcastOp>(op) || isa<DistributedScatterOp>(op) ||
          isa<EPDispatchOp>(op) || isa<EPDispatchFP8Op>(op) ||
          isa<EPDispatchBlockScaledNVOp>(op) ||

@@ -47,7 +47,7 @@ from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import TileTensorMHAOperand
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
@@ -193,6 +193,7 @@ def test[
         flare_mla_decoding[
             config=MHAConfig[q_type](num_heads, depth),
             decoding_warp_split_k=decoding_warp_split_k,
+            kernels=SM100MLA,
         ](
             out_tt.as_unsafe_any_origin(),
             q_tt,

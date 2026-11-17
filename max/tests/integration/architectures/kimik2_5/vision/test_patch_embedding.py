@@ -269,13 +269,13 @@ def test_pos_emb_matches_torch(
     pos_emb_weight = _generate_tensor((height, width, dim))
     x = _generate_tensor((total_patches, dim))
 
+    max_out = _build_and_run_pos_emb(
+        x, grid_thws, pos_emb_weight, height, width, dim, num_frames, MAX_DTYPE
+    )
+
     device = torch.device("cuda")
     torch_out = _run_torch_pos_emb(
         x, grid_thws, pos_emb_weight, height, width, dim, num_frames, device
-    )
-
-    max_out = _build_and_run_pos_emb(
-        x, grid_thws, pos_emb_weight, height, width, dim, num_frames, MAX_DTYPE
     )
 
     _assert_close(torch_out, max_out)

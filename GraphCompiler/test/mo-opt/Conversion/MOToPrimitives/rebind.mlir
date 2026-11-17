@@ -1,6 +1,6 @@
 // RUN: mo-opt %s --mogg-import-packages --mo-to-map --map-outline-structured-kernel-bodies --map-to-mogg --mogg-to-mgp --cse | FileCheck %s
 
-// CHECK-LABEL: mgp.model @static_ranks_int_to_unknown : mof
+// CHECK-LABEL: mgp.model @static_ranks_int_to_unknown
 // CHECK: } execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context,
 // CHECK: %[[ARG2:[a-z0-9]*]]: !mgp.tensor<42x?xf32>)
 // CHECK-DAG:   %[[CDIM:.*]] = index.constant 42
@@ -18,7 +18,7 @@ mo.graph @static_ranks_int_to_unknown<D0, D1>(
   mo.output %res : !mo.tensor<[?, D0], f32>
 }
 
-// CHECK-LABEL: mgp.model @static_ranks_unknown_to_int : mof
+// CHECK-LABEL: mgp.model @static_ranks_unknown_to_int
 // CHECK: } execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context,
 // CHECK: %[[ARG2:[a-z0-9]*]]: !mgp.tensor<?x?xf32>)
 // CHECK:   %[[SPEC:.*]] = mgp.tensor.extract.tensor_spec %[[ARG2]] : <?x?xf32>
@@ -35,7 +35,7 @@ mo.graph @static_ranks_unknown_to_int<D0, D1 -> ()>(
   mo.output %res : !mo.tensor<[42, D0], f32>
 }
 
-// CHECK-LABEL: mgp.model @static_ranks_unknown_to_static : mof
+// CHECK-LABEL: mgp.model @static_ranks_unknown_to_static
 // CHECK: } execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context
 // CHECK: %[[ARG2:[a-z0-9]*]]: !mgp.tensor<?x?xf32>)
 // CHECK:   %[[BUF:.*]] = mgp.tensor.extract.buffer %[[ARG2]] : <?x?xf32>
@@ -50,7 +50,7 @@ mo.graph @static_ranks_unknown_to_static<D0, D1>(
   mo.output %res : !mo.tensor<[42, 10], f32>
 }
 
-// CHECK-LABEL: mgp.model @multiple_rebind : mof
+// CHECK-LABEL: mgp.model @multiple_rebind
 // CHECK: } execute (%[[CH0:.*]]: !mef.chain,
 
 // CHECK: %[[CH1:.*]] = mogg.routine.async {{(dispatch\([a-z]+\) )?}}(%[[CH0]]

@@ -144,7 +144,7 @@ class EngramPending:
             Each layer's operand.
         """
         scales = ops.custom(
-            "mo.engram.join",
+            "engram.join",
             device=anchor.device,
             values=[anchor, *self.scales],
             out_types=[s.type for s in self.scales],
@@ -329,7 +329,7 @@ class EngramLookup:
         """Both layers' operands from the full tables, on one device.
 
         With ``host_gather``, host threads hash and gather at prefill
-        sizes (``mo.engram.hash_gather_host``).
+        sizes (``engram.hash_gather_host``).
 
         Args:
             tokens: This forward's hash inputs, on ``device``.
@@ -367,7 +367,7 @@ class EngramLookup:
         host = self.host_gather
         t = tokens[0].shape[0]
         codes, scales, _ = ops.custom(
-            "mo.engram.hash_gather_host" if host else "mo.engram.hash_gather",
+            "engram.hash_gather_host" if host else "engram.hash_gather",
             device=device,
             values=[*tokens, *constants, *tables],
             out_types=[
@@ -468,7 +468,7 @@ class EngramLookup:
         ):
             t = x.ids.shape[0]
             codes, scales, _ = ops.custom(
-                "mo.engram.hash_gather_shard",
+                "engram.hash_gather_shard",
                 device=device,
                 values=[*x.values(), *self._constants(device), *shard],
                 out_types=[
@@ -496,7 +496,7 @@ class EngramLookup:
             all_codes, all_scales, devices, strict=True
         ):
             full_codes, full_scales = ops.custom(
-                "mo.engram.assemble_shards",
+                "engram.assemble_shards",
                 device=device,
                 values=[codes, scales],
                 out_types=self._operand_types(codes.shape[1], device),

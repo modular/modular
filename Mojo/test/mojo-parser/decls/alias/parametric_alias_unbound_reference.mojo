@@ -57,7 +57,7 @@ def bind_alias_typed_fn_param[T: AnyType]():
 
 # CHECK-LABEL: lit.fn @"unbound_reference()"
 def unbound_reference():
-    # The hole for `f` gets the plain expansion `Pair[?, Int]` as its type;
-    # the signature itself keeps the `Wrap[T]` sugar.
-    # CHECK: alias.decl *"UnboundRef{{.*}}TakesWrapFn <:!AnyType ?, :!lit.generator<[1](!Int, |, ?, "__result__": !lit.ref<!lit.struct<#Pair <:!AnyType ?, :!AnyType !Int>>
+    # The reference is the struct's generator; `f`'s result type applies
+    # `Wrap` to the generator's `T` input.
+    # CHECK: alias.decl *"UnboundRef{{.*}}": !lit.generator<<"T": !AnyType, +, "f": !lit.generator<[1](!Int, |, ?, "__result__": !lit.ref<{{.*}}@parametric_alias_unbound_reference::@Pair<:!AnyType *(1,0), :!AnyType !Int>)
     comptime UnboundRef = TakesWrapFn

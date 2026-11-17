@@ -5,22 +5,18 @@ package(default_visibility = ["//Mojo:consumers"])
 modular_cc_binary(
     name = "kgen-llvm-opt",
     srcs = glob(["*.cpp"]),
-    internal_deps = select({
-        # Under --config=hal-device-context we don't link the full DeviceContext,
-        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
-        "//:hal_device_context_enabled": [
-            "//MLRT:Driver/CompilationDeviceImpl",
-            "//MLRT:Driver/CompilerDeviceArch",
-        ],
-        "//conditions:default": [],
-    }),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//MLRT:Driver/Compilation",
+        "//Support:Globals",
+    ],
     deps = [
         "//Config",
         "//Mojo:Compiler",
         "//Mojo:ObjectCompiler",
         "//Mojo:ToolCommon",
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//llvm:Plugins",
         "@llvm-project//llvm:Support",
     ],

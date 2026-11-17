@@ -16,6 +16,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.math.uutils import udivmod
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 
 
@@ -44,24 +45,18 @@ def _stencil_impl_gpu[
     & def(dim: Int) -> Int,
     LoadFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[simd_width: Int, dtype: DType](
-        IndexList[rank, element_type=_]
-    ) -> SIMD[dtype, simd_width],
+    & def[simd_width: Int, dtype: DType](Coord) -> SIMD[dtype, simd_width],
     ComputeInitFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[simd_width: Int]() -> SIMD[dtype, simd_width],
     ComputeFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[simd_width: SIMDLength](
-        IndexList[rank, element_type=_],
-        SIMD[dtype, simd_width],
-        SIMD[dtype, simd_width],
+        Coord, SIMD[dtype, simd_width], SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width],
     ComputeFinalizeFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[simd_width: SIMDLength](
-        IndexList[rank, element_type=_], SIMD[dtype, simd_width]
-    ) -> None,
+    & def[simd_width: SIMDLength](Coord, SIMD[dtype, simd_width]) -> None,
 ](
     ctx: DeviceContext,
     shape: IndexList[rank, element_type=shape_element_type],
@@ -109,10 +104,31 @@ def _stencil_impl_gpu[
         stencil_axis[0] == 1 and stencil_axis[1] == 2
     ), "Only stencil spatial axes [1, 2] are supported"
 
+    # A vector spans `simd_width` adjacent channels, so it must not run past the
+    # end of the channel axis: the channel count has to be a multiple of the
+    # requested width.
+    if simd_width > 1 and Int(shape[3]) % simd_width != 0:
+        raise Error(
+            "stencil_gpu: channel count",
+            Int(shape[3]),
+            "is not a multiple of the vector width",
+            simd_width,
+        )
+
+    var channel_blocks = ceildiv(Int(shape[3]), simd_width)
+    comptime block_x = 32
+    comptime block_y = 32
+    var grid_dim = (
+        ceildiv(shape[2], block_x),  # width
+        ceildiv(shape[1], block_y),  # height
+        Int(shape[0]) * channel_blocks,  # batch_size * channel blocks
+    )
+
     # GPU kernel implementation
     @inline(.always)
     def stencil_kernel() {
         var shape,
+        var channel_blocks,
         var input_shape,
         var map_func,
         var map_strides_func,
@@ -129,11 +145,14 @@ def _stencil_impl_gpu[
         var bid_z = block_idx.z
 
         # Calculate global indices
-        var x = bid_x * block_dim.x + tid_x
-        var y = bid_y * block_dim.y + tid_y
+        var x = bid_x * block_x + tid_x
+        var y = bid_y * block_y + tid_y
 
-        # Calculate batch and channel from bid_z
-        var batch_idx, channel = udivmod(bid_z, shape[3])
+        # Channels are the innermost (contiguous) axis, so a thread owns
+        # `simd_width` adjacent channels of a single output point. The channel
+        # count is guaranteed to be a multiple of `simd_width` by the caller.
+        var batch_idx, channel_block = udivmod(bid_z, channel_blocks)
+        var channel = channel_block * simd_width
 
         # Early exit if outside bounds
         if x >= shape[2] or y >= shape[1]:
@@ -176,21 +195,15 @@ def _stencil_impl_gpu[
                 min(input_width, upper_bound[1]),
                 step_j,
             ):
-                var point_idx = IndexList[
-                    rank, element_type=shape_element_type
-                ](indices[0], i, j, indices[3])
+                var point_idx = Coord(indices[0], i, j, indices[3])
                 var val = load_func[simd_width, dtype](point_idx)
                 result = compute_func[simd_width](point_idx, result, val)
 
-        compute_finalize_func[simd_width](indices, result)
-
-    # Calculate grid and block dimensions
-    var block_dim = (32, 32, 1)
-    var grid_dim = (
-        ceildiv(shape[2], block_dim[0]),  # width
-        ceildiv(shape[1], block_dim[1]),  # height
-        shape[0] * shape[3],  # batch_size * num_channels
-    )
+        compute_finalize_func[simd_width](
+            Coord(batch_idx, y, x, channel), result
+        )
 
     # Compile and launch kernel
-    ctx.enqueue_function(stencil_kernel, grid_dim=grid_dim, block_dim=block_dim)
+    ctx.enqueue_function(
+        stencil_kernel, grid_dim=grid_dim, block_dim=(block_x, block_y, 1)
+    )

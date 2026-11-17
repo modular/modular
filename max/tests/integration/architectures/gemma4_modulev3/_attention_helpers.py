@@ -44,7 +44,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, MHAKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )

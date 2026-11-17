@@ -139,7 +139,7 @@ def bench_dict_find_hit[size: Int](mut b: Bencher) raises:
         var total = 0
         for _ in range(10_000):
             for key in range(10):
-                total += items.find(black_box(key)).value()
+                total += items.find(black_box(key)).or_else(0)
         keep(total)
 
     b.iter(call_fn)

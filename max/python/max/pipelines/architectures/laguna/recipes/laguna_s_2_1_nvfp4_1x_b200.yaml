@@ -18,3 +18,6 @@ model:
   max_length: 262144  # The vendor's serving length; the checkpoint declares
                       # 1048576, which does not fit beside the weights on one
                       # B200.
+
+runtime:
+  prefer_module_v3: false

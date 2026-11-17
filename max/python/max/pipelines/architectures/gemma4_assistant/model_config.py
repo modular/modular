@@ -19,10 +19,7 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.transformer.transformer import (
-    ReturnHiddenStates,
-    ReturnLogits,
-)
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
 )

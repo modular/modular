@@ -25,7 +25,7 @@ def _malloc[
             ]._mlir_type
             # expected-error @+2 {{heap allocation is not supported on GPU}}
             # expected-note-re @+1 {{see current operation: {{.*}}}}
-        ](alignment.__mlir_index__(), size.__mlir_index__())
+        ](alignment._mlir_value, size._mlir_value)
     }
 
 

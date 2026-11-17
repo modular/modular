@@ -17,13 +17,9 @@ A serving engine that runs the exported graphs must feed the tower what MAX
 serve does: the tokenizer's patches, position tables and rotary positions,
 and the grid and segment bounds the model packs for them. For video, each
 temporal patch of a clip is one run, which the tower attends over alone.
-Every output but the patches matches bit for bit. The graphs resize uint8
-pixels, accumulating in float32 and rounding once at the end, where the
-tokenizer resizes an image, or each frame of a clip, with Pillow, which
-rounds and clamps between its two passes, so the patches match within a
-level or two, and further around a chart's hard edges. The decoder's M-RoPE
-positions the graphs return for each item, stitched into a prompt, are the
-ones ``get_rope_index`` gives it.
+Every output matches bit for bit. The decoder's M-RoPE positions the graphs
+return for each item, stitched into a prompt, are the ones
+``get_rope_index`` gives it.
 """
 
 from __future__ import annotations
@@ -40,7 +36,10 @@ from max.driver import CPU, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.legacy.image_preprocess import image_preprocess_input_types
-from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+from max.pipelines.architectures.qwen3_5.data_processing import (
+    QWEN3_5_MAX_PIXELS,
+    get_bilinear_interpolation_weights_and_indices,
+    get_rope_index,
     mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen3_5.layers.visual_transformer import (
@@ -50,20 +49,15 @@ from max.pipelines.architectures.qwen3_5.model import Qwen3_5Model
 from max.pipelines.architectures.qwen3_5.preprocess_graph import (
     Qwen3_5ImagePreprocess,
 )
-from max.pipelines.architectures.qwen3_5.vision_packing import (
-    pack_uncached_images,
+from max.pipelines.architectures.qwen3_5.tokenizer import (
+    Qwen3_5ImageProcessor,
 )
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    QWEN3VL_MAX_PIXELS,
-    get_bilinear_interpolation_weights_and_indices,
-    get_rope_index,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
+from max.pipelines.architectures.qwen3_5.video_processing import (
     clip_grid,
     patchify_clip,
 )
-from max.pipelines.architectures.qwen3vl_moe.tokenizer import (
-    Qwen3VLImageProcessor,
+from max.pipelines.architectures.qwen3_5.vision_packing import (
+    pack_uncached_images,
 )
 from max.pipelines.lib.graph_specs import (
     GraphRole,
@@ -85,9 +79,6 @@ from test_common.vision_preprocess_parity import (
 # The Qwen3.5 checkpoints' vision config.
 _PATCH = 16
 _TEMPORAL_PATCH = 2
-# How far one uint8 level moves a patch value, which the tokenizer
-# normalizes as (level - 127.5) / 127.5.
-_LEVEL = 1 / 127.5
 _MERGE = 2
 _POSITION_EMBEDDINGS = 2304
 
@@ -113,10 +104,9 @@ def preprocess() -> CompiledCallable[..., Any]:
 
 @pytest.fixture(scope="module")
 def preprocess_video() -> CompiledCallable[..., Any]:
-    model: Any = SimpleNamespace(
-        huggingface_config=SimpleNamespace(vision_config=_vision_config())
+    spec = Qwen3_5Model.vision_preprocess_video_spec_for(
+        _pipeline_config(SimpleNamespace(vision_config=_vision_config())), None
     )
-    spec = Qwen3_5Model.vision_preprocess_video_spec(model)
     assert spec is not None
     role = GraphRole.VISION_PREPROCESS_VIDEO
     session = InferenceSession(devices=[CPU()])
@@ -139,7 +129,7 @@ _CASES: dict[str, Callable[[], Image.Image]] = {
     "palette_transparency": palette_with_transparency,
 }
 
-# An image shrinks only past QWEN3VL_MAX_PIXELS, so the chart clip, which
+# An image shrinks only past QWEN3_5_MAX_PIXELS, so the chart clip, which
 # the clip budget shrinks, covers downscaling.
 _CHARTS: dict[str, Callable[[], Image.Image]] = {
     "round_501x333": lambda: chart(333, 501),
@@ -154,12 +144,12 @@ def _processed(
     tokenizer computes them."""
     # The tokenizer's image loader converts every image to RGB.
     rgb = image if image.mode == "RGB" else image.convert("RGB")
-    processor = Qwen3VLImageProcessor(
+    processor = Qwen3_5ImageProcessor(
         patch_size=_PATCH,
         temporal_patch_size=_TEMPORAL_PATCH,
         merge_size=_MERGE,
         min_pixels=65536,
-        max_pixels=QWEN3VL_MAX_PIXELS,
+        max_pixels=QWEN3_5_MAX_PIXELS,
     )
     _, grid_thw, (pixel_values,) = processor([rgb])
     _, grid_h, grid_w = (int(n) for n in grid_thw[0])
@@ -258,7 +248,7 @@ def test_matches_the_served_inputs(
     image = _CASES[case]()
     size, served = _served(image)
     outputs = preprocess.execute_raw(*graph_inputs(image, size))
-    check(preprocess, case, outputs, served, _LEVEL)
+    check(preprocess, case, outputs, served)
 
 
 @pytest.mark.parametrize("case", sorted(_CHARTS))
@@ -266,11 +256,11 @@ def test_a_chart_matches_the_served_inputs(
     preprocess: CompiledCallable[..., Any], case: str
 ) -> None:
     """A chart's text, lines and bars, whose hard edges near black and white
-    Pillow clamps between its passes, match within the hard-edge bounds."""
+    Pillow clamps between its passes, match too."""
     image = _CHARTS[case]()
     size, served = _served(image)
     outputs = preprocess.execute_raw(*graph_inputs(image, size))
-    check(preprocess, f"chart_{case}", outputs, served, _LEVEL, hard_edges=True)
+    check(preprocess, f"chart_{case}", outputs, served)
 
 
 # Frame count, height and width of each synthetic clip.
@@ -329,18 +319,16 @@ def test_each_temporal_patch_matches_the_served_clip(
 def test_a_chart_clip_matches_the_served_clip(
     preprocess_video: CompiledCallable[..., Any],
 ) -> None:
-    """A clip of charts, downscaled to the clip budget, matches within the
-    hard-edge bounds."""
+    """A clip of charts, downscaled to the clip budget, matches too."""
     count, height, width = _CLIPS["budget_14f_1920x1080"]
     frames = [chart(height, width, seed=seed) for seed in range(count)]
-    _check_clip(preprocess_video, "chart_budget_14f", frames, hard_edges=True)
+    _check_clip(preprocess_video, "chart_budget_14f", frames)
 
 
 def _check_clip(
     preprocess_video: CompiledCallable[..., Any],
     case: str,
     frames: list[Image.Image],
-    hard_edges: bool = False,
 ) -> None:
     """Checks the graph's run over each temporal patch of the clip."""
     (grid_t, grid_h, grid_w), pixel_values, patches = _clip(frames)
@@ -352,14 +340,7 @@ def _check_clip(
         served = _packed(
             pixel_values[t * rows : (t + 1) * rows], one_patch
         ) + _positions(one_patch, _VIDEO)
-        check(
-            preprocess_video,
-            f"{case}[{t}]",
-            outputs,
-            served,
-            _LEVEL,
-            hard_edges=hard_edges,
-        )
+        check(preprocess_video, f"{case}[{t}]", outputs, served)
 
 
 def _stitch(
@@ -435,23 +416,29 @@ def _vision_config() -> SimpleNamespace:
     )
 
 
+def _pipeline_config(huggingface_config: object) -> Any:
+    """A stand-in for the pipeline config the spec methods read."""
+    return SimpleNamespace(
+        model=SimpleNamespace(huggingface_config=huggingface_config)
+    )
+
+
 @pytest.mark.parametrize(
     "spec_of",
     [
-        Qwen3_5Model.vision_preprocess_spec,
-        Qwen3_5Model.vision_preprocess_video_spec,
+        Qwen3_5Model.vision_preprocess_spec_for,
+        Qwen3_5Model.vision_preprocess_video_spec_for,
     ],
 )
 def test_vision_preprocess_returns_the_vision_inputs_by_path(
-    spec_of: Callable[[Any], GraphSpec | None],
+    spec_of: Callable[[Any, object], GraphSpec | None],
 ) -> None:
     """A serving engine feeds the preprocess graphs' outputs to the tower by
     path, so they are the tower's one-device inputs for an image or a
     temporal patch, all but the TP signal buffers the engine supplies."""
-    model: Any = SimpleNamespace(
-        huggingface_config=SimpleNamespace(vision_config=_vision_config())
+    spec = spec_of(
+        _pipeline_config(SimpleNamespace(vision_config=_vision_config())), None
     )
-    spec = spec_of(model)
     assert spec is not None
     outputs, out_tree = tree.flatten(spec.trace().output_tree)
     tower: Any = SimpleNamespace(
@@ -477,6 +464,11 @@ def test_vision_preprocess_returns_the_vision_inputs_by_path(
 
 
 def test_a_checkpoint_without_a_tower_has_no_preprocess_graph() -> None:
-    model: Any = SimpleNamespace(huggingface_config=SimpleNamespace())
-    assert Qwen3_5Model.vision_preprocess_spec(model) is None
-    assert Qwen3_5Model.vision_preprocess_video_spec(model) is None
+    pipeline_config = _pipeline_config(SimpleNamespace())
+    assert (
+        Qwen3_5Model.vision_preprocess_spec_for(pipeline_config, None) is None
+    )
+    assert (
+        Qwen3_5Model.vision_preprocess_video_spec_for(pipeline_config, None)
+        is None
+    )

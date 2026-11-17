@@ -29,10 +29,11 @@ adapter changes the *storage* of the quantized tensors, which the reference's
   ``[E, N, K/2]`` uint8 tensors of :class:`DeepseekV4RoutedExperts`
   (``gate_up_proj`` = ``[w1; w3]`` along N, ``down_proj`` = ``w2``) with
   ``[E, N, K/32]`` e8m0 scales; the grouped W4A8 kernel reads both as is.
-* the compressors' ``wkv`` / ``wgate`` and every norm weight are stored bf16
-  but declared float32 by the reference, which upcasts them on load; so does
-  this adapter (exact). ``head`` is the exception: the reference upcasts it
-  too, but here it stays bf16 (see ``DeepseekV4._lm_head``).
+* every norm weight is stored bf16 but declared float32 by the reference,
+  which upcasts it on load; so does this adapter (exact). ``head`` and the
+  compressors' ``wkv`` / ``wgate`` are the exceptions: the reference upcasts
+  them too, but here they stay bf16 (see ``DeepseekV4._lm_head`` and
+  :class:`~.layers.DeepseekV4Compressor`).
 * everything else (bf16 / f32 / the int64 ``tid2eid`` tables) passes through.
 
 Last, projections that read the same input are stacked along N into one
@@ -82,13 +83,8 @@ GATE_UP_PROJ = "gate_up_proj"
 DOWN_PROJ = "down_proj"
 
 # bf16 in the checkpoint, float32 in the reference (and here), which upcasts
-# them on load: the compressor's raw projections (it pools in float32), every
-# norm weight (``*norm.weight``).
-_FLOAT32_WEIGHTS = (
-    ".compressor.wkv.weight",
-    ".compressor.wgate.weight",
-    "norm.weight",
-)
+# them on load: every norm weight (``*norm.weight``).
+_FLOAT32_WEIGHTS = ("norm.weight",)
 
 _FP8_WEIGHT_BLOCK = 128
 

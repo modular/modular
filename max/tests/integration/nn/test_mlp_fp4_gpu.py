@@ -29,7 +29,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, TensorValue
 from max.graph.weights import WeightData
 from max.nn.legacy import MLP
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -219,7 +219,6 @@ def test_mlp_fp4_nvfp4() -> None:
 
     seq_len = 4
     x = torch.randn((seq_len, hidden_dim), dtype=torch.bfloat16) * 0.1
-    x = x.cuda()
 
     session = InferenceSession(devices=[device])
     with Graph(
@@ -238,7 +237,7 @@ def test_mlp_fp4_nvfp4() -> None:
         graph.output(graph_output)
 
     compiled = session.load(graph, weights_registry=mlp.state_dict())
-    max_output = compiled.execute(x)[0]
+    max_output = compiled.execute(x.cuda())[0]
 
     assert isinstance(max_output, Buffer)
     max_result = torch.from_dlpack(max_output)

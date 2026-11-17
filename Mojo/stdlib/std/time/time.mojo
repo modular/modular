@@ -37,7 +37,6 @@ comptime _CLOCK_MONOTONIC_RAW = 4
 
 # Constants
 comptime _NSEC_PER_USEC = 1000
-comptime _NSEC_PER_MSEC = 1_000_000
 comptime _USEC_PER_MSEC = 1000
 comptime _MSEC_PER_SEC = 1000
 comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
@@ -79,12 +78,6 @@ def _gettime_as_nsec_unix(clockid: Int) -> Int:
 
 
 @inline(.always)
-def _realtime_nanoseconds() -> Int:
-    """Returns the current realtime time in nanoseconds"""
-    return _gettime_as_nsec_unix(_CLOCK_REALTIME)
-
-
-@inline(.always)
 def _monotonic_nanoseconds() -> Int:
     """Returns the current monotonic time in nanoseconds"""
 
@@ -92,26 +85,6 @@ def _monotonic_nanoseconds() -> Int:
         return Int(global_perf_counter_ns())
     else:
         return _gettime_as_nsec_unix(_CLOCK_MONOTONIC)
-
-
-@inline(.always)
-def _monotonic_raw_nanoseconds() -> Int:
-    """Returns the current monotonic time in nanoseconds"""
-    return _gettime_as_nsec_unix(_CLOCK_MONOTONIC_RAW)
-
-
-@inline(.always)
-def _process_cputime_nanoseconds() -> Int:
-    """Returns the high-resolution per-process timer from the CPU"""
-
-    return _gettime_as_nsec_unix(_CLOCK_PROCESS_CPUTIME_ID)
-
-
-@inline(.always)
-def _thread_cputime_nanoseconds() -> Int:
-    """Returns the thread-specific CPU-time clock"""
-
-    return _gettime_as_nsec_unix(_CLOCK_THREAD_CPUTIME_ID)
 
 
 # ===-----------------------------------------------------------------------===#

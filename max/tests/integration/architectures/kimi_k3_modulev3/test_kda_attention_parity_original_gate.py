@@ -197,12 +197,14 @@ def _make_v3_layer_with_weights(
         conv_kernel_size=CONV_KERNEL,
         gate_lower_bound=gate_lower_bound,
     )
-    layer.qkv_proj.weight = Tensor(
+    layer.qkvg_proj.weight = Tensor(
         interleave_for_tp(
             [
                 weights["q_proj_weight"],
                 weights["k_proj_weight"],
                 weights["v_proj_weight"],
+                weights["g_proj_weight"],
+                weights["b_proj_weight"],
             ],
             1,
         ),
@@ -215,10 +217,8 @@ def _make_v3_layer_with_weights(
     layer.f_b_proj.weight = Tensor(
         weights["f_b_proj_weight"], dtype=DType.float32
     )
-    layer.b_proj.weight = Tensor(weights["b_proj_weight"], dtype=DType.float32)
     layer.a_log = Tensor(weights["a_log"], dtype=DType.float32)
     layer.dt_bias = Tensor(weights["dt_bias"], dtype=DType.float32)
-    layer.g_proj.weight = Tensor(weights["g_proj_weight"], dtype=DType.float32)
     layer.o_norm.weight = Tensor(weights["o_norm_weight"], dtype=DType.float32)
     layer.o_proj.weight = Tensor(weights["o_proj_weight"], dtype=DType.float32)
     return layer

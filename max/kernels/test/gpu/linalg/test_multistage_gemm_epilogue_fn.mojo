@@ -149,7 +149,7 @@ def main() raises:
     with DeviceContext() as ctx:
         comptime bf16_config = _amdgpu_matmul_config_from_block_shape[
             .float32, .bfloat16, .bfloat16, True, 512
-        ](Index(128, 128))
+        ]((128, 128))
         test_epilogue_fn[.bfloat16, .float32, 256, 512, bf16_config](ctx, 130)
         test_compute_fn[.bfloat16, .float32, 256, 512, bf16_config](ctx, 130)
 
@@ -159,7 +159,7 @@ def main() raises:
         )
         comptime fp8_config = _amdgpu_matmul_config_from_block_shape[
             .bfloat16, fp8_type, fp8_type, True, 512
-        ](Index(128, 128))
+        ]((128, 128))
         # Standard, skinny, and ping-pong branches of the FP8 dispatch.
         for m in [64, 300, 640]:
             test_epilogue_fn[fp8_type, .bfloat16, 4096, 512, fp8_config](ctx, m)

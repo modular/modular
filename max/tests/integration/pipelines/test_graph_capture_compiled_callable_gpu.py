@@ -28,7 +28,7 @@ from unittest.mock import MagicMock
 import numpy as np
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.nn.legacy.kv_cache import BatchCharacteristics, MHAAttnKey
+from max.nn.kv_cache import BatchCharacteristics, MHAAttnKey
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 from max.tensor import Tensor, compilation
 from max.tensor.sharding import TensorLayout

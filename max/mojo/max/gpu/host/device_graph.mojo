@@ -23,11 +23,11 @@ Creating a graph on any other device, such as an Apple GPU or a CPU, raises."""
 
 
 @__doc_inline
-from ._overlay import (
+from ._overlay import DeviceGraphInput
+from max._driver.max_license.device_context_dispatch.graph_names import (
     DeviceGraph,
     DeviceGraphBuilder,
     DeviceGraphCache,
-    DeviceGraphInput,
     DeviceGraphInputKind,
     DeviceGraphNode,
     StableAddr,

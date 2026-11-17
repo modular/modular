@@ -39,7 +39,7 @@ from mimo_dflash_v3_fixtures import (
     graph_name,
 )
 
-FUSED_QKV = "mo.chunked_qkv_rope_store.ragged.paged"
+FUSED_QKV = "kv_cache.chunked_qkv_rope_store.ragged.paged"
 SLIDING_LAYERS = sum(_FakeAttrConfig.hybrid_layer_pattern)
 FULL_LAYERS = _FakeAttrConfig.num_hidden_layers - SLIDING_LAYERS
 

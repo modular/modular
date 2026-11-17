@@ -19,15 +19,13 @@ import extensibility
 from max.gpu.host import DeviceContext
 from extensibility import (
     ElementwiseBinaryOp,
-    InputTensor,
+    Fused,
+    Input,
+    LoadAccess,
+    Output,
+    StoreAccess,
+    Tensor,
 )
-from extensibility import (
-    _FusedInputTensor as FusedInputTensor,
-)
-from extensibility import (
-    _FusedOutputTensor as FusedOutputTensor,
-)
-from std.utils.index import IndexList
 
 
 # Built-in `mo.add` returns `lhs + rhs`.  This override returns
@@ -48,16 +46,12 @@ struct AddOverride(ElementwiseBinaryOp):
 @extensibility.register("mo.reduce.layer_norm")
 struct LayerNormOverride:
     @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-    ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
-        beta: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
+    def execute(
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
+        beta: Some[Input & Tensor],
+        epsilon: Float32,
         ctx: DeviceContext,
     ) raises:
         raise Error("LAYER_NORM_OVERRIDE_FIRED")

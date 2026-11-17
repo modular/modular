@@ -14,16 +14,15 @@ the `CompilationTarget` the type is parameterized on, resolved right where it's
 used:
 
 ```mojo
-struct DeviceContextBase[target: CompilationTarget = default_accelerator()]:
-    comptime _target_value = Self.target._mlir_value
-    comptime _HALHooks = HAL_PLUGINS.for_target[Self._target_value].HookFor[
-        Self.target
-    ]
+struct DeviceContext[target: CompilationTarget = default_accelerator()]:
+    comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
 ```
 
-Don't add a module-level `comptime` to do this for you (eg, a
-`_HALHooksFor[target]` helper). It hides which target a lookup is keyed on, and
-reads like a global even when it isn't one.
+`MaxPluginForTarget` (`max/_plugin`) is the one place the selection rule lives,
+and its `HalHooks` member holds the HAL half of a plugin. Always pass it the
+type's own target. Don't add a helper that supplies the
+target for you (eg, one keyed on `default_accelerator()`). It hides which
+target a lookup is keyed on, and reads like a global even when it isn't one.
 
 Code without a target parameter of its own gets one from the context it's
 handed. `DeviceFunction`'s launch path is generic over a

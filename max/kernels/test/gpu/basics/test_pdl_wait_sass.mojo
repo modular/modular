@@ -181,7 +181,7 @@ def _sass(ptx: String) raises -> String:
             "nvPTXCompiler failed (",
             status,
             "): ",
-            StringSlice(unsafe_from_utf8=Span(log)[:size]),
+            StringSpan(unsafe_from_utf8=Span(log)[:size]),
         )
     _ = lib.call["nvPTXCompilerGetCompiledProgramSize", Int32](
         handle, Pointer(to=size)
@@ -245,14 +245,14 @@ def _kernels(sass: String) -> List[Kernel]:
 
 
 def _reaches_acqbulk(kernel: Kernel, label: String) -> Bool:
-    var start = kernel.labels.get(label)
-    if not start:
-        return False
-    for i in range(start.value(), len(kernel.ops)):
-        if kernel.ops[i] == "ACQBULK":
-            return True
-        if kernel.ops[i].startswith("RET") or kernel.ops[i].startswith("EXIT"):
-            return False
+    if case .Some(start) = kernel.labels.get(label):
+        for i in range(start, len(kernel.ops)):
+            if kernel.ops[i] == "ACQBULK":
+                return True
+            if kernel.ops[i].startswith("RET") or kernel.ops[i].startswith(
+                "EXIT"
+            ):
+                return False
     return False
 
 
@@ -290,10 +290,9 @@ def gate(ptx: String) raises -> String:
     """Returns the one kernel with a wait in `ptx`'s `check` result."""
     var results = List[String]()
     for kernel in _kernels(_sass(ptx)):
-        var result = check(kernel)
-        if result:
-            print(kernel.name, ":", result.value() or "ok")
-            results.append(result.value())
+        if case .Some(result) = check(kernel):
+            print(kernel.name, ":", result or "ok")
+            results.append(result)
     assert_equal(len(results), 1, "expected one kernel with a wait")
     return results[0]
 

@@ -172,11 +172,13 @@ TEST_F(MemoryManagerVMMTest, PendingFreeCancelledWhenFreeListDestroyed) {
 
   {
     // Deferral is on, so freeing through this child parks a record.
-    MemoryManagerFreeList child(ctx.getPointer(), *cache, cache->freeList(),
-                                /*disableFlush=*/false, /*label=*/"cancel");
-    ASSIGN_NO_ERR(void *, ptr, child.allocate(256 * kMiB, mode));
+    std::unique_ptr<MemoryManagerFreeList> child =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                /*label=*/"cancel");
+    ASSIGN_NO_ERR(void *, ptr, child->allocate(256 * kMiB, mode));
     EXPECT_NE(ptr, nullptr);
-    EXPECT_NO_ERR(child.free(ptr));
+    EXPECT_NO_ERR(child->free(ptr));
     // `child` is destroyed here with its record still queued.
   }
 
@@ -205,9 +207,11 @@ TEST_F(MemoryManagerVMMTest, NoDeferredFreeRecordedDuringGraphCapture) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
   {
-    MemoryManagerFreeList child(ctx.getPointer(), *cache, cache->freeList(),
-                                /*disableFlush=*/false, /*label=*/"capture");
-    ASSIGN_NO_ERR(void *, ptr, child.allocate(256 * kMiB, mode));
+    std::unique_ptr<MemoryManagerFreeList> child =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                /*label=*/"capture");
+    ASSIGN_NO_ERR(void *, ptr, child->allocate(256 * kMiB, mode));
     EXPECT_NE(ptr, nullptr);
 
     // Capture on the context's own stream, which is what isGraphCapturing()
@@ -215,15 +219,70 @@ TEST_F(MemoryManagerVMMTest, NoDeferredFreeRecordedDuringGraphCapture) {
     ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
     EXPECT_NO_ERR(stream->beginCapture());
     ASSERT_TRUE(ctx->isGraphCapturing());
-    EXPECT_NO_ERR(child.free(ptr));
+    EXPECT_NO_ERR(child->free(ptr));
     ErrorOr<DeviceGraphRef> graph = stream->endCapture();
     EXPECT_FALSE(graph.isError()) << graph.getError();
 
     // With a record, the drain would migrate the block to the parent and leave
     // this freelist empty.
     EXPECT_NO_ERR(cache->drainCompletedFrees());
-    EXPECT_FALSE(child.empty());
+    EXPECT_FALSE(child->empty());
   }
+  cache->clear();
+}
+
+// A `disableFlush` free list -- how the graph-capture pools are built -- never
+// migrates its frees to its parent, so nothing it holds comes back while the
+// list lives. The snapshot must attribute those bytes to it and keep them out
+// of `recoverable_by_sync`: counting them there made DRIV-690 read as
+// `avoidable` and offer a synchronize against ~50 GB no wait could free.
+TEST_F(MemoryManagerVMMTest, GraphPoolFreesAreRetainedNotSyncRecoverable) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const size_t kBudget = 4 * kGiB;
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, kBudget);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+
+  {
+    std::unique_ptr<MemoryManagerFreeList> pool =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/true,
+                                                /*label=*/"graphPool");
+    std::vector<void *> bufs;
+    for (int i = 0; i < 3; ++i) {
+      ASSIGN_NO_ERR(void *, p, pool->allocate(1 * kGiB, mode));
+      bufs.push_back(p);
+    }
+    for (void *p : bufs)
+      EXPECT_NO_ERR(pool->free(p));
+    // Everything a wait could do has been done, so what remains held is held
+    // for good.
+    EXPECT_NO_ERR(ctx->synchronize());
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+
+    const VmmOomSnapshot held = cache->oomSnapshotForTesting(0);
+    EXPECT_EQ(held.retainedBytes, 3 * kGiB);
+    EXPECT_EQ(held.retained(), 3 * kGiB);
+    EXPECT_EQ(held.recoverableBySync(), 0u)
+        << "a synchronize returns nothing a disableFlush list holds";
+    ASSERT_EQ(held.pendingOwners.size(), 1u);
+    EXPECT_EQ(held.pendingOwners.front().label, "graphPool");
+    EXPECT_TRUE(held.pendingOwners.front().neverFlushes);
+
+    // A request the remaining budget cannot serve: the verdict names the pool
+    // rather than offering a wait.
+    const VmmOomSnapshot miss = cache->oomSnapshotForTesting(2 * kGiB);
+    ASSERT_LT(miss.available(), miss.neededPhysicalBytes());
+    EXPECT_EQ(classifyVmmOom(miss, VmmBackingFailure::None),
+              VmmOomCategory::Retained);
+    EXPECT_NE(describeVmmOom(miss, VmmOomCategory::Retained).find("graphPool"),
+              std::string::npos);
+    // Nothing is queued, so a drain-and-retry stall would buy nothing.
+    EXPECT_FALSE(pendingRetryWorthwhile(miss));
+  }
+  // The destructor's flush is the only thing that returns a retained block.
+  EXPECT_EQ(cache->oomSnapshotForTesting(0).retainedBytes, 0u);
   cache->clear();
 }
 
@@ -264,15 +323,18 @@ TEST_F(MemoryManagerVMMTest, ViewFreeStaysUnreclaimableWhileBaseReadQueued) {
   ASSIGN_NO_ERR(DeviceBufferRef, readback, base->createHostBuffer(64));
 
   {
-    MemoryManagerFreeList sideList(side.getPointer(), *cache, cache->freeList(),
-                                   /*disableFlush=*/false, /*label=*/"side");
-    ASSIGN_NO_ERR(void *, result, sideList.allocate(1 * kGiB, mode));
+    std::unique_ptr<MemoryManagerFreeList> sideList =
+        MemoryManagerFreeList::createForContext(*side, *cache,
+                                                cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                /*label=*/"side");
+    ASSIGN_NO_ERR(void *, result, sideList->allocate(1 * kGiB, mode));
 
     flag->reset();
-    EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+    EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
     EXPECT_NO_ERR(base->enqueueCopyFromDevice(readback->ptr(), result, 64));
 
-    EXPECT_NO_ERR(sideList.free(result));
+    EXPECT_NO_ERR(sideList->free(result));
     EXPECT_NO_ERR(side->synchronize());
     EXPECT_NO_ERR(cache->drainCompletedFrees());
     EXPECT_EQ(cache->oomSnapshotForTesting(0).reclaimableGranules, 0u)
@@ -299,17 +361,156 @@ TEST_F(MemoryManagerVMMTest, NoDeferredViewFreeWhileBaseCaptures) {
   ASSIGN_NO_ERR(DeviceStreamRef, stream, base->stream());
 
   {
-    MemoryManagerFreeList sideList(side.getPointer(), *cache, cache->freeList(),
-                                   /*disableFlush=*/false, /*label=*/"side");
-    ASSIGN_NO_ERR(void *, ptr, sideList.allocate(256 * kMiB, mode));
+    std::unique_ptr<MemoryManagerFreeList> sideList =
+        MemoryManagerFreeList::createForContext(*side, *cache,
+                                                cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                /*label=*/"side");
+    ASSIGN_NO_ERR(void *, ptr, sideList->allocate(256 * kMiB, mode));
     EXPECT_NO_ERR(stream->beginCapture());
-    EXPECT_NO_ERR(sideList.free(ptr));
+    EXPECT_NO_ERR(sideList->free(ptr));
     ErrorOr<DeviceGraphRef> graph = stream->endCapture();
     EXPECT_FALSE(graph.isError()) << graph.getError();
 
     EXPECT_NO_ERR(side->synchronize());
     EXPECT_NO_ERR(cache->drainCompletedFrees());
-    EXPECT_FALSE(sideList.empty());
+    EXPECT_FALSE(sideList->empty());
+  }
+  cache->clear();
+}
+
+// Stream-ordered reuse (MAX-1123). A stream frees a block it cannot reuse for a
+// larger request, and the root cannot cover that request alone. The miss
+// remaps the freed block's pages into a fresh range together with only the
+// pages the root has to add, without a host synchronize: the free is gated
+// behind a host flag the test holds shut, so a synchronize on the stream (or
+// a host wait for the free's event) would never return, and the allocation
+// returning while the flag is still shut is the proof. The old range retires
+// on the regular drain once the stream has run past it.
+TEST_F(MemoryManagerVMMTest, LargerRequestRemapsTheStreamsOwnFreePages) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const size_t kPage = 256 * kMiB; // the target's VMM page
+  const size_t kSmall = 2 * kPage; // A
+  const size_t kLarge = 3 * kPage; // B > A; A + the budget's rest covers it
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kPage);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(CompletionFlagRef, gate, ctx->allocateCompletionFlag());
+  gate->reset();
+
+  {
+    std::unique_ptr<MemoryManagerFreeList> child =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                /*label=*/"remap");
+    ASSIGN_NO_ERR(void *, small, child->allocate(kSmall, mode));
+    EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kSmall);
+    EXPECT_EQ(cache->getAllocationStats().liveBytes, kSmall);
+
+    // Shut the gate, then free: the free's event is ordered behind the gate,
+    // so A stays on this stream's free list and never reaches the root.
+    EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*gate, 1));
+    EXPECT_NO_ERR(child->free(small));
+    EXPECT_EQ(cache->getAllocationStats().liveBytes, 0u);
+
+    // Only 2 pages are left to create, so B needs A's 2 pages. It must come
+    // back with the gate still shut.
+    ASSIGN_NO_ERR(void *, large, child->allocate(kLarge, mode));
+    EXPECT_NE(large, nullptr);
+    EXPECT_EQ(cache->streamRemaps(), 1u);
+    EXPECT_EQ(cache->streamRemapReusedBytes(), kSmall);
+    // A's pages were reused: B added exactly B - A of new physical.
+    EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kLarge);
+    EXPECT_EQ(cache->retiringRangesForTesting(), 1u);
+    // The remap counts B as live like any other allocation.
+    EXPECT_EQ(cache->getAllocationStats().liveBytes, kLarge);
+
+    // The old range waits for the stream, which is still behind the gate.
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+    EXPECT_EQ(cache->retiringRangesForTesting(), 1u);
+
+    gate->signal(1);
+    EXPECT_NO_ERR(writeAndVerify(*ctx, large, kLarge, kPage));
+    // The stream ran past the gate: the drain retires the old range, and the
+    // pages stay mapped under B, so nothing is created or lost.
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+    EXPECT_EQ(cache->retiringRangesForTesting(), 0u);
+    EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kLarge);
+    EXPECT_NO_ERR(writeAndVerify(*ctx, large, kLarge, kPage));
+
+    EXPECT_NO_ERR(child->free(large));
+    const MemoryManager::AllocationStats stats = cache->getAllocationStats();
+    EXPECT_EQ(stats.liveBytes, 0u);
+    EXPECT_EQ(stats.peakLiveBytes, kLarge);
+    EXPECT_NO_ERR(ctx->synchronize());
+  }
+  cache->clear();
+}
+
+// Steady state does not remap: a request that fits a block the stream freed
+// reuses it in place.
+TEST_F(MemoryManagerVMMTest, RequestThatFitsTheStreamsFreeBlockDoesNotRemap) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const size_t kPage = 256 * kMiB;
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kPage);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  {
+    std::unique_ptr<MemoryManagerFreeList> child =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                /*label=*/"steady");
+    for (int i = 0; i < 4; ++i) {
+      ASSIGN_NO_ERR(void *, big, child->allocate(3 * kPage, mode));
+      EXPECT_NO_ERR(child->free(big));
+      ASSIGN_NO_ERR(void *, smaller, child->allocate(2 * kPage, mode));
+      EXPECT_NO_ERR(child->free(smaller));
+    }
+    EXPECT_EQ(cache->streamRemaps(), 0u);
+    EXPECT_NO_ERR(ctx->synchronize());
+  }
+  cache->clear();
+}
+
+// The allocation statistics a sizing decision reads (the memory ledgers):
+// live and peak bytes, the largest request and the distinct large request
+// sizes, all restartable.
+TEST_F(MemoryManagerVMMTest, AllocationStatsTrackPeaksAndLargeRequests) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const size_t kPage = 256 * kMiB;
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  {
+    std::unique_ptr<MemoryManagerFreeList> child =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                /*label=*/"stats");
+    ASSIGN_NO_ERR(void *, small, child->allocate(kPage, mode));
+    ASSIGN_NO_ERR(void *, large, child->allocate(kGiB + kPage, mode));
+    MemoryManager::AllocationStats s = cache->getAllocationStats();
+    EXPECT_EQ(s.liveBytes, kGiB + 2 * kPage);
+    EXPECT_EQ(s.peakLiveBytes, kGiB + 2 * kPage);
+    EXPECT_EQ(s.maxRequestBytes, kGiB + kPage);
+    EXPECT_EQ(s.requestSizes, (std::vector<uint64_t>{kPage, kGiB + kPage}));
+
+    EXPECT_NO_ERR(child->free(large));
+    s = cache->getAllocationStats();
+    EXPECT_EQ(s.liveBytes, kPage);
+    EXPECT_EQ(s.peakLiveBytes, kGiB + 2 * kPage) << "a free keeps the peak";
+
+    cache->resetAllocationPeaks();
+    s = cache->getAllocationStats();
+    EXPECT_EQ(s.peakLiveBytes, kPage);
+    EXPECT_EQ(s.maxRequestBytes, 0u);
+    EXPECT_TRUE(s.requestSizes.empty());
+
+    EXPECT_NO_ERR(child->free(small));
+    EXPECT_NO_ERR(ctx->synchronize());
   }
   cache->clear();
 }

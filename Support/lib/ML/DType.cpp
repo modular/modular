@@ -204,33 +204,6 @@ std::string DType::getAsString() const {
 void DType::print(raw_ostream &os) const { os << getAsString(); }
 void DType::dump() const { print(llvm::errs()); }
 
-ErrorOr<std::pair<int32_t, int32_t>> DType::getMaxAndMinValue() const {
-  return dispatch<ErrorOr<std::pair<int32_t, int32_t>>>()
-      .when<DType::si32>([&]() {
-        return std::pair(std::numeric_limits<int32_t>::max(),
-                         std::numeric_limits<int32_t>::min());
-      })
-      .when<DType::si16>([&]() {
-        return std::pair(std::numeric_limits<int16_t>::max(),
-                         std::numeric_limits<int16_t>::min());
-      })
-      .when<DType::ui16>([&]() {
-        return std::pair(std::numeric_limits<uint16_t>::max(),
-                         std::numeric_limits<uint16_t>::min());
-      })
-      .when<DType::si8>([&]() {
-        return std::pair(std::numeric_limits<int8_t>::max(),
-                         std::numeric_limits<int8_t>::min());
-      })
-      .when<DType::ui8>([&]() {
-        return std::pair(std::numeric_limits<uint8_t>::max(),
-                         std::numeric_limits<uint8_t>::min());
-      })
-      .otherwise([&]() {
-        return Error("Unsupported quantization dtype " + getAsString());
-      });
-}
-
 /// This method returns the LLVM floating point semantics for the given DType,
 /// or nullptr if the DType is not a floating point type LLVM knows about
 /// (e.g. TF32).

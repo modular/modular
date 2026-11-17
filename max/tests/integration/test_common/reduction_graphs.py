@@ -104,7 +104,7 @@ def build_reduction(
         )[0].tensor
     if op == "row_mean_of_squares":
         return ops.custom(
-            "mo.reduce.row_mean_of_squares",
+            "reduction.row_mean_of_squares",
             device=x.device,
             values=[x],
             out_types=[

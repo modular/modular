@@ -63,13 +63,18 @@ from . import (
     random,
     reducescatter,
 )
+from .all_to_all import all_to_all
 from .allgather import allgather, allgather_rows_slice
 from .allgather_rms_norm import (
+    allgather_gated_residual_rms_norm,
     allgather_rms_norm,
     allgather_rms_norm_quant_mxfp6,
     allgather_rms_norm_quant_mxfp8,
 )
-from .allreduce_rms_norm import allreduce_rms_norm
+from .allreduce_rms_norm import (
+    allreduce_post_norm_residual_rms_norm,
+    allreduce_rms_norm,
+)
 from .argsort import argsort
 from .band_part import band_part
 from .bottom_k import bottom_k
@@ -115,7 +120,7 @@ from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
 from .reduce_scatter_rms_norm import reduce_scatter_rms_norm
-from .reduction import argmax, argmin, mean, prod, sum
+from .reduction import argmax, argmin, logsoftmax, mean, prod, sum
 from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave

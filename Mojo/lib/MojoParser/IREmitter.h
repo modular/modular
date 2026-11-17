@@ -40,6 +40,97 @@ class IREmitter;
 class CallOperands;
 class TraitType;
 
+/// Tracks error storage and propagation behavior while emitting a raising
+/// function, source-level try body, or loop iterator call. The opForRaise is a
+/// FnOp for a throwing function and a TryOp for a try body.
+struct RaiseContext {
+  explicit RaiseContext(FnOp fn);
+
+  // Create a RaiseContext for a try block.  If errorDecl is specified, then
+  // this uses the specified error decl for all raises and raises within its
+  // body will be eagerly resolved instead of collected lazily.  The benefit of
+  // this is that contextual member resolution will see the concrete type of the
+  // VarDecl, allowing "raise .enumElt" to work in with blocks that require a
+  // specific error type.
+  //
+  // If null, the errors are processed lazily when the except block is seen.
+  explicit RaiseContext(TryOp tryOp, VarDeclOp errorDecl = {});
+
+  /// Creates a context for a throwing `__next__()` call in a for loop.
+  static RaiseContext getForLoopIteratorContext();
+
+  /// Returns the primary error slot, or null when none has been needed.
+  MLValue getErrorSlot() const;
+
+  /// Returns storage for `errorType`, creating it before a try when needed.
+  MLValue getOrCreateErrorSlot(IREmitter &emitter, ASTType errorType,
+                               Location loc);
+
+  /// Reuses an earlier slot if an inferred slot resolved to the same type.
+  MLValue coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
+                            const ExprNode *sourceExpr);
+
+  /// Records an error propagation terminator for deferred try type unification.
+  void recordRaiseSite(MLValue errorSlot, Operation *terminator,
+                       Operation *sourceOperation, SMLoc sourceLoc);
+
+  /// Converts deferred errors to a common slot, optionally constrained to
+  /// `requiredErrorType`. When `isSlotRequired`, creates an `Error` slot if
+  /// no error was raised and no type was specified.
+  MLValue finalizeErrorSlots(IREmitter &emitter, ASTType requiredErrorType = {},
+                             bool isSlotRequired = false);
+
+  /// Returns whether this context writes directly to a fixed error slot or
+  /// collects all the raised temporaries and processes them at finalization
+  /// time.
+  bool isEagerlyEmitted() const { return eagerlyEmitted; }
+  size_t getNumErrorSlots() const { return errorSlots.size(); }
+  bool isInvalid() const {
+    return opForRaise == nullptr && !breakLoopElseOnRaise;
+  }
+
+  // When emitting for-each loops, the `__next__()` function will throw on loop
+  // termination.  This flag indicates whether we are in a context like this, it
+  // changes generation on the error path to exit the loop instead of raising.
+  bool shouldBreakLoopElseOnRaise() const { return breakLoopElseOnRaise; }
+
+private:
+  void verifyExceptTypeLifetimeValidity(IREmitter &emitter,
+                                        MLValue exceptErrorSlot) const;
+
+  struct RaiseSite {
+    MLValue errorSlot;
+    Operation *terminator;
+    Operation *sourceOperation;
+    SMLoc sourceLoc;
+  };
+
+  Operation *opForRaise;
+  SmallVector<MLValue, 2> errorSlots;
+  SmallVector<RaiseSite, 4> raiseSites;
+  bool breakLoopElseOnRaise = false;
+  bool eagerlyEmitted = false;
+};
+
+//===--------------------------------------------------------------------===//
+// TypeStrictness
+//===--------------------------------------------------------------------===//
+
+/// The restriction on a type emitted by IREmitter, ordered from least
+/// restrictive to most restrictive.
+enum class TypeStrictness {
+  /// The result is not necessarily a type (It may have holes from parameters
+  /// left unbound, e.g. `List[_]`).
+  /// TODO(MOCO-3542): The long term plan is to remove this option, and instead
+  /// have callers install a DeferredTypingContext to ensure every implicit
+  /// parameter is explicitly created at the callsite.
+  kIncomplete,
+  /// The result is any type (may be parametric, e.g. a generator type).
+  kParametric,
+  /// The result is any type that is not parametric (can be used at runtime).
+  kConcrete,
+};
+
 //===----------------------------------------------------------------------===//
 // ConversionFailure
 //===----------------------------------------------------------------------===//
@@ -102,15 +193,18 @@ private:
 class IREmitter : public SharedStateUser {
 public:
   /// Create an IREmitter for a dynamic context with a builder.
-  IREmitter(ASTDecl &declScope, OpBuilder builder);
+  IREmitter(ASTDecl &declScope, OpBuilder builder,
+            RaiseContext *raiseContext = nullptr);
   /// Create an IREmitter for a parameter context.
   IREmitter(ASTDecl &declScope, ExprContext paramContext,
-            DeferredTypingContext *deferredTypingContext = nullptr);
+            DeferredTypingContext *deferredTypingContext = nullptr,
+            RaiseContext *raiseContext = nullptr);
 
   /// Get an emitter set up for parameter expressions only with the specified
   /// context.
   IREmitter getParamEmitter(ExprContext context) {
-    return IREmitter(declScope, context, deferredTypingContext);
+    return IREmitter(declScope, context, deferredTypingContext,
+                     getRaiseContext());
   }
 
   //===--------------------------------------------------------------------===//
@@ -135,6 +229,12 @@ public:
   /// discharge later. Per-parameter-constraint inconclusiveness is *not*
   /// affected by this context: those remain hard errors.
   DeferredTypingContext *deferredTypingContext = nullptr;
+
+  /// The parser-owned context accepting errors from the expression currently
+  /// being emitted. Null when the surrounding scope cannot raise.
+  RaiseContext *raiseContext = nullptr;
+
+  RaiseContext *getRaiseContext() { return raiseContext; }
 
   /// Return information about the scope we're looking into.
   ASTDecl &getDeclScope() const { return declScope; }
@@ -246,6 +346,13 @@ public:
                          std::function<void(bool isLHS)> configEmitter,
                          ASTType contextualType = {});
 
+  /// Returns a common type for two values using their `__merge_with__`
+  /// functions and implicit conversions, without emitting those conversions.
+  /// Returns null when no common type exists or selecting it would require
+  /// emitting a `__merge_with__` call.
+  ASTType getCommonType(CValue lhs, CValue rhs, SMLoc loc = {},
+                        ASTType contextualType = {});
+
   /// If there is a common type shared between the two reference types, return
   /// it. Otherwise return null.
   static RefType getCommonRefType(RefType ref1, RefType ref2);
@@ -341,23 +448,6 @@ public:
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
   CValue emitIndirectCall(CValue callee, CallOperands &&operands);
-
-  /// Emit a call to `callee` in a try block, invoking a callback to generate
-  /// logic in the 'catch' block that is wrapped around the call. This ensures
-  /// that the ExprDest is updated and live after the try block, which only
-  /// works if the "catch" logic doesn't fall through.
-  ///
-  /// This emits an error and returns null on failure.
-  CValue
-  emitCallInTryBlock(CValue callee, CallOperands &&operands,
-                     function_ref<CValue(CallOperands &&)> emitCall,
-                     std::function<void(VarDeclOp errDecl)> emitCatchLogic);
-
-  /// Emit an indirect call to a resolved value in a try block. See
-  /// `emitCallInTryBlock`.
-  CValue emitIndirectCallInTryBlock(
-      CValue callee, CallOperands &&operands,
-      std::function<void(VarDeclOp errDecl)> emitCatchLogic);
 
   /// This helper emits a named method call with the provided `operands`,
   /// where the first positional operand is the receiver of the call. This emits
@@ -555,14 +645,14 @@ public:
   // Emission helpers for specific value types.
 
   /// This helper emits the specified expression tree as a type, e.g. turning
-  /// "Int" into the type for it.  This emits an error and returns null on
-  /// failure. If `allowUnbound` is set, then a type with no bound parameters is
-  /// allowed.
-  ASTType emitExprType(const ExprNode *expr, bool allowUnbound = false);
+  /// "Int" into the type for it. This emits an error and returns null on
+  /// failure. `strictness` is the restriction on the returned type, see
+  /// TypeStrictness.
+  ASTType emitExprType(const ExprNode *expr, TypeStrictness strictness);
 
   /// This emits the specified PValue as a type, binding defaulted parameters
-  /// etc if needed.
-  ASTType emitType(ASTExprAnd<PValue> value, bool allowUnbound = false);
+  /// etc if needed. `strictness` is as documented on emitExprType.
+  ASTType emitType(ASTExprAnd<PValue> value, TypeStrictness strictness);
 
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// scalar<bool> value that we can test directly.  This reports and error and
@@ -605,13 +695,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Statement emission helpers.
 
-  /// Find the nearest error slot to use if the emitter is currently within a
-  /// context that can raise. Otherwise, return null.
-  MLValue findNearestErrorSlot();
-
-  /// Verify inferred error types for escaping origins.
-  void checkInferredErrorType(ASTType rvalueType, SMLoc loc);
-
   /// Check that the declarations `origin` is rooted at outlive `block`,
   /// emitting an error at `expr` and returning failure when one does not.
   LogicalResult checkRootOriginsOutliveBlock(TypedAttr origin, Block &block,
@@ -629,17 +712,22 @@ public:
   void emitNormalReturn(Location loc, Value value = Value(),
                         bool emitEndFunc = true);
 
-  /// Helper to emit a VarDeclOp with a uniquely generated origin name.
+  /// Helper to emit a VarDeclOp with a uniquely generated origin name. A null
+  /// address space means the default one.
   VarDeclOp emitVarDecl(const Twine &name, Type type, Location loc,
-                        VarDeclKind kind);
+                        VarDeclKind kind, TypedAttr addressSpace = {});
   VarDeclOp emitVarDecl(StringAttr name, Type type, Location loc,
-                        VarDeclKind kind);
+                        VarDeclKind kind, TypedAttr addressSpace = {});
 
   /// Internal implementation of call emission, use emitCall/emitIndirectCall
   /// or higher level wrappers instead.
   /// In case customOpName is provided, emit a custom MLIR operation instead
   /// with the given name for the given custom op definition struct type.
   CValue emitCallUnchecked(RValue callee, CallOperands &&operands);
+
+  /// Emit the control flow following a call that throws or never returns.
+  void emitCallControlFlow(Operation &call, FuncType signature,
+                           const ExprNode *callExpr);
 };
 
 //===----------------------------------------------------------------------===//
@@ -649,6 +737,12 @@ public:
 /// Refine a parametric type based on where-clause constraints in the scope.
 /// Returns the refined type if refinement applies, otherwise the original type.
 Type maybeRefineTypeWithAssumptions(Type varType, ASTDecl &declScope);
+
+/// Select the arm of a conditional type (`A if c else B`) that `assumptions`
+/// decide. Returns the original type if it is not a conditional type or the
+/// assumptions do not decide its condition.
+Type maybeRefineCondTypeWithAssumptions(Type type,
+                                        ArrayRef<ConstraintAttr> assumptions);
 
 /// Refine a type-valued parameter expression based on where-clause constraints
 /// in the scope. Returns the refined type value if refinement applies,

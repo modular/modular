@@ -1,0 +1,11 @@
+--- a/settings/BUILD.bazel
++++ b/settings/BUILD.bazel
+@@ -17,7 +17,7 @@
+ # identify all of the exported symbols.
+ bool_setting(
+     name = "enable_no_private_namespace",
+-    build_setting_default = False,
++    build_setting_default = True,
+ )
+ 
+ config_setting(

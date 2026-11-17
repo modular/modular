@@ -38,7 +38,7 @@ def test_elementwise_print[
         print("print thousands of messages: m=", m, " n=", n, sep="")
 
     print("about to call elementwise, M=", M, "N=", N)
-    elementwise[simd_width, target="gpu"](binary, (M, N), ctx)
+    elementwise[simd_width](binary, (M, N), ctx)
     print("called elementwise")
     # Avoid exiting in the middle of the call to the kernel that is printing the test messages.
     ctx.synchronize()

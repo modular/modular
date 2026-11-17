@@ -109,13 +109,17 @@
 
 // `Loadable & TileTensorable` (shape fn `trait_shape_fn_loadable`) -- a fusion
 // access capability on a shape-fn arg.
-// CHECK-DAG: error: LoadAccess, Loadable, StoreAccess, Storable, _LegacyComputeOutput, and _LegacyComputable are fusion machinery
+// CHECK-DAG: error: LoadAccess, Loadable, StoreAccess, Storable, _LegacyComputeOutput, _LegacyComputable, and the legacy tile traits are fusion machinery
 
 module {}
 
 // === Stable storage marker ================================================ //
 
 // `Output & TileTensorable & Stable` (kernel `trait_stable_output`).
+// CHECK-DAG: error: Stable is not valid on an Output argument
+
+// `Output & Tensor & Stable` on `build_graph` (kernel
+// `trait_stable_output_on_build_graph`).
 // CHECK-DAG: error: Stable is not valid on an Output argument
 
 // `Input & Fused & Loadable & Stable` (kernel `trait_stable_fused`).
@@ -132,5 +136,3 @@ module {}
 // CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of 'VariadicTensors'
 // CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of '_FusedInputVariadicTensors'
 // CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of '_FusedOutputVariadicTensors'
-// CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of 'StableTensor'
-// CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of 'StableVariadicTensors'

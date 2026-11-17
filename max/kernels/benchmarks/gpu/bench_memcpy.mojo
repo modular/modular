@@ -103,15 +103,13 @@ def bench_memcpy(
     length_in_bytes: Int,
     *,
     config: Config,
-    context: DeviceContext,
+    context: DeviceContext[],
 ) raises:
     comptime dtype = DType.float32
     var length_in_elements = length_in_bytes // size_of[dtype]()
     var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length_in_elements
-    ) if config.pinned_memory else DeviceContext(
-        api="cpu"
-    ).enqueue_create_host_buffer[
+    ) if config.pinned_memory else DeviceContext.cpu().enqueue_create_host_buffer[
         dtype
     ](
         length_in_elements
@@ -130,7 +128,7 @@ def bench_memcpy(
     @inline(.always)
     def bench_func(mut b: Bencher) {imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             if config.direction == Config.DToH:
                 context.enqueue_copy(mem_host, mem_device)
             elif config.direction == Config.HToD:
@@ -171,8 +169,8 @@ def bench_p2p(
     mut b: Bench,
     length_in_bytes: Int,
     *,
-    ctx1: DeviceContext,
-    ctx2: DeviceContext,
+    ctx1: DeviceContext[],
+    ctx2: DeviceContext[],
 ) raises:
     comptime dtype = DType.float32
     var length_in_elements = length_in_bytes // size_of[dtype]()
@@ -194,7 +192,7 @@ def bench_p2p(
     @inline(.always)
     def bench_func(mut b: Bencher) {imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             ctx2.enqueue_copy(dst_buf, src_buf)
 
         bencher_iter_custom(b, kernel_launch, ctx1)

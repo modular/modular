@@ -16,7 +16,7 @@ from std.sys.info import simd_width_of
 from std.testing import assert_equal, assert_true
 
 from layout import Coord, TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from nn.normalization import apply_qk_rms_norm_cpu
 
 

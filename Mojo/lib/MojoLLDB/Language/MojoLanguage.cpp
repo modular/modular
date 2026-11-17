@@ -250,7 +250,8 @@ public:
 
   bool MightHaveChildren() override { return true; }
 
-  llvm::Expected<size_t> GetIndexOfChildWithName(ConstString name) override {
+  llvm::Expected<size_t>
+  GetIndexOfChildWithName(llvm::StringRef name) override {
     if (m_inner)
       return m_inner->GetIndexOfChildWithName(name);
     return m_backend.GetIndexOfChildWithName(name);
@@ -337,7 +338,7 @@ stringSliceSummaryProvider(ValueObject &valobj, Stream &stream,
   }
 
   // Get the length from _len (an Int) and data pointer from _data
-  // (UnsafePointer[Byte]). Both may be wrapped in Mojo value-type layers
+  // (Pointer[Byte]). Both may be wrapped in Mojo value-type layers
   // (_mlir_value, value, address, etc.) — unwrap to reach the scalar/pointer.
   ValueObjectSP lenField =
       unwrapToScalarOrPointer(span->GetChildMemberWithName("_len"));
@@ -384,7 +385,7 @@ stringSliceSummaryProvider(ValueObject &valobj, Stream &stream,
       StringPrinter::StringElementType::ASCII>(options);
 }
 
-// Summary provider for Mojo UnsafePointer[T] variables (!kgen.pointer<T>).
+// Summary provider for Mojo Pointer[T] variables (!kgen.pointer<T>).
 // Dereferences the pointer and shows the pointee's own summary (or raw value).
 // The unanchored regex `pointer<.*>` is a substring match that catches
 // `!kgen.pointer<T>` type spellings.
@@ -440,7 +441,7 @@ mojoPointerSummaryProvider(ValueObject &valobj, Stream &stream,
   return false;
 }
 
-// Summary provider for pointer<String> types (including UnsafePointer[String])
+// Summary provider for pointer<String> types (including Pointer[String])
 static bool
 pointerToStringSummaryProvider(ValueObject &valobj, Stream &stream,
                                const TypeSummaryOptions &summaryOptions) {
@@ -536,8 +537,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                 kLLDBFormatterWrappingTypeRegex, summaryFlags, /*regex=*/true);
 
   AddCXXSummary(mojoCategorySP, mojoPointerSummaryProvider,
-                "Mojo UnsafePointer summary provider", R"(pointer<.*>)",
-                summaryFlags, /*regex=*/true);
+                "Mojo Pointer summary provider", R"(pointer<.*>)", summaryFlags,
+                /*regex=*/true);
 
   // Add summary provider for pointer<String> types - MUST be AFTER generic
   // pointer handler because summary providers are matched in reverse order

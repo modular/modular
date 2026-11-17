@@ -18,6 +18,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/Support/SMLoc.h"
 #include <optional>
@@ -27,14 +28,15 @@ namespace M {
 /// Parses a region, using argumentInfo as the block arguments. If
 /// isIsolatedFromAbove is true then it is legal for argumentInfo SSA values
 /// to shadow those already bound in an outer scope.
-ParseResult parseRegion(OpAsmParser &parser,
-                        const SmallVector<OpAsmParser::Argument> &argumentInfo,
-                        Region &region, bool isIsolatedFromAbove);
+MODULAR_CXX_EXPORT ParseResult parseRegion(
+    OpAsmParser &parser, const SmallVector<OpAsmParser::Argument> &argumentInfo,
+    Region &region, bool isIsolatedFromAbove);
 
 /// Prints a region. If isIsolatedFromAbove is true then it is legal for the
 /// region's argument to shadow the given operands.
-void printRegion(OpAsmPrinter &printer, const OperandRange &operands,
-                 Region &region, bool isIsolatedFromAbove);
+MODULAR_CXX_EXPORT void printRegion(OpAsmPrinter &printer,
+                                    const OperandRange &operands,
+                                    Region &region, bool isIsolatedFromAbove);
 
 /// Parses a parenthesized operand list with optional or required 'as' clauses.
 /// Each operand contributes both to the operation state's operand list and to
@@ -48,7 +50,7 @@ void printRegion(OpAsmPrinter &printer, const OperandRange &operands,
 ///   (%a: i32, %b: f32)
 /// Eg: With corresponding block argument name distinct from the operand name
 ///   (%a: i32, %a as %b: f32)
-ParseResult parseParenOperandListWithShadowing(
+MODULAR_CXX_EXPORT ParseResult parseParenOperandListWithShadowing(
     OpAsmParser &parser, OperationState &state,
     SmallVectorImpl<OpAsmParser::Argument> &argumentInfo,
     bool isIsolatedFromAbove);
@@ -57,7 +59,7 @@ ParseResult parseParenOperandListWithShadowing(
 /// parseParenOperandListWithShadowing.
 ///
 /// Intended to pair with printRegionWithShadowing for nested regions.
-void printParenOperandListWithShadowing(
+MODULAR_CXX_EXPORT void printParenOperandListWithShadowing(
     OpAsmPrinter &printer, const OperandRange &operands,
     const Block::BlockArgListType &arguments, bool isIsolatedFromAbove);
 
@@ -66,7 +68,7 @@ void printParenOperandListWithShadowing(
 ///
 /// Basic form is (%a, %b: f32). %a will be assigned the default type, and %b
 /// will have type f32.
-ParseResult parseParenOperandListWithDefaultType(
+MODULAR_CXX_EXPORT ParseResult parseParenOperandListWithDefaultType(
     OpAsmParser &parser,
     SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
     SmallVectorImpl<Type> &operandTypes, Type defaultType);
@@ -79,7 +81,7 @@ ParseResult parseParenOperandListWithDefaultType(
 ///   (%a: i32, %b: f32)
 /// Eg: With default type taken from defaultType:
 ///   (%a, %b: f32)
-ParseResult parseParenOperandListWithDefaultType(
+MODULAR_CXX_EXPORT ParseResult parseParenOperandListWithDefaultType(
     OpAsmParser &parser, SmallVectorImpl<Value> &operands,
     SmallVectorImpl<Type> &operandTypes, Type defaultType);
 
@@ -91,15 +93,13 @@ ParseResult parseParenOperandListWithDefaultType(
 ///   (%a: i32, %b: f32)
 /// Eg: With default type taken from defaultType:
 ///   (%a, %b: f32)
-ParseResult parseParenOperandListWithDefaultType(OpAsmParser &parser,
-                                                 OperationState &state,
-                                                 Type defaultType);
+MODULAR_CXX_EXPORT ParseResult parseParenOperandListWithDefaultType(
+    OpAsmParser &parser, OperationState &state, Type defaultType);
 
 /// Prints a parenthesized operand list, matching the syntax parsed by
 /// parseParenOperandListWithDefaultType.
-void printParenOperandListWithDefaultType(OpAsmPrinter &printer,
-                                          const OperandRange &operands,
-                                          Type defaultType);
+MODULAR_CXX_EXPORT void printParenOperandListWithDefaultType(
+    OpAsmPrinter &printer, const OperandRange &operands, Type defaultType);
 
 /// Parses an 'in/out signature' of the form:
 ///    ( in|out|mut %x : type, ... )
@@ -122,7 +122,7 @@ void printInOutArgsSignature(OpAsmPrinter &printer, const Operation *opIgnored,
 
 /// This is an AsmPrinter implementation that just outputs to an external output
 /// stream.
-class StreamAsmPrinter : public AsmPrinter {
+class MODULAR_CXX_EXPORT StreamAsmPrinter : public AsmPrinter {
 public:
   explicit StreamAsmPrinter(raw_ostream &os) : os(os) {}
 

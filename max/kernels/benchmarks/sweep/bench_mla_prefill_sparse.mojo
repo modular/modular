@@ -82,7 +82,7 @@ struct Workspace(Movable):
     var sink: DeviceBuffer[DType.float32]
 
     def __init__(
-        out self, ctx: DeviceContext, footprint: Footprint, on_host: Bool
+        out self, ctx: DeviceContext[], footprint: Footprint, on_host: Bool
     ) raises:
         var tokens = footprint["tokens"]
         self.q = ctx.enqueue_create_buffer[fp8](tokens * NUM_HEADS * Q_DEPTH)
@@ -140,7 +140,7 @@ def _num_valid_pairs(batch_size: Int, seq_len: Int, cache_len: Int) -> Int:
 
 
 def run_config(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut h: SweepHarness,
     mut table: PageTable[PAGE_SIZE],
     mut latent: PagedBlocks[fp8],
@@ -204,7 +204,7 @@ def run_config(
     blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
 
     def cache_at(
-        launch_ctx: DeviceContext, copy: Int
+        launch_ctx: DeviceContext[], copy: Int
     ) raises {mut latent, imm} -> Collection.CacheType:
         var lut = table.copy_lut(launch_ctx, copy, batch_size, pages)
         var kv_collection = Collection(
@@ -259,7 +259,7 @@ def run_config(
 
     @inline(.always)
     def kernel_launch(
-        launch_ctx: DeviceContext, copy: Int
+        launch_ctx: DeviceContext[], copy: Int
     ) raises {mut out_tt, imm}:
         var indices_tt = TileTensor(
             indices_ptr.unsafe_offset(copy * slots), row_major(slots)

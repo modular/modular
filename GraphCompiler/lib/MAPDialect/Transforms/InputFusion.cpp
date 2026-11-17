@@ -74,17 +74,29 @@ bool isCheapToDuplicate(IterElementwiseOp op) {
   return true;
 }
 
-bool loadIndexCrossesReshape(LoadOp load) {
-  return dataflowGraphContains<WalkDirection::Producers>(
-      load.getIndex().getDefiningOp(),
-      [](Operation *o) { return isa<ReshapeIndexOp>(o); });
+static bool callsIndexReader(IterElementwiseOp op) {
+  return op.getBody()
+      .walk([](CallElementwiseOp call) {
+        return call.readsIndex() ? WalkResult::interrupt()
+                                 : WalkResult::advance();
+      })
+      .wasInterrupted();
 }
 
-bool anyLoadCrossesReshape(Value tensor) {
-  return llvm::any_of(tensor.getUsers(), [](Operation *user) {
+bool crossesFusionBarrier(IterElementwiseOp src, Value tensor) {
+  bool loadsThroughView = false;
+  for (Operation *user : tensor.getUsers()) {
     auto load = dyn_cast<LoadOp>(user);
-    return load && loadIndexCrossesReshape(load);
-  });
+    if (!load)
+      continue;
+    Operation *index = load.getIndex().getDefiningOp();
+    if (dataflowGraphContains<WalkDirection::Producers>(
+            index, [](Operation *o) { return isa<ReshapeIndexOp>(o); }))
+      return true;
+    loadsThroughView |= isa_and_present<IndexTransformOpInterface>(index);
+  }
+  // `callsIndexReader` looks up each callee, so it runs last.
+  return loadsThroughView && callsIndexReader(src);
 }
 
 namespace {
@@ -261,16 +273,21 @@ void spliceIntoClosure(IterOpaqueOp dst, IterElementwiseOp src,
   // consumer such as a transpose (GEX-2569) must not turn async.
 }
 
-// Whether `dstOp` has a site to read `src`'s result through AND `shouldFuse`
-// accepts it. Without the latter, duplication would clone `src` into some users
-// while another (e.g. an opaque, for the elementwise fuser) keeps it
-// materialized -- pure recomputation.
+// Whether `src` can fuse into `dstOp`. Both must be in one block, since fusion
+// never crosses a control-flow boundary. No fusion barrier may block a load of
+// `src`'s result, and `shouldFuse` must accept the load. `duplicationAllowed`
+// asks this of every user, so `src` is never cloned into some users while
+// another keeps it in memory.
 bool hasFusionSite(IterElementwiseOp src, Operation *dstOp,
                    const InputFusionConfig &config) {
   if (src->getBlock() != dstOp->getBlock())
     return false;
 
   if (auto dst = dyn_cast<IterElementwiseOp>(dstOp)) {
+    for (auto [input, arg] :
+         llvm::zip(dst.getInputs(), dst.getInputBlockArgs()))
+      if (input == src.getResult(0) && crossesFusionBarrier(src, arg))
+        return false;
     LoadOp load = firstConsumerLoad(dst, src);
     return load && config.shouldFuse(producerStoreOf(src), load);
   }
@@ -287,7 +304,7 @@ bool hasFusionSite(IterElementwiseOp src, Operation *dstOp,
       return false;
     BlockArgument capArg =
         capture.closure.getCaptureBlockArgs()[capture.captureIdx];
-    if (capArg.use_empty())
+    if (capArg.use_empty() || crossesFusionBarrier(src, capArg))
       return false;
     auto load = dyn_cast<LoadOp>(*capArg.getUsers().begin());
     if (!load || !config.shouldFuse(producerStoreOf(src), load))
@@ -315,7 +332,6 @@ bool duplicationAllowed(IterElementwiseOp src,
 IterElementwiseOp findEligibleProducer(Operation *dstOp,
                                        const InputFusionConfig &config) {
   if (auto dst = dyn_cast<IterElementwiseOp>(dstOp)) {
-    Block &body = dst.getBody().front();
     DenseSet<Operation *> tried;
     // Fusing a producer moves it when `dst` is its only reader and copies it
     // otherwise. Take the single-use ones first: once `d = tanh(r)` is in,
@@ -326,22 +342,12 @@ IterElementwiseOp findEligibleProducer(Operation *dstOp,
       auto src = input.getDefiningOp<IterElementwiseOp>();
       if (!src || src.getNumResults() != 1 || !tried.insert(src).second)
         continue;
-      // Fusion stays within a block: never across a control-flow boundary.
-      if (src->getBlock() != dstOp->getBlock())
-        continue;
       if (!sameDevice(src, dst) || !duplicationAllowed(src, config))
         continue;
       if (!checkMutableKernelFusible(src.getInputChain(), src.getOutputChain(),
                                      dst.getInputChain(), dst.getOutputChain()))
         continue;
-      // Reshape barrier: a view cannot fuse into a load already past a reshape.
-      if (llvm::any_of(llvm::enumerate(dst.getInputs()), [&](auto input) {
-            return input.value() == src.getResult(0) &&
-                   anyLoadCrossesReshape(body.getArgument(input.index()));
-          }))
-        continue;
-      LoadOp load = firstConsumerLoad(dst, src);
-      if (!load || !config.shouldFuse(producerStoreOf(src), load))
+      if (!hasFusionSite(src, dst, config))
         continue;
       if (src.getResult(0).hasOneUse())
         return src;
@@ -359,31 +365,8 @@ IterElementwiseOp findEligibleProducer(Operation *dstOp,
     auto src = input.getDefiningOp<IterElementwiseOp>();
     if (!src || src.getNumResults() != 1 || !tried.insert(src).second)
       continue;
-    if (src->getBlock() != dstOp->getBlock())
-      continue;
-    if (!sameDevice(src, dst) || !duplicationAllowed(src, config))
-      continue;
-    bool ok = true;
-    LoadOp firstLoad = nullptr;
-    for (auto [i, in] : llvm::enumerate(dst.getInputs())) {
-      if (in != src.getResult(0))
-        continue;
-      ClosureCapture capture = findExistingPrologueCapture(dst, i);
-      if (!capture.closure) {
-        ok = false;
-        break;
-      }
-      BlockArgument capArg =
-          capture.closure.getCaptureBlockArgs()[capture.captureIdx];
-      auto load = cast<LoadOp>(*capArg.getUsers().begin());
-      if (loadIndexCrossesReshape(load)) {
-        ok = false;
-        break;
-      }
-      if (!firstLoad)
-        firstLoad = load;
-    }
-    if (ok && firstLoad && config.shouldFuse(producerStoreOf(src), firstLoad))
+    if (sameDevice(src, dst) && duplicationAllowed(src, config) &&
+        hasFusionSite(src, dst, config))
       return src;
   }
   return nullptr;

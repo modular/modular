@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _moe_test_utils import assign_experts
 from max.driver import Accelerator
 from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
@@ -157,7 +158,7 @@ def _random_weights(seed: int) -> dict[str, np.ndarray]:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
+    "moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_matches_independent_reference() -> None:
     rng = np.random.default_rng(42)
@@ -196,11 +197,11 @@ def test_matches_independent_reference() -> None:
         layer.routed_expert_norm.weight = Tensor(
             weights["routed_expert_norm_weight"], dtype=DType.float32
         )
-        layer.experts_gate_up_proj = Tensor(
-            weights["experts_gate_up_proj"], dtype=DType.float32
-        )
-        layer.experts_down_proj = Tensor(
-            weights["experts_down_proj"], dtype=DType.float32
+        assign_experts(
+            layer,
+            weights["experts_gate_up_proj"],
+            weights["experts_down_proj"],
+            lambda a, device: Tensor(a, device=device),
         )
         layer.shared_experts.gate_up_proj.weight = Tensor(
             weights["shared_gate_up_weight"], dtype=DType.float32

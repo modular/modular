@@ -214,7 +214,6 @@ def test_skip_a2a[
         n_gpus_per_node,
         n_nodes,
         fused_shared_expert,
-        "gpu",
         skip_a2a=True,
         allreduce_world_size=N_DEVICES,
     ](
@@ -248,7 +247,6 @@ def test_skip_a2a[
         n_tokens,
         n_gpus_per_node,
         n_nodes,
-        "gpu",
         fused_shared_expert=fused_shared_expert,
         skip_a2a=True,
         allreduce_world_size=N_DEVICES,

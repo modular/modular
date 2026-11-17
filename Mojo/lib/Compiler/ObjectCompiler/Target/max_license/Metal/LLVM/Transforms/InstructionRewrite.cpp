@@ -53,7 +53,7 @@ namespace {
 struct AnnotatingBuilder
     : llvm::IRBuilder<llvm::TargetFolder, llvm::IRBuilderCallbackInserter> {
   AnnotatingBuilder(llvm::Function &func, llvm::InstructionWorklist &worklist)
-      : IRBuilder(func.getContext(), llvm::TargetFolder(func.getDataLayout()),
+      : IRBuilder(*func.getParent(), llvm::TargetFolder(func.getDataLayout()),
                   llvm::IRBuilderCallbackInserter(
                       [this, &worklist](llvm::Instruction *inst) {
                         worklist.add(inst);

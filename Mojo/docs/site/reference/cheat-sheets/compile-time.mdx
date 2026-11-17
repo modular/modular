@@ -203,8 +203,9 @@ comptime match (m, n): # pick a path by pattern
 ```
 
 The subject must be a parameter. A guard is proof for its case, so it
-satisfies a matching `where` on the call. An unmatched subject skips the
-match, so add `case _` when every path must return.
+satisfies a matching `where` on the call. A `comptime match` with literal
+cases needs a `case _` catch-all; use `case _: pass` when unmatched values
+should do nothing.
 
 </Panel>
 

@@ -53,7 +53,7 @@ from std.sys import align_of
 from std.memory import unsafe_stack_allocation
 
 from layout import Coord, TensorEngine, TileTensor, row_major
-from layout.tile_layout import TensorLayout
+from layout.layout import TensorLayout
 
 from linalg.arch.apple.mma import MmaOpApple
 

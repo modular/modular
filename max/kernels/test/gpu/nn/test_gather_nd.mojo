@@ -51,7 +51,7 @@ def execute_gather_nd_test[
     )
 
     # execute the kernel
-    gather_nd[batch_dims, target="gpu"](
+    gather_nd[batch_dims](
         data_tensor,
         indices_tensor,
         actual_output_tensor,

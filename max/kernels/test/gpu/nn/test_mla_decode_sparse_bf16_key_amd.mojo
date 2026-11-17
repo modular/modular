@@ -14,17 +14,14 @@
 """Keep the BF16 sparse MLA capture key aligned with the launched split grid."""
 
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceContext,
     DeviceGraph,
     DeviceGraphBuilder,
     default_accelerator,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    amd_mla_decode_dispatch_scalars,
     amd_sparse_mla_bf16_num_partitions,
-)
-from nn.attention.gpu.mla_decode_dispatch_scalars import (
-    mla_decode_dispatch_scalars,
 )
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS,
@@ -52,14 +49,12 @@ def _check_key(
     """Checks the capture key on a BF16 and an FP8 cache against the split
     each arm launches, pinned at MI355X's CU count so a change to either
     side shows up here rather than agreeing by construction."""
-    var sm_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = ctx.device().multiprocessor_count()
     comptime context_length = 80000
-    var _, _, bf16_key = mla_decode_dispatch_scalars(
+    var _, _, bf16_key = amd_mla_decode_dispatch_scalars(
         batch, context_length, q_len, heads, False, ctx, stride
     )
-    var _, _, fp8_key = mla_decode_dispatch_scalars(
+    var _, _, fp8_key = amd_mla_decode_dispatch_scalars(
         batch, context_length, q_len, heads, True, ctx, stride
     )
     var bf16_launch = amd_sparse_mla_bf16_num_partitions(
@@ -156,13 +151,13 @@ def main() raises:
             _check_key(ctx, 32, 128, 4, 1, 1)
             _check_key(ctx, 32, 257, 1, 1, 1)
             _check_key(ctx, 32, 257, 4, 1, 1)
-            _check_key(ctx, 16, 1, 1, 32, 64)
-            _check_key(ctx, 16, 1, 4, 32, 16)
-            _check_key(ctx, 16, 8, 1, 32, 32)
-            _check_key(ctx, 16, 8, 4, 16, 16)
-            _check_key(ctx, 16, 32, 1, 16, 8)
-            _check_key(ctx, 16, 32, 4, 4, 4)
-            _check_key(ctx, 16, 128, 1, 4, 2)
+            _check_key(ctx, 16, 1, 1, 17, 64)
+            _check_key(ctx, 16, 1, 4, 17, 16)
+            _check_key(ctx, 16, 8, 1, 17, 32)
+            _check_key(ctx, 16, 8, 4, 6, 16)
+            _check_key(ctx, 16, 32, 1, 6, 8)
+            _check_key(ctx, 16, 32, 4, 2, 4)
+            _check_key(ctx, 16, 128, 1, 2, 2)
             _check_key(ctx, 16, 128, 4, 1, 1)
             _check_key(ctx, 16, 257, 1, 1, 1)
             _check_key(ctx, 16, 257, 4, 1, 1)

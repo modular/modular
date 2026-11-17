@@ -52,19 +52,16 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn import Linear, Module
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-    store_k_cache_ragged,
-)
+from max.nn._graph_ops import fused_qk_ragged_rope as _fused_qk_ragged_rope
+from max.nn._graph_ops import store_v_cache_ragged as _store_v_cache_ragged
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import col_parallel, row_parallel
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import fused_qk_ragged_rope as _fused_qk_ragged_rope
-from max.nn.legacy.kernels import store_v_cache_ragged as _store_v_cache_ragged
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kernels import flash_attention_ragged, store_k_cache_ragged
+from max.nn.kv_cache import KVCacheParams
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
@@ -552,6 +549,17 @@ class MarkovHead(Module[..., Tensor]):
         return embedded @ w2.weight.local_shards[0].T
 
 
+class _HostEmbeddingTable(Module[..., Tensor]):
+    """An embedding table kept on the host as the checkpoint stores it."""
+
+    def __init__(self, vocab_size: int, hidden_size: int) -> None:
+        self.weight = Tensor.zeros([vocab_size, hidden_size], device=CPU())
+
+    def forward(self, row: int) -> Tensor:
+        """Returns one row of the table, on the host."""
+        return self.weight[row]
+
+
 class DSparkQwen3(Module[..., Tensor]):
     """The DSpark draft: context projection, layers and Markov head."""
 
@@ -607,9 +615,13 @@ class DSparkQwen3(Module[..., Tensor]):
             num_devices,
         )
         self.hidden_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        # The trained embedding of the mask token. The rest of the block's
-        # embeddings are the target's.
-        self.mask_embedding = Tensor.zeros([config.hidden_size])
+        # The checkpoint's table is the target's with the mask token's row
+        # trained. The block embeds every other id with the target's table,
+        # so the graph reads only that row: the table stays on the host as
+        # stored and the row is taken at init.
+        self.embed_tokens = _HostEmbeddingTable(
+            config.vocab_size, config.hidden_size
+        )
         self.layers = ModuleList(
             [
                 DSparkLayer(config, quantized, kv_params, i, rope, num_devices)
@@ -618,6 +630,11 @@ class DSparkQwen3(Module[..., Tensor]):
         )
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.markov_head = MarkovHead(config, quantized, num_devices)
+
+    @property
+    def mask_embedding(self) -> Tensor:
+        """The mask token's trained embedding, on the host."""
+        return self.embed_tokens(self.config.mask_token_id)
 
     def project_context(self, taps: Tensor) -> Tensor:
         """Projects the concatenated target taps to the draft's context."""

@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Graph-level test for the Apple M5 int8 W8A8 fused matmul op.
 
-Builds a one-op graph invoking ``mo.matmul.int8.w8a8.apple`` (via the
+Builds a one-op graph invoking ``matmul.int8.w8a8.apple`` (via the
 ``_apple_int8_w8a8_matmul`` wrapper -- online activation quant + int8
 widening-MMA GEMM + dequant, all internal to the op) and compares it to a bf16
 reference matmul of the *dequantized* int8 weight, at a FLUX.2-Klein transformer
 Linear shape. This exercises the full lowering:
-``_apple_int8_w8a8_matmul -> ops.custom("mo.matmul.int8.w8a8.apple"[.bias]) ->
+``_apple_int8_w8a8_matmul -> ops.custom("matmul.int8.w8a8.apple"[.bias]) ->
 enqueue_apple_int8_quantize_activation + enqueue_apple_int8_matmul`` -- the
 graph-op path the standalone kernel test cannot cover.
 
@@ -43,8 +43,9 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import _apple_int8_w8a8_matmul
-from max.nn.legacy.quant_config import (
+from max.nn._graph_ops import _apple_int8_w8a8_matmul
+from max.nn._graph_ops.quant import quantized_matmul
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -52,7 +53,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.quant_ops import quantized_matmul
 
 
 def _int8_w8a8_quant_config() -> QuantConfig:

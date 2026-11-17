@@ -159,7 +159,6 @@ declare -a PIPELINES=(
   "meta-llama/Llama-3.1-8B-Instruct|cpu,gpu|big|Llama 3.1 8B float32"
   "sentence-transformers/all-mpnet-base-v2|cpu,gpu||MPNet embeddings"
   "unsloth/gpt-oss-20b-BF16|gpu||GPT-OSS 20B bfloat16"
-  "allenai/OLMo-1B-hf|cpu,gpu||OLMo 1B float32"
 
   # ========== Brittle Pipelines ==========
   # Llama family
@@ -196,7 +195,6 @@ declare -a PIPELINES=(
   "allenai/olmOCR-2-7B-1025-FP8|gpu|nvidia-only|OLMoOCR 7B FP8"
   "allenai/OLMo-2-1124-7B|cpu,gpu|big|OLMo 2 7B float32"
   "HuggingFaceM4/Idefics3-8B-Llama3|gpu|big,nvidia-only|Idefics3 8B bfloat16"
-  "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct|cpu,gpu|big|EXAONE 7.8B float32"
   "microsoft/Phi-3.5-mini-instruct|gpu||Phi 3.5 mini bfloat16"
   "microsoft/phi-4|gpu|big|Phi 4 bfloat16"
   "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4|gpu|nvidia-only|Llama 3.1 8B GPTQ"

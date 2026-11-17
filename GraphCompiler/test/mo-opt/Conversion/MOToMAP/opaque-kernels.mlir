@@ -1,5 +1,4 @@
 // RUN: mo-opt --mlir-print-local-scope %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" --mo-to-map | FileCheck %s
-// RUN: mo-opt --mlir-print-local-scope %s --mo-to-map | FileCheck %s --check-prefix=DISABLED
 
 // MOToMAP lowers each MO op with a registered opaque (non-elementwise,
 // non-view) kernel into a `map.iter.opaque` wrapping a `map.call.opaque`,
@@ -88,9 +87,3 @@ mo.graph @two_partial(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, 
   %c:2 = mo.custom [symbol = "map_lower_partial_fused_outputs", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
   mo.output %c#0, %c#1 : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
-
-// With advanced fusion disabled the pass is a no-op: the custom ops survive and
-// no map ops are produced.
-
-// DISABLED-NOT: map.iter.opaque
-// DISABLED: mo.custom

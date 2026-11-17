@@ -10,11 +10,29 @@ modular_py_library(
         "__init__.py",
         "codec.py",
         "metadata.py",
+        "sampling_defaults.py",
         "value_types.py",
         "vision.py",
     ],
     deps = [
         "//max/python/max:tree",
+        requirement("typing-extensions"),
+    ],
+)
+
+# The overlap helper graphs and their component, which Mach's gen_mef
+# writes beside a MEF too.
+modular_py_library(
+    name = "overlap_helpers",
+    srcs = ["overlap_helpers.py"],
+    deps = [
+        ":_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         requirement("typing-extensions"),
     ],
 )
@@ -26,15 +44,18 @@ modular_py_library(
     name = "model_artifact",
     srcs = [
         "batch_processor.py",
+        "block_diffusion.py",
         "engine_config.py",
         "format_spec.py",
         "kv_cache.py",
         "model_artifact.py",
         "pipeline_modules.py",
         "serialization.py",
+        "tokenizer.py",
     ],
     deps = [
         ":_artifact",
+        ":overlap_helpers",
         "//max/python/max:_core",
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -52,13 +73,18 @@ modular_py_library(
     deps = [
         ":_artifact",
         ":model_artifact",
+        ":overlap_helpers",
         "//max/python/max:tensor",
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/weights",
+        requirement("huggingface-hub"),
     ],
 )

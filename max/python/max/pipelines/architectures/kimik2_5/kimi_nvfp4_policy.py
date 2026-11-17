@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from max.dtype import DType
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 
 def _weight_entry_dtype(value: Any) -> DType | None:
@@ -36,7 +36,7 @@ def infer_kimi_nvfp4_weight_flags(
     """Infer NVFP4 vs BF16 regions from MAX-adapted Kimi checkpoint keys.
 
     Args:
-        state_dict: Weight map after :func:`convert_kimik2_5_safetensor_state_dict`
+        state_dict: Weight map after :func:`kimik2_5_weight_rules`
             (``language_model.layers.*`` prefix).
         first_k_dense_replace: First layer index that uses MoE (HF ``text_config``).
         quant_config: Parsed quantization config, if any.

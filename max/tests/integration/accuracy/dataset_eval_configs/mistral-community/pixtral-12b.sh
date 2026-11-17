@@ -16,3 +16,5 @@ batch_size=1
 max_length=8192
 evaluator=mistral-evals
 tasks=mathvista,chartqa,docvqa
+
+extra_pipelines_args=(--no-prefer-module-v3)

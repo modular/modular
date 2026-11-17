@@ -12,22 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 """Fused q/kv RMSNorm + MXFP8 quantize vs the unfused kernels.
 
-`rms_norm_quantize_mxfp8_q_kv` must write what `rms_norm` on the q and kv
-parts followed by `quantize_dynamic_scaled_fp4fp8` on the normalized q write.
-The two only differ in the order of each row's sum of squares. The exact test
+`rms_norm_quantize_mxfp8_q_kv` must write what a naive rms_norm (one thread
+per row, below) on the q and kv parts followed by
+`quantize_dynamic_scaled_fp4fp8` on the normalized q writes. The two only
+differ in the order of each row's sum of squares. The exact test
 feeds integer values whose squares sum exactly in fp32 in any order, so every
 byte must match. The random test allows the rare rounding flip a different
 order causes. Every output starts as poison, so a byte either path skips,
 padded scale rows included, shows up.
 """
 
-from std.math import ceildiv
+from std.math import ceildiv, rsqrt
 from std.random import rand, seed
 from std.testing import assert_equal, assert_raises, assert_true
-from std.utils.coord import ComptimeInt
 
+from max.gpu import global_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.block_scaled_quantization import (
     quantize_dynamic_scaled_fp4fp8,
     rms_norm_quantize_mxfp8_q_kv,
@@ -39,7 +40,6 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_MN_GROUP_SIZE,
 )
-from builtin_kernels.rowwise_normalization import rms_norm
 
 comptime IN_DTYPE = DType.bfloat16
 comptime OUT_DTYPE = DType.float8_e4m3fn
@@ -47,43 +47,57 @@ comptime EPS = Float32(1e-20)
 comptime POISON = 0xAB
 
 
-def _reference_rms_norm[
-    cols: Int
+def _naive_rms_norm_kernel[
+    x_origin: ImmOrigin,
+    gamma_origin: ImmOrigin,
+    normed_origin: MutOrigin,
 ](
+    x: ImmPointer[Scalar[IN_DTYPE], x_origin],
+    gamma: ImmPointer[Scalar[IN_DTYPE], gamma_origin],
+    normed: MutPointer[Scalar[IN_DTYPE], normed_origin],
+    rows: Int32,
+    cols: Int32,
+):
+    """One thread per row: the sum of squares in column order, then
+    `(x * rsqrt(mean + eps)) * gamma` in f32, as the fused kernel computes
+    it."""
+    var r = Int(global_idx.x)
+    if r >= Int(rows):
+        return
+    var n = Int(cols)
+    var ssq = Float32(0)
+    for c in range(n):
+        var v = x[unsafe_offset=r * n + c].cast[.float32]()
+        ssq += v * v
+    var inv_rms = rsqrt(ssq / Float32(n) + EPS)
+    for c in range(n):
+        var v = x[unsafe_offset=r * n + c].cast[.float32]()
+        var g = gamma[unsafe_offset=c].cast[.float32]()
+        normed[unsafe_offset=r * n + c] = ((v * inv_rms) * g).cast[IN_DTYPE]()
+
+
+def _reference_rms_norm(
     ctx: DeviceContext,
-    x_tt: TileTensor[IN_DTYPE, ...],
-    normed_tt: TileTensor[mut=True, IN_DTYPE, ...],
-    gamma_tt: TileTensor[IN_DTYPE, ...],
-    shape: Coord,
+    x: DeviceBuffer[IN_DTYPE],
+    gamma: DeviceBuffer[IN_DTYPE],
+    mut normed: DeviceBuffer[IN_DTYPE],
+    rows: Int,
+    cols: Int,
 ) raises:
-    @inline(.always)
-    def input_fn[
-        width: Int, alignment: Int
-    ](coords: Coord) {var x_tt} -> SIMD[IN_DTYPE, width]:
-        return x_tt.load[width=width, alignment=alignment](coords)
-
-    @inline(.always)
-    def output_fn[
-        width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[IN_DTYPE, width]) {var normed_tt}:
-        normed_tt.store[alignment=alignment](
-            coords, rebind[SIMD[IN_DTYPE, width]](val)
-        )
-
-    rms_norm[
-        IN_DTYPE,
-        2,
-        target="gpu",
-        epsilon=EPS,
-        weight_offset=Float32(0.0),
-        multiply_before_cast=True,
+    ctx.enqueue_function[
+        _naive_rms_norm_kernel[
+            ImmOrigin(origin_of(x)),
+            ImmOrigin(origin_of(gamma)),
+            origin_of(normed),
+        ]
     ](
-        input_fn,
-        output_fn,
-        shape,
-        ComptimeInt[cols](),
-        gamma_tt,
-        ctx,
+        x,
+        gamma,
+        normed,
+        Int32(rows),
+        Int32(cols),
+        grid_dim=ceildiv(rows, 128),
+        block_dim=128,
     )
 
 
@@ -165,20 +179,8 @@ def test_matches_unfused[
     )
 
     # Unfused: rms_norm of each part, then the plain quantize of q.
-    _reference_rms_norm[q_cols](
-        ctx,
-        TileTensor(q_in, row_major(m, Idx[q_cols])),
-        TileTensor(q_normed, row_major(m, Idx[q_cols])),
-        TileTensor(gamma_q, row_major(Idx[q_cols])),
-        Coord(m, q_cols),
-    )
-    _reference_rms_norm[kv_cols](
-        ctx,
-        TileTensor(kv_in, row_major(m, Idx[kv_cols])),
-        TileTensor(kv_ref, row_major(m, Idx[kv_cols])),
-        TileTensor(gamma_kv, row_major(Idx[kv_cols])),
-        Coord(m, kv_cols),
-    )
+    _reference_rms_norm(ctx, q_in, gamma_q, q_normed, m, q_cols)
+    _reference_rms_norm(ctx, kv_in, gamma_kv, kv_ref, m, kv_cols)
     quantize_dynamic_scaled_fp4fp8[
         SF_VECTOR_SIZE=MXFP8_SF_VECTOR_SIZE, num_max_threads=1024
     ](

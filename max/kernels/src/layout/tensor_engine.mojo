@@ -1886,7 +1886,8 @@ trait TileIO(TensorEngine):
     with the storage handle, as in `TensorOps`, so an engine whose storage
     bakes in its extents can check them against the layout. `TileTensor`
     exposes these as the zero-coordinate `load()` and `store(value)`
-    overloads.
+    overloads. `StorageIO` is the element-granular counterpart, for an
+    engine that also has no raw pointer to serve `t[i]`.
     """
 
     # TODO(HWB-749): Unify with a generic `InlineTensor`.
@@ -1952,6 +1953,93 @@ trait TileIO(TensorEngine):
             storage: A tuple of the storage handle (modified in place) and its
                 layout.
             value: The register value to store.
+        """
+        ...
+
+
+trait StorageIO(TensorEngine):
+    """Extends `TensorEngine` with element loads and stores that bypass
+    `unsafe_ptr`.
+
+    Element-granular access normally goes through the raw pointer
+    `unsafe_ptr` returns. An engine whose storage has no such pointer, such
+    as a TPU memref, conforms to this trait instead, and `TileTensor` routes
+    every offset-based load and store through it: coordinate loads and
+    stores, element indexing, `raw_load` and `raw_store`, and fills. The
+    engine decides which widths it supports. `TileIO` is the whole-tile
+    counterpart, keyed by call shape rather than by trait: `load()` with no
+    coordinate is `TileIO`, `t[i]` is `StorageIO`.
+    """
+
+    # TODO(HWB-749): Fold into `TileIO` once `InlineTensor` and
+    # `TileValueType` unify: `t[i]` is then `load_tile` with a one-element
+    # layout at offset `i`, and `SIMD` is its rank-1 case.
+    @staticmethod
+    def load[
+        mut: Bool,
+        dtype: DType,
+        origin: Origin[mut=mut],
+        address_space: AddressSpace,
+        //,
+        width: SIMDLength,
+        alignment: Int,
+        invariant: Bool = False,
+        non_temporal: Bool = False,
+    ](
+        storage: Self.StorageType[dtype, origin, address_space], offset: Int
+    ) -> SIMD[dtype, width]:
+        """Loads `width` elements starting at linear index `offset`.
+
+        Parameters:
+            mut: The mutability of the storage, inferred from `origin`.
+            dtype: The element data type of the storage.
+            origin: The origin tracking the lifetime of the storage.
+            address_space: The address space the storage resides in.
+            width: The number of elements to load.
+            alignment: The alignment of the access, in bytes.
+            invariant: Whether the storage is unchanged for the kernel's
+                lifetime, so the load may be hoisted or cached.
+            non_temporal: Whether the data is not reused soon, so the access
+                may bypass caches.
+
+        Args:
+            storage: The storage handle.
+            offset: The linear element index, as the layout computes it.
+
+        Returns:
+            The `width` elements at `offset`.
+        """
+        ...
+
+    @staticmethod
+    def store[
+        dtype: DType,
+        origin: MutOrigin,
+        address_space: AddressSpace,
+        width: SIMDLength,
+        //,
+        alignment: Int,
+        non_temporal: Bool = False,
+    ](
+        storage: Self.StorageType[dtype, origin, address_space],
+        offset: Int,
+        value: SIMD[dtype, width],
+    ):
+        """Stores `value` starting at linear index `offset`.
+
+        Parameters:
+            dtype: The element data type of the storage.
+            origin: The origin tracking the lifetime of the storage.
+            address_space: The address space the storage resides in.
+            width: The number of elements to store, inferred from `value`.
+            alignment: The alignment of the access, in bytes.
+            non_temporal: Whether the data is not reused soon, so the access
+                may bypass caches.
+
+        Args:
+            storage: The storage handle, modified in place.
+            offset: The linear element index, as the layout computes it.
+            value: The elements to store.
         """
         ...
 

@@ -18,7 +18,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu import warp_id, block_idx, lane_id, thread_idx
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -330,7 +330,7 @@ def kernel_2[
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
@@ -384,9 +384,6 @@ def kernel_2[
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -410,7 +407,7 @@ def make_dict_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
     return dic^
 
 
-def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+def benchmark_blackwell_matmul(ctx: DeviceContext[]) raises:
     comptime a_type = DType.bfloat16
     comptime b_type = DType.bfloat16
     comptime c_type = DType.bfloat16
@@ -462,7 +459,7 @@ def test_kernel_2[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext) raises:
+](ctx: DeviceContext[]) raises:
     print(M, "x", N, "x", K)
 
     var a = HostDeviceTileTensor[a_type](row_major[M, K](), ctx)
@@ -512,7 +509,7 @@ def test_kernel_2[
         comptime num_warmup = 10
 
         @inline(.always)
-        def run_kernel(ctx: DeviceContext) raises {mut c, imm}:
+        def run_kernel(ctx: DeviceContext[]) raises {mut c, imm}:
             kernel_2[
                 transpose_b=transpose_b,
                 umma_shape=umma_shape,  # 64, 128, 16

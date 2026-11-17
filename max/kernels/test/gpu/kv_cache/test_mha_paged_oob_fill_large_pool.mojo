@@ -35,6 +35,7 @@ from max.gpu.host import DeviceContext
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from kv_cache_test_utils import padded_lut_cols
+from extensibility import TensorTuple
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 from nn.kv_cache_ragged import generic_flash_attention_kv_cache_ragged
 
@@ -123,7 +124,8 @@ def run_case(q_len: Int, cache_len: Int, extra: Int, ctx: DeviceContext) raises:
     ](1, q_len, seq_len + extra, ctx)
     var out = HostDeviceTileTensor[bf16](q_layout, ctx)
     generic_flash_attention_kv_cache_ragged[
-        target="gpu", mask_str="causal", output_dtype=bf16
+        mask_str="causal",
+        output_dtype=bf16,
     ](
         q.device_tensor().as_imm(),
         row_offsets.device_tensor().as_imm(),
@@ -133,6 +135,7 @@ def run_case(q_len: Int, cache_len: Int, extra: Int, ctx: DeviceContext) raises:
         out.device_tensor(),
         ctx,
         meta,
+        TensorTuple(),
     )
     ctx.synchronize()
     out.to_host()

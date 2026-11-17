@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from max._core.dialects import mo
+from max._core.dialects.builtin import IntegerAttr, IntegerType
 
 from ..graph import Graph
 from ..type import _ChainType
@@ -67,6 +68,8 @@ def sum(
         tensor: TensorValue, _: BufferValue, body_chain: _ChainValue
     ) -> tuple[TensorValue, _ChainValue]:
         peers = graph._add_op_generated(mo.BundledExpandOp, input_types, tensor)
+        # One full-world group, and no explicit rank: each launch's copy
+        # takes its rank from the device it runs on.
         out, out_chain = graph._add_op_generated(
             mo.BundledAllreduceSumOp,
             input_types[0],
@@ -74,6 +77,8 @@ def sum(
             peers,
             signal_buffers,
             body_chain,
+            IntegerAttr(IntegerType(64), 0),
+            None,
         )
         return out.tensor, _ChainValue(out_chain._mlir_value)
 

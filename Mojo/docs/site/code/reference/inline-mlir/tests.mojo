@@ -205,10 +205,14 @@ def test_pop_simd_splat() raises:
         _type=__mlir_type.`!kgen.simd<4, f32>`
     ](scalar_f32)
 
-    # Extract element 0 back out
+    # Extract element 0 back out.
+    var pos: __mlir_type.index = __mlir_attr.`0 : index`
+    var pop_pos = __mlir_op.`pop.cast_from_builtin`[
+        _type=__mlir_type.`!kgen.scalar<index>`
+    ](pos)
     var elem = __mlir_op.`pop.simd.extractelement`(
         vec,
-        __mlir_attr.`0 : index`,
+        pop_pos,
     )
 
     # Wrap in SIMD scalar to compare
@@ -225,6 +229,26 @@ def test_explicit_type_attr() raises:
     var casted = __mlir_op.`index.castu`[_type=__mlir_type.i1](x)
     # 255 truncated to i1 = true (lowest bit is 1)
     assert_equal(Bool(casted), True)
+
+
+# --- __mlir_op: template form ---
+
+
+def test_template_op() raises:
+    """The template form binds Mojo values with %{name}."""
+    var a = Int(40).__mlir_index__()
+    var b = Int(2).__mlir_index__()
+    var sum = __mlir_op[`index.add %{a}, %{b}`]
+    assert_equal(Int(mlir_value=sum), 42)
+
+
+def test_template_op_type_of() raises:
+    """%{type_of(name)} inserts the MLIR type of a bound value."""
+    var x = Int(255).__mlir_index__()
+    var low_bit = __mlir_op[
+        `index.castu %{x} : %{type_of(x)} to i1`, _type=__mlir_type.i1
+    ]
+    assert_equal(Bool(low_bit), True)
 
 
 # --- Wrapper struct pattern ---
@@ -473,6 +497,8 @@ def main() raises:
     test_pop_cast_roundtrip()
     test_pop_simd_splat()
     test_explicit_type_attr()
+    test_template_op()
+    test_template_op_type_of()
     test_wrapper_struct_arithmetic()
     test_wrapper_struct_comparison()
     test_wrapper_struct_write()

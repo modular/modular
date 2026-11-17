@@ -33,34 +33,26 @@ job instead.
 
 from std.math import ceildiv, exp, max
 
+from internal_utils.fp8_utils import (
+    cast_saturating,
+    compute_dynamic_fp8_scale,
+    fp8_quantize,
+)
+from kv_cache.types import KVCacheT
 from layout import TensorEngine, TensorLayout, TileTensor, row_major
 
 from max.gpu import block_dim, block_idx, thread_idx
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
-from max.gpu.primitives.grid_controls import PDLLevel, wait_on_dependent_grids
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 
 # Threads per `kpool_expand_topk_kernel` block. The kernel compacts the selected
 # pools with block-wide scans, so every launch must use exactly this width.
 comptime KPOOL_EXPAND_BLOCK_SIZE = 128
-
-
-@always_inline
-def _pdl_enter[pdl_level: PDLLevel]():
-    """Waits for the grid launched before this one, when launched with PDL.
-
-    Every k-pool kernel reads buffers an earlier grid wrote: the layer-normed
-    keys, the gate scores, the tail ring, the selected pool ids. The wait
-    therefore comes before any global read, and before any early return, so
-    a block that exits early still orders this grid after its predecessor and
-    a grid launched behind this one can rely on that. The grid releases its
-    own dependent when its blocks exit.
-
-    Parameters:
-        pdl_level: Programmatic dependent launch level; `OFF` compiles to
-            nothing.
-    """
-    comptime if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
 
 
 @inline(.always)
@@ -122,7 +114,6 @@ def kpool_compress_kernel[
     OutEngine: TensorEngine,
     head_dim: Int,
     kpool: Int,
-    pdl_level: PDLLevel,
 ](
     pooled: TileTensor[dtype, OutLayoutType, out_origin, Engine=OutEngine],
     k: TileTensor[mut=False, dtype, KLayoutType, k_origin, Engine=KEngine],
@@ -172,12 +163,6 @@ def kpool_compress_kernel[
         OutEngine: Engine of `pooled`.
         head_dim: Channels per key; also the block width.
         kpool: Tokens per pool.
-        pdl_level: Programmatic dependent launch level, with no default so a
-            caller cannot launch with the PDL attribute and forget the level
-            (the kernel would then read before it waits). Above `OFF`, the
-            kernel waits on its predecessor grid before its first read, and
-            the launch carries `pdl_launch_attributes(pdl_level)`.
-
     Args:
         pooled: Output `[total_pools, head_dim]`, where `total_pools` is the
             last entry of `pool_row_offsets`.
@@ -192,7 +177,12 @@ def kpool_compress_kernel[
             pool covers absolute positions, so this is what places the call's
             tokens on the pool grid.
     """
-    _pdl_enter[pdl_level]()
+    # Every k-pool kernel reads buffers an earlier grid wrote: the
+    # layer-normed keys, the gate scores, the tail ring, the selected pool
+    # ids. The wait comes before any global read and before any early return,
+    # so a block that exits early still orders this grid after its
+    # predecessor. The grid releases its own dependent when its blocks exit.
+    wait_on_dependent_grids()
     var pool_row = block_idx.x
     # The last offset is the exact pool count, so an over-sized grid is
     # harmless.
@@ -440,7 +430,6 @@ def kpool_seed_tail_kernel[
     SlotEngine: TensorEngine,
     head_dim: Int,
     kpool: Int,
-    pdl_level: PDLLevel,
 ](
     tail: TileTensor[dtype, TailLayoutType, tail_origin, Engine=TailEngine],
     k: TileTensor[mut=False, dtype, KLayoutType, k_origin, Engine=KEngine],
@@ -492,12 +481,6 @@ def kpool_seed_tail_kernel[
         SlotEngine: Engine of `slot_idx`.
         head_dim: Channels per key; also the block width.
         kpool: Tokens per pool.
-        pdl_level: Programmatic dependent launch level, with no default so a
-            caller cannot launch with the PDL attribute and forget the level
-            (the kernel would then read before it waits). Above `OFF`, the
-            kernel waits on its predecessor grid before its first read, and
-            the launch carries `pdl_launch_attributes(pdl_level)`.
-
     Args:
         tail: Per-slot ring, `[max_slots, 2, kpool, head_dim]`. Index 0 holds
             keys, index 1 holds gate scores.
@@ -508,7 +491,12 @@ def kpool_seed_tail_kernel[
         slot_idx: Ring slot owned by each batch row, `[num_requests]`, `uint32`.
         num_requests: Requests actually present.
     """
-    _pdl_enter[pdl_level]()
+    # Every k-pool kernel reads buffers an earlier grid wrote: the
+    # layer-normed keys, the gate scores, the tail ring, the selected pool
+    # ids. The wait comes before any global read and before any early return,
+    # so a block that exits early still orders this grid after its
+    # predecessor. The grid releases its own dependent when its blocks exit.
+    wait_on_dependent_grids()
     var r = block_idx.x
     if r >= Int(num_requests):
         return
@@ -573,7 +561,6 @@ def kpool_ring_close_kernel[
     SlotEngine: TensorEngine,
     head_dim: Int,
     kpool: Int,
-    pdl_level: PDLLevel,
 ](
     pooled: TileTensor[dtype, OutLayoutType, out_origin, Engine=OutEngine],
     closed_pool: TileTensor[
@@ -653,12 +640,6 @@ def kpool_ring_close_kernel[
         SlotEngine: Engine of `slot_idx`.
         head_dim: Channels per key; also the block width.
         kpool: Tokens per pool.
-        pdl_level: Programmatic dependent launch level, with no default so a
-            caller cannot launch with the PDL attribute and forget the level
-            (the kernel would then read before it waits). Above `OFF`, the
-            kernel waits on its predecessor grid before its first read, and
-            the launch carries `pdl_launch_attributes(pdl_level)`.
-
     Args:
         pooled: Output `[batch, head_dim]`, meaningful only where
             `closed_pool` is non-negative.
@@ -677,7 +658,12 @@ def kpool_ring_close_kernel[
         slot_idx: Ring slot owned by each batch row, `[batch]`, `uint32`.
         num_requests: Requests actually present.
     """
-    _pdl_enter[pdl_level]()
+    # Every k-pool kernel reads buffers an earlier grid wrote: the
+    # layer-normed keys, the gate scores, the tail ring, the selected pool
+    # ids. The wait comes before any global read and before any early return,
+    # so a block that exits early still orders this grid after its
+    # predecessor. The grid releases its own dependent when its blocks exit.
+    wait_on_dependent_grids()
     var r = block_idx.x
     if r >= Int(num_requests):
         return
@@ -763,7 +749,6 @@ def kpool_expand_topk_kernel[
     kpool: Int,
     pool_topk: Int,
     always_select_tail: Bool,
-    pdl_level: PDLLevel,
 ](
     out_indices: TileTensor[
         .int32, OutLayoutType, out_origin, Engine=OutEngine
@@ -819,12 +804,6 @@ def kpool_expand_topk_kernel[
         kpool: Tokens per pool.
         pool_topk: Selected pools per token, `index_topk // kpool`.
         always_select_tail: Whether to append the incomplete trailing pool.
-        pdl_level: Programmatic dependent launch level, with no default so a
-            caller cannot launch with the PDL attribute and forget the level
-            (the kernel would then read before it waits). Above `OFF`, the
-            kernel waits on its predecessor grid before its first read, and
-            the launch carries `pdl_launch_attributes(pdl_level)`.
-
     Args:
         out_indices: Output `[total_seq_len, pool_topk * kpool + tail]`, where
             `tail` is `kpool - 1` when `always_select_tail` and 0 otherwise.
@@ -842,7 +821,12 @@ def kpool_expand_topk_kernel[
         block_dim.x == KPOOL_EXPAND_BLOCK_SIZE,
         "kpool_expand_topk_kernel needs KPOOL_EXPAND_BLOCK_SIZE threads",
     )
-    _pdl_enter[pdl_level]()
+    # Every k-pool kernel reads buffers an earlier grid wrote: the
+    # layer-normed keys, the gate scores, the tail ring, the selected pool
+    # ids. The wait comes before any global read and before any early return,
+    # so a block that exits early still orders this grid after its
+    # predecessor. The grid releases its own dependent when its blocks exit.
+    wait_on_dependent_grids()
     # Uniform across the block, so returning before the block scans is safe.
     var token_idx = block_idx.x
     if token_idx >= Int(total_seq_len):
@@ -907,3 +891,181 @@ def kpool_expand_topk_kernel[
             < tail_count else Int32(-1),
         )
         col += KPOOL_EXPAND_BLOCK_SIZE
+
+
+def kpool_append_ragged_paged[
+    dtype: DType,
+    cache_t: KVCacheT,
+    //,
+    head_dim: Int,
+    kpool: Int,
+](
+    tail: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    k: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    gate: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    ape: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    slot_idx: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    k_cache: cache_t,
+    scale_ub: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Pools, quantizes and caches every pool this call completes, in one grid.
+
+    Equivalent, byte for byte, to `kpool_ring_close_kernel` and
+    `kpool_compress_kernel` followed by a per-pool dynamic FP8 quantization
+    (`quantize_dynamic_scaled_fp8`, one group per pooled key) and the paged
+    cache stores of the values and their scale. Pool `P` of a request lands at
+    cache positions `[P * kpool, (P + 1) * kpool)`, `head_dim // kpool` values
+    per position, with the pool's scale replicated into each position.
+
+    Block `r < batch` closes request `r`'s pending tail-ring pool, if this call
+    finishes it; every later block builds one pool entirely from this call's
+    tokens. The tail ring is only read: `kpool_seed_tail_kernel` must run
+    after this grid.
+
+    Parameters:
+        dtype: Element type of `tail`, `k` and `gate` (inferred).
+        cache_t: The pooled key cache of one layer (inferred), FP8 with one
+            scale per position.
+        head_dim: Channels per key; also the block width.
+        kpool: Tokens per pool.
+
+    Args:
+        tail: Per-slot ring, `[max_slots, 2, kpool, head_dim]`.
+        k: Layer-normed indexer keys, `[total_tokens, head_dim]`.
+        gate: Per-token gate scores, `[total_tokens, head_dim]`.
+        ape: Within-pool position embedding, `[kpool, head_dim]`, f32.
+        input_row_offsets: Token row offsets per request, `[batch + 1]`.
+        cache_lengths: Cached-prefix length per request, `[batch]`.
+        slot_idx: Ring slot per request, `[batch]`.
+        k_cache: The layer's pooled key cache.
+        scale_ub: Upper bound on a pool's max-abs before the scale derives.
+        ctx: Device context to launch on.
+    """
+    comptime pooled_dim = head_dim // kpool
+    comptime assert head_dim % kpool == 0, "a pooled key spans kpool rows"
+    comptime assert tail.flat_rank == 4, "tail is [slots, 2, kpool, head_dim]"
+    comptime assert k.flat_rank == 2, "k is [total_tokens, head_dim]"
+    comptime assert gate.flat_rank == 2, "gate is [total_tokens, head_dim]"
+    comptime assert ape.flat_rank == 2, "ape is [kpool, head_dim]"
+    comptime assert (
+        cache_t.kv_params.head_size == pooled_dim
+    ), "the cache holds head_dim // kpool values per position"
+    comptime fp8_dtype = DType.float8_e4m3fn
+
+    var batch = Int(input_row_offsets.dim[0]()) - 1
+    if batch <= 0:
+        return
+    # The compressed pools number at most `total_tokens // kpool`; blocks past
+    # the true count exit.
+    var num_blocks = batch + Int(k.dim[0]()) // kpool
+    var num_requests = Int32(batch)
+
+    def kernel() {
+        var tail,
+        var k,
+        var gate,
+        var ape,
+        var input_row_offsets,
+        var cache_lengths,
+        var slot_idx,
+        var k_cache,
+        var scale_ub,
+        var num_requests,
+    }:
+        # Same ordering contract as the other k-pool kernels: wait before any
+        # global read and before any early return.
+        wait_on_dependent_grids()
+        var batch_size = Int(num_requests)
+        var c = thread_idx.x
+
+        var logits = Array[Float32, kpool]()
+        var vals = Array[Float32, kpool]()
+        var b: Int
+        var pool_id: Int
+        var blk = block_idx.x
+        if blk < batch_size:
+            # The pending tail-ring pool; see `kpool_ring_close_kernel`.
+            b = blk
+            var cache_len = Int(cache_lengths[b])
+            var ring_members = cache_len % kpool
+            var row_start = Int(input_row_offsets[b])
+            var n = Int(input_row_offsets[b + 1]) - row_start
+            if ring_members == 0 or n < kpool - ring_members:
+                return
+            pool_id = cache_len // kpool
+            var slot = Int(slot_idx[b])
+            # Ring slot plane 0 holds keys, plane 1 their gate scores.
+            comptime key_plane = 0
+            comptime gate_plane = 1
+            for m in range(kpool):
+                var ape_m = ape[m, c][0]
+                if m < ring_members:
+                    logits[m] = (
+                        tail[slot, gate_plane, m, c][0].cast[.float32]() + ape_m
+                    )
+                    vals[m] = tail[slot, key_plane, m, c][0].cast[.float32]()
+                else:
+                    var row = row_start + (m - ring_members)
+                    logits[m] = gate[row, c][0].cast[.float32]() + ape_m
+                    vals[m] = k[row, c][0].cast[.float32]()
+        else:
+            # The `local`-th pool built entirely from this call's tokens; see
+            # `kpool_compress_kernel`. The pool counts are a running sum of
+            # per-request floors, recomputed per block: `batch` is small.
+            var pool_row = blk - batch_size
+            var found = False
+            b = 0
+            var local = 0
+            var seen = 0
+            for i in range(batch_size):
+                var len_i = Int(cache_lengths[i])
+                var n_i = Int(input_row_offsets[i + 1]) - Int(
+                    input_row_offsets[i]
+                )
+                var full = max(
+                    (len_i + n_i) // kpool - ceildiv(len_i, kpool), 0
+                )
+                if pool_row < seen + full:
+                    b = i
+                    local = pool_row - seen
+                    found = True
+                    break
+                seen += full
+            if not found:
+                return
+            var cache_len = Int(cache_lengths[b])
+            pool_id = ceildiv(cache_len, kpool) + local
+            var align = (kpool - cache_len % kpool) % kpool
+            var first_row = Int(input_row_offsets[b]) + align + local * kpool
+            for m in range(kpool):
+                var row = first_row + m
+                logits[m] = gate[row, c][0].cast[.float32]() + ape[m, c][0]
+                vals[m] = k[row, c][0].cast[.float32]()
+
+        # Round through `dtype` as the unfused path's pooled tensor does, then
+        # quantize the whole key as one group.
+        var x = pool_channel[kpool](logits, vals).cast[dtype]().cast[.float32]()
+        var pool_max = block.max[block_size=head_dim, broadcast=True](abs(x))
+        var scale, scale_recip = compute_dynamic_fp8_scale[fp8_dtype](
+            pool_max, scale_ub
+        )
+        var q = fp8_quantize[fp8_dtype](x, scale_recip)
+
+        var pos = pool_id * kpool + c // pooled_dim
+        k_cache.store(
+            b, 0, pos, c % pooled_dim, cast_saturating[cache_t.dtype](q)
+        )
+        if c % pooled_dim == 0:
+            k_cache.store_scale(b, 0, pos, 0, scale.cast[cache_t.scale_dtype]())
+
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=num_blocks,
+        block_dim=head_dim,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )

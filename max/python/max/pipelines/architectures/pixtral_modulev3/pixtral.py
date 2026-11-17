@@ -15,15 +15,14 @@
 from __future__ import annotations
 
 from max import functional as F
-from max import tree
 from max.graph import TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.attention import AttentionWithRope
+from max.nn.common_layers.kv_cache import per_device_caches
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
 )
@@ -191,21 +190,20 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
     ) -> tuple[Tensor, ...]:
         """Runs the language model over the tokens and image embeddings."""
         assert self.kv_params is not None
-        kv_inputs = iter(x._graph_value for x in variadic_args)
-        symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        kv_collections = tree.leaves(
-            symbolic_inputs, leaf=KVCacheInputsPerDevice
-        )
+        kv_collections = per_device_caches(self.kv_params, variadic_args)
 
         inputs_embeds = self.language_model.embed_tokens(input_ids)
 
-        # Merge image embeddings at pre-computed token positions
-        merged_value = merge_multimodal_embeddings(
-            inputs_embeds=TensorValue(inputs_embeds),
-            multimodal_embeddings=TensorValue(image_embeddings),
-            image_token_indices=TensorValue(image_token_indices),
-        )
-        merged = Tensor.from_graph_value(merged_value)
+        # Merge image embeddings at pre-computed token positions. Called
+        # eagerly, the graph values live in the context the block opens.
+        with F.ensure_context():
+            merged = Tensor.from_graph_value(
+                merge_multimodal_embeddings(
+                    inputs_embeds=TensorValue(inputs_embeds),
+                    multimodal_embeddings=TensorValue(image_embeddings),
+                    image_token_indices=TensorValue(image_token_indices),
+                )
+            )
 
         return self.language_model(
             merged, kv_collections[0], return_n_logits, input_row_offsets

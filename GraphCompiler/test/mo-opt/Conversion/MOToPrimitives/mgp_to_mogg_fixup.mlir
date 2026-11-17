@@ -3,7 +3,7 @@
 // Jit compile kernels will output the function execution in a particular way,
 // we need to run a fixup pass over it to convert to the form MGP expects.
 
-mgp.model @basic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @basic devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   "mogg.compiled.load"() {symbols = ["__gen_0"], value = dense_resource<fake_binary> : tensor<1xui8>} : () -> ()
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
@@ -26,7 +26,7 @@ mgp.model @basic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.op
 // CHECK: } execute
 // CHECK: "mgp.generic.execute"(%{{.*}}, dSummary = {{.*}}}
 
-mgp.model @basic_control_flow : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @basic_control_flow devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   "mogg.compiled.load"() {symbols = ["__gen_0"], value = dense_resource<fake_binary> : tensor<1xui8>} : () -> ()
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
@@ -59,7 +59,7 @@ mgp.model @basic_control_flow : mof devices [#M.device_ref<"cpu", 0>] init (%wei
 // CHECK: %[[CHAIN:.*]] = mgp.runtime.create
 // CHECK: "mgp.generic.execute"(%[[CTX]], {{.*}}, %[[CHAIN]]) <{aRuntimeSlot
 
-mgp.model @basic_init : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @basic_init devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %out_chain = mgp.runtime.create %0, %1[1]

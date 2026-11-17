@@ -115,7 +115,7 @@ def _run_matmul[
     m: Int,
     ctx: DeviceContext,
 ) raises:
-    """Drives the real dispatch entry (`matmul[target="gpu"]` forwards to
+    """Drives the real dispatch entry (`matmul` on a GPU context forwards to
     `_matmul_gpu`) on the first `m` rows of `a_host`. N and K are
     compile-time static so the split-K GEMV guard in matmul_dispatch_sm100
     applies; the runtime `m` picks the kernel and the comptime `use_tf32`

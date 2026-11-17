@@ -58,7 +58,7 @@ from max.gpu.host.info import MI355X
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from std.utils import StaticTuple
 from layout import Idx, TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.matmul.gpu.amd import Shuffler

@@ -19,16 +19,13 @@ from collections.abc import Iterable, Sequence
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.graph.weight import Segment
+from max.nn._graph_ops import flash_attention_gpu, rope_ragged_with_position_ids
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.attention import num_heads_for_device
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
-    flash_attention_gpu,
-    rope_ragged_with_position_ids,
-)
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 from ..model_config import Flux2BlockQuant
 from .embeddings import get_1d_rotary_pos_embed

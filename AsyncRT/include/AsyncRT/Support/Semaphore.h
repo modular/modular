@@ -14,6 +14,7 @@
 #ifndef ASYNCRT_SUPPORT_SEMAPHORE_H
 #define ASYNCRT_SUPPORT_SEMAPHORE_H
 
+#include "Support/SymbolExport.h"
 #include <memory>
 #if defined(_WIN64) || defined(_WIN32)
 #include <BaseTsd.h>
@@ -27,7 +28,7 @@ namespace M::AsyncRT {
 /// functionality. This is essentially a lowest-common-denominator interface
 /// that is meant to be able to be backed by a GCD semaphore, or a POSIX
 /// semaphore, or in the worst case a counter protected by a mutex.
-class Semaphore {
+class MODULAR_CXX_EXPORT Semaphore {
 public:
   /// Initialize a semaphore, the initial value is the starting count for the
   /// value, it may not be negative because that would indicate that there are

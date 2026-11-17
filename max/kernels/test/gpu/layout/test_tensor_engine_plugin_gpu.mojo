@@ -56,11 +56,11 @@ comptime _NUM_ELEMENTS = _ROWS * _COLS
 
 comptime _Layout = type_of(row_major[_ROWS, _COLS]())
 
-comptime _HookTile[origin: MutOrigin] = TileTensor[
+comptime _HookTile = TileTensor[
     .float32,
     _Layout,
-    origin,
-    Engine=CurrentTensorEngine[AddressSpace.GENERIC],
+    _,
+    Engine=CurrentTensorEngine[_Layout, AddressSpace.GENERIC],
 ]
 """A tile whose engine comes from the hook rather than a literal engine name.
 

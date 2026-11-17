@@ -13,7 +13,7 @@
 
 from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceContext
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_raises
 
 
 def read_dim[
@@ -77,7 +77,23 @@ def test_grid_dim(ctx: DeviceContext) raises:
     check_axis[True, 2](ctx, 3)
 
 
+def noop():
+    pass
+
+
+def test_dims_out_of_range(ctx: DeviceContext) raises:
+    with assert_raises(contains="grid_dim.x must be in [1, Int32.MAX]"):
+        ctx.enqueue_function[noop](grid_dim=(0, 1, 1), block_dim=(1, 1, 1))
+    # Drivers take launch dims as 32-bit values, so one past `Int32.MAX`
+    # would launch with a truncated dim if it were not rejected.
+    with assert_raises(contains="block_dim.y must be in [1, Int32.MAX]"):
+        ctx.enqueue_function[noop](
+            grid_dim=(1, 1, 1), block_dim=(1, Int(Int32.MAX) + 1, 1)
+        )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_block_dim(ctx)
         test_grid_dim(ctx)
+        test_dims_out_of_range(ctx)

@@ -14,10 +14,30 @@
 
 from __future__ import annotations
 
-from max.graph.weights import WeightData, Weights
+from collections.abc import Sequence
 
-# Maps from Safetensor to MAX weight names.
-# The new ModuleV3 model uses "language_model." prefix (matching GPT-OSS pattern).
+from max.graph.weights import WeightData, Weights
+from max.pipelines.lib import WeightRenaming, WeightRule
+from transformers import PretrainedConfig
+
+
+def llama3_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the rules that map a Llama 3 checkpoint onto the decoder.
+
+    Args:
+        huggingface_config: The checkpoint's config.
+    """
+    del huggingface_config
+    return (
+        WeightRenaming(r"^model\.", "language_model."),
+        WeightRenaming(r"^lm_head\.", "language_model.lm_head."),
+    )
+
+
+# Maps from Safetensor to MAX weight names, for the architectures that reuse
+# this converter.
 LLAMA_SAFETENSOR_MAPPING = {
     "model.": "language_model.",
     "lm_head": "language_model.lm_head",

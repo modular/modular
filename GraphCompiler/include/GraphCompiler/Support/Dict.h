@@ -15,6 +15,7 @@
 #define GENERICML_SUPPORT_DICT_H
 
 #include "GraphCompiler/Support/Value.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/MapVector.h"
 #include <iostream>
 
@@ -41,7 +42,7 @@ struct DenseMapInfo<M::GML::Variant> {
 namespace M::GML {
 
 /// Pythonic `Dict`. Preserves insertion order so printing is deterministic.
-class Dict : public Container {
+class MODULAR_CXX_EXPORT Dict : public Container {
 public:
   Dict() = default;
   Dict(const Dict &other);
@@ -61,24 +62,24 @@ private:
 };
 
 /// Compares map contents.
-bool operator==(const Dict &lhs, const Dict &rhs);
+MODULAR_CXX_EXPORT bool operator==(const Dict &lhs, const Dict &rhs);
 
 /// Compares map contents.
-bool operator!=(const Dict &lhs, const Dict &rhs);
+MODULAR_CXX_EXPORT bool operator!=(const Dict &lhs, const Dict &rhs);
 
 /// Always returns false, since `<` is not supported on `Dict`.
 bool operator<(const Dict &lhs, const Dict &rhs);
 
 /// Writes the string representation of `Dict` to a stream.
-raw_ostream &operator<<(raw_ostream &os, const Dict &dict);
-std::ostream &operator<<(std::ostream &os, const Dict &dict);
+MODULAR_CXX_EXPORT raw_ostream &operator<<(raw_ostream &os, const Dict &dict);
+MODULAR_CXX_EXPORT std::ostream &operator<<(std::ostream &os, const Dict &dict);
 
 } // namespace M::GML
 
 namespace std {
 
 /// Returns the string representation.
-std::string to_string(const M::GML::Dict &dict);
+MODULAR_CXX_EXPORT std::string to_string(const M::GML::Dict &dict);
 
 /// Computes the hash for `Dict`, which is based on the map contents.
 template <>

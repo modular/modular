@@ -50,14 +50,15 @@ bool isPureViewForeach(IterElementwiseOp op);
 /// every extra copy re-reads all of them (JSC-30 / MSTDL-2759).
 bool isCheapToDuplicate(IterElementwiseOp op);
 
-/// Whether `load`'s index runs through a `map.index.reshape`. A reshape changes
-/// rank, so `LoopInvariantViewMotion` can't hoist a view fused above it;
-/// nothing may fuse into such a load.
-bool loadIndexCrossesReshape(LoadOp load);
-
-/// Whether a load of `tensor`, a kernel body's block argument, already crosses
-/// a reshape (`loadIndexCrossesReshape`), so no view may fuse into it.
-bool anyLoadCrossesReshape(mlir::Value tensor);
+/// Whether a fusion barrier keeps `src` out of the loads of `tensor`, a kernel
+/// body's block argument that carries `src`'s result. Nothing fuses into a load
+/// past a `map.index.reshape`: a reshape changes rank, so
+/// `LoopInvariantViewMotion` cannot hoist a view above it. An index reader, a
+/// kernel that reads its element index, does not fuse under a view, that is,
+/// into a consumer that loads its result through a slice or transpose:
+/// `LoopInvariantViewMotion` would give it the consumer's index. An index
+/// reader can still read from a view.
+bool crossesFusionBarrier(IterElementwiseOp src, mlir::Value tensor);
 
 /// Clones `src`'s body into `dst` at each load of `src`'s result, at the
 /// load's own index, and replaces that input with `src`'s inputs. Loads of

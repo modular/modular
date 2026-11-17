@@ -151,7 +151,7 @@ func.func @tryUnusedResult(%arg0: index) -> index {
 
 // Duplicate `!mef.chain` outputs are collapsed to a single output, and uses of
 // the removed chain results are rewired to the surviving one.
-mgp.model @remove_redundant_chains : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @remove_redundant_chains devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %2 = mgp.runtime.create %0, %1[1]
@@ -176,7 +176,7 @@ mgp.model @remove_redundant_chains : mof devices [#M.device_ref<"cpu", 0>] init 
 // -----
 
 // Op attributes (e.g. emitsMojo) are preserved when a region is left unchanged.
-mgp.model @preserve_kernel_attributes : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @preserve_kernel_attributes devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   %2 = mgp.runtime.create %0, %1[1]

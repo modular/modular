@@ -10,18 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The real checkpoint's key list, renamed by the adapter, covers the module.
+"""The real checkpoint's keys, named by the weight rules, cover the module.
 
 ``testdata/checkpoint_keys.txt`` lists the ``weight_map`` keys of
 ``model.safetensors.index.json`` for RecursiveSI/flint. A missing
-parameter already fails ``Module.compile``; this also catches two
-checkpoint keys renamed onto one parameter, where the second silently
-wins.
+parameter already fails ``Module.compile``; this also catches a checkpoint
+key the module would silently skip.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -30,19 +28,18 @@ import pytest
 from max import functional as F
 from max.driver import Buffer, DeviceSpec
 from max.dtype import DType
-from max.graph.weights import SafetensorWeights, WeightData
+from max.graph.weights import SafetensorWeights
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.flint import FlintConfig
 from max.pipelines.architectures.flint.flint import Flint
 from max.pipelines.architectures.flint.weight_adapters import (
-    convert_safetensor_state_dict,
+    flint_weight_rules,
 )
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, WeightTransform
 from max.tensor import default_dtype
 from transformers import AutoConfig
 
 TESTDATA = Path(__file__).parent / "testdata"
-Converter = Callable[..., dict[str, WeightData]]
 
 
 def _pipeline_config() -> Mock:
@@ -90,7 +87,10 @@ def _convert(keys: list[str]) -> set[str]:
         tensors_to_file_idx={},
         _st_weight_map=dict.fromkeys(keys, placeholder),
     )
-    return set(convert_safetensor_state_dict(dict(weights.items())))
+    transform = WeightTransform(
+        flint_weight_rules(_pipeline_config().model.huggingface_config)
+    )
+    return set(transform(dict(weights.items())))
 
 
 def test_checkpoint_keys_cover_module(

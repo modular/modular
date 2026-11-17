@@ -50,7 +50,7 @@ struct KernelArgPack[kernel: KernelFunction[_]]:
         )
 
 
-# Rudimentary check to see if a type is an Pointer.
+# Rudimentary check to see if a type is a Pointer.
 def looks_like_pointer[T: AnyType]() -> Bool:
     comptime base_name = reflect[T].base_name()
     return base_name == "Pointer"
@@ -64,13 +64,13 @@ def wrapped_entry_point[
 ](
     pa: Pointer[KernelArgPack[kernel], MutAnyOrigin],
 ) -> kernel.declared_ret_type:
-    comptime to_unsafe_pointer_mapper[
+    comptime to_pointer_mapper[
         T: AnyType
     ]: ImplicitlyCopyable & Deinitable = Pointer[T, MutUntrackedOrigin]
-    comptime UnsafePointerTupleType = Tuple[
-        *kernel.declared_arg_types.map[to_unsafe_pointer_mapper]()
+    comptime PointerTupleType = Tuple[
+        *kernel.declared_arg_types.map[to_pointer_mapper]()
     ]
-    var ptr_tuple: UnsafePointerTupleType
+    var ptr_tuple: PointerTupleType
     __mlir_op.`lit.ownership.mark_initialized`(
         __get_mvalue_as_litref(ptr_tuple)
     )

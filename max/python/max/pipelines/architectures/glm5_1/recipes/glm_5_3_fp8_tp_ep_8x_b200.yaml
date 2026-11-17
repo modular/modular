@@ -26,6 +26,7 @@ model:
     device_memory_utilization: 0.78
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   max_batch_input_tokens: 2048
   max_batch_size: 8

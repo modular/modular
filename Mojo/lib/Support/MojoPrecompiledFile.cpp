@@ -103,11 +103,6 @@ ErrorOrSuccess M::KGEN::checkVersion(const MojoPrecompiledFileVersion &base,
                (otherName.empty() ? "" : " ") + other.toString());
 }
 
-bool M::KGEN::isCompatiblePrecompiledFile(
-    const MojoPrecompiledFileHeader &header) {
-  return !checkCompatiblePrecompiledFile(header).isError();
-}
-
 template <typename T>
 static void writeInt(llvm::raw_ostream &os, uint64_t x) {
   SmallVector<char> buffer(sizeof(T));

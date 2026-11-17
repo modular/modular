@@ -120,6 +120,38 @@ def f(pair):
     assert_mojo_format(source, expected)
 
 
+def test_mojo_formats_guard_case():
+    source = """\
+def f(opt):
+    __guard case .Some(var value)=opt else:
+        return
+    use(value)
+"""
+    expected = """\
+def f(opt):
+    __guard case .Some(var value) = opt else:
+        return
+    use(value)
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_comptime_guard_case():
+    source = """\
+def f[T: AnyType]():
+    comptime __guard case ==Int=T else:
+        return
+    use(T)
+"""
+    expected = """\
+def f[T: AnyType]():
+    comptime __guard case == Int = T else:
+        return
+    use(T)
+"""
+    assert_mojo_format(source, expected)
+
+
 def test_python_mode_keeps_case_indent():
     source = """\
 def f(x):

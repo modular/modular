@@ -19,6 +19,7 @@
 #include "Support/ForwardDecls.h"
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -34,7 +35,7 @@ class PrimitiveDescriptor;
 ///
 /// Invokables may be shared across many different runtimes.
 ///
-class MEFInvokable {
+class MODULAR_CXX_EXPORT MEFInvokable {
 public:
   virtual ~MEFInvokable() = default;
 

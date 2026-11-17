@@ -21,8 +21,8 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
 )
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.comm.allreduce import Allreduce
-from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,

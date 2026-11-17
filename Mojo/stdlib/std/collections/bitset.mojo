@@ -38,6 +38,7 @@ from std.bit import log2_floor, pop_count
 from std.format._utils import FormatStruct
 from std.memory import pack_bits, unsafe_memcpy, unsafe_memset_zero
 
+from std.collections import check_bounds
 from std.collections.array import Array
 
 # ===-----------------------------------------------------------------------===#
@@ -75,28 +76,6 @@ def _range_mask(lo: Int, hi: Int) -> Int64:
     var high = ~Int64(0) if hi == _WORD_BITS else (Int64(1) << Int64(hi)) - 1
     var low = (Int64(1) << Int64(lo)) - 1
     return high & ~low
-
-
-@inline(.always)
-def _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
-    """Checks if the index is within bounds for a BitSet operation.
-
-    Parameters:
-        operation_name: The name of the operation for error reporting.
-
-    Args:
-        idx: The index to check.
-        max_size: The maximum size of the BitSet.
-    """
-    debug_assert(
-        idx < max_size,
-        "BitSet index out of bounds when ",
-        operation_name,
-        " bit: ",
-        idx,
-        " >= ",
-        max_size,
-    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -304,7 +283,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         Args:
             idx: The non-negative index of the bit to set (must be < `size`).
         """
-        _check_index_bounds["set"](idx, Self.size)
+        check_bounds(idx, length=Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) |= Int64(_bit_mask(idx))
 
@@ -318,7 +297,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         Args:
             idx: The non-negative index of the bit to clear (must be < `size`).
         """
-        _check_index_bounds["clearing"](idx, Self.size)
+        check_bounds(idx, length=Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) &= Int64(~_bit_mask(idx))
 
@@ -333,7 +312,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         Args:
             idx: The non-negative index of the bit to toggle (must be < `size`).
         """
-        _check_index_bounds["toggling"](idx, Self.size)
+        check_bounds(idx, length=Self.size)
         var w = _word_index(idx)
         self._words.unsafe_get(w) ^= Int64(_bit_mask(idx))
 
@@ -350,7 +329,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         Returns:
             True if the bit at `idx` is set, False otherwise.
         """
-        _check_index_bounds["testing"](idx, Self.size)
+        check_bounds(idx, length=Self.size)
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & Int64(_bit_mask(idx))) != 0
 

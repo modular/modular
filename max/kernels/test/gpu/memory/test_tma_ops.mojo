@@ -24,7 +24,7 @@ from max.gpu.memory import (
     fence_proxy_tensormap_generic_sys_release,
 )
 
-comptime OpaquePointer[origin: ImmOrigin] = ImmPointer[NoneType, origin]
+comptime OpaquePointer = ImmPointer[NoneType, _]
 
 
 # CHECK-LABEL: test_async_copy_asm

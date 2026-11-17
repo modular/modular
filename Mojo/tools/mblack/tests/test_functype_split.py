@@ -25,8 +25,8 @@ def test_ffi_functype_thin_abi_is_stable():
         "\n"
         "\n"
         "comptime version_query_callback = Optional[\n"
-        '    def() thin abi("C") -> UnsafePointer[\n'
-        "        UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
+        '    def() thin abi("C") -> Pointer[\n'
+        "        Pointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
         "    ]\n"
         "]\n"
     )
@@ -44,8 +44,8 @@ def test_long_functype_splits_return_type_not_named_effect():
         "\n"
         "\n"
         "comptime version_query_callback = Optional[\n"
-        '    def() thin abi("C") -> UnsafePointer['
-        "UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin]\n"
+        '    def() thin abi("C") -> Pointer['
+        "Pointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin]\n"
         "]\n"
     )
     expected = (
@@ -53,8 +53,8 @@ def test_long_functype_splits_return_type_not_named_effect():
         "\n"
         "\n"
         "comptime version_query_callback = Optional[\n"
-        '    def() thin abi("C") -> UnsafePointer[\n'
-        "        UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
+        '    def() thin abi("C") -> Pointer[\n'
+        "        Pointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
         "    ]\n"
         "]\n"
     )
@@ -68,8 +68,8 @@ def test_async_ffi_functype_is_stable():
         "\n"
         "\n"
         "comptime version_query_callback = Optional[\n"
-        '    __async def() thin abi("C") -> UnsafePointer[\n'
-        "        UnsafePointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
+        '    __async def() thin abi("C") -> Pointer[\n'
+        "        Pointer[c_char, ImmutAnyOrigin], ImmutAnyOrigin\n"
         "    ]\n"
         "]\n"
     )

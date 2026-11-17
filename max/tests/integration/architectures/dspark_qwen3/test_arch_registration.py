@@ -28,9 +28,13 @@ def test_draft_arch_is_registered() -> None:
 
 
 def test_pairs_with_the_modulev3_target() -> None:
-    # Nemotron-H builds its module only as ModuleV3.
+    # Nemotron-H registers its decoder as ModuleV3, so it pairs only as the
+    # ModuleV3 variant, which its recipes select.
     arch = spec_decode_architecture(
-        "NemotronHForCausalLM", "dspark", "Qwen3DSparkModel"
+        "NemotronHForCausalLM",
+        "dspark",
+        "Qwen3DSparkModel",
+        prefer_module_v3=True,
     )
     assert arch is not None
     assert arch.name == "NemotronHForCausalLM_ModuleV3+dspark"
@@ -39,7 +43,10 @@ def test_pairs_with_the_modulev3_target() -> None:
 
 def test_mixed_batches_advance_draft_less() -> None:
     arch = spec_decode_architecture(
-        "NemotronHForCausalLM", "dspark", "Qwen3DSparkModel"
+        "NemotronHForCausalLM",
+        "dspark",
+        "Qwen3DSparkModel",
+        prefer_module_v3=True,
     )
     assert arch is not None
     assert arch.supports_spec_decode_mixed_batches is False
@@ -47,7 +54,10 @@ def test_mixed_batches_advance_draft_less() -> None:
 
 def test_keeps_prefix_caching_on() -> None:
     arch = spec_decode_architecture(
-        "NemotronHForCausalLM", "dspark", "Qwen3DSparkModel"
+        "NemotronHForCausalLM",
+        "dspark",
+        "Qwen3DSparkModel",
+        prefer_module_v3=True,
     )
     assert arch is not None
     assert "enable_prefix_caching" not in arch.required_arguments

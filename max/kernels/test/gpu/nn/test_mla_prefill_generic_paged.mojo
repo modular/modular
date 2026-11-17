@@ -15,7 +15,7 @@
 This test exercises the production code path for DeepSeek-V2/V3
 prefill: ``flare_mla_prefill`` with a ``KVCacheT`` for K_rope, dispatched
 to ``mla_sm100_prefill_generic`` on B200. The existing
-``test_mla.mojo``/``test_mla_prefill_qkv_fp8.mojo`` tests cover only the
+``test_mla_*.mojo``/``test_mla_prefill_qkv_fp8_*.mojo`` tests cover only the
 contiguous K_rope path (``TileTensorMHAOperand``) and so do not
 exercise the sub-tile TMA loops in the kernel.
 
@@ -80,6 +80,7 @@ from std.random import seed
 from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
+from nn.attention.gpu.mla import SM100MLA
 from max.gpu.host.info import _is_sm10x_gpu
 
 from _paged_prefill_test_utils import (
@@ -119,6 +120,7 @@ def main() raises:
                     nope_depth=128,
                     page_size=PAGE_SIZE,
                     batch_size=1,
+                    kernels=SM100MLA,
                 ](num_keys, num_keys, ctx)
                 # Multi-batch — exercises cross-batch LUT layout: each
                 # batch's pages occupy a distinct slice of the global
@@ -134,6 +136,7 @@ def main() raises:
                     nope_depth=128,
                     page_size=PAGE_SIZE,
                     batch_size=2,
+                    kernels=SM100MLA,
                 ](num_keys, num_keys, ctx)
 
             # 1Q multi-tile coverage: 657 keys / 16 heads / batch 1 keeps
@@ -153,6 +156,7 @@ def main() raises:
                 nope_depth=128,
                 page_size=PAGE_SIZE,
                 batch_size=1,
+                kernels=SM100MLA,
             ](657, 657, ctx)
             # 2Q coverage retention: 1088 keys -> 5 BM=256 tiles, so the
             # unclamped 2Q grid is 5 * 16 = 80 blocks > SMs/2 and the
@@ -167,4 +171,5 @@ def main() raises:
                 nope_depth=128,
                 page_size=PAGE_SIZE,
                 batch_size=1,
+                kernels=SM100MLA,
             ](1088, 1088, ctx)

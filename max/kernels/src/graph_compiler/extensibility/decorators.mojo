@@ -16,6 +16,8 @@
 `@register_internal` is used by built-in MAX Graph operations.
 """
 
+from .platform_predicates import PlatformExpr, PlatformPredicate
+
 
 def register_internal(name: StaticString):
     """
@@ -43,86 +45,74 @@ def register_internal(name: StaticString):
     return
 
 
-def register(
-    name: StaticString,
-    type: StaticString = "",
-    api: StaticString = "",
-    arch: StaticString = "",
-    model: StaticString = "",
-):
-    """Registers a struct as a kernel implementation for a MAX Graph op.
-
-    At compile time, the Graph Compiler selects the most specific registered
-    kernel that matches the runtime device. The four device fields narrow the
-    target from coarse to fine:
-
-    - `type`: broad device category: `"cpu"`, `"gpu"`, or a custom label.
-    - `api`: compute backend: `"cuda"`, `"hip"`, `"metal"`, etc.
-    - `arch`: microarchitecture: `"sm_100a"`, `"sm_90a"`, `"gfx942"`, etc.
-    - `model`: exact hardware model: `"NVIDIA B200"`, `"AMD Instinct MI355X"`, etc.
-
-    An empty string for any field acts as a wildcard: it matches any device
-    value for that field.
-    Fields are ordered from least to most specific: `type` < `api` < `arch` <
-    `model`. Among all matching candidates, the most specific registration wins:
-    a registration that sets `arch` is more specific than one that sets only
-    `type` and `api`, because `arch` sits higher in the hierarchy.
-
-    If a user-defined kernel and a built-in kernel are equally specific for a
-    device, the user-defined kernel takes precedence.
-    Registering the same op with identical device fields more than once,
-    whether within the same library or across multiple user libraries, is an
-    error reported by the Graph Compiler.
-
-    Example: device field combinations and their reach:
+def register(name: StaticString):
+    """Registers a struct as a kernel implementation of a MAX Graph op for all
+    devices.
 
     ```mojo
-    # Matches all devices (backward-compatible default).
     @extensibility.register("mo.matmul")
-
-    # Matches all CPU devices.
-    @extensibility.register("mo.matmul", type="cpu")
-
-    # Matches all GPU devices regardless of vendor or architecture.
-    @extensibility.register("mo.matmul", type="gpu")
-
-    # Matches all CUDA GPUs (any architecture).
-    @extensibility.register("mo.matmul", type="gpu", api="cuda")
-
-    # Matches only the NVIDIA SM100A architecture.
-    @extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")
-
-    # Matches only the NVIDIA B200.
-    @extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a", model="NVIDIA B200")
+    struct Matmul:
+        ...
     ```
 
-    Example: selection with multiple registrations in scope:
-
-    ```mojo
-    @extensibility.register("mo.matmul")                                          # wildcard
-    @extensibility.register("mo.matmul", type="cpu")                              # least specific
-    @extensibility.register("mo.matmul", type="gpu")                              # least specific
-    @extensibility.register("mo.matmul", type="gpu", api="cuda", arch="sm_100a")  # more specific
-    ```
-
-    - SM100A CUDA GPU → all four match; `arch` registration wins (most specific).
-    - SM90A CUDA GPU  → wildcard and `type="gpu"` match; `type="gpu"` wins.
-    - CPU             → wildcard and `type="cpu"` match; `type="cpu"` wins.
-    - Some NPU        → only the wildcard matches; wildcard wins.
+    To restrict a registration to some devices, use the `cond` overload of
+    `register` with a platform.
 
     Args:
         name: The MAX Graph op name to register (e.g. `"mo.matmul"`).
-        type: Broad device category: `"cpu"`, `"gpu"`, or a custom accelerator
-            label such as `"npu-xxx"`. Corresponds to the label used in
-            `DeviceRef` (e.g. `DeviceRef.GPU()`). Empty matches all.
-        api: Programming API or compute backend for the device, for example
-            `"cuda"` (NVIDIA CUDA), `"hip"` (AMD ROCm/HIP), or `"metal"`
-            (Apple Metal). Empty matches all.
-        arch: Microarchitecture identifier, for example `"sm_90a"` (Hopper),
-            `"sm_100a"` (Blackwell), or `"gfx942"` (AMD CDNA3). Empty matches
-            all.
-        model: Specific device model, for example `"NVIDIA B200"` or
-            `"AMD Instinct MI355X"`. Empty matches all.
+    """
+    pass
+
+
+def register[
+    expr: PlatformExpr, //
+](name: StaticString, cond: PlatformPredicate[expr], /):
+    """Registers a struct as a kernel implementation for the devices that
+    `cond` selects.
+
+    Build `cond` from the aliases in `extensibility.platforms` and the atoms in
+    `extensibility.platform_predicates`. Give each platform that uses the
+    `type`, `api`, `arch`, or `model` atoms a name with `comptime`, and pass
+    that name as `cond`. In the alias, state every level of the device above
+    the narrowest one that it tests, even when a helper already implies it:
+
+    ```mojo
+    comptime TCGEN05 = ACCELERATOR & CUDA & (arch("sm_100a") | arch("sm_103a"))
+
+    @extensibility.register("mo.matmul", CPU)
+    struct CpuMatmul:
+        ...
+
+    @extensibility.register("mo.matmul", ACCELERATOR)
+    struct AcceleratorMatmul:
+        ...
+
+    @extensibility.register("mo.matmul", TCGEN05)
+    struct TcgenMatmul:
+        ...
+    ```
+
+    The Graph Compiler selects a kernel for each op and device as follows:
+
+    1. It keeps the registrations whose platform holds for the device.
+    2. If a user-defined registration remains, it keeps only the user-defined
+       ones. Otherwise it keeps the built-in ones.
+    3. It selects the registration whose set of devices is a strict subset of
+       the set of every other remaining registration. In the example, a B200
+       matches `AcceleratorMatmul` and `TcgenMatmul`, and `TcgenMatmul` wins.
+
+    If no registration is a strict subset of all the others, the selection is
+    ambiguous and the Graph Compiler reports an error. To resolve it, narrow a
+    platform or register a kernel for exactly the devices that overlap. Two
+    registrations of the same op for the same set of devices, both built-in or
+    both user-defined, are an error, because neither can ever be selected.
+
+    Parameters:
+        expr: The expression of the platform, inferred from `cond`.
+
+    Args:
+        name: The MAX Graph op name to register (e.g. `"mo.matmul"`).
+        cond: The devices that the kernel supports.
     """
     pass
 

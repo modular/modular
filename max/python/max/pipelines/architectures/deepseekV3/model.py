@@ -23,10 +23,10 @@ from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     GraphRole,
@@ -34,7 +34,6 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    compile_and_init_graphs,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -47,9 +46,9 @@ from .batch_processor import (
     DeepseekV3BatchProcessorBase,
 )
 from .deepseekV3 import DeepseekV3
-from .memory_planner import (
-    _ep_max_rank_send_tokens_for_pipeline,
-    _get_mtp_draft_ep_dispatch_dtype,
+from .ep_dispatch import (
+    ep_max_rank_send_tokens_for_pipeline,
+    mtp_draft_ep_dispatch_dtype,
 )
 from .model_config import DeepseekV3Config
 
@@ -208,7 +207,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             n_nodes = ep_size // num_devices
 
-            ep_max_rank_send_tokens = _ep_max_rank_send_tokens_for_pipeline(
+            ep_max_rank_send_tokens = ep_max_rank_send_tokens_for_pipeline(
                 pipeline_config
             )
 
@@ -312,7 +311,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # When EAGLE/MTP speculative decoding shares EP buffers between
         # target (FP4) and draft (BF16) models, allocate buffers
         # large enough for the draft model's dispatch dtype.
-        draft_ep_dtype = _get_mtp_draft_ep_dispatch_dtype(self.pipeline_config)
+        draft_ep_dtype = mtp_draft_ep_dispatch_dtype(self.pipeline_config)
         if draft_ep_dtype is not None:
             ep_alloc_config = replace(
                 model_config.ep_config,
@@ -331,31 +330,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             raise ValueError(
                 "EP node ID is not set. Please check if the EP initialization is successful."
             )
-
-    def _init_ep_comm(
-        self, session: InferenceSession, ep_config: EPConfig
-    ) -> EPCommInitializer:
-        """Sets up expert parallelism for ``ep_config``.
-
-        Compiles the one-time EP init graph under :attr:`GraphRole.EP_INIT`,
-        keeps it in :attr:`compiled_modules`, and runs it.
-
-        Args:
-            session: The session that compiles and runs the EP init graph.
-            ep_config: The EP configuration. EP init sets its node ID.
-
-        Returns:
-            The initialized EP communication buffers.
-        """
-        ep_comm_initializer = EPCommInitializer(ep_config)
-        init = ep_comm_initializer.init_module()
-        specs: dict[str, GraphSpec] = {
-            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
-        }
-        modules = compile_and_init_graphs(session, specs)
-        ep_comm_initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
-        self.compiled_modules = {**self.compiled_modules, **modules}
-        return ep_comm_initializer
 
     @override
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:

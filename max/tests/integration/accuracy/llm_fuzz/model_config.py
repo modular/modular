@@ -147,6 +147,24 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:muse_glimmer"],
         description="Muse Glimmer model-specific tests",
     ),
+    "muse_spark": ModelProfile(
+        name="muse_spark",
+        default_port=8650,
+        tags=["model:muse_spark"],
+        description="Muse Spark model-specific tests",
+    ),
+    "mimo_v2": ModelProfile(
+        name="mimo_v2",
+        default_port=8620,
+        tags=["model:mimo_v2"],
+        description="MiMo-V2.6-Flash model-specific tests",
+    ),
+    "beam": ModelProfile(
+        name="beam",
+        default_port=8900,
+        tags=["model:beam"],
+        description="Beam 1.0 on Mach",
+    ),
     "nemotron": ModelProfile(
         name="nemotron",
         default_port=8700,
@@ -158,6 +176,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         default_port=8500,
         tags=["model:smollm"],
         description="SmolLM model-specific tests",
+    ),
+    "deepseek_v4": ModelProfile(
+        name="deepseek_v4",
+        default_port=8091,
+        tags=["model:deepseek_v4"],
+        description="DeepSeek-V4-Flash-0731",
     ),
     "laguna": ModelProfile(
         name="laguna",

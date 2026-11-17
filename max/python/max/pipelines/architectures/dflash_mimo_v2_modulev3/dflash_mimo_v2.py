@@ -29,9 +29,10 @@ from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer
+from max import functional as F
+from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import TensorValue, ops
 from max.graph.weights import WeightData
 from max.nn import (
     Linear,
@@ -39,26 +40,25 @@ from max.nn import (
     ModuleList,
     RMSNorm,
 )
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.mlp import MLP
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
+    fused_k_rope_v_store_ragged,
+    fused_rope_qkv_store_ragged,
 )
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.tensor import Tensor
-from max.tensor.realization_context import ensure_context
 from max.tensor.sharding import NamedMapping
+from max.tensor.sharding.action import PerShard
 
-from ..dflash_mimo_v2 import DFlashMiMoV2Config
 from .context_writer import DFlashContextWriter, _heads_per_shard
+from .model_config import DFlashMiMoV2Config
 
 __all__ = [
     "DFlashMiMoV2",
@@ -74,10 +74,12 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
     queries.
 
     The K/V a block query attends to must be computed the same way whether it
-    came from a target tap or from the block itself, so both paths go through
-    :meth:`store_kv`. The K/V and Q projections are column-parallel over the
-    heads, so each device stores its heads' K/V; ``o_proj`` reduces the
-    shards' partial sums. Under data parallelism every one-device replica
+    came from a target tap or from the block itself, so both paths share the
+    projections and the rotation-and-store kernel: :meth:`store_kv` for the
+    block, which ropes its queries too, and :meth:`write_context_kv` for the
+    taps, which have no queries. The K/V and Q projections are column-parallel
+    over the heads, so each device stores its heads' K/V; ``o_proj`` reduces
+    the shards' partial sums. Under data parallelism every one-device replica
     holds the full drafter instead: all heads local, plain projections, and
     each replica attends its own rows with nothing to reduce.
     """
@@ -116,19 +118,37 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
             else sinks.to(NamedMapping(sinks.mesh, (TP,)))
         )
 
+    def _kv_projections(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """Returns this layer's unrotated K and unscaled V projections.
+
+        Args:
+            x: ``[rows, hidden]`` inputs, ragged by ``input_row_offsets``.
+
+        Returns:
+            ``[rows, kv_heads, head_dim]`` K and V, sharded over the heads
+            under tensor parallelism and whole per replica under data
+            parallelism.
+        """
+        config = self.config
+        head_dim = config.head_dim
+        heads = self.num_key_value_heads
+        k = self.k_norm(self.k_proj(x).reshape([-1, heads, head_dim]))
+        v = self.v_proj(x).reshape([-1, heads, head_dim])
+        return k, v
+
     def store_kv(
         self,
         x: Tensor,
         kv_collections: Sequence[PagedCacheValues],
         freqs_cis: Tensor,
         input_row_offsets: Tensor,
-        q: Tensor | None = None,
-    ) -> list[TensorValue]:
+        q: Tensor,
+    ) -> Tensor:
         """Writes the K/V of ``x``'s rows at their positions and ropes ``q``.
 
-        The only kernel that rotates a NeoX prefix of the head rotates the
-        cached K together with a query, so without ``q`` the K rows stand in
-        for it and the result is discarded.
+        One launch per device: the key is rotated on its way into the cache
+        rather than stored raw and rotated in place, and the value is scaled
+        in the same kernel.
 
         Args:
             x: ``[rows, hidden]`` inputs, ragged by ``input_row_offsets``,
@@ -144,46 +164,60 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
                 parallelism.
             q: ``[rows, heads, head_dim]`` queries to rope, sharded over the
                 heads under tensor parallelism and full per replica under
-                data parallelism, if any.
+                data parallelism.
 
         Returns:
-            ``q``, or the K rows without it, roped at the rows' positions;
-            one entry per device.
+            The roped queries, sharded like ``q``.
         """
-        config = self.config
-        head_dim = config.head_dim
-        heads = self.num_key_value_heads
-        k = self.k_norm(self.k_proj(x).reshape([-1, heads, head_dim]))
-        v = self.v_proj(x).reshape([-1, heads, head_dim])
-        # A bfloat16 constant would round the scale itself (0.612 -> 0.6133).
-        v = (v.cast(DType.float32) * config.attention_value_scale).cast(v.dtype)
-        layer_idx = ops.constant(
-            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+        k, v = self._kv_projections(x)
+        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        # The rotation reaches the cache write, so an unrotated K store first
+        # would be read back only to be overwritten.
+        return F.call_on_mesh(
+            fused_rope_qkv_store_ragged, x.mesh, out_specs=q.mapping
+        )(
+            q,
+            k,
+            v,
+            input_row_offsets,
+            freqs_cis,
+            PerShard(kv_collections),
+            layer_idx,
+            self.config.attention_value_scale,
         )
-        roped: list[TensorValue] = []
-        with ensure_context():
-            for d in range(x.mesh.num_devices):
-                k_d = TensorValue(k.local_shards[d])
-                v_d = TensorValue(v.local_shards[d])
-                offsets_d = TensorValue(input_row_offsets.local_shards[d])
-                store_k_cache_ragged(
-                    kv_collections[d], k_d, offsets_d, layer_idx
-                )
-                store_v_cache_ragged(
-                    kv_collections[d], v_d, offsets_d, layer_idx
-                )
-                roped.append(
-                    fused_qk_ragged_rope(
-                        config.kv_params,
-                        k_d if q is None else TensorValue(q.local_shards[d]),
-                        offsets_d,
-                        kv_collections[d],
-                        TensorValue(freqs_cis.local_shards[d]),
-                        layer_idx,
-                        interleaved=False,
-                    )
-                )
-        return roped
+
+    def write_context_kv(
+        self,
+        x: Tensor,
+        kv_collections: Sequence[PagedCacheValues],
+        freqs_cis: Tensor,
+        input_row_offsets: Tensor,
+    ) -> None:
+        """Writes the K/V of ``x``'s rows at their positions, with no query.
+
+        One launch per device, covering the key and value heads alone: a
+        context row has no queries to rope, so nothing rotates into a buffer
+        nobody reads.
+
+        Args:
+            x: ``[rows, hidden]`` context inputs, ragged by
+                ``input_row_offsets``.
+            kv_collections: The drafter cache, one per device, whose lengths
+                place the rows.
+            freqs_cis: The RoPE table, replicated on the mesh.
+            input_row_offsets: Ragged offsets of ``x``.
+        """
+        k, v = self._kv_projections(x)
+        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        F.call_on_mesh(fused_k_rope_v_store_ragged, x.mesh)(
+            k,
+            v,
+            input_row_offsets,
+            freqs_cis,
+            PerShard(kv_collections),
+            layer_idx,
+            self.config.attention_value_scale,
+        )
 
     def forward(
         self,
@@ -212,34 +246,26 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
         head_dim = self.config.head_dim
         q = self.q_norm(self.q_proj(x).reshape([-1, self.num_heads, head_dim]))
         roped = self.store_kv(
-            x, kv_collections, freqs_cis, input_row_offsets, q=q
+            x, kv_collections, freqs_cis, input_row_offsets, q
         )
-        layer_idx = ops.constant(
-            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
-        )
-        attns: list[TensorValue] = []
-        with ensure_context():
-            for d in range(x.mesh.num_devices):
-                # This device's own rows: all of them under tensor
-                # parallelism, its replica's under data parallelism.
-                rows = x.local_shards[d].shape[0]
-                offsets_d = TensorValue(input_row_offsets.local_shards[d])
-                attn = flash_attention_ragged(
-                    self.config.kv_params,
-                    input=roped[d],
-                    input_row_offsets=offsets_d,
-                    kv_collection=kv_collections[d],
-                    layer_idx=layer_idx,
-                    mask_variant=(MHAMaskVariant.SLIDING_WINDOW_NONCAUSAL_MASK),
-                    scale=head_dim**-0.5,
-                    local_window_size=self.config.sliding_window,
-                    sink_weights=TensorValue(
-                        self.attention_sink_bias.local_shards[d]
-                    ),
-                )
-                attns.append(
-                    ops.reshape(attn, [rows, self.local_heads * head_dim])
-                )
+        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        attns: list[Tensor] = []
+        for d in range(x.mesh.num_devices):
+            # This device's own rows: all of them under tensor parallelism,
+            # its replica's under data parallelism.
+            rows = x.local_shards[d].shape[0]
+            attn = flash_attention_ragged(
+                self.config.kv_params,
+                input=roped.local_shards[d],
+                input_row_offsets=input_row_offsets.local_shards[d],
+                kv_collection=kv_collections[d],
+                layer_idx=layer_idx,
+                mask_variant=(MHAMaskVariant.SLIDING_WINDOW_NONCAUSAL_MASK),
+                scale=head_dim**-0.5,
+                local_window_size=self.config.sliding_window,
+                sink_weights=self.attention_sink_bias.local_shards[d],
+            )
+            attns.append(attn.reshape([rows, self.local_heads * head_dim]))
         if x.mesh.num_devices == 1 or self.data_parallel:
             heads = Tensor.from_shard_values(attns, x.mapping)
         else:
@@ -252,8 +278,8 @@ class DFlashMiMoV2Attention(Module[..., Tensor]):
 class DFlashMiMoV2DecoderLayer(Module[..., Tensor]):
     """A pre-norm drafter layer: sink attention, then a SiLU MLP.
 
-    The attention's :meth:`DFlashMiMoV2Attention.store_kv` is the context
-    writer's path; the block runs through :meth:`forward`.
+    The attention's :meth:`DFlashMiMoV2Attention.write_context_kv` is the
+    context writer's path; the block runs through :meth:`forward`.
     """
 
     def __init__(self, config: DFlashMiMoV2Config, layer_idx: int) -> None:
@@ -290,7 +316,7 @@ class DFlashMiMoV2DecoderLayer(Module[..., Tensor]):
         input_row_offsets: Tensor,
     ) -> None:
         """Writes this layer's context K/V, with no block query."""
-        self.self_attn.store_kv(
+        self.self_attn.write_context_kv(
             ctx, kv_collections, freqs_cis, input_row_offsets
         )
 

@@ -20,6 +20,7 @@
 
 #include "Mojo/MojoParser/ModuleSpec.h"
 #include "Mojo/MojoParser/SharedState.h"
+#include "Support/SymbolExport.h"
 
 #include <memory>
 #include <optional>
@@ -59,15 +60,21 @@ struct BindingSpec {
 ///
 /// Its primary purpose is resolution: given an import path, work out what it
 /// names on disk and describe it as a `ModuleSpec`.
-class ModuleLoader : public SharedStateUser {
+class MODULAR_CXX_EXPORT ModuleLoader : public SharedStateUser {
 public:
   ModuleLoader(SharedState &shared);
   ~ModuleLoader();
 
-  /// Resolve the absolute path for a given module name. Returns nullopt if the
-  /// module cannot be found.
-  std::optional<ModuleSpec> resolveModulePath(StringRef moduleName,
-                                              llvm::SMLoc includeLoc);
+  /// The working directory that imports from `importBufferFileId` search, or
+  /// an empty path for a null buffer id, which requests none.
+  std::filesystem::path workingDirectoryFor(unsigned importBufferFileId) const;
+
+  /// Resolve the absolute path for a given module name across the import
+  /// directories, searching `workingDir` among them unless it is empty.
+  /// Returns nullopt if the module cannot be found.
+  std::optional<ModuleSpec>
+  resolveModulePath(StringRef moduleName,
+                    const std::filesystem::path &workingDir);
 
   /// Resolve the absolute path for a given module name within the provided
   /// directory. Returns nullopt if the module cannot be found.
@@ -80,9 +87,9 @@ public:
                                               bool isInsideSourcePackage);
 
   /// Collect the portion directories of the namespace described by
-  /// `parentSpec`: for each import directory visible from
-  /// `importBufferFileId`, descend the spec's namespace components as plain
-  /// directories. Portions are returned in traversal order, deduplicated.
+  /// `parentSpec`: for each import directory, `workingDir` among them unless it
+  /// is empty, descend the spec's namespace components as plain directories.
+  /// Portions are returned in traversal order, deduplicated.
   ///
   /// A "portion" is one root's directory contributing to the namespace. For the
   /// example on `namespaceComponents`, the portions of `foo.bar` are
@@ -96,7 +103,7 @@ public:
   /// portion.
   SmallVector<std::string>
   collectNamespacePortions(const ModuleSpec &parentSpec,
-                           unsigned importBufferFileId);
+                           const std::filesystem::path &workingDir);
 
   /// Resolve the name as a submodule of the namespace described by
   /// `parentSpec`, searching every portion. Returns every distinct thing the
@@ -106,12 +113,13 @@ public:
   /// ambiguous; several portions provide a closed candidate.
   SmallVector<ModuleSpec>
   resolveNamespaceSubModule(StringRef moduleName, const ModuleSpec &parentSpec,
-                            unsigned importBufferFileId);
+                            const std::filesystem::path &workingDir);
 
   /// Traverse the directories available for importing modules and packages,
-  /// calling the given callback for each directory found.
+  /// `workingDir` among them unless it is empty, calling the given callback
+  /// for each directory found.
   void
-  traverseImportDirectories(unsigned importBufferFileId,
+  traverseImportDirectories(const std::filesystem::path &workingDir,
                             function_ref<WalkResult(StringRef)> callback) const;
 
   /// Resolve what binding the name makes in the provided scope, creating the
@@ -137,6 +145,18 @@ public:
 
   /// The state of the top-level decl, which every import is nested within.
   ModuleState &getTopLevelState() const;
+
+  /// Bind `packageState`, the package being precompiled, at `importPath` too:
+  /// the absolute path it is imported by once precompiled, namespace
+  /// components first. The binding shares the package's origin, aliasing the
+  /// binding under its source directory's name, so a self-import spelled either
+  /// way resolves to its source, never to what is on disk under the import
+  /// path, such as a stale build of it or the output being written. Each
+  /// namespace component binds as a namespace whether or not any import root
+  /// has a directory for it yet; fails, reporting why, if one names anything
+  /// else.
+  LogicalResult bindPrecompiledPackage(ModuleState &packageState,
+                                       ArrayRef<StringRef> importPath);
 
   /// The state this decl was imported as, or null if it names no module.
   ModuleState *lookupState(ASTDecl *decl) const;

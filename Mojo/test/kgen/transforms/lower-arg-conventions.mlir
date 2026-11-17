@@ -324,7 +324,7 @@ kgen.func @two_call_indirect(%arg0: !kgen.generator<(!kgen.pointer<index> byref_
 // CHECK-LABEL: kgen.func @lower_args1
 // CHECK-SAME: (%arg0: index, %arg1: i1, %arg2: index, %arg3: i1)
 kgen.func @lower_args1(
- %arg0: !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> imm_mem
+ %arg0: !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> pack_imm_mem
 ) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> {
     // CHECK: [[V0:%.*]] = pop.stack_allocation 1 x i1
     // CHECK-NEXT: pop.store %arg3, [[V0]] : !kgen.pointer<i1>
@@ -354,14 +354,14 @@ kgen.func @main() {
     // CHECK-NEXT: [[V9:%.*]] = pop.load [[V5]] : !kgen.pointer<i1>
     // CHECK-NEXT: [[V10:%.*]] = kgen.call @lower_args1([[V6]], [[V7]], [[V8]], [[V9]]) : (index, i1, index, i1) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
     %0 = pop.stack_allocation 1 x !kgen.struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>
-    %1 = kgen.call @lower_args1(%0) : (!kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> imm_mem) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
+    %1 = kgen.call @lower_args1(%0) : (!kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> pack_imm_mem) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
     hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @lower_empty
 // CHECK-SAME: (%arg0: !kgen.none) -> !kgen.pointer<struct<() isParamPack>>
 kgen.func @lower_empty(
- %arg0: !kgen.pointer<struct<() isParamPack>> imm_mem
+ %arg0: !kgen.pointer<struct<() isParamPack>> pack_imm_mem
 ) -> !kgen.pointer<struct<() isParamPack>> {
  hlcf.return %arg0 : !kgen.pointer<struct<() isParamPack>>
 }
@@ -369,13 +369,13 @@ kgen.func @lower_empty(
 kgen.func @main_empty() {
     %0 = pop.stack_allocation 1 x !kgen.struct<() isParamPack>
     // CHECK: kgen.call @lower_empty(%none) : (!kgen.none) -> !kgen.pointer<struct<() isParamPack>>
-    %1 = kgen.call @lower_empty(%0) : (!kgen.pointer<struct<() isParamPack>> imm_mem) -> !kgen.pointer<struct<() isParamPack>>
+    %1 = kgen.call @lower_empty(%0) : (!kgen.pointer<struct<() isParamPack>> pack_imm_mem) -> !kgen.pointer<struct<() isParamPack>>
     hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @none_with_res
 // CHECK-SAME: (%arg0: !kgen.none, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
-kgen.func @none_with_res(%arg0: !kgen.pointer<struct<() isParamPack>> owned_in_mem, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none {
+kgen.func @none_with_res(%arg0: !kgen.pointer<struct<() isParamPack>> pack_owned_in_mem, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
 }
@@ -384,7 +384,7 @@ kgen.func @call_none_with_res(%arg0: !kgen.pointer<struct<(variant<struct<() mem
     %2 = pop.stack_allocation 1 x !kgen.struct<() isParamPack>
     %3 = pop.stack_allocation 1 x struct<(struct<() isParamPack>) memoryOnly>
     // CHECK: kgen.call @none_with_res(%none, %{{.*}}) : (!kgen.none, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
-    %4 = kgen.call @none_with_res(%2, %3) : (!kgen.pointer<struct<() isParamPack>> owned_in_mem, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
+    %4 = kgen.call @none_with_res(%2, %3) : (!kgen.pointer<struct<() isParamPack>> pack_owned_in_mem, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
 }
@@ -401,28 +401,82 @@ kgen.func @call_recursive_ptr(%arg0: !kgen.pointer<pointer<none>> imm_mem){
     hlcf.return
 }
 
-// COM: Do not promote types inside a pack not known to be read only.
+// COM: Elements of a `mut` pack are passed by reference.
 
 // CHECK-LABEL: kgen.func @lower_args_no_ptr
 // CHECK-SAME: (%arg0: !kgen.pointer<index> mut)
 kgen.func @lower_args_no_ptr(
- %arg0: !kgen.struct<(pointer<index>) isParamPack>
-) -> !kgen.struct<(pointer<index>) isParamPack> {
-    %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<index>) isParamPack>
-    %1 = kgen.param.constant:index = <9>
-    pop.store %1, %0 : !kgen.pointer<index>
- hlcf.return %arg0 : !kgen.struct<(pointer<index>) isParamPack>
+ %arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) {
+    %0 = pop.load %arg0 : !kgen.pointer<struct<(pointer<index>) isParamPack>>
+    %1 = kgen.struct.extract %0[0] : !kgen.struct<(pointer<index>) isParamPack>
+    %2 = kgen.param.constant:index = <9>
+    pop.store %2, %1 : !kgen.pointer<index>
+ hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @callIt
 kgen.func @callIt() -> index {
     %0 = pop.stack_allocation 1 x index
     %1 = kgen.struct.create(%0) : !kgen.struct<(pointer<index>) isParamPack>
-    // CHECK: kgen.call @lower_args_no_ptr(%{{.*}}) : (!kgen.pointer<index> mut) -> !kgen.struct<(pointer<index>) isParamPack>
-    %2 = kgen.call @lower_args_no_ptr(%1) : (!kgen.struct<(pointer<index>) isParamPack>) -> !kgen.struct<(pointer<index>) isParamPack>
-    %3 = kgen.struct.extract %2[0] : !kgen.struct<(pointer<index>) isParamPack>
-    %4 = pop.load %3 : !kgen.pointer<index>
-    hlcf.return %4 : index
+    %2 = pop.stack_allocation 1 x !kgen.struct<(pointer<index>) isParamPack>
+    pop.store %1, %2 : !kgen.pointer<struct<(pointer<index>) isParamPack>>
+    // CHECK: kgen.call @lower_args_no_ptr(%{{.*}}) : (!kgen.pointer<index> mut) -> ()
+    kgen.call @lower_args_no_ptr(%2) : (!kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) -> ()
+    %3 = pop.load %0 : !kgen.pointer<index>
+    hlcf.return %3 : index
+}
+
+// COM: A `mut *args` pack is passed by pointer, and its elements are still
+// COM: passed by reference (MOCO-5272).
+
+// CHECK-LABEL: kgen.func @mut_pack_vararg
+// CHECK-SAME: (%arg0: !kgen.pointer<index> mut, %arg1: !kgen.pointer<i1> mut)
+kgen.func @mut_pack_vararg(
+ %arg0: !kgen.pointer<struct<(pointer<index>, pointer<i1>) isParamPack>> pack_mut) {
+ hlcf.return
+}
+
+// COM: The elements of a `var *args` pack are owned.
+
+// CHECK-LABEL: kgen.func @owned_pack_vararg
+// CHECK-SAME: (%arg0: index owned)
+kgen.func @owned_pack_vararg(
+ %arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_owned_in_mem) {
+ hlcf.return
+}
+
+// COM: A pack among the elements of a pack vararg is an ordinary value: it is
+// COM: promoted like any struct, not split.
+
+// CHECK-LABEL: kgen.func @nested_pack_vararg
+// CHECK-SAME: (%arg0: !kgen.struct<(pointer<index>, pointer<i1>) isParamPack>)
+kgen.func @nested_pack_vararg(
+ %arg0: !kgen.pointer<struct<(pointer<struct<(pointer<index>, pointer<i1>) isParamPack>>) isParamPack>> pack_imm_mem) {
+ hlcf.return
+}
+
+// COM: A pack that is not a pack vararg is an ordinary value.
+
+// CHECK-LABEL: kgen.func @value_pack_arg
+// CHECK-SAME: (%arg0: !kgen.struct<(index, index) isParamPack>)
+kgen.func @value_pack_arg(%arg0: !kgen.struct<(index, index) isParamPack>) {
+ hlcf.return
+}
+
+// COM: A call site lowers a pack vararg the same way as its callee.
+
+// CHECK-LABEL: kgen.func @pack_vararg_round_trip
+// CHECK-SAME: (%arg0: !kgen.pointer<index> mut)
+// CHECK-LABEL: kgen.func @call_pack_vararg_round_trip
+// CHECK: kgen.call @pack_vararg_round_trip(%{{.*}}) : (!kgen.pointer<index> mut) -> ()
+kgen.func @pack_vararg_round_trip(
+ %arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) {
+ hlcf.return
+}
+kgen.func @call_pack_vararg_round_trip(
+ %arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> imm_mem) {
+ kgen.call @pack_vararg_round_trip(%arg0) : (!kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) -> ()
+ hlcf.return
 }
 
 //===----------------------------------------------------------------------===//

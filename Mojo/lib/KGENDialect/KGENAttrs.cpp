@@ -172,9 +172,7 @@ EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 //===----------------------------------------------------------------------===//
 
 bool QuoteAttr::isConstant() const {
-  // Should we consider enclosed index ref constant within quoted attr? probably
-  // does not matter.
-  return ParameterAttr::isSimpleConstant(getQuotedParam());
+  return !EscapingReferenceFinder::check(*this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1269,6 +1267,23 @@ inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
   return specializedType;
 }
 
+/// Returns true if the result of `bindParams` is a partially specialized
+/// version of its body generator (in contrast to a nested generator).
+static bool isCurriedBinding(BindParamsAttr bindParams) {
+  auto genType = sugarCast<GeneratorType>(bindParams.getGenerator().getType());
+  ArrayRef<TypedAttr> values = bindParams.getParamValues();
+  if (values.size() != genType.getInputParamTypes().size() ||
+      llvm::any_of(values, llvm::IsaPred<UnboundAttr>))
+    return true;
+
+  PogListAttr metadata = genType.getParamListAttrs();
+  size_t numConstraints = metadata ? metadata.getBodyConstraints().size() : 0;
+  DenseBoolArrayAttr discharged = bindParams.getDischarged();
+  size_t numDischarged =
+      discharged ? llvm::count(discharged.asArrayRef(), true) : 0;
+  return numDischarged != numConstraints || !isEagerlyInstantiatable(genType);
+}
+
 Type BindParamsAttr::inferResultType(
     TypedAttr generator, ArrayRef<TypedAttr> paramValues,
     DenseBoolArrayAttr discharged,
@@ -1289,6 +1304,21 @@ Type BindParamsAttr::getType() const {
                          /*evaluationContext=*/nullptr);
 }
 
+/// Strips top-level sugar, including rebinds between canonically equal types,
+/// which canonicalization would remove. The result may differ from `value` in
+/// type sugar, so it is only suitable for deciding whether a fold applies.
+static TypedAttr stripSugarAndSugarRebinds(TypedAttr value) {
+  while (true) {
+    value = SugarAttr::strip(value);
+    auto rebind = dyn_cast<ParamOperatorAttr>(value);
+    // FIXME(MOCO-5297): Recognize sugar-only rebinds structurally.
+    if (!rebind || rebind.getOpcode() != POC::Rebind ||
+        !isEqualCanon(rebind.getOperand(0).getType(), rebind.getType()))
+      return value;
+    value = rebind.getOperand(0);
+  }
+}
+
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                               ArrayRef<TypedAttr> paramValues,
                               DenseBoolArrayAttr discharged,
@@ -1301,9 +1331,16 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       isEqualCanon(generator.getType(), type))
     return generator;
 
-  // If the generator is itself a BindParamsAttr, flatten the new bindings into
-  // the existing ones.
-  if (auto bindParams = sugarDynCast<BindParamsAttr>(generator)) {
+  // Look through sugar so the fold decision here agrees with the one made on
+  // the canonical form, which may run without an evaluation context. Results
+  // are rebound to `type` to restore the requested sugar.
+  TypedAttr strippedGenerator = stripSugarAndSugarRebinds(generator);
+
+  // If the generator is a curried BindParamsAttr, flatten the new bindings into
+  // the existing ones. A non-curried one has instantiated its body, so the
+  // new bindings belong to that body instead.
+  auto bindParams = dyn_cast<BindParamsAttr>(strippedGenerator);
+  if (bindParams && isCurriedBinding(bindParams)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
     DenseBoolArrayAttr innerMask = bindParams.getDischarged();
@@ -1320,18 +1357,20 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     TypedAttr flattened =
         BindParamsAttr::get(bindParams.getContext(), bindParams.getGenerator(),
                             mergedParamValues, mergedMask, evaluationContext);
-    assert((!flattened || isEqualCanon(flattened.getType(), type)) &&
+    if (!flattened)
+      return {};
+    assert(isEqualCanon(flattened.getType(), type) &&
            "bind_params simplification must preserve the requested type");
-    return flattened;
+    return ParamOperatorAttr::getRebind(flattened, type);
   }
 
   // If the generator is a GeneratorAttr, specialize it directly. A null nested
   // evaluation propagates upwards as a null result.
-  if (auto genAttr = sugarDynCast<GeneratorAttr>(generator)) {
+  if (auto genAttr = dyn_cast<GeneratorAttr>(strippedGenerator)) {
     // TODO: We allow `FuncSymbolGenerator` without eval context since graph
     // compiler is relying on this.
     assert(
-        (evaluationContext || FuncSymbolGenerator::dynCast(generator)) &&
+        (evaluationContext || FuncSymbolGenerator::dynCast(genAttr)) &&
         "A foldable BindParamsAttr must be created with an evaluation context");
     SmallVector<TypedAttr> partialParamValues = normalizeBindParamsValues(
         cast<GeneratorType>(genAttr.getType()), paramValues);
@@ -1349,12 +1388,12 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       return {};
 
     if (isEqualCanon(specializedGenerator.getType(), type))
-      return specializedGenerator;
+      return ParamOperatorAttr::getRebind(specializedGenerator, type);
 
     if (specializedGenerator.isFullyBound()) {
       TypedAttr instantiatedValue = specializedGenerator.getInstantiatedValue();
       if (instantiatedValue && isEqualCanon(instantiatedValue.getType(), type))
-        return instantiatedValue;
+        return ParamOperatorAttr::getRebind(instantiatedValue, type);
     }
 
     llvm_unreachable("requested bind_params type is inconsistent with the "
@@ -1893,56 +1932,37 @@ FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
       GeneratorAttr::get(inputParamTypes, funcSymbol, metadata));
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
-                                             FuncType type,
-                                             Attribute metadata) {
+FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
+  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  assert(type.getInputParamTypes().empty());
+  return getParamLess(FlatSymbolRefAttr::get(func.getSymNameAttr()),
+                      type.getBody(), type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::getParamLess(SymbolRefAttr symbol,
+                                                      FuncType type,
+                                                      Attribute metadata) {
   auto funcSymbol = FuncSymbolAttr::get(symbol, type, /*paramValues=*/{});
   return get(/*inputParamTypes=*/{}, funcSymbol, metadata);
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
-  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
-  assert(type.getInputParamTypes().empty());
-  return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
+FuncSymbolGenerator
+FuncSymbolGenerator::getUnbound(SymbolRefAttr symbol,
+                                FuncTypeGeneratorType type) {
+  // Simply forward the parameters.
+  ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
+  SmallVector<TypedAttr> bodyValues;
+  for (auto [i, paramType] : llvm::enumerate(inputParamTypes))
+    bodyValues.push_back(ParamIndexRefAttr::get(i, paramType));
+
+  return get(inputParamTypes,
+             FuncSymbolAttr::get(symbol, type.getBody(), bodyValues),
              type.getParamListAttrs());
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
-                                             FuncTypeGeneratorType type,
-                                             ArrayRef<TypedAttr> paramValues) {
-  ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
-
-  // The body binds every parameter of the callee. A parameter left unbound
-  // refers to the generator's next input parameter, so specializing the
-  // generator binds it; a bound value moves one scope deeper, into the body.
-  SmallVector<TypedAttr> bodyValues;
-  IndexDepthAdjuster adjuster(1);
-  unsigned nextInput = 0;
-  auto selfRef = [&]() -> TypedAttr {
-    TypedAttr ref =
-        ParamIndexRefAttr::get(nextInput, inputParamTypes[nextInput]);
-    ++nextInput;
-    return ref;
-  };
-  for (TypedAttr value : paramValues) {
-    if (sugarIsa<UnboundAttr>(value)) {
-      if (nextInput == inputParamTypes.size())
-        return {};
-      bodyValues.push_back(selfRef());
-    } else {
-      bodyValues.push_back(cast<TypedAttr>(adjuster.replace(value)));
-    }
-  }
-  while (nextInput < inputParamTypes.size())
-    bodyValues.push_back(selfRef());
-  auto funcSymbol = FuncSymbolAttr::get(symbol, type.getBody(), bodyValues);
-  return get(inputParamTypes, funcSymbol, type.getParamListAttrs());
-}
-
-FuncSymbolGenerator FuncSymbolGenerator::get(StringAttr name,
-                                             FuncTypeGeneratorType type,
-                                             ArrayRef<TypedAttr> paramValues) {
-  return get(FlatSymbolRefAttr::get(name), type, paramValues);
+FuncSymbolGenerator
+FuncSymbolGenerator::getUnbound(StringAttr name, FuncTypeGeneratorType type) {
+  return getUnbound(FlatSymbolRefAttr::get(name), type);
 }
 
 FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
@@ -2297,6 +2317,35 @@ StructExtractAttr StructExtractAttr::getFromBytecode(TypedAttr structValue,
                                                      TypedAttr fieldIdx,
                                                      Type resultType) {
   return Base::get(resultType.getContext(), structValue, fieldIdx, resultType);
+}
+
+//===----------------------------------------------------------------------===//
+// UntaggedUnionAttr
+//===----------------------------------------------------------------------===//
+
+bool UntaggedUnionAttr::isConstant() const {
+  return !isParameterizedType(getType()) &&
+         llvm::all_of(getFragments(), [](TypedAttr fragment) {
+           return ParameterAttr::isSimpleConstant(fragment);
+         });
+}
+
+LogicalResult
+UntaggedUnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                          ArrayRef<TypedAttr> fragments,
+                          UntaggedUnionType type) {
+  for (TypedAttr fragment : fragments) {
+    if (isa<IntegerAttr>(fragment) && fragment.getType().isInteger(8))
+      continue;
+    if (isa<PointerType, FuncType>(fragment.getType()))
+      continue;
+    if (auto generator = dyn_cast<GeneratorType>(fragment.getType());
+        generator && isa<FuncType>(generator.getBody()))
+      continue;
+    return emitError()
+           << "union fragments must be bytes, pointers or function symbols";
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2718,8 +2767,9 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode)
                          << " operand 1 should be a !kgen.target";
     }
-    if (!::isa<IndexType>(type))
-      return emitError() << stringifyEnum(opcode) << " should return index";
+    if (type != SIMDType::getScalarIndexType(type.getContext()))
+      return emitError() << stringifyEnum(opcode)
+                         << " should return !kgen.scalar<index>";
     break;
   case POC::Apply:
     if (failed(verifyApply(operands, type, emitError)))
@@ -3976,15 +4026,24 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
+/// Narrows a data layout query's type operand to a type constant, or returns
+/// null. Extensions, casts and rebinds only change a type value's trait view,
+/// so its layout is the wrapped type's; without stripping them a closure
+/// whose type is extended never folds.
+static TypeParamAttr getLayoutTypeConstant(TypedAttr type) {
+  return sugarDynCast<TypeParamAttr>(
+      stripIdentityWrappers(SugarAttr::strip(type)));
+}
+
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
                                    Type &resultType) {
-  Builder b(operands[0].getContext());
+  auto indexTy = SIMDType::getScalarIndexType(operands[0].getContext());
   if (!resultType)
-    resultType = b.getIndexType();
+    resultType = indexTy;
 
-  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
@@ -3995,18 +4054,18 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!size)
     return {};
 
-  return b.getIndexAttr(*size);
+  return SIMDAttr::get(uint64_t(*size), indexTy);
 }
 
 /// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
                                     Type &resultType) {
-  Builder b(operands[0].getContext());
+  auto indexTy = SIMDType::getScalarIndexType(operands[0].getContext());
   if (!resultType)
-    resultType = b.getIndexType();
+    resultType = indexTy;
 
-  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
@@ -4015,7 +4074,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!size)
     return {};
 
-  return b.getIndexAttr(*size);
+  return SIMDAttr::get(uint64_t(*size), indexTy);
 }
 
 // We want data_to_str to maintain a simple invariant without sugar getting in
@@ -4065,7 +4124,7 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
     if (failed((*op)->fold(attrs, results)))
       return {};
     assert(results.size() == 1 && "expected one operation result");
-    if (auto result = results.front().dyn_cast<Attribute>())
+    if (auto result = llvm::dyn_cast_if_present<Attribute>(results.front()))
       return cast<TypedAttr>(result);
     // If the fold hook returned an operation, just look up the corresponding
     // input.
@@ -4609,7 +4668,9 @@ ErrorOr<Type> inferParamOperatorResultType(POC opcode,
   Type resultType;
   if (opcode == POC::Cond)
     resultType = operandsIn[1].getType();
-  else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
+  else if (opcode == POC::GetSizeOf || opcode == POC::GetAlignOf)
+    resultType = SIMDType::getScalarIndexType(operandsIn.front().getContext());
+  else
     resultType = operandsIn.front().getType();
   // Raise error if operands do not have the same type for certain POCs.
   if (!llvm::is_contained({POC::Apply, POC::ApplyResultSlot, POC::DataToStr,
@@ -4719,7 +4780,8 @@ bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
   return false;
 }
 
-ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
+ErrorOrSuccess
+ParamOperatorAttr::validateForElaborator(TargetInfoAttr target) const {
   // If this is a shift by a constant amount that does not fit in the operand's
   // bit width, produce a clear user-facing diagnostic instead of the generic
   // "could not simplify" note.
@@ -4732,7 +4794,7 @@ ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
       if (lhsType && rhs) {
         std::optional<KGENDType> dtype = lhsType.getResolvedDType();
         if (dtype) {
-          int64_t width = dtype->getWidthInBits(nullptr);
+          int64_t width = dtype->getWidthInBits(target);
           if (width > 0) {
             for (const DTypeValue &lane : rhs.getValues()) {
               const APSInt &amount = lane.getData();
@@ -4978,7 +5040,8 @@ ParamIdenticalAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 bool ParamIdenticalAttr::isConstant() const { return false; }
 
-ErrorOrSuccess ParamIdenticalAttr::validateForElaborator() const {
+ErrorOrSuccess
+ParamIdenticalAttr::validateForElaborator(TargetInfoAttr target) const {
   ArrayRef<TypedAttr> operands = getOperands();
   std::string operandList;
   llvm::raw_string_ostream os(operandList);
@@ -5592,14 +5655,26 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     // Walking is repeated for the same value many times; cache across calls.
     using Base =
         std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
-    ShardedCache<const void *> *cache = getCache(value.getContext());
-    if (cache) {
-      if (const void *hit = cache->lookup(value.getAsOpaquePointer()))
-        return Base::getFromOpaquePointer(hit);
-    }
+    MLIRContext *context = value.getContext();
+    return Base::getFromOpaquePointer(CompilerCaches::getOrCompute(
+        context, &CompilerCaches::canonical, value.getAsOpaquePointer(), [&] {
+          Base result = rebuildUncached(value, depth);
+          // A canonical form is its own canonical form.
+          if (result != Base(value))
+            CompilerCaches::insert(context, &CompilerCaches::canonical,
+                                   result.getAsOpaquePointer(),
+                                   result.getAsOpaquePointer());
+          return result.getAsOpaquePointer();
+        }));
+  }
 
-    // Otherwise, recursively walk and rebuild the attribute with
-    // canonicalized subelements.
+  /// Recursively walks `value` and rebuilds it with canonicalized subelements.
+  /// Does not consult the cache; only `doReplace` calls it.
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  rebuildUncached(T value, size_t depth) {
+    using Base =
+        std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
     SmallVector<Attribute, 16> newAttrs;
     SmallVector<Type, 16> newTypes;
     bool changed = false;
@@ -5611,20 +5686,8 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     value.walkImmediateSubElements(
         [&](Attribute attr) { walkFn(attr, newAttrs); },
         [&](Type type) { walkFn(type, newTypes); });
-    Base result =
-        changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
-                : Base(value);
-    if (cache && result) {
-      cache->insert(value.getAsOpaquePointer(), result.getAsOpaquePointer());
-      if (changed)
-        cache->insert(result.getAsOpaquePointer(), result.getAsOpaquePointer());
-    }
-    return result;
-  }
-
-  static ShardedCache<const void *> *getCache(MLIRContext *context) {
-    CompilerCaches *caches = CompilerCaches::get(context);
-    return caches ? &caches->canonical : nullptr;
+    return changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
+                   : Base(value);
   }
 
   friend class ParameterReplacer<Canonicalizer>;

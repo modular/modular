@@ -69,7 +69,7 @@ struct _ComptimeConditional[
         Args:
             value: The value to store.
         """
-        self._value = rebind_var[type_of(self._value)](value^)
+        self._value = value^
 
     @inline(.always)
     def __getitem__(ref self) -> ref[self._value] Self.T where Self.engaged:
@@ -77,4 +77,4 @@ struct _ComptimeConditional[
 
         Only available when `engaged` is `True`.
         """
-        return rebind[Self.T](self._value)
+        return self._value

@@ -65,8 +65,8 @@ def _nvfp4(state_dict: dict[str, WeightData], prefix: str) -> None:
         state_dict[f"{base}.weight_scale"] = _weight(
             (MOE_DIM, GROUPS), DType.float8_e4m3fn
         )
-        state_dict[f"{base}.weight_scale_2"] = _weight((), DType.float32)
-        state_dict[f"{base}.input_scale"] = _weight((), DType.float32)
+        state_dict[f"{base}.weight_global_scale"] = _weight((), DType.float32)
+        state_dict[f"{base}.input_global_scale"] = _weight((), DType.float32)
 
 
 def _state_dict(
@@ -156,6 +156,7 @@ def test_uniformly_quantized_mlps() -> None:
     assert quant_config.mlp_quantized_layers == {0, 1, 2, 3}
     assert quant_config.attn_quantized_layers == set()
     assert quant_config.shared_experts_weight_dtype is None
+    assert quant_config.compressed_tensors_global_scales
 
 
 def test_bfloat16_checkpoint_stays_unquantized() -> None:
@@ -177,7 +178,7 @@ def test_block_scales_without_global_scales_are_rejected() -> None:
         quantized_experts=(1, 2),
         quantized_shared_experts=False,
     )
-    del state_dict["layers.1.mlp.experts.0.gate_proj.input_scale"]
+    del state_dict["layers.1.mlp.experts.0.gate_proj.input_global_scale"]
 
-    with pytest.raises(ValueError, match="but not input_scale"):
+    with pytest.raises(ValueError, match="but not input_global_scale"):
         _resolve(S21_MLP_TYPES, state_dict)

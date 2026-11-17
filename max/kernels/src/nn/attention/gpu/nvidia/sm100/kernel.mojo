@@ -219,9 +219,6 @@ struct SM100MHA2Q[
     comptime qo_bytes: UInt32 = UInt32(Self.qkv_dt_size * Self.qo_elements)
     comptime k_bytes: UInt32 = UInt32(Self.qkv_dt_size) * Self.k_elements
     comptime MMA_K = 16
-    comptime v_bytes_per_mma: UInt32 = UInt32(
-        Self.qkv_dt_size * Self.MMA_K * Self.config.padded_ov_depth
-    )
 
     comptime PositionType = MHAPosition[
         Self.config.BM,

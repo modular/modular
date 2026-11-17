@@ -14,13 +14,15 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
+from .draft import DSparkQwen3Draft, dspark_draft_registration
 from .model_config import (
     Qwen3DSparkDraftArchConfig,
     dspark_nemotron_draft_width,
 )
+from .weight_adapters import dspark_qwen3_weight_rules
 
 # The DSpark draft checkpoint declares architectures ["Qwen3DSparkModel"]. It
 # is only served as a --draft-model beside a Nemotron-H target, so its
@@ -34,7 +36,8 @@ qwen3_dspark_draft_arch = SupportedArchitecture(
     # The released draft is NVFP4 weight-only, which the checkpoint's
     # quantization config resolves to; a BF16 drafter resolves to bfloat16.
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
-    pipeline_model=None,
+    modules={GraphRole.DRAFT: DSparkQwen3Draft},
+    draft=dspark_draft_registration,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
@@ -42,4 +45,6 @@ qwen3_dspark_draft_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=Qwen3DSparkDraftArchConfig,
     checkpoint_draft_width=dspark_nemotron_draft_width,
+    weight_rules=dspark_qwen3_weight_rules,
+    use_weight_rules=True,
 )

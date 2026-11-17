@@ -16,7 +16,7 @@ The reference keeps, per compressed layer, a two-zone flat buffer (a 128-slot
 sliding window of per-token latents plus one compressed entry per
 ``compress_ratio`` tokens), the compressor's open-window projections, and for
 ratio-4 layers the same again for the lightning indexer. Here every one of
-those is a leaf of one :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams`, all paged
+those is a leaf of one :class:`~max.nn.kv_cache.MultiKVCacheParams`, all paged
 by token with one shared lookup table:
 
 * the latent window is a ``sliding_window_group(128)`` leaf;
@@ -28,15 +28,15 @@ by token with one shared lookup table:
   tokens (K and V of an MHA leaf). The pooled entry is recomputed from those
   rows, so no per-request state machine survives a forward.
 
-Writes go through the stock ``mo.kv_cache.store.paged.ragged`` kernel. It
+Writes go through the stock ``kv_cache.store.paged.ragged`` kernel. It
 takes the page size from the buffer's static slot dimension, so a compressed
 leaf is written by handing it ``cache_lengths // ratio``: entry ``j`` lands on
 page ``j // slots_per_page``, slot ``j % slots_per_page``, which is the same
 page the token page table already names.
 
 Attention reads the window leaf and the zone leaf through the fused
-``mo.latent_sparse_attention.ragged.paged`` kernel, and the indexer scores its
-zone leaf through ``mo.indexer_score.ragged.paged``. The remaining graph-side
+``attention.latent_sparse.ragged.paged`` kernel, and the indexer scores its
+zone leaf through ``attention.indexer_score.ragged.paged``. The remaining graph-side
 read -- the compressor's open state -- gathers rows out of the block buffer by
 ``(lookup_table[b, slot // slots_per_page], slot % slots_per_page)``; it
 copies the leaf (``buffer_load``), which is fine at bringup sizes and nowhere
@@ -52,8 +52,8 @@ from typing import Any
 from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.legacy.kernels import store_k_cache_ragged, store_v_cache_ragged
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn._graph_ops import store_k_cache_ragged, store_v_cache_ragged
+from max.nn.kv_cache import PagedCacheValues
 from max.support.math import ceildiv as ceildiv
 
 from ..model_config import DeepseekV4Config

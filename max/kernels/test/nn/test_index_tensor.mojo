@@ -100,7 +100,7 @@ def test_index_tensor_DLRM() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var indices_dyn = indices.make_dynamic[.int64]()
-    var output_shape = index_tensor_shape[
+    _ = index_tensor_shape[
         output_rank,
         input_type,
         .uint64,
@@ -196,7 +196,7 @@ def test_index_tensor_DLRM_batch() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var indices_dyn = indices.make_dynamic[.int64]()
-    var output_shape = index_tensor_shape[
+    _ = index_tensor_shape[
         output_rank,
         input_type,
         .uint64,
@@ -296,7 +296,7 @@ def test_index_tensor_CLIPVIT() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var indices_dyn = indices.make_dynamic[.int64]()
-    var output_shape = gather_nd_shape[
+    _ = gather_nd_shape[
         output_rank,
         input_type,
         .uint64,
@@ -315,11 +315,11 @@ def test_index_tensor_CLIPVIT() raises:
     var output_dyn = output_data_buffer.make_dynamic[.int64]()
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
-    gather_nd[batch_dims, target="cpu"](
+    gather_nd[batch_dims](
         input_dyn,
         indices_dyn,
         output_dyn,
-        DeviceContext(api="cpu"),
+        DeviceContext.cpu(),
     )
 
     for i in range(dim_0):
@@ -379,7 +379,7 @@ def test_index_tensor_llama2_mistral() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var index_a_dyn = index_a.make_dynamic[.int64]()
-    var output_shape = gather_shape[output_rank, input_type, index_type](
+    _ = gather_shape[output_rank, input_type, index_type](
         input_dyn,
         index_a_dyn,
         0,
@@ -399,7 +399,7 @@ def test_index_tensor_llama2_mistral() raises:
         output_dyn,
         input_dyn,
         index_a_dyn,
-        context=DeviceContext(api="cpu"),
+        context=DeviceContext.cpu(),
     )
 
     for i in range(index_dim_0):

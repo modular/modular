@@ -80,7 +80,7 @@ def _check[
         var val = in_ptr.unsafe_load[width=simd_width](idx)
         out_ptr.unsafe_store[width=simd_width](idx, expm1(val))
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     var worst_gpu = 0
     var worst_host = 0
@@ -224,7 +224,7 @@ def _check_half_subnormals[
         var idx = Int(idx0[0])
         out_ptr.unsafe_store(idx, expm1(in_ptr.unsafe_load(idx)))
 
-    elementwise[1, target="gpu"](func, Coord(n), ctx)
+    elementwise[1](func, Coord(n), ctx)
     with out_device.map_to_host() as out_host:
         for i in range(n):
             var x = bitcast[dtype](bits[i])

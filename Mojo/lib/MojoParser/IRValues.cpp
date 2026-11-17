@@ -559,7 +559,7 @@ InitializerUValue::getOperandsForInferredType(ASTType type, ExprDest &&dest,
     // {} turns into a dict with PythonObject.
 
     // Convert MySet[*(0, 0)] to MySet[?] so we can infer the parameter(s).
-    type = type.getWithUnknownParametersReplaced(emitter.shared);
+    type = type.extractAndRelinkParamRef(emitter.shared);
     if (operands.values.empty()) {
       auto getEmptyList = [&]() -> AnyValue {
         return InitializerUValue::create(InitializerUValue::kListLiteral,

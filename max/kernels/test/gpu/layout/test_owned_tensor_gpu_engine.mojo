@@ -25,7 +25,7 @@ from layout.owned_tensor import (
     OwnedTensorEngine,
 )
 from layout.tensor_engine import DefaultEngine, TensorEngine
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 from max.gpu import thread_idx
 from max.gpu.host import DeviceContext

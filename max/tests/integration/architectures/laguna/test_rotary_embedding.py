@@ -35,11 +35,8 @@ import torch
 from max.driver import CPU
 from max.engine import InferenceSession
 from max.graph import Graph
-from max.nn.legacy.rotary_embedding import (
-    RotaryEmbedding,
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
+from max.nn.legacy.rotary_embedding import RotaryEmbedding, YarnRotaryEmbedding
+from max.nn.rope_scaling import YarnScalingParams
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )

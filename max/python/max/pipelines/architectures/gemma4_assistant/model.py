@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib import CheckpointRole, WeightEntry, WeightTransform
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,

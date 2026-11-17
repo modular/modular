@@ -88,7 +88,7 @@ def bench_fused_qk_rms_norm_rope[
     rope_dim: Int,
     num_q_heads: Int,
     num_kv_heads: Int,
-](ctx: DeviceContext, mut m: Bench, batch_size: Int, seq_len: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, batch_size: Int, seq_len: Int) raises:
     """Benchmarks two-step (norm+rope) vs fused at a given shape."""
     comptime kv_params = KVCacheStaticParams(
         num_heads=num_kv_heads, head_size=head_dim
@@ -258,7 +258,7 @@ def bench_fused_qk_rms_norm_rope[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             var kv_ref = Collection(
                 kv_blocks_ref_tile.as_unsafe_any_origin(),
                 cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
@@ -266,9 +266,7 @@ def bench_fused_qk_rms_norm_rope[
                 max_prompt_len,
                 max_cache_len,
             )
-            fused_qk_rms_norm_ragged_paged[
-                target="gpu", multiply_before_cast=True
-            ](
+            fused_qk_rms_norm_ragged_paged[multiply_before_cast=True,](
                 q_tile.as_imm(),
                 kv_ref,
                 gamma_q_tile.as_imm(),
@@ -283,7 +281,8 @@ def bench_fused_qk_rms_norm_rope[
             # rope output goes to q_tile (original Q buf) — avoids aliasing
             # q_out_ref_tile as both mutable output and immutable input.
             fused_qk_rope_ragged[
-                kv_ref.CacheType, interleaved=False, target="gpu"
+                kv_ref.CacheType,
+                interleaved=False,
             ](
                 q_proj=q_out_ref_tile.as_imm(),
                 input_row_offsets=row_offsets_tile.as_imm(),
@@ -324,7 +323,7 @@ def bench_fused_qk_rms_norm_rope[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             var kv_fused = Collection(
                 kv_blocks_fused_tile.as_unsafe_any_origin(),
                 cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
@@ -343,7 +342,6 @@ def bench_fused_qk_rms_norm_rope[
                 return q_src.load[width=width]((token, head, col))
 
             fused_qk_rms_norm_rope_ragged_paged[
-                target="gpu",
                 multiply_before_cast=True,
                 interleaved=False,
             ](

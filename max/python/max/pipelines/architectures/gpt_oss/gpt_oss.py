@@ -20,23 +20,17 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MultiKVCacheParams,
-    PagedCacheValues,
-)
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import ColumnParallelLinear
 from max.nn.legacy.norm.rms_norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
+from max.nn.legacy.rotary_embedding import YarnRotaryEmbedding
 from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
+from max.nn.rope_scaling import YarnScalingParams
 
 from .layers.attention import GptOssAttention
 from .layers.moe import GptOssMoE

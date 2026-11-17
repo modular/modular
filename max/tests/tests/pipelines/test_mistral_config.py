@@ -20,7 +20,7 @@ from unittest.mock import NonCallableMock, patch
 
 import pytest
 from max.dtype import DType
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.mistral import (
     MistralConfig,
     MistralDecoder,

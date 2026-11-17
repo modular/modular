@@ -77,7 +77,7 @@ def _gathered_value[dtype: DType](row: Int, col: Int) -> Scalar[dtype]:
 
 def _run_case[
     in_dtype: DType, ngpus: Int, num_cols: Int, route_two_launch: Bool = False
-](num_rows: Int, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, list_of_ctx: List[DeviceContext[]]) raises:
     """Byte-compare the fused epilogue against gather+norm followed by quantize.
 
     Arm B always enters through `_dispatch_ag_norm_quant`; `route_two_launch`
@@ -464,7 +464,7 @@ def main() raises:
         print("SKIPPED: the MXFP8 quantize path is CDNA4-only")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(num_devices):
         list_of_ctx.append(DeviceContext(device_id=i))
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")

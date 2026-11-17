@@ -56,10 +56,10 @@ from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
 from std.memory import OwnedPointer, Pointer
 from std.memory.alloc import dealloc, ThinAllocation
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
-from .cstring import CStringSpan, CStringSlice
+from .cstring import CStringSpan
 from .unsafe_union import UnsafeUnion
 
 # ===-----------------------------------------------------------------------===#
@@ -129,8 +129,35 @@ comptime c_float = Float32
 comptime c_double = Float64
 """C `double` type."""
 
-comptime c_pid_t = Int
+comptime c_pid_t = c_int
 """C `pid_t` type."""
+
+comptime _null[
+    mut: Bool,
+    //,
+    T: AnyType,
+    origin: Origin[mut=mut] = MutUntrackedOrigin,
+    *,
+    address_space: AddressSpace = .GENERIC,
+] = Optional[Pointer[T, origin, address_space=address_space]]()
+"""An empty `Optional[Pointer[T, origin]]`, equivalent to the C `NULL`.
+
+```mojo
+from std.ffi import _null
+
+def maybe_write(nullable: Optional[MutPointer[Int, _]]):
+    if case .Some(ptr) = nullable:
+        ptr[] = 42
+
+maybe_write(_null[Int])
+```
+
+Parameters:
+    mut: The mutability of the pointer.
+    T: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
 
 comptime MAX_PATH = _get_max_path()
 """Maximum path length for the current platform."""
@@ -424,13 +451,12 @@ struct OwnedDLHandle(Boolable, Movable):
             ' `get_function[def(Arg) abi("C") -> Ret](name)` to'
             " `get_function[Ret](name)`."
         )
-        var ptr = self._handle.get_symbol[NoneType](
+        __guard case .Some(ptr) = self._handle.get_symbol[NoneType](
             cstr_name=name.as_c_string_span()
-        )
-        if not ptr:
+        ) else:
             raise Error(t"symbol not found: {name}")
         return _DLCallable[return_type, origin_of(self)](
-            ptr.unsafe_value(),
+            ptr,
             Pointer(to=self),
         )
 
@@ -470,7 +496,7 @@ struct OwnedDLHandle(Boolable, Movable):
 
     def get_symbol[
         mut: Bool, origin: Origin[mut=mut], //, result_type: AnyType
-    ](ref[origin] self, name: StringSlice) -> Optional[
+    ](ref[origin] self, name: StringSpan) -> Optional[
         Pointer[result_type, origin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -528,17 +554,14 @@ struct OwnedDLHandle(Boolable, Movable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        var res = self._handle.get_symbol[result_type](cstr_name=cstr_name)
-        if not res:
+        __guard case .Some(res) = self._handle.get_symbol[result_type](
+            cstr_name=cstr_name
+        ) else:
             return None
-        # `_DLHandle` is non-owning, so it can only hand back an untracked
-        # origin. Re-tie the pointer to this owning handle, which is the borrow
-        # `_DLHandle` has no way to express.
-        return (
-            res.unsafe_value()
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
+        # `_DLHandle` is non-owning, so it can only hand back an
+        # untracked origin. Re-tie the pointer to this owning handle,
+        # which is the borrow `_DLHandle` has no way to express.
+        return res.unsafe_mut_cast[mut]().unsafe_origin_cast[origin]()
 
     @inline(.always)
     def call[
@@ -771,18 +794,15 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Returns:
             A handle to the function.
         """
-        var opaque_function_ptr = self.get_symbol[NoneType](cstr_name=cstr_name)
-
-        if not opaque_function_ptr:
+        __guard case .Some(opaque_function_ptr) = self.get_symbol[NoneType](
+            cstr_name=cstr_name
+        ) else:
             abort(t"symbol not found: {cstr_name}")
-
-        return Pointer(to=opaque_function_ptr.value()).unsafe_bitcast[
-            result_type
-        ]()[]
+        return Pointer(to=opaque_function_ptr).unsafe_bitcast[result_type]()[]
 
     def get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> Optional[
+    ](self, name: StringSpan) -> Optional[
         Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -853,7 +873,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             # symbols should specify a nullable pointer as the result_type.
             abort(t"symbol resolved to NULL: {cstr_name}")
 
-        return res.value()
+        return res
 
     @inline(.always)
     def call[
@@ -903,7 +923,7 @@ def _get_dylib_function[
     var new_func = dylib._get_function[func_name, result_type]()
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(func_cache_name),
+        StringSpan(func_cache_name),
         Pointer(to=new_func).unsafe_bitcast[
             OpaquePointer[MutUntrackedOrigin]
         ]()[],
@@ -1137,7 +1157,7 @@ def _get_global[
 
 @inline(.always)
 def _get_global_or_null(
-    name: StringSlice,
+    name: StringSpan,
 ) -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull",

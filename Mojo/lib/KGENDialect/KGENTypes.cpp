@@ -46,13 +46,16 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
   case ArgConvention::ImmReg:
   case ArgConvention::ImmMem:
+  case ArgConvention::PackImmMem:
     return "imm";
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
+  case ArgConvention::PackOwnedMem:
     return "var";
   case ArgConvention::DeinitMem:
     return "deinit";
   case ArgConvention::Mut:
+  case ArgConvention::PackMut:
     return "mut";
   case ArgConvention::Ref:
     return "ref";
@@ -80,10 +83,12 @@ void KGENDialect::registerTypes() {
   registerPrettyType(
       "non_struct_type", &NonStructTypeType::parse,
       mlir::TypeID::get<NonStructTypeType>(),
-      +[](AsmPrinter &p, Type) { p << "non_struct_type"; });
+      +[](AsmPrinter &p, Type) { p << "non_struct_type"; },
+      +[](AsmPrinter &p, Type, KGENParamPrinter &) { p << "non_struct_type"; });
   registerPrettyType(
       "type", &TypeType::parse, mlir::TypeID::get<TypeType>(),
-      +[](AsmPrinter &p, Type) { p << "type"; });
+      +[](AsmPrinter &p, Type) { p << "type"; },
+      +[](AsmPrinter &p, Type, KGENParamPrinter &) { p << "type"; });
   registerMnemonicType<DTypeType>();
   registerMnemonicType<PointerType>();
   registerMnemonicType<NoneType>();
@@ -95,6 +100,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<StructInstanceType>();
   registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
+  registerMnemonicType<UntaggedUnionType>();
 
   // Register the SIMD type with custom parser/printer that sugars
   // `!kgen.simd<1, dtype>` to `!kgen.scalar<dtype>`.
@@ -103,6 +109,9 @@ void KGENDialect::registerTypes() {
       +[](AsmPrinter &p, Type type) {
         KGENParamPrinter::createDiagnosticPrinter().printSIMDBody(
             p, cast<SIMDType>(type));
+      },
+      +[](AsmPrinter &p, Type type, KGENParamPrinter &printer) {
+        printer.printSIMDBody(p, cast<SIMDType>(type));
       });
   registerKeywordParser("scalar", [](AsmParser &p) -> Type {
     TypedAttr resultDType;
@@ -115,49 +124,45 @@ void KGENDialect::registerTypes() {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamPrintableTypeInterface
+// Param-aware printing
 //===----------------------------------------------------------------------===//
+// The mnemonic is emitted by the registration lambda, so these print only the
+// body.
 
-void StructInstanceType::printWith(AsmPrinter &p,
-                                   KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void StructInstanceType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printStructInstanceBody(p, *this);
 }
 
-void StructType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void StructType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printStructBody(p, *this);
 }
 
-void PointerType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void PointerType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printPointerBody(p, *this);
 }
 
-void ParamListType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void ParamListType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printParamListBody(p, *this);
 }
 
-void TypeValueType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void TypeValueType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printTypeValueBody(p, *this);
 }
 
-void VariantType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void VariantType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printVariantBody(p, *this);
 }
 
-void SIMDType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  printer.printSIMDBody(p, *this);
+void UntaggedUnionType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members || !members.getValues().empty())
+    printer.printVariantTypes(p, getVariadic());
+  p << '>';
 }
 
-// Not registered as a pretty type, so it prints with its dialect prefix.
-void FuncLiteralType::printWith(AsmPrinter &p,
-                                KGENParamPrinter &printer) const {
-  p << "!kgen." << getMnemonic();
-  printer.printFuncLiteralBody(p, *this);
+void SIMDType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printSIMDBody(p, *this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -726,18 +731,15 @@ bool FuncType::isKwVarArg(size_t index) {
 bool FuncType::isPack(size_t index) { return getArgListAttrs().isPack(index); }
 
 std::optional<size_t> FuncType::findPackVarArgIndex() {
-  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult() - isThrows();
-  if (numUserArgs == 0)
+  PogListAttr argList = getArgListAttrs();
+  if (!argList)
     return std::nullopt;
-  size_t lastUserArgIndex = numUserArgs - 1;
-  if (isKwVarArg(lastUserArgIndex)) {
-    if (lastUserArgIndex == 0)
-      return std::nullopt;
-    --lastUserArgIndex;
-  }
-  if (isPack(lastUserArgIndex))
-    return std::make_optional(lastUserArgIndex);
-  return std::nullopt;
+  ArrayRef<PogMetadataAttr> pogs = argList.getPogs();
+  const auto *it =
+      llvm::find_if(pogs, [](PogMetadataAttr pog) { return pog.isPack(); });
+  if (it == pogs.end())
+    return std::nullopt;
+  return it - pogs.begin();
 }
 
 bool FuncType::hasKwVarArgs() { return getArgListAttrs().hasKwVarArg(); }
@@ -827,6 +829,34 @@ FuncType FuncType::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return result;
 }
 
+/// Each element of a variadic pack argument is the address of an argument of
+/// the caller (see `ArgConvention::PackImmMem`), so it must be a pointer.
+static LogicalResult
+verifyPackArgument(function_ref<InFlightDiagnostic()> emitError, size_t argIdx,
+                   Type argType) {
+  auto ptr = dyn_cast<PointerType>(argType);
+  if (!ptr)
+    return success();
+  // Before elaboration, the pack can be a `VariadicPack` that is not resolved.
+  auto pack = dyn_cast<StructType>(ptr.getElementType());
+  if (!pack || !pack.getIsParamPack())
+    return success();
+  auto elts = dyn_cast_or_null<ParamListAttr>(pack.getElementTypesVariadic());
+  if (!elts)
+    return success();
+  for (auto [eltIdx, elt] : llvm::enumerate(elts.getValues())) {
+    auto typeValue = dyn_cast<TypeParamAttr>(elt);
+    if (!typeValue)
+      continue;
+    if (Type eltType = typeValue.getMlirType(); !isa<PointerType>(eltType)) {
+      return emitError() << "element #" << eltIdx << " of pack argument #"
+                         << argIdx
+                         << " should be a `!kgen.pointer` but got: " << eltType;
+    }
+  }
+  return success();
+}
+
 LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                                FunctionType values, FnMetadataAttr metadataAttr,
                                PogListAttr argListAttrs) {
@@ -875,6 +905,9 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                << "func type with 'byref_error' argument must be 'throws'";
       byRefErrorIdx = i;
     }
+    if (getPackEltConvention(conv) &&
+        failed(verifyPackArgument(emitError, i, argType)))
+      return failure();
 
     Type type = argType;
     // Verify variadics.
@@ -1693,33 +1726,22 @@ std::optional<size_t> StructType::getNumElements() const {
   return resolved.getValues().size();
 }
 
-static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
-                                                        TargetInfoAttr target) {
-  int64_t size = 0;
-  int64_t strictest = 1;
+/// Lay out `types` in order, each at the next offset aligned for it. Append
+/// the offset of each type to `offsets`, and return the end of the last one.
+static std::optional<int64_t>
+layOutElements(ArrayRef<Type> types, TargetInfoAttr target,
+               SmallVectorImpl<int64_t> &offsets) {
+  int64_t end = 0;
   for (Type type : types) {
     std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeABIAlign(target, type);
-    std::optional<int64_t> typeSize =
-        DataLayoutInterface::getTypeAllocSize(target, type);
+    std::optional<int64_t> typeSize = getStructFieldSize(target, type);
     if (!typeAlign || !typeSize)
       return {};
-    size = llvm::alignTo(size, *typeAlign) + *typeSize;
-    strictest = std::max(strictest, *typeAlign);
+    offsets.push_back(llvm::alignTo(end, *typeAlign));
+    end = offsets.back() + *typeSize;
   }
-  return llvm::alignTo(size, strictest);
-}
-
-std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
-  // A struct backed by a concrete ParamListAttr has a known size.
-  if (ParamListAttr attr = getVariadicIfResolved()) {
-    SmallVector<Type> types;
-    if (failed(resolveTypes(attr.getValues(), types)))
-      return {};
-    return getPackedElementsTypeSize(types, target);
-  }
-  // Parametric struct - size unknown until elaboration.
-  return {};
+  return end;
 }
 
 static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
@@ -1733,6 +1755,42 @@ static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
     strictest = std::max(strictest, *typeAlign);
   }
   return strictest;
+}
+
+static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
+                                                        TargetInfoAttr target) {
+  SmallVector<int64_t> offsets;
+  std::optional<int64_t> end = layOutElements(types, target, offsets);
+  std::optional<int64_t> strictest = getMaxAlignmentAmongTypes(types, target);
+  if (!end || !strictest)
+    return {};
+  return llvm::alignTo(*end, *strictest);
+}
+
+std::optional<SmallVector<int64_t>>
+StructType::getElementOffsets(TargetInfoAttr target) const {
+  ParamListAttr attr = getVariadicIfResolved();
+  if (!attr)
+    return std::nullopt;
+  SmallVector<Type> types;
+  if (failed(resolveTypes(attr.getValues(), types)))
+    return std::nullopt;
+  SmallVector<int64_t> offsets;
+  if (!layOutElements(types, target, offsets))
+    return std::nullopt;
+  return offsets;
+}
+
+std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
+  // A struct backed by a concrete ParamListAttr has a known size.
+  if (ParamListAttr attr = getVariadicIfResolved()) {
+    SmallVector<Type> types;
+    if (failed(resolveTypes(attr.getValues(), types)))
+      return {};
+    return getPackedElementsTypeSize(types, target);
+  }
+  // Parametric struct - size unknown until elaboration.
+  return {};
 }
 
 std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
@@ -1837,22 +1895,21 @@ static void projectToLayouts(TypedAttr &variadic) {
 
   SmallVector<TypedAttr> normalized;
   normalized.reserve(paramList.getValues().size());
-  bool changed = false;
+  Type metatype = paramList.getType().getElementType();
   for (TypedAttr value : paramList.getValues()) {
-    if (auto typeParam = dyn_cast<TypeParamAttr>(value)) {
-      // Keep the element's metatype: a pack's list can be typed by a trait.
-      TypedAttr canonical = cast<TypedAttr>(
-          TypeParamAttr::get(typeParam.getMlirType(), typeParam.getType()));
-      normalized.push_back(canonical);
-      if (canonical != value)
-        changed = true;
-    } else {
+    TypedAttr element = stripIdentityWrappers(value);
+
+    // Keep the element's metatype: a pack's list can be typed by a trait.
+    auto typeParam = sugarDynCast<TypeParamAttr>(element);
+    if (!typeParam) {
       // Keep parametric expressions as-is.
       normalized.push_back(value);
+      continue;
     }
+    normalized.push_back(TypeParamAttr::get(typeParam.getMlirType(), metatype));
   }
 
-  if (changed)
+  if (ArrayRef<TypedAttr>(normalized) != paramList.getValues())
     variadic = ParamListAttr::get(normalized, paramList.getType());
 }
 
@@ -2071,6 +2128,113 @@ static ParseResult parseVariantTypes(AsmParser &p, TypedAttr &variadic) {
 
 static void printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
   KGENParamPrinter::createDiagnosticPrinter().printVariantTypes(p, variadic);
+}
+
+UntaggedUnionType UntaggedUnionType::get(MLIRContext *ctx, TypedAttr variadic) {
+  // Both storage types erase metatype witnesses from concrete member lists.
+  return Base::get(ctx, VariantType::get(ctx, variadic).getVariadic());
+}
+
+UntaggedUnionType UntaggedUnionType::getFromBytecode(TypedAttr variadic) {
+  return Base::get(variadic.getContext(), variadic);
+}
+
+UntaggedUnionType
+UntaggedUnionType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              MLIRContext *ctx, TypedAttr variadic) {
+  if (failed(verify(emitError, variadic)))
+    return {};
+  return get(ctx, variadic);
+}
+
+Type UntaggedUnionType::parse(AsmParser &p) {
+  auto loc = p.getCurrentLocation();
+  if (p.parseLess())
+    return {};
+  TypedAttr variadic;
+  if (succeeded(p.parseOptionalGreater())) {
+    auto listType = ParamListType::get(TypeType::get(p.getContext()));
+    variadic = ParamListAttr::get({}, listType);
+  } else if (parseVariantTypes(p, variadic) || p.parseGreater()) {
+    return {};
+  }
+  return getChecked([&] { return p.emitError(loc); }, p.getContext(), variadic);
+}
+
+void UntaggedUnionType::print(AsmPrinter &p) const {
+  p << '<';
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members || !members.getValues().empty())
+    printVariantTypes(p, getVariadic());
+  p << '>';
+}
+
+LogicalResult
+UntaggedUnionType::verify(function_ref<InFlightDiagnostic()> emitError,
+                          TypedAttr variadic) {
+  auto list = dyn_cast<ParamListType>(variadic.getType());
+  auto metatype = list ? dyn_cast<ParameterTypeInterface>(list.getElementType())
+                       : ParameterTypeInterface();
+  if (!list || (!isTypeExprType(list.getElementType()) &&
+                (!metatype || !metatype.isMetaType())))
+    return emitError() << "union members must be a list of types";
+  return success();
+}
+
+std::optional<int64_t>
+UntaggedUnionType::getTypeSize(TargetInfoAttr target) const {
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members)
+    return {};
+  int64_t size = 0;
+  for (TypedAttr member : members.getValues()) {
+    auto memberSize =
+        DataLayoutInterface::getTypeAllocSize(target, ParamType::get(member));
+    if (!memberSize)
+      return {};
+    size = std::max(size, *memberSize);
+  }
+  return size;
+}
+
+std::optional<int64_t>
+UntaggedUnionType::getTypeAlign(TargetInfoAttr target) const {
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members)
+    return {};
+  SmallVector<Type> types =
+      llvm::map_to_vector(members.getValues(), [](TypedAttr member) {
+        return ParamType::get(member);
+      });
+  return getMaxAlignmentAmongTypes(types, target);
+}
+
+std::optional<int64_t> KGEN::getStructFieldSize(TargetInfoAttr target,
+                                                Type type) {
+  if (isa<UntaggedUnionType>(type))
+    return DataLayoutInterface::getTypeStoreSize(target, type);
+  return DataLayoutInterface::getTypeAllocSize(target, type);
+}
+
+ErrorOrSuccess UntaggedUnionType::writeTo(TypedAttr value, int64_t addr,
+                                          InterpreterState &state) const {
+  auto snapshot = dyn_cast<UntaggedUnionAttr>(value);
+  auto size = getTypeSize(state.getTarget());
+  if (!snapshot || !size)
+    return Error("cannot write unresolved untagged union field");
+  return state.writeMemoryFragments(addr, *size, snapshot.getFragments());
+}
+
+ErrorOr<TypedAttr> UntaggedUnionType::readFrom(int64_t addr,
+                                               InterpreterState &state) const {
+  auto size = getTypeSize(state.getTarget());
+  if (!size)
+    return Error("cannot read unresolved untagged union field");
+  auto fragments = state.readMemoryFragments(
+      addr, *size, PointerType::get(NoneType::get(getContext())));
+  if (fragments.isError())
+    return fragments.takeError();
+  return UntaggedUnionAttr::get(getContext(), *fragments, *this);
 }
 
 OptionalParseResult VariantType::parseValue(AsmParser &p,
@@ -2372,6 +2536,10 @@ SIMDType SIMDType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
 
 SIMDType SIMDType::getScalarBoolType(MLIRContext *ctx) {
   return get(ctx, /*size=*/1, KGENDType::kBool);
+}
+
+SIMDType SIMDType::getScalarIndexType(MLIRContext *ctx) {
+  return get(ctx, /*size=*/1, KGENDType::index);
 }
 
 SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,

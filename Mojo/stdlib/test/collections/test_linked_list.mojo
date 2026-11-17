@@ -940,5 +940,15 @@ def test_linked_list_prepend_explicit_destroy() raises:
     assert_equal(order[1], 2)
 
 
+def test_insert_pointer_with_mutable_origin() raises:
+    var o = 1
+    var l = LinkedList[Pointer[Int, origin_of(o)]]()
+    l.append(Pointer(to=o))
+    l.prepend(Pointer(to=o))
+    l.insert(1, Pointer(to=o))
+    assert_equal(len(l), 3)
+    assert_equal(l.pop()[], 1)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

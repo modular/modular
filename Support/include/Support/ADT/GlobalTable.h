@@ -15,6 +15,7 @@
 #define SUPPORT_ADT_GLOBALTABLE_H
 
 #include "Support/ADT/DenseStringMap.h" // IWYU pragma: keep
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -47,7 +48,7 @@ struct OverflowGlobalEntry {
 /// This implementation uses a hybrid approach with fixed size lock-free hash
 /// map for the main table and a mutex-protected overflow container when the
 /// hash table exceeds capacity.
-struct GlobalTable {
+struct MODULAR_CXX_EXPORT GlobalTable {
   void *getOrCreate(llvm::StringRef name, void *(*initFn)(),
                     void (*destroyFn)(void *));
 

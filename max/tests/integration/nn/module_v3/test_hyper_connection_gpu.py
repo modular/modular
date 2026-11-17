@@ -15,7 +15,7 @@
 Covers the whole ModuleV3 layer -- the unweighted RMSNorm, the stream
 projection, the fused gate op, and the stream collapse -- compiled ahead of
 time and measured against the same reference the ModuleV2 layer uses. At the
-widths ``mo.mhc.pre`` takes, the layer is also held to a float64 reference and,
+widths ``hyper_connection.mhc.pre`` takes, the layer is also held to a float64 reference and,
 where the op runs, to the op chain it replaces. GPU-only.
 """
 
@@ -41,7 +41,7 @@ from max.driver import (
 from max.dtype import DType
 from max.nn import GemmaRMSNorm, HyperConnection, Module, RMSNorm
 from max.nn import hyper_connection as hyper_connection_module
-from max.nn.legacy.kernels import mhc_pre_supports
+from max.nn._graph_ops import mhc_pre_supports
 from max.tensor import default_device, default_dtype
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import (
@@ -97,17 +97,20 @@ def hc_compiled(
 ) -> tuple[Device, CompiledCallable[[Tensor], tuple[Tensor, Tensor, Tensor]]]:
     """One ahead-of-time compile; the row count stays symbolic."""
     device = Accelerator()
-    layer = HyperConnection(
-        hidden_size=_HIDDEN_SIZE,
-        hc_mult=_HC_MULT,
-        hc_sinkhorn_iters=_SINKHORN_ITERS,
-        hc_eps=_HC_EPS,
-        rms_norm_eps=_RMS_NORM_EPS,
-    ).to(device)
+    # The parameters realize when the compiled model binds them, so the
+    # compile needs no device.
+    with F.lazy():
+        layer = HyperConnection(
+            hidden_size=_HIDDEN_SIZE,
+            hc_mult=_HC_MULT,
+            hc_sinkhorn_iters=_SINKHORN_ITERS,
+            hc_eps=_HC_EPS,
+            rms_norm_eps=_RMS_NORM_EPS,
+        ).to(device)
 
-    layer.hc_fn = Tensor(hc_weights["hc_fn"], device=device)
-    layer.hc_base = Tensor(hc_weights["hc_base"], device=device)
-    layer.hc_scale = Tensor(hc_weights["hc_scale"], device=device)
+        layer.hc_fn = Tensor(hc_weights["hc_fn"], device=device)
+        layer.hc_base = Tensor(hc_weights["hc_base"], device=device)
+        layer.hc_scale = Tensor(hc_weights["hc_scale"], device=device)
 
     return device, layer.compile(
         TensorType(
@@ -400,7 +403,8 @@ def fused_compiled() -> Callable[[_Variant, bool], _Layer]:
 
     def get(variant: _Variant, op_chain: bool) -> _Layer:
         if (variant, op_chain) not in cache:
-            site = _PreSite(variant).to(device)
+            with F.lazy():
+                site = _PreSite(variant).to(device)
             with _op_chain_only() if op_chain else nullcontext():
                 cache[variant, op_chain] = site.compile(
                     _input_type(device), weights=_fused_weights(variant)
@@ -416,9 +420,9 @@ def test_fused_site_in_graph(variant: _Variant) -> None:
     site = _PreSite(variant)
     graph = str(site.trace(_input_type(device)))
     uses_kernel = _uses_mhc_pre(variant.fn_dtype, device)
-    assert ("mo.mhc.pre" in graph) == uses_kernel
+    assert ("hyper_connection.mhc.pre" in graph) == uses_kernel
     # The op replaces the projection and the gate op; the chain keeps both.
-    assert ("mo.hyper_connection.gates" in graph) != uses_kernel
+    assert ("hyper_connection.gates" in graph) != uses_kernel
     # The op applies a plain RMSNorm itself; any other norm runs after it.
     has_rms_norm_op = _RMS_NORM_OP.search(graph) is not None
     assert has_rms_norm_op == (
@@ -427,7 +431,7 @@ def test_fused_site_in_graph(variant: _Variant) -> None:
 
     with _op_chain_only():
         chain = str(site.trace(_input_type(device)))
-    assert "mo.mhc.pre" not in chain
+    assert "hyper_connection.mhc.pre" not in chain
     assert (_RMS_NORM_OP.search(chain) is not None) == variant.has_norm
 
 
@@ -439,27 +443,30 @@ def test_fused_site_matches_float64_and_op_chain(
     rows: int,
 ) -> None:
     device = Accelerator()
+    uses_kernel = _uses_mhc_pre(variant.fn_dtype, device)
+    # Both graphs compile before the streams reach the device.
+    fused = fused_compiled(variant, False)
+    op_chain = fused_compiled(variant, True) if uses_kernel else None
     weights = _fused_weights(variant)
     streams = _streams(rows)
     expected = _float64_site(
         streams, weights, norm_offset=1.0 if variant.norm == "gemma" else 0.0
     )
     streams_in = Tensor(streams, device=device)
-    actual = _outputs(fused_compiled(variant, False)(streams_in))
+    actual = _outputs(fused(streams_in))
     assert tuple(actual.comb.shape) == (rows, _HC_MULT, _HC_MULT)
     assert tuple(actual.collapsed.shape) == (rows, _FUSED_HIDDEN)
 
     gate, collapsed = _errors(variant, actual, expected)
     label = f"{variant} T={rows}"
     print(f"{label} vs fp64: gates {gate:.3e} collapsed/atol {collapsed:.3e}")
-    uses_kernel = _uses_mhc_pre(variant.fn_dtype, device)
     # The op chain's float32 projection may run at TF32.
     assert gate <= (_FUSED_GATE_ATOL if uses_kernel else _GATE_TOL["atol"])
     assert collapsed <= 1.0
-    if not uses_kernel:
+    if op_chain is None:
         return
 
-    chain = _outputs(fused_compiled(variant, True)(streams_in))
+    chain = _outputs(op_chain(streams_in))
     gate, collapsed = _errors(variant, actual, chain)
     print(f"{label} vs chain: gates {gate:.3e} collapsed/atol {collapsed:.3e}")
     assert gate <= 2 * _FUSED_GATE_ATOL
@@ -479,7 +486,7 @@ def test_fused_site_on_replicated_mesh() -> None:
         DType.bfloat16, ["total_seq_len", _HC_MULT, _FUSED_HIDDEN], replicated
     )
     uses_kernel = _uses_mhc_pre(variant.fn_dtype, mesh.devices[0])
-    assert str(site.trace(input_type)).count("mo.mhc.pre") == (
+    assert str(site.trace(input_type)).count("hyper_connection.mhc.pre") == (
         2 if uses_kernel else 0
     )
 

@@ -13,6 +13,7 @@
 """Registers Gemma 4 with the pipeline registry."""
 
 import dataclasses
+import re
 from pathlib import Path
 
 from max.experimental.cascade.pipelines.common_textgen import (
@@ -24,7 +25,6 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Gemma4BatchProcessor
 from .context import Gemma4Context
-from .memory_planner import Gemma4MemoryPlanner
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma4ForConditionalGenerationConfig
 from .tokenizer import Gemma4Tokenizer
@@ -62,8 +62,13 @@ gemma4_arch = SupportedArchitecture(
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
     format_spec=Path(__file__).parent / "formatspec.json",
+    tokenizer_family=lambda repo: (
+        "gemma4",
+        "nonthinking"
+        if re.search(r"(?<![a-z0-9])e[24]b(?![a-z0-9])", repo.repo_id.lower())
+        else "thinking",
+    ),
     reasoning_parser="gemma4",
-    memory_planner=Gemma4MemoryPlanner,
     cascade_pipeline_factory=CommonTextGenPipeline,
     supports_spec_decode_mixed_batches=True,
     spec_decode_graph_names={"mtp": "gemma4_with_mtp_graph"},

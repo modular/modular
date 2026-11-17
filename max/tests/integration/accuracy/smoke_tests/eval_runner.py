@@ -64,20 +64,14 @@ EvalSamples = list[dict[str, Any]]
 _COMPLETION_TOKEN_METRICS = (
     "max_num_output_tokens_total",  # max / max-ci
     "max_request_output_tokens_total",  # mach-ci
-    # TODO(MAX-1007): Remove after rollout and the rollback window close.
-    "maxserve_num_output_tokens_total",  # historical max / max-ci
     "vllm:generation_tokens_total",  # vllm
     "sglang:generation_tokens_total",  # sglang
-    # TODO(MAX-1007): Remove after rollout and the rollback window close.
-    "mach_request_output_tokens_total",  # historical mach-ci
 )
 
+# vllm and sglang expose no acceptance-length histogram; max and mach
+# engines both do, under the max name.
 _SPEC_DECODE_ACCEPTANCE_LENGTH_METRICS = (
     "max_spec_decode_avg_acceptance_length",
-    # TODO(MAX-1007): Remove both legacy aliases after rollout and the
-    # rollback window close.
-    "maxserve_spec_decode_avg_acceptance_length",
-    "mach_spec_decode_avg_acceptance_length",
 )
 
 

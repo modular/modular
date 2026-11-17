@@ -53,27 +53,7 @@ from max.benchmark.benchmark_shared.request import (
 )
 from max.benchmark.benchmark_shared.single_turn import prime_shared_contexts
 from pytest_mock import MockerFixture
-
-
-class _CapturingDriver(RequestDriver):
-    """Request driver that records all requests and returns success."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.calls: list[RequestFuncInput] = []
-
-    async def request(
-        self, request_func_input: BaseRequestFuncInput
-    ) -> RequestFuncOutput:
-        assert isinstance(request_func_input, RequestFuncInput)
-        self.calls.append(request_func_input)
-        return RequestFuncOutput(
-            success=True,
-            latency=0.1,
-            ttft=0.05,
-            prompt_len=request_func_input.prompt_len,
-            generated_text="ok",
-        )
+from tests.benchmark.benchmark_fakes import CapturingDriver
 
 
 def _make_4turn_session(
@@ -245,6 +225,75 @@ def test_chat_session_driver_disable_ignore_eos_covers_every_turn() -> None:
 
 
 @pytest.mark.parametrize(
+    ("strip", "replayed", "second_prompt_len"),
+    [
+        (True, "thinkanswer", 22),
+        (False, "<|channel|>think<|message|>answer<|end|>", 25),
+    ],
+    ids=["stripped", "kept_by_default"],
+)
+def test_chat_session_driver_strips_harmony_wire_tags_from_history(
+    strip: bool, replayed: str, second_prompt_len: int
+) -> None:
+    """A Harmony chat template rejects wire tags in message text, so a
+    response that echoes them would end the session at the next turn.
+
+    Each tag is one token, so a stripped tag also leaves the next turn's
+    ``prompt_len``.
+    """
+    histories: list[list[str]] = []
+    prompt_lens: list[int] = []
+
+    class EchoingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            assert isinstance(request_func_input.prompt, list)
+            prompt_lens.append(request_func_input.prompt_len)
+            histories.append(
+                [
+                    block.text
+                    for message in request_func_input.prompt
+                    for block in message.content
+                    if isinstance(block, TextContentBlock)
+                ]
+            )
+            return RequestFuncOutput(
+                success=True,
+                latency=0.1,
+                ttft=0.05,
+                generated_text="<|channel|>think<|message|>answer<|end|>",
+                server_token_stats=ServerTokenStats(completion_tokens=5),
+            )
+
+    async def run_test() -> None:
+        messages = [
+            SessionMessage(source="user", content="one", num_tokens=10),
+            SessionMessage(source="assistant", content="", num_tokens=50),
+            SessionMessage(source="user", content="two", num_tokens=10),
+            SessionMessage(source="assistant", content="", num_tokens=50),
+        ]
+        await chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=EchoingDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=ChatSession(id=0, messages=messages),
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            strip_harmony_wire_tags=strip,
+        )
+
+    asyncio.run(run_test())
+
+    assert histories[1] == ["one", replayed, "two"]
+    assert prompt_lens == [10, second_prompt_len]
+
+
+@pytest.mark.parametrize(
     ("completion_tokens", "second_prompt_len"),
     [(2, 22), (None, 70)],
     ids=["server_reported", "fallback_to_the_draw"],
@@ -309,24 +358,28 @@ def _make_session_with_id(session_id: int, prefix_turns: int) -> ChatSession:
     return dataclasses.replace(session, id=session_id)
 
 
+def _run_prerun_warmup(
+    sessions: list[ChatSession],
+    request_driver: RequestDriver,
+    max_chat_len: int = 4096,
+) -> None:
+    asyncio.run(
+        prerun_warmup_turns(
+            sessions=sessions,
+            request_driver=request_driver,
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=max_chat_len,
+            sampling=SamplingConfig(),
+            max_concurrency=128,
+        )
+    )
+
+
 def test_chat_session_driver_forwards_sampling_params() -> None:
     """Test that chat_session_driver forwards temperature, top_p, top_k."""
 
-    captured_inputs: list[RequestFuncInput] = []
-
-    class CapturingDriver(RequestDriver):
-        async def request(
-            self, request_func_input: BaseRequestFuncInput
-        ) -> RequestFuncOutput:
-            assert isinstance(request_func_input, RequestFuncInput)
-            captured_inputs.append(request_func_input)
-            return RequestFuncOutput(
-                success=True,
-                latency=0.1,
-                ttft=0.05,
-                prompt_len=request_func_input.prompt_len,
-                generated_text="Hello",
-            )
+    driver = CapturingDriver()
 
     async def run_test() -> None:
         chat_session = ChatSession(
@@ -343,7 +396,7 @@ def test_chat_session_driver_forwards_sampling_params() -> None:
         await chat_session_driver(
             model_id="test-model",
             api_url="http://localhost:8000/v1/chat/completions",
-            request_driver=CapturingDriver(),
+            request_driver=driver,
             request_counter=request_counter,
             chat_session=chat_session,
             max_chat_len=4096,
@@ -352,30 +405,16 @@ def test_chat_session_driver_forwards_sampling_params() -> None:
 
     asyncio.run(run_test())
 
-    assert len(captured_inputs) == 1
-    assert captured_inputs[0].sampling.temperature == 0.7
-    assert captured_inputs[0].sampling.top_p == 0.9
-    assert captured_inputs[0].sampling.top_k == 50
+    assert len(driver.calls) == 1
+    assert driver.calls[0].sampling.temperature == 0.7
+    assert driver.calls[0].sampling.top_p == 0.9
+    assert driver.calls[0].sampling.top_k == 50
 
 
 def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
     """First user message gets the run prefix when run_prefix is set."""
 
-    captured: list[RequestFuncInput] = []
-
-    class CapturingDriver(RequestDriver):
-        async def request(
-            self, request_func_input: BaseRequestFuncInput
-        ) -> RequestFuncOutput:
-            assert isinstance(request_func_input, RequestFuncInput)
-            captured.append(request_func_input)
-            return RequestFuncOutput(
-                success=True,
-                latency=0.1,
-                ttft=0.05,
-                prompt_len=request_func_input.prompt_len,
-                generated_text="Hello",
-            )
+    driver = CapturingDriver()
 
     async def run_test() -> None:
         chat_session = ChatSession(
@@ -394,7 +433,7 @@ def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
         await chat_session_driver(
             model_id="test-model",
             api_url="http://localhost:8000/v1/chat/completions",
-            request_driver=CapturingDriver(),
+            request_driver=driver,
             request_counter=request_counter,
             chat_session=chat_session,
             max_chat_len=4096,
@@ -405,15 +444,15 @@ def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
 
     asyncio.run(run_test())
 
-    assert len(captured) == 2
-    assert isinstance(captured[0].prompt, list)
-    first_user_content_block = captured[0].prompt[0].content[0]
+    assert len(driver.calls) == 2
+    assert isinstance(driver.calls[0].prompt, list)
+    first_user_content_block = driver.calls[0].prompt[0].content[0]
     assert isinstance(first_user_content_block, TextContentBlock)
     first_user_text = first_user_content_block.text
     assert first_user_text.endswith("Hi")
     assert first_user_text != "Hi"
-    assert isinstance(captured[1].prompt, list)
-    second_user_content_block = captured[1].prompt[2].content[0]
+    assert isinstance(driver.calls[1].prompt, list)
+    second_user_content_block = driver.calls[1].prompt[2].content[0]
     assert isinstance(second_user_content_block, TextContentBlock)
     second_user_text = second_user_content_block.text
     assert second_user_text == "Again"
@@ -441,7 +480,7 @@ def test_chat_session_driver_attaches_turn_images() -> None:
                 SessionMessage(source="assistant", content="Hi", num_tokens=5),
             ],
         )
-        driver = _CapturingDriver()
+        driver = CapturingDriver()
         await chat_session_driver(
             model_id="test-model",
             api_url="http://localhost:8000/v1/chat/completions",
@@ -470,13 +509,20 @@ def test_chat_session_driver_attaches_turn_images() -> None:
     assert isinstance(second_user_content[0], TextContentBlock)
 
 
-def test_prefix_turns_excluded_from_results() -> None:
-    """With prefix_turns=2, a 4-turn session should return only 2 results."""
+@pytest.mark.parametrize(
+    ("prefix_turns", "expected_outputs"),
+    [
+        pytest.param(2, 2, id="excluded_from_results"),
+        pytest.param(0, 4, id="zero_is_noop"),
+    ],
+)
+def test_prefix_turns_results(prefix_turns: int, expected_outputs: int) -> None:
+    """Prefix turns of a 4-turn session are left out of the results."""
 
     async def run_test() -> list[RequestFuncOutput]:
-        session = _make_4turn_session(prefix_turns=2)
+        session = _make_4turn_session(prefix_turns=prefix_turns)
         counter = RequestCounter(max_requests=100)
-        driver = _CapturingDriver()
+        driver = CapturingDriver()
         return await chat_session_driver(
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
@@ -488,7 +534,7 @@ def test_prefix_turns_excluded_from_results() -> None:
         )
 
     outputs = asyncio.run(run_test())
-    assert len(outputs) == 2
+    assert len(outputs) == expected_outputs
 
 
 def test_prefix_turns_dont_count_against_max_requests() -> None:
@@ -497,7 +543,7 @@ def test_prefix_turns_dont_count_against_max_requests() -> None:
     async def run_test() -> tuple[list[RequestFuncOutput], int, int]:
         session = _make_4turn_session(prefix_turns=2)
         counter = RequestCounter(max_requests=2)
-        driver = _CapturingDriver()
+        driver = CapturingDriver()
         outputs = await chat_session_driver(
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
@@ -527,7 +573,7 @@ def test_prefix_turns_no_server_or_delays() -> None:
     async def run_test() -> int:
         session = _make_4turn_session(prefix_turns=2, delay_ms=5000.0)
         counter = RequestCounter(max_requests=100)
-        driver = _CapturingDriver()
+        driver = CapturingDriver()
         with patch("asyncio.sleep", side_effect=mock_sleep):
             await chat_session_driver(
                 model_id="test",
@@ -550,27 +596,6 @@ def test_prefix_turns_no_server_or_delays() -> None:
     assert sleep_calls[1] == pytest.approx(5.0)
 
 
-def test_prefix_turns_zero_is_noop() -> None:
-    """prefix_turns=0 should behave identically to the old code."""
-
-    async def run_test() -> list[RequestFuncOutput]:
-        session = _make_4turn_session(prefix_turns=0)
-        counter = RequestCounter(max_requests=100)
-        driver = _CapturingDriver()
-        return await chat_session_driver(
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            request_driver=driver,
-            request_counter=counter,
-            chat_session=session,
-            max_chat_len=4096,
-            sampling=SamplingConfig(),
-        )
-
-    outputs = asyncio.run(run_test())
-    assert len(outputs) == 4
-
-
 def test_prerun_warmup_turns_one_request_per_session_with_prefix() -> None:
     """Each session with prefix_turns>0 produces exactly one warmup request."""
     sessions = [
@@ -579,20 +604,9 @@ def test_prerun_warmup_turns_one_request_per_session_with_prefix() -> None:
         _make_session_with_id(2, prefix_turns=0),
         _make_session_with_id(3, prefix_turns=3),
     ]
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
 
-    async def run() -> None:
-        await prerun_warmup_turns(
-            sessions=sessions,
-            request_driver=driver,
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            max_chat_len=4096,
-            sampling=SamplingConfig(),
-            max_concurrency=128,
-        )
-
-    asyncio.run(run())
+    _run_prerun_warmup(sessions, driver)
     # Sessions 1 and 3 fire one request each; sessions with
     # prefix_turns=0 fire nothing.
     assert len(driver.calls) == 2
@@ -617,39 +631,17 @@ def test_prerun_warmup_turns_raises_on_failed_request() -> None:
                 prompt_len=request_func_input.prompt_len,
             )
 
-    async def run() -> None:
-        await prerun_warmup_turns(
-            sessions=sessions,
-            request_driver=_FailingDriver(),
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            max_chat_len=4096,
-            sampling=SamplingConfig(),
-            max_concurrency=128,
-        )
-
     with pytest.raises(ValueError, match="simulated timeout"):
-        asyncio.run(run())
+        _run_prerun_warmup(sessions, _FailingDriver())
 
 
 def test_prerun_warmup_turns_request_prompt_is_last_turn_prefix() -> None:
     """For prefix_turns=N, the one request's prompt = dataset messages[0:2N-1]."""
     session = _make_session_with_id(0, prefix_turns=3)
     msgs = session.messages
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
 
-    async def run() -> None:
-        await prerun_warmup_turns(
-            sessions=[session],
-            request_driver=driver,
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            max_chat_len=4096,
-            sampling=SamplingConfig(),
-            max_concurrency=128,
-        )
-
-    asyncio.run(run())
+    _run_prerun_warmup([session], driver)
     assert len(driver.calls) == 1
     call = driver.calls[0]
     # prefix_turns=3 means the prompt is messages[0:5]:
@@ -672,20 +664,9 @@ def test_prerun_warmup_turns_attaches_prefix_images() -> None:
     }
     session = _make_session_with_id(0, prefix_turns=1)
     session.messages[0].images.append(image)  # first user turn (in prefix)
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
 
-    async def run() -> None:
-        await prerun_warmup_turns(
-            sessions=[session],
-            request_driver=driver,
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            max_chat_len=4096,
-            sampling=SamplingConfig(),
-            max_concurrency=128,
-        )
-
-    asyncio.run(run())
+    _run_prerun_warmup([session], driver)
     assert len(driver.calls) == 1
     last = driver.calls[0].prompt[-1]
     assert not isinstance(last, str)
@@ -730,18 +711,7 @@ def test_prerun_warmup_turns_cross_session_parallelism() -> None:
     # 3 sessions, one request each. All 3 should overlap.
     sessions = [_make_session_with_id(i, prefix_turns=2) for i in range(3)]
 
-    async def run() -> None:
-        await prerun_warmup_turns(
-            sessions=sessions,
-            request_driver=_SlowDriver(),
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            max_chat_len=4096,
-            sampling=SamplingConfig(),
-            max_concurrency=128,
-        )
-
-    asyncio.run(run())
+    _run_prerun_warmup(sessions, _SlowDriver())
     # If serialised, only one would be in flight before release fires.
     assert max_concurrent_seen == 3
 
@@ -749,20 +719,9 @@ def test_prerun_warmup_turns_cross_session_parallelism() -> None:
 def test_prerun_warmup_turns_noop_without_prefix_sessions() -> None:
     """When no session has prefix_turns > 0, no requests are issued."""
     sessions = [_make_session_with_id(idx, prefix_turns=0) for idx in range(3)]
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
 
-    async def run() -> None:
-        await prerun_warmup_turns(
-            sessions=sessions,
-            request_driver=driver,
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            max_chat_len=4096,
-            sampling=SamplingConfig(),
-            max_concurrency=128,
-        )
-
-    asyncio.run(run())
+    _run_prerun_warmup(sessions, driver)
     assert driver.calls == []
 
 
@@ -771,20 +730,9 @@ def test_prerun_warmup_turns_respects_chat_length_budget() -> None:
     # Each turn = 5 user + 5 asst tokens. With max_chat_len=15, only
     # turn 1 fits.
     session = _make_session_with_id(0, prefix_turns=3)
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
 
-    async def run() -> None:
-        await prerun_warmup_turns(
-            sessions=[session],
-            request_driver=driver,
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            max_chat_len=15,
-            sampling=SamplingConfig(),
-            max_concurrency=128,
-        )
-
-    asyncio.run(run())
+    _run_prerun_warmup([session], driver, max_chat_len=15)
     assert len(driver.calls) == 1
 
 
@@ -811,7 +759,7 @@ async def test_run_chat_judge_benchmark_smoke_with_system_role() -> None:
     """Orchestrator runs multiple sessions with system role end-to-end:
     outputs are collected per session and every call carries the
     system+user prompt without crashing through the TaskGroup wrapper."""
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
     sessions = [
         _make_chat_judge_session(0, num_user_turns=2),
         _make_chat_judge_session(1, num_user_turns=3),
@@ -875,7 +823,7 @@ def test_chat_judge_driver_sleeps_between_turns() -> None:
             return await chat_judge_session_driver(
                 model_id="test",
                 api_url="http://localhost:8000/v1/chat/completions",
-                request_driver=_CapturingDriver(),
+                request_driver=CapturingDriver(),
                 request_counter=RequestCounter(max_requests=100),
                 chat_session=session,
                 max_output_tokens=16,
@@ -909,7 +857,7 @@ def test_chat_judge_driver_interturn_sleep_deadline_skip() -> None:
         return await chat_judge_session_driver(
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
-            request_driver=_CapturingDriver(),
+            request_driver=CapturingDriver(),
             request_counter=RequestCounter(max_requests=100),
             chat_session=session,
             max_output_tokens=16,
@@ -981,7 +929,7 @@ def test_prewarmed_phase_spread_uses_correct_message() -> None:
     async def run_test() -> int:
         session = _make_prewarmed_session(prefix_turns=2, delay_ms=2000.0)
         counter = RequestCounter(max_requests=100)
-        driver = _CapturingDriver()
+        driver = CapturingDriver()
         with (
             patch("asyncio.sleep", side_effect=mock_sleep),
             patch("random.uniform", side_effect=mock_uniform),
@@ -1012,7 +960,7 @@ def test_prewarmed_phase_spread_deadline_skip() -> None:
     async def run_test() -> list[RequestFuncOutput]:
         session = _make_prewarmed_session(prefix_turns=2, delay_ms=5000.0)
         counter = RequestCounter(max_requests=100)
-        driver = _CapturingDriver()
+        driver = CapturingDriver()
         deadline = time.perf_counter_ns()  # already at deadline
         return await chat_session_driver(
             model_id="test",
@@ -1048,7 +996,7 @@ def test_interturn_sleep_deadline_skip() -> None:
             ],
         )
         counter = RequestCounter(max_requests=100)
-        driver = _CapturingDriver()
+        driver = CapturingDriver()
         deadline = time.perf_counter_ns() + 1_000_000  # 1 ms from now
         return await chat_session_driver(
             model_id="test",
@@ -1091,7 +1039,7 @@ def _jitter_trial_fired_immediately() -> bool:
     async def run_test() -> None:
         session = _make_4turn_session(prefix_turns=2, delay_ms=10.0)
         counter = RequestCounter(max_requests=100)
-        driver = _CapturingDriver()
+        driver = CapturingDriver()
         with patch("asyncio.sleep", side_effect=mock_sleep):
             await chat_session_driver(
                 model_id="test",
@@ -1409,21 +1357,7 @@ def test_prefix_turn_images_reach_the_wire() -> None:
     history, a response_format is a per-request field the prefix loop never
     sets. Ref CENG-1086.
     """
-    captured: list[RequestFuncInput] = []
-
-    class CapturingDriver(RequestDriver):
-        async def request(
-            self, request_func_input: BaseRequestFuncInput
-        ) -> RequestFuncOutput:
-            assert isinstance(request_func_input, RequestFuncInput)
-            captured.append(request_func_input)
-            return RequestFuncOutput(
-                success=True,
-                latency=0.1,
-                ttft=0.05,
-                prompt_len=request_func_input.prompt_len,
-                generated_text="ok",
-            )
+    driver = CapturingDriver()
 
     image: OpenAIImage = {
         "type": "image_url",
@@ -1438,7 +1372,7 @@ def test_prefix_turn_images_reach_the_wire() -> None:
         await chat_session_driver(
             model_id="test-model",
             api_url="http://localhost:8000/v1/chat/completions",
-            request_driver=CapturingDriver(),
+            request_driver=driver,
             request_counter=RequestCounter(
                 max_requests=10, total_sent_requests=0
             ),
@@ -1449,8 +1383,8 @@ def test_prefix_turn_images_reach_the_wire() -> None:
 
     asyncio.run(run_test())
 
-    assert captured, "expected at least one measured turn"
-    first_prompt = captured[0].prompt
+    assert driver.calls, "expected at least one measured turn"
+    first_prompt = driver.calls[0].prompt
     assert isinstance(first_prompt, list)
     image_blocks = [
         block
@@ -1472,8 +1406,8 @@ def test_prerun_preserves_measured_tools_and_history(with_tools: bool) -> None:
     for message in session.messages:
         if message.source == "user":
             message.tools = tools if with_tools else None
-    warmup = _CapturingDriver()
-    measured = _CapturingDriver()
+    warmup = CapturingDriver()
+    measured = CapturingDriver()
 
     async def run() -> None:
         await prerun_warmup_turns(
@@ -1516,7 +1450,7 @@ def test_prime_shared_contexts_seeds_distinct_tool_variants(
         for message in session.messages:
             if message.source == "user":
                 message.tools = None if mixed and index == 0 else tools
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
     samples = (
         ChatSamples(chat_sessions=sessions)
         if is_chat
@@ -1564,10 +1498,10 @@ def test_max_output_len_caps_measured_and_prerun_turns(
     max_output_len: int | None,
 ) -> None:
     session = _make_4turn_session(prefix_turns=1, delay_ms=0)
-    warmup = _CapturingDriver()
+    warmup = CapturingDriver()
     max_tokens: list[int | None] = []
 
-    class _RecordingDriver(_CapturingDriver):
+    class _RecordingDriver(CapturingDriver):
         async def request(
             self, request_func_input: BaseRequestFuncInput
         ) -> RequestFuncOutput:
@@ -1633,7 +1567,7 @@ def test_prime_shared_contexts_collapses_identical_tool_variants(
     ]
     samples = RequestSamples(requests=requests)
     samples.shared_contexts = [SharedContext(text="shared", num_tokens=1)]
-    driver = _CapturingDriver()
+    driver = CapturingDriver()
     asyncio.run(
         prime_shared_contexts(
             model_id="test",

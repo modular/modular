@@ -32,7 +32,6 @@ def unstable_function():
 
 # The struct must be @stable to allow @stable members inside it.
 # CHECK: lit.struct.decl @TestStruct
-# CHECK-SAME: hasStableDecorator
 @stable
 struct TestStruct(Movable where False):
     # CHECK: lit.fn @"stable_method{{.*}}TestStruct)"
@@ -49,6 +48,7 @@ struct TestStruct(Movable where False):
 
     # CHECK: lit.fn @"stable_static()"
     # CHECK-SAME: hasStableDecorator
+    # CHECK: } <hasStableDecorator
     @stable
     @staticmethod
     def stable_static():

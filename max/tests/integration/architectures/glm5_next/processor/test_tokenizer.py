@@ -37,14 +37,14 @@ import pytest
 from max.pipelines.architectures.glm5_next.context import (
     Glm5NextTextAndVisionContext,
 )
-from max.pipelines.architectures.glm5_next.image_processor import (
-    Glm5NextImageProcessor,
-)
 from max.pipelines.architectures.glm5_next.tokenizer import (
     Glm5NextTokenizer,
     _Video,
 )
-from max.pipelines.architectures.glm5_next.video_processor import (
+from max.pipelines.architectures.glm5_next.vision.image_processor import (
+    Glm5NextImageProcessor,
+)
+from max.pipelines.architectures.glm5_next.vision.video_processor import (
     Glm5NextVideoProcessor,
 )
 from max.pipelines.context.exceptions import PromptTooLongError

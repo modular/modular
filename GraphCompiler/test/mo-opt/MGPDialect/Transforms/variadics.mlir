@@ -11,7 +11,7 @@
 // CHECK-COUNT-3: var {{.*}} = _MoggInputLoadFusionTensor[DType.int32, {{.*}}]
 // CHECK: var [[OUT:.*]] = _MoggOutputStoreFusionTensor[DType.int32, {{.*}}]
 // CHECK: var [[INS:.*]] = extensibility.TensorTuple[type_of({{.*}}), type_of({{.*}}), type_of({{.*}})]({{.*}}, {{.*}}, {{.*}})
-// CHECK: builtin_kernels.gather_scatter.Concat.execute[target = "cpu", axis = 0]([[OUT]], [[INS]], {{.*}})
+// CHECK: builtin_kernels.gather_scatter.Concat.execute[axis = 0]([[OUT]], [[INS]], {{.*}})
 
 mo.graph @concat(%arg0: !mo.tensor<[2], si32>, %arg1: !mo.tensor<[3], si32>, %arg2: !mo.tensor<[4], si32>) -> !mo.tensor<[9], si32> {
   %axis = mo.constant <#M.dense_array<0> : tensor<si32>> : !mo.tensor<[], si32>

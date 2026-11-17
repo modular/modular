@@ -295,6 +295,15 @@ The
 function returns the total number of elements in the tensor, which is the
 product of the dimensions.
 
+## Tensors across devices
+
+A tensor's value can be spread across a device mesh, with one shard per device,
+while `shape` still reports the global shape.
+[Distributed tensors](/develop/distributed/tensors/) covers the mapping that
+records the split, what
+[`local_shards`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.local_shards)
+returns, and what a placement tells an op about its inputs.
+
 ## Next steps
 
 Now that you understand tensor basics, continue to

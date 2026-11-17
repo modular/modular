@@ -16,6 +16,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringMap.h"
 #include <filesystem>
 #include <optional>
@@ -54,7 +55,7 @@ namespace M {
 /// If there is no file at the canonical location, that does not constitute an
 /// error, it simply means that any values in the config must be derived from
 /// the environment.
-class Config {
+class MODULAR_CXX_EXPORT Config {
 public:
   Config() = default;
   // No copying.
@@ -205,7 +206,7 @@ std::optional<std::filesystem::path> findModularFile(StringRef fileName);
 /// Returns true if the MAX package is present in this install, i.e.
 /// `max.package_root` points at a tree containing libmax. Returns true when
 /// no package root is configured (bazel/dev builds).
-bool isMaxInstalled();
+MODULAR_CXX_EXPORT bool isMaxInstalled();
 } // namespace M
 
 #endif // SUPPORT_CONFIGURATION_H

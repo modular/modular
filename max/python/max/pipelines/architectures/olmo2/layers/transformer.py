@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from max.graph import TensorValue
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Layer, Module
 
 

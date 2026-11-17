@@ -25,7 +25,7 @@ def main():
         print(e)
         print("-" * 20)
         var stack_trace = e.get_stack_trace()
-        if stack_trace:
-            print(stack_trace.value())
+        if case .Some(trace) = stack_trace:
+            print(trace)
         else:
             print("No stack trace available")

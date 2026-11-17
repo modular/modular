@@ -77,7 +77,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
 
@@ -573,6 +573,7 @@ def _latent_sparse_attention_sm100[
         ragged=True,
         sparse=True,
         has_extra_k=True,
+        kernels=SM100MLA,
     ](
         TileTensor(out_ptr, row_major(num_rows, Idx[num_heads], Idx[head_dim])),
         TileTensor(q_ptr, row_major(num_rows, Idx[num_heads], Idx[head_dim])),
@@ -609,7 +610,6 @@ def latent_sparse_attention_ragged_paged[
     q_type: DType,
     out_type: DType,
     //,
-    target: StaticString,
     window: Int,
     split_k: Bool = True,
     portable_p_bf16: Bool = False,
@@ -631,7 +631,6 @@ def latent_sparse_attention_ragged_paged[
     Parameters:
         q_type: Query element type (inferred).
         out_type: Output element type (inferred).
-        target: Compilation target string, selects the CPU or GPU path.
         window: Sliding window length in tokens; a query at ``pos`` sees
             positions ``max(0, pos - window + 1) .. pos``.
         split_k: Whether the SM100 route may split a row's keys across
@@ -655,6 +654,64 @@ def latent_sparse_attention_ragged_paged[
         scale: Softmax scale applied to the scores.
         ctx: Device context used to enqueue the GPU kernel.
     """
+    comptime if not ctx.target.is_cpu() and _is_sm10x_gpu(
+        ctx.default_device_info
+    ):
+        latent_sparse_attention_ragged_paged_sm100[
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_cache,
+            comp_cache,
+            scale,
+            ctx,
+        )
+    else:
+        latent_sparse_attention_ragged_paged_portable[
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_cache,
+            comp_cache,
+            scale,
+            ctx,
+        )
+
+
+def latent_sparse_attention_ragged_paged_sm100[
+    q_type: DType,
+    out_type: DType,
+    //,
+    window: Int,
+    split_k: Bool = True,
+    portable_p_bf16: Bool = False,
+](
+    output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    comp_indices: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    swa_cache: PagedKVCache[...],
+    comp_cache: PagedKVCache[...],
+    scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Runs `latent_sparse_attention_ragged_paged` on the SM100 decode when
+    the shape and layout allow it, else on the portable GPU kernel."""
     comptime swa_t = type_of(swa_cache)
     comptime comp_t = type_of(comp_cache)
     comptime head_dim = swa_t.kv_params.head_size
@@ -699,7 +756,7 @@ def latent_sparse_attention_ragged_paged[
 
     comptime q_heads = q.static_shape[1]
     comptime use_sm100 = (
-        not is_cpu[target]()
+        not ctx.target.is_cpu()
         and _is_sm10x_gpu(ctx.default_device_info)
         and q_type == .bfloat16
         and out_type == .bfloat16
@@ -755,7 +812,88 @@ def latent_sparse_attention_ragged_paged[
             )
             return
 
-    comptime if is_cpu[target]():
+    latent_sparse_attention_ragged_paged_portable[
+        window=window,
+        split_k=split_k,
+        portable_p_bf16=portable_p_bf16,
+    ](
+        output,
+        q,
+        input_row_offsets,
+        comp_indices,
+        attn_sink,
+        swa_cache,
+        comp_cache,
+        scale,
+        ctx,
+    )
+
+
+def latent_sparse_attention_ragged_paged_portable[
+    q_type: DType,
+    out_type: DType,
+    //,
+    window: Int,
+    split_k: Bool = True,
+    portable_p_bf16: Bool = False,
+](
+    output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    comp_indices: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    swa_cache: PagedKVCache[...],
+    comp_cache: PagedKVCache[...],
+    scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Runs `latent_sparse_attention_ragged_paged` on the CPU or the
+    portable GPU kernel."""
+    comptime swa_t = type_of(swa_cache)
+    comptime comp_t = type_of(comp_cache)
+    comptime head_dim = swa_t.kv_params.head_size
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime assert (
+        comp_t.kv_params.head_size == head_dim
+    ), "window and compressed leaves must share the latent width"
+    comptime assert (
+        swa_t.kv_params.num_heads == 1 and comp_t.kv_params.num_heads == 1
+    ), "the latent leaves hold a single shared head"
+    comptime assert (
+        head_dim % warp_size == 0
+    ), "head_dim must be a multiple of the warp size"
+    comptime assert output.flat_rank == 3 and q.flat_rank == 3
+    comptime assert comp_indices.flat_rank == 2
+    comptime assert (
+        input_row_offsets.flat_rank == 1 and attn_sink.flat_rank == 1
+    )
+
+    var num_rows = Int(q.dim[0]())
+    var num_heads = Int(q.dim[1]())
+    var num_batches = Int(input_row_offsets.dim[0]()) - 1
+    var num_comp = Int(comp_indices.dim[1]())
+    var q_stride0 = Int(q.dynamic_stride(0))
+    var q_stride1 = Int(q.dynamic_stride(1))
+    var out_stride0 = Int(output.dynamic_stride(0))
+    var out_stride1 = Int(output.dynamic_stride(1))
+    var idx_stride0 = Int(comp_indices.dynamic_stride(0))
+    var idx_stride1 = Int(comp_indices.dynamic_stride(1))
+    debug_assert(
+        Int(q.dynamic_stride(2)) == 1 and Int(output.dynamic_stride(2)) == 1,
+        "q and output must be contiguous along head_dim",
+    )
+    if num_rows == 0:
+        return
+
+    var out_ptr = output.unsafe_ptr().as_unsafe_any_origin()
+    var q_ptr = q.unsafe_ptr().as_unsafe_any_origin()
+    var offs_ptr = input_row_offsets.unsafe_ptr().as_unsafe_any_origin()
+    var idx_ptr = comp_indices.unsafe_ptr().as_unsafe_any_origin()
+    var sink_ptr = attn_sink.unsafe_ptr().as_unsafe_any_origin()
+
+    comptime if ctx.target.is_cpu():
         _latent_sparse_attention_cpu[head_dim=head_dim, window=window](
             out_ptr,
             q_ptr,

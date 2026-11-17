@@ -12,7 +12,8 @@
 //===----------------------------------------------------------------------===//
 //
 // TargetBackend for Apple Metal (air64): writes AIR bitcode and links a
-// metallib via `xcrun metal`.
+// metallib via `xcrun metal`, or packages it in-tree (MetallibWriter) when the
+// Metal toolchain is absent or MODULAR_METAL_INTREE_METALLIB is set.
 //
 //===----------------------------------------------------------------------===//
 
@@ -28,6 +29,7 @@
 #include "Target/max_license/Metal/LLVM/Transforms/MetalVerifier.h"
 #include "Target/max_license/Metal/MetalAddressSpace.h"
 #include "Target/max_license/Metal/MetalTraits.h"
+#include "Target/max_license/Metal/MetallibWriter.h"
 #include "LLVM/Transforms/PointerRewriter.h"
 
 #include "llvm/IR/Constants.h"
@@ -39,6 +41,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
@@ -57,6 +60,47 @@ llvm::cl::opt<std::string> objectCompilerUseCustomAIR(
         "not removed after compilation. WARNING: to run the program AIR file "
         "must contain all kernels used by it."));
 #pragma GCC diagnostic pop
+
+constexpr const char *kXcrunPath = "/usr/bin/xcrun";
+
+constexpr const char *kInTreeMetallibEnv = "MODULAR_METAL_INTREE_METALLIB";
+
+/// Packages AIR in-tree when asked to, or when there is no Metal toolchain to
+/// fall back on (e.g. cross-compiling from Linux). An empty value counts as
+/// unset so templated CI configs still get the fallback.
+ErrorOr<bool> useInTreeMetallib() {
+  std::optional<std::string> env =
+      llvm::sys::Process::GetEnv(kInTreeMetallibEnv);
+  if (!env || env->empty())
+    return !llvm::sys::fs::can_execute(kXcrunPath);
+  std::string value = llvm::StringRef(*env).lower();
+  if (value == "1" || value == "true" || value == "on" || value == "yes")
+    return true;
+  if (value == "0" || value == "false" || value == "off" || value == "no")
+    return false;
+  return Error(Twine(kInTreeMetallibEnv) + "='" + *env +
+               "' is not a boolean; use 1/0, true/false, on/off or yes/no");
+}
+
+/// Rejects a MACOSX_DEPLOYMENT_TARGET the AIR cannot run on, as `xcrun metal`
+/// does, so the failure happens at build time instead of at library load.
+ErrorOrSuccess checkDeploymentTarget(const llvm::Module &module) {
+  std::optional<std::string> env =
+      llvm::sys::Process::GetEnv("MACOSX_DEPLOYMENT_TARGET");
+  if (!env || env->empty())
+    return success();
+  llvm::VersionTuple target;
+  if (target.tryParse(*env))
+    return Error(Twine("invalid version number in 'MACOSX_DEPLOYMENT_TARGET=") +
+                 *env + "'");
+  llvm::VersionTuple required =
+      llvm::Triple(module.getTargetTriple()).getOSVersion();
+  if (target < required)
+    return Error(Twine("MACOSX_DEPLOYMENT_TARGET=") + *env +
+                 " is older than macOS " + required.getAsString() +
+                 ", which this kernel's AIR version requires");
+  return success();
+}
 
 /// Maps an `xcrun metal` error message to actionable guidance.
 std::string getPrettyMetallibError(llvm::StringRef metalCompilerErrorMessage,
@@ -262,6 +306,33 @@ public:
         return Error("failed to save air to saveTempsPrefix");
     }
 
+    ErrorOr<bool> inTree = useInTreeMetallib();
+    if (inTree.isError())
+      return Error(Twine(inTree.getError()));
+    if (*inTree) {
+      if (!objectCompilerUseCustomAIR.getValue().empty())
+        return Error("-kgen-object-compiler-use-custom-air needs the `xcrun "
+                     "metal` packager; set " +
+                     Twine(kInTreeMetallibEnv) + "=0 on a host with Xcode");
+      if (ErrorOrSuccess err = checkDeploymentTarget(module))
+        return Error(Twine(err.getError()));
+      auto airBuffer = llvm::MemoryBuffer::getFile(airTempFile);
+      if (!airBuffer)
+        return Error("Failed to read AIR file: " +
+                     airBuffer.getError().message());
+      llvm::Expected<std::string> metallib =
+          writeMetallib(module, (*airBuffer)->getBuffer());
+      if (!metallib)
+        return Error("Failed to package metallib: " +
+                     llvm::toString(metallib.takeError()));
+      if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, ".metallib",
+                                          llvm::StringRef(*metallib))))
+        return Error("failed to save metallib to saveTempsPrefix");
+      WriteableBufferRef buf = WriteableBuffer::get();
+      (*buf) << *metallib;
+      return buf;
+    }
+
     // Convert AIR to metallib using `xcrun metallib`.
     llvm::SmallString<256> metallibTempFile;
     if (auto err = llvm::sys::fs::createTemporaryFile("kernel", ".metallib",
@@ -271,7 +342,7 @@ public:
     }
     llvm::FileRemover metallibRemover(metallibTempFile);
 
-    const char *xcrunPath = "/usr/bin/xcrun";
+    const char *xcrunPath = kXcrunPath;
     const std::string optLevel =
         std::string("-O") + std::to_string(options.optimizationLevel);
 

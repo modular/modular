@@ -21,7 +21,8 @@ shared memory. This module provides type-safe abstractions:
 - TmemAddress: Simple address wrapper for TMEM load operations
 """
 
-from layout import Layout
+from layout import TensorLayout
+from layout.layout import row_major as tt_row_major
 from std.sys import size_of
 
 from max.gpu.sync import syncwarp
@@ -318,7 +319,8 @@ struct TmemAddress(TrivialRegisterPassable):
 
 struct TmemTensor[
     dtype: DType,
-    layout: Layout,
+    layout_t: TensorLayout,
+    layout: layout_t,
     *,
     cta_group: Int = 1,
 ](TrivialRegisterPassable):
@@ -335,13 +337,14 @@ struct TmemTensor[
 
     Parameters:
         dtype: Accumulator data type (typically float32).
-        layout: Logical layout of the accumulator tile (M × N).
+        layout_t: The typed layout of the accumulator tile (M × N).
+        layout: The accumulator tile layout value.
         cta_group: CTA cooperation level (1 or 2).
 
     Example:
         # Create typed TMEM view with (64, 128) accumulator layout
-        comptime layout = Layout.row_major(64, 128)
-        var tmem = TmemTensor[.float32, layout](col_offset)
+        comptime layout = tt_row_major[64, 128]()
+        var tmem = TmemTensor[.float32, type_of(layout), layout](col_offset)
 
         # Use with MMA operations (returns raw UInt32 offset)
         mma_op.mma(a_tile, b_tile, tmem.offset(), init_c=True)
@@ -358,7 +361,7 @@ struct TmemTensor[
     comptime frag_size = (Self.data_paths * (Self.bits // 32)) // 32
 
     # Lower fragment required unless cta_group=1 and M=64
-    comptime tile_m = Self.layout.shape[0].value()
+    comptime tile_m = Int(Self.layout.shape[0]())
     comptime is_lower_required = not (Self.cta_group == 1 and Self.tile_m == 64)
 
     var col_addr: Int
@@ -732,7 +735,8 @@ struct TmemFragments[
 
 struct TmemArrayType[
     dtype: DType,
-    layout: Layout,
+    layout_t: TensorLayout,
+    layout: layout_t,
     num_tiles: Int,
     *,
     cta_group: Int = 1,
@@ -744,7 +748,8 @@ struct TmemArrayType[
 
     Parameters:
         dtype: Element dtype for tiles.
-        layout: Layout of each tile.
+        layout_t: The typed layout of each tile.
+        layout: The layout value of each tile.
         num_tiles: Number of tiles in the array.
         cta_group: CTA group size (1 or 2).
 
@@ -755,10 +760,10 @@ struct TmemArrayType[
     """
 
     comptime Tile = TmemTensor[
-        Self.dtype, Self.layout, cta_group=Self.cta_group
+        Self.dtype, type_of(Self.layout), Self.layout, cta_group=Self.cta_group
     ]
     # TMEM addresses are in column units, so stride is N dimension (shape[1])
-    comptime tile_stride = Self.layout.shape[1].value()
+    comptime tile_stride = Int(Self.layout.shape[1]())
     comptime num_cols = Self.num_tiles * Self.tile_stride
 
     var base_addr: Int
@@ -843,29 +848,32 @@ struct BlockScaledTmem[
     # Tile layouts (stride derived automatically from layout.size())
     # Each SFA/SFB tile in TMEM covers num_sf_k_tiles SF vectors,
     # so the column width is num_sf_k_tiles * (dim // 32).
-    comptime accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
-    comptime sfa_layout = Layout.row_major(
+    comptime accum_layout = tt_row_major[Self.MMA_M, Self.MMA_N]()
+    comptime sfa_layout = tt_row_major[
         1, Self.num_sf_k_tiles * (Self.BM // 32)
-    )
-    comptime sfb_layout = Layout.row_major(
+    ]()
+    comptime sfb_layout = tt_row_major[
         1, Self.num_sf_k_tiles * (Self.SFB_N // 32)
-    )
+    ]()
 
     # Array types for each TMEM region
     comptime AccumArray = TmemArrayType[
         Self.accum_dtype,
+        type_of(Self.accum_layout),
         Self.accum_layout,
         num_tiles=Self.num_accum_stages,
         cta_group=Self.cta_group,
     ]
     comptime SFAArray = TmemArrayType[
         Self.sf_dtype,
+        type_of(Self.sfa_layout),
         Self.sfa_layout,
         num_tiles=Self.num_pipeline_stages,
         cta_group=Self.cta_group,
     ]
     comptime SFBArray = TmemArrayType[
         Self.sf_dtype,
+        type_of(Self.sfb_layout),
         Self.sfb_layout,
         num_tiles=Self.num_pipeline_stages,
         cta_group=Self.cta_group,
@@ -1082,20 +1090,30 @@ struct TmemStage[
     @inline(.always)
     def tensor[
         accum_dtype: DType,
-        accum_layout: Layout,
-    ](self) -> TmemTensor[accum_dtype, accum_layout, cta_group=Self.cta_group]:
+        accum_layout_t: TensorLayout,
+        accum_layout: accum_layout_t,
+    ](self) -> TmemTensor[
+        accum_dtype,
+        type_of(accum_layout),
+        accum_layout,
+        cta_group=Self.cta_group,
+    ]:
         """Get typed TmemTensor view of this stage's accumulator.
 
         Parameters:
             accum_dtype: Accumulator data type.
-            accum_layout: Logical accumulator layout (M × N).
+            accum_layout_t: The typed logical accumulator layout (M × N).
+            accum_layout: The logical accumulator layout value (M × N).
 
         Returns:
             TmemTensor providing typed access to the accumulator.
         """
-        return TmemTensor[accum_dtype, accum_layout, cta_group=Self.cta_group](
-            self.base_addr + self.index * Self.stage_stride
-        )
+        return TmemTensor[
+            accum_dtype,
+            type_of(accum_layout),
+            accum_layout,
+            cta_group=Self.cta_group,
+        ](self.base_addr + self.index * Self.stage_stride)
 
     @inline(.always)
     def load_upper[

@@ -92,7 +92,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
             updates_tensor,
             spec.axis,
             output_tensor,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
 
     bencher.iter(bench_fn)

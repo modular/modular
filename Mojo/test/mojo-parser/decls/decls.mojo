@@ -599,30 +599,22 @@ def test_typed_raises_fn3() raises Float32:
     # This tests calling a function that raises Int in context that requires
     # raising Float32.  We need a temporary for the implicit conversion.
 
-    # CHECK-NEXT: %anonymous2A = lit.var.decl
     # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
-    # CHECK-NEXT: lit.try %__call_error_tmp__
-    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %anonymous2A)
-    # CHECK-NEXT: lit.try.yield
-    # CHECK-NEXT: } except {
-    # CHECK-NEXT:    [[ERB:%.*]] = kgen.rebind %__call_error_tmp__
-    # CHECK-NEXT:    = lit.ref.load [[ERB]]
-    # CHECK-NEXT:    lit.call {{.*}}SIMD::@"__init__
-    # CHECK-NEXT:    = kgen.rebind
-    # CHECK-NEXT:    lit.ref.store {{.*}}, %__error__
-    # CHECK-NEXT:    lit.raise
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %__call_result_tmp__)
+    # CHECK-NEXT: hlcf.if
+    # CHECK: lit.ref.load {{.*}}__call_error_tmp__
+    # CHECK: lit.ref.store {{.*}}, %__error__
+    # CHECK-NEXT: lit.raise
     _ = test_typed_raises_fn2()
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn4
 def test_typed_raises_fn4() raises Float32:
-    # CHECK: %anonymous2A = lit.var.decl
-    # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl
-    # CHECK-NEXT: lit.try %__call_error_tmp__
-    # CHECK-NEXT:   lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %anonymous2A)
+    # CHECK: %__call_error_tmp__ = lit.var.decl
+    # CHECK-NEXT: %str = lit.var.decl
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %__call_result_tmp__)
 
-    # Make sure to emit ExprDest outside the try block.
-    # CHECK: %str = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}(%anonymous2A, %str){{.*}}*, "move"
     var str = test_typed_raises_fn2()
     _ = str.__len__()
 
@@ -630,9 +622,8 @@ def test_typed_raises_fn4() raises Float32:
 def test_typed_raises_fn5() raises Float32:
 
     # Make sure to emit ExprDest outside the try block.
-    # CHECK: %anonymous2A = lit.var.decl
-    # CHECK-NEXT: %__call_error_tmp__
-    # CHECK-NEXT: lit.try
+    # CHECK: %__call_error_tmp__ = lit.var.decl
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     _ = test_typed_raises_fn2().__len__()
 
 def test_typed_raises_fn3(x: String) raises Int -> ref [x] String:
@@ -643,9 +634,8 @@ def test_typed_raises_fn3(x: String) raises Int -> ref [x] String:
 def test_typed_raises_fn6(x: String) raises Float32:
 
     # Make sure to emit ExprDest outside the try block.
-    # CHECK: %__ref_result_tmp__ = lit.var.decl
-    # CHECK-NEXT: %__call_error_tmp__
-    # CHECK-NEXT: lit.try
+    # CHECK: %__call_error_tmp__ = lit.var.decl
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     _ = test_typed_raises_fn3(x).__len__()
 
 # https://github.com/modular/modular/issues/5845
@@ -664,7 +654,7 @@ struct TypedRaisesInit[n: Int]:
 # CHECK-LABEL: lit.fn @"test_typed_raises_init
 def test_typed_raises_init() raises Float32:
     # CHECK: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
-    # CHECK-NEXT: lit.try %__call_error_tmp__
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}TypedRaisesInit{{.*}}__init__{{.*}}(%__call_error_tmp__,
     _ = TypedRaisesInit[1]()
 
@@ -1390,7 +1380,7 @@ def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]() where x > 0:
     need_positive_int[x]()
 
 # CHECK-LABEL: lit.fn @"use_constraint_struct
-# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">, <{<sugar_preserved(#lit.struct.extract<:!Bool apply(:!lit.generator<("self": !Int, "rhs": !Int) -> !Bool> @std::@builtin::@stubs::@SIMD::@"__gt__(::SIMD[$0, $1],::SIMD[$0, $1])"<:!DType {:dtype index}, :!SIMDLength {1}>, *"cs.a`", {:scalar<index> 0}), "_mlir_value">, ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>>, {<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
+# CHECK-SAME: <["cs.a`"]*"cs.a`": !Int, +, cs: !lit.struct<#ConstraintStruct <:!Int *"cs.a`">>, {<sugar_preserved({{.*}}ge(:scalar<index> #lit.struct.extract<:!Int *"cs.a`", "_mlir_value">, 1)), {{.*}}>}>() -> !kgen.none attributes {sourceName = "use_constraint_struct_autoparam", specialFnKind = 0 : i8} {
 # CHECK: lit.call {{.*}}need_positive_int{{.*}}<:!Int *"cs.a`">
 def use_constraint_struct_autoparam[cs: ConstraintStruct[_]]():
     need_positive_int[cs.a]()
@@ -1428,3 +1418,25 @@ struct PartiallyBoundParam[T: AnyType](Movable where False):
 def infer_partially_bound_var_type():
     # CHECK: lit.var.decl "v" var : !lit.ref<!lit.struct<#PartiallyBoundParam <:!AnyType !Int>>, mut *"v`1">
     var v: PartiallyBoundParam = 1
+
+
+##===----------------------------------------------------------------------===##
+# Auto-parameterization on unbound struct metatypes.
+##===----------------------------------------------------------------------===##
+
+struct AutoParamStruct[x: Int]:
+    pass
+
+comptime AutoParamAlias[t: Int] = AutoParamStruct[t]
+
+
+# CHECK-LABEL: lit.fn @"autoparam_via_alias
+# CHECK-SAME: <["f.t`"]*"f.t`": !Int, +, f: meta<!lit.struct<#AutoParamStruct <:!Int *"f.t`">>>>()
+def autoparam_via_alias[f: type_of(AutoParamAlias[_])]():
+    pass
+
+
+# CHECK-LABEL: lit.fn @"autoparam_direct_ref
+# CHECK-SAME: <["f.x`"]*"f.x`": !Int, +, f: meta<!lit.struct<#AutoParamStruct <:!Int *"f.x`">>>>()
+def autoparam_direct_ref[f: type_of(AutoParamStruct[_])]():
+    pass

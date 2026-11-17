@@ -427,7 +427,7 @@ def _run_ragged_at[
         )
         var rejected_scalar = False
         try:
-            generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+            generic_cross_attention_kv_cache[mask_str="causal"](
                 q_ragged_lt,
                 input_row_offsets_dt,
                 TileTensor(invalid_q_max_seq_len, row_major[2]()),
@@ -456,7 +456,7 @@ def _run_ragged_at[
         )
         var rejected_stride = False
         try:
-            generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+            generic_cross_attention_kv_cache[mask_str="causal"](
                 q_ragged_lt,
                 input_row_offsets_dt,
                 TileTensor(q_max_seq_len, row_major[1]()),
@@ -474,7 +474,7 @@ def _run_ragged_at[
             rejected_stride = True
         assert_true(rejected_stride)
 
-        generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+        generic_cross_attention_kv_cache[mask_str="causal"](
             q_ragged_lt,
             input_row_offsets_dt,
             TileTensor(q_max_seq_len, row_major[1]()),

@@ -23,9 +23,32 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/architectures/mtp_deepseekV3",
         "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_registered_draft",
+    size = "large",
+    srcs = ["test_registered_draft.py"],
+    ignore_extra_deps = [
+        # Finds the target's architecture by name.
+        "//max/python/max/pipelines",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/deepseekV3_nextn",
+        "//max/python/max/pipelines/architectures/mtp_deepseekV3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
     ],
 )

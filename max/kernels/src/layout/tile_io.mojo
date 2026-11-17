@@ -21,7 +21,7 @@ from std.os import abort
 
 from layout import Coord, Idx
 from .swizzle import Swizzle
-from .tile_layout import Layout, row_major
+from .layout import Layout, row_major
 from .tile_tensor import TileTensor
 from .tensor_engine import DefaultEngine
 
@@ -82,7 +82,7 @@ struct ThreadScope(EnumLike, TrivialRegisterPassable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].length, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)

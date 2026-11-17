@@ -33,7 +33,7 @@ from layout import TileTensor, Coord, row_major
 
 def bench_add[
     unroll_by: Int, rank: Int
-](mut b: Bench, shape: IndexList[rank], ctx: DeviceContext) raises:
+](mut b: Bench, shape: IndexList[rank], ctx: DeviceContext[]) raises:
     comptime type = DType.float32
     var size = shape.flattened_length()
     var input0_ptr = ctx.enqueue_create_buffer[type](size)
@@ -69,10 +69,8 @@ def bench_add[
     @inline(.always)
     def bench_func(mut b: Bencher, shape: IndexList[rank]) raises {imm}:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
-            elementwise[simd_width=unroll_by, target="gpu"](
-                add, Coord(shape), ctx
-            )
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
+            elementwise[simd_width=unroll_by](add, Coord(shape), ctx)
 
         bencher_iter_custom(b, kernel_launch, ctx)
 

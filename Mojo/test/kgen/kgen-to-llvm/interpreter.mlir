@@ -16,7 +16,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: llvm.func internal @heap
 kgen.func @heap() -> !kgen.pointer<i16> {
-  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %idx32, %idx2 : <i8>
+  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %{{.*}}, %{{.*}} : <i8>
   // CHECK: %[[ALLOC_LLVM:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]] : !kgen.pointer<i8> to !llvm.ptr
   // CHECK: %[[BASE:.*]] = llvm.bitcast %[[ALLOC_LLVM]] : !llvm.ptr to !llvm.ptr
   // CHECK: %[[P0:.*]] = llvm.getelementptr inbounds %[[BASE]][0]
@@ -65,7 +65,7 @@ kgen.func @global() -> !kgen.pointer<i8> {
 // CHECK-LABEL: llvm.func internal @one_heap_use_only
 kgen.func @one_heap_use_only() {
   // COM: only materialize #bar1 here (index 1)
-  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %idx32, %idx4
+  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %{{.*}}, %{{.*}}
   // CHECK: %[[PTR_TYPED:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]]
   // CHECK: %[[PTR:.*]] = llvm.bitcast %[[PTR_TYPED]]
 
@@ -89,7 +89,7 @@ kgen.func @pointer_to_pointer() {
   // CHECK: %[[PTR1_TYPED:.*]] = builtin.unrealized_conversion_cast %[[ALLOC1]]
   // CHECK: %[[PTR1:.*]] = llvm.bitcast %[[PTR1_TYPED]]
 
-  // CHECK: %[[ALLOC2:.*]] = pop.aligned_alloc %idx16, %idx2
+  // CHECK: %[[ALLOC2:.*]] = pop.aligned_alloc %{{.*}}, %{{.*}}
   // CHECK: %[[PTR2_TYPED:.*]] = builtin.unrealized_conversion_cast %[[ALLOC2]]
   // CHECK: %[[PTR2:.*]] = llvm.bitcast %[[PTR2_TYPED]]
 
@@ -247,7 +247,7 @@ kgen.func export @persistent_global() -> !kgen.pointer<i8, 2> {
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=256>} {
 // CHECK-LABEL: llvm.func internal @overaligned_after_pointer
 kgen.func @overaligned_after_pointer() {
-  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %idx32, %idx64
+  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %{{.*}}, %{{.*}}
   // CHECK: %[[BASE_TYPED:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]]
   // CHECK: %[[BASE:.*]] = llvm.bitcast %[[BASE_TYPED]]
 

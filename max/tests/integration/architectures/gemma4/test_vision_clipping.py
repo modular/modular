@@ -39,7 +39,7 @@ from conftest import (
 )
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import (
     DeviceRef,
     Graph,
@@ -491,16 +491,13 @@ def test_clipped_mlp_shards_are_clipped(num_devices: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_max_attention(
+def _load_max_attention(
     attn: Gemma4VisionAttention,
-    hidden_states: torch.Tensor,
-    freqs_cis: torch.Tensor,
+    num_patches: int,
     weights: Mapping[str, DLPackArray],
-) -> torch.Tensor:
-    """Compiles the vision attention graph and executes it once."""
-    num_patches = hidden_states.shape[0]
-    device = Accelerator(0)
-    session = InferenceSession(devices=[device])
+) -> Model:
+    """Compiles the vision attention graph."""
+    session = InferenceSession(devices=[Accelerator(0)])
 
     with Graph(
         "gemma4_vision_clipped_attn_test",
@@ -527,8 +524,15 @@ def _run_max_attention(
         )
         graph.output(attn(hs_in, freqs_in, cu_seqlens_in, max_seq_len))
 
-    cu_seqlens = torch.tensor([0, num_patches], dtype=torch.uint32)
-    compiled = session.load(graph, weights_registry=weights)
+    return session.load(graph, weights_registry=weights)
+
+
+def _run_max_attention(
+    compiled: Model, hidden_states: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    """Executes the vision attention graph once."""
+    device = compiled.input_devices[0]
+    cu_seqlens = torch.tensor([0, hidden_states.shape[0]], dtype=torch.uint32)
     (result,) = compiled.execute(
         Buffer.from_dlpack(hidden_states).to(device),
         Buffer.from_dlpack(freqs_cis).to(device),
@@ -538,14 +542,11 @@ def _run_max_attention(
     return torch.from_dlpack(result).cpu()
 
 
-def _run_max_mlp(
-    mlp: Gemma4VisionMLP,
-    x: torch.Tensor,
-    weights: Mapping[str, DLPackArray],
-) -> torch.Tensor:
-    """Compiles the vision MLP graph and executes it once."""
-    device = Accelerator(0)
-    session = InferenceSession(devices=[device])
+def _load_max_mlp(
+    mlp: Gemma4VisionMLP, weights: Mapping[str, DLPackArray]
+) -> Model:
+    """Compiles the vision MLP graph."""
+    session = InferenceSession(devices=[Accelerator(0)])
 
     with Graph(
         "gemma4_vision_clipped_mlp_test",
@@ -561,7 +562,12 @@ def _run_max_mlp(
         assert isinstance(x_in, TensorValue)
         graph.output(mlp(x_in))
 
-    compiled = session.load(graph, weights_registry=weights)
+    return session.load(graph, weights_registry=weights)
+
+
+def _run_max_mlp(compiled: Model, x: torch.Tensor) -> torch.Tensor:
+    """Executes the vision MLP graph once."""
+    device = compiled.input_devices[0]
     (result,) = compiled.execute(Buffer.from_dlpack(x).to(device))
     assert isinstance(result, Buffer)
     return torch.from_dlpack(result).cpu()
@@ -579,6 +585,10 @@ def test_clipped_attention_matches_reference() -> None:
         * INPUT_SCALE
     )
     freqs_cis, position_embeddings = _vision_freqs_cis(num_patches)
+
+    max_attn = _max_attention(True)
+    max_attn.load_state_dict(weights)
+    compiled = _load_max_attention(max_attn, num_patches, max_attn.state_dict())
 
     ref = _ClippedRefAttention(
         VISION_EMBED_HIDDEN_SIZE,
@@ -610,11 +620,7 @@ def test_clipped_attention_matches_reference() -> None:
     )
     assert not torch.allclose(ref_out, unclipped_out, rtol=RTOL, atol=ATOL)
 
-    max_attn = _max_attention(True)
-    max_attn.load_state_dict(weights)
-    max_out = _run_max_attention(
-        max_attn, hidden_states, freqs_cis, max_attn.state_dict()
-    ).float()
+    max_out = _run_max_attention(compiled, hidden_states, freqs_cis).float()
 
     torch.testing.assert_close(ref_out, max_out, rtol=RTOL, atol=ATOL)
 
@@ -630,6 +636,10 @@ def test_clipped_mlp_matches_reference() -> None:
         torch.randn(num_tokens, VISION_EMBED_HIDDEN_SIZE, dtype=TORCH_DTYPE)
         * INPUT_SCALE
     )
+
+    max_mlp = _max_mlp(True)
+    max_mlp.load_state_dict(weights)
+    compiled = _load_max_mlp(max_mlp, max_mlp.state_dict())
 
     ref = _ClippedRefMLP(
         VISION_EMBED_HIDDEN_SIZE,
@@ -651,9 +661,7 @@ def test_clipped_mlp_matches_reference() -> None:
     unclipped_out = unclipped(x.cuda()).cpu().float()
     assert not torch.allclose(ref_out, unclipped_out, rtol=RTOL, atol=ATOL)
 
-    max_mlp = _max_mlp(True)
-    max_mlp.load_state_dict(weights)
-    max_out = _run_max_mlp(max_mlp, x, max_mlp.state_dict()).float()
+    max_out = _run_max_mlp(compiled, x).float()
 
     torch.testing.assert_close(ref_out, max_out, rtol=RTOL, atol=ATOL)
 
@@ -676,17 +684,16 @@ def test_clipped_attention_shard_matches_unsharded() -> None:
 
     attn = _max_attention(True)
     attn.load_state_dict(weights)
-    expected = _run_max_attention(
-        attn, hidden_states, freqs_cis, attn.state_dict()
-    )
+    unsharded = _load_max_attention(attn, num_patches, attn.state_dict())
 
     sharded_attn = _max_attention(True)
     sharded_attn.load_state_dict(weights)
     sharded_attn.sharding_strategy = ShardingStrategy.replicate(1)
     (shard,) = sharded_attn.shard([DeviceRef.GPU()])
-    got = _run_max_attention(
-        shard, hidden_states, freqs_cis, sharded_attn.state_dict()
-    )
+    sharded = _load_max_attention(shard, num_patches, sharded_attn.state_dict())
+
+    expected = _run_max_attention(unsharded, hidden_states, freqs_cis)
+    got = _run_max_attention(sharded, hidden_states, freqs_cis)
 
     torch.testing.assert_close(expected, got, rtol=RTOL, atol=ATOL)
 
@@ -703,13 +710,16 @@ def test_clipped_mlp_shard_matches_unsharded() -> None:
 
     mlp = _max_mlp(True)
     mlp.load_state_dict(weights)
-    expected = _run_max_mlp(mlp, x, mlp.state_dict())
+    unsharded = _load_max_mlp(mlp, mlp.state_dict())
 
     sharded_mlp = _max_mlp(True)
     sharded_mlp.load_state_dict(weights)
     sharded_mlp.sharding_strategy = ShardingStrategy.replicate(1)
     (shard,) = sharded_mlp.shard([DeviceRef.GPU()])
-    got = _run_max_mlp(shard, x, sharded_mlp.state_dict())
+    sharded = _load_max_mlp(shard, sharded_mlp.state_dict())
+
+    expected = _run_max_mlp(unsharded, x)
+    got = _run_max_mlp(sharded, x)
 
     torch.testing.assert_close(expected, got, rtol=RTOL, atol=ATOL)
 

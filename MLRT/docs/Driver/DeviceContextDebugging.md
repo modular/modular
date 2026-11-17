@@ -17,15 +17,15 @@ The launched kernel writes to a host pointer and will always result in a
 
 ```mojo
 # Always errors with a CUDA_ERROR_ILLEGAL_ADDRESS
-def kernel(res: UnsafePointer[UInt32]):
+def kernel(res: MutPointer[UInt32, MutUntrackedOrigin]):
     res[] = 0
 
 def test_function_error(ctx: DeviceContext):
     try:
-      var res_host = UnsafePointer[UInt32].alloc(1)
+      var res_host = unsafe_alloc[UInt32](1)
       ctx.enqueue_function[kernel](res_host, block_dim=(1), grid_dim=(1))
       ctx.synchronize()
-      res_host.free()
+      res_host.unsafe_free()
     except e:
       # Prints 'max/kernels/test/gpu/device_context/test_function_error.mojo:30:24'
       # pointing to the ctx.synchronize() call.

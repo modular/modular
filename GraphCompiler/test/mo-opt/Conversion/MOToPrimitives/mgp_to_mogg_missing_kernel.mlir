@@ -1,6 +1,6 @@
 // RUN: not mo-opt -allow-unregistered-dialect --mogg-lower-compiled-routines %s 2>&1 | FileCheck %s
 
-mgp.model @missing_kernel : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @missing_kernel devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 1
   %2 = mgp.runtime.create %0, %1[0]

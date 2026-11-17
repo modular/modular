@@ -67,7 +67,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
     ) raises:
         comptime if ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu():
             self._data = shmem_malloc[Self.dtype](size)
-            self._ctx_ptr = ctx._handle
+            self._ctx_ptr = ctx._handle_ptr()
             self._size = size
         else:
             CompilationTarget.unsupported_target_error[
@@ -83,7 +83,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         size: Int,
     ):
         self._data = data
-        self._ctx_ptr = ctx._handle
+        self._ctx_ptr = ctx._handle_ptr()
         self._size = size
 
     def __deinit__(deinit self):

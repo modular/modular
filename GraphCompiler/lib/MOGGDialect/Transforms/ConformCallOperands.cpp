@@ -39,16 +39,42 @@ namespace M::MOGG {
 namespace {
 
 // Packs one operand list (a call's inputs or outputs) per `mapping`: a scalar
-// kernel argument's `!mogg.tensor` is wrapped in `mogg.scalar.create`; a legacy
-// variadic argument's consecutive `!mogg.tensor` operands go into one
-// `mogg.tuple.create`; a trait argument, including each element of a
-// `TensorTuple`, gets a `mogg.trait.create`, and a `TensorTuple`'s run is then
-// packed as well. Sets `changed` on any rewrite.
+// kernel argument's `!mogg.tensor` is wrapped in `mogg.scalar.create`; a trait
+// argument, including each element of a `TensorTuple`, gets a
+// `mogg.trait.create`, and a `TensorTuple`'s run is then packed into one
+// `mogg.tuple.create`. Sets `changed` on any rewrite.
 SmallVector<Value>
 packOperands(OpBuilder &builder, Location loc, ValueRange operands,
              const KernelDeclIndexToOperandAdaptorMapping &mapping,
+             ArrayRef<KernelDeclOperandAdaptor> kernelArgs,
              M::DeviceRefAttr device, bool &changed) {
   MLIRContext *ctx = builder.getContext();
+
+  // A `TensorTuple` the mapping bound no operand to gets an empty tuple, in
+  // its signature position among the packed operands.
+  SmallVector<uint64_t> emptyTuplePositions;
+  for (const KernelDeclOperandAdaptor &arg : kernelArgs) {
+    if (!arg.isTraitTensorTupleType() || !arg.sourceDescriptor)
+      continue;
+    uint64_t pos = arg.sourceDescriptor->position;
+    if (llvm::none_of(mapping, [&](const auto &entry) {
+          return entry.second.sourceDescriptor &&
+                 entry.second.sourceDescriptor->position == pos;
+        }))
+      emptyTuplePositions.push_back(pos);
+  }
+  auto emptyTuple = emptyTuplePositions.begin();
+  auto packEmptyTuplesBefore = [&](std::optional<uint64_t> pos,
+                                   SmallVectorImpl<Value> &packed) {
+    for (; emptyTuple != emptyTuplePositions.end() &&
+           (!pos || *emptyTuple < *pos);
+         ++emptyTuple) {
+      packed.push_back(TupleCreateOp::create(builder, loc, TupleType::get(ctx),
+                                             ValueRange{},
+                                             VariadicABI::TensorTuple));
+      changed = true;
+    }
+  };
 
   // A NON-fused trait-bound tensor argument (`Tensor` /
   // `TileTensorable`) has its raw `!mogg.tensor` re-presented as the
@@ -79,6 +105,7 @@ packOperands(OpBuilder &builder, Location loc, ValueRange operands,
       continue;
     }
     const KernelDeclOperandAdaptor &arg = it->second;
+    packEmptyTuplesBefore(arg.sourceDescriptor->position, packed);
 
     if (arg.isScalarType()) {
       packed.push_back(ScalarCreateOp::create(
@@ -99,28 +126,13 @@ packOperands(OpBuilder &builder, Location loc, ValueRange operands,
         run.push_back(operands[i]);
         ++i;
       }
-      // Record the ABI the callee's variadic parameter wants, so emit picks the
-      // aggregate without inspecting the run's producing ops. For the legacy
-      // lane, the variant's own IOSpec (not store mutability -- a fused output
-      // is not a `MutableInputTensor`) distinguishes the fused cases; a
-      // slot-backed (`StableVariadicTensors`) parameter packs its
-      // `StableTensor` elements.
-      VariadicABI abi = VariadicABI::Plain;
-      if (arg.isTraitTensorTupleType()) {
-        abi = VariadicABI::TensorTuple;
-        for (Value &element : run)
-          element = asTraitArg(element, *arg.getTraitContract());
-      } else if (const auto *v = std::get_if<KernelDeclVariadicTensorAdaptor>(
-                     &arg.underlyingType)) {
-        if (v->stable)
-          abi = VariadicABI::Stable;
-        else if (v->ioSpec == IOSpec::FusedInputTensor)
-          abi = VariadicABI::FusedInput;
-        else if (v->ioSpec == IOSpec::FusedOutputTensor)
-          abi = VariadicABI::FusedOutput;
-      }
-      packed.push_back(
-          TupleCreateOp::create(builder, loc, TupleType::get(ctx), run, abi));
+      // Variadic tensor parameters are `TensorTuple`s of trait arguments.
+      assert(arg.isTraitTensorTupleType() &&
+             "expected a TensorTuple variadic parameter");
+      for (Value &element : run)
+        element = asTraitArg(element, *arg.getTraitContract());
+      packed.push_back(TupleCreateOp::create(builder, loc, TupleType::get(ctx),
+                                             run, VariadicABI::TensorTuple));
       changed = true;
       continue;
     }
@@ -134,6 +146,7 @@ packOperands(OpBuilder &builder, Location loc, ValueRange operands,
     packed.push_back(operands[i]);
     ++i;
   }
+  packEmptyTuplesBefore(std::nullopt, packed);
   return packed;
 }
 
@@ -188,9 +201,11 @@ packAgainstSignature(Operation *call, const KernelDeclFunctionAdaptor &fn,
   PackedCall packed;
   packed.changed = reconciled;
   packed.inputs = packOperands(builder, call->getLoc(), reconciledInputs,
-                               mapping->operandMapping, device, packed.changed);
-  packed.outputs = packOperands(builder, call->getLoc(), outputs,
-                                mapping->resultMapping, device, packed.changed);
+                               mapping->operandMapping, fn.inputArguments,
+                               device, packed.changed);
+  packed.outputs =
+      packOperands(builder, call->getLoc(), outputs, mapping->resultMapping,
+                   fn.outputArguments, device, packed.changed);
   return packed;
 }
 
@@ -206,10 +221,7 @@ static M::DeviceRefAttr enclosingKernelDevice(Operation *call) {
 // Strips the fusion off a fused output's contract: the plain `Tensor` output
 // the kernel's unfused `execute` overload takes in that position.
 static void stripOutputFusion(KernelDeclOperandAdaptor &arg) {
-  // The contract is the source of truth for a trait argument; the adaptor's
-  // own `fused` bit is only set for the legacy lane.
   auto strip = [](auto &tensor) {
-    tensor.fused = false;
     if (tensor.traitContract) {
       tensor.traitContract->fused = false;
       tensor.traitContract->accessMask = 0;

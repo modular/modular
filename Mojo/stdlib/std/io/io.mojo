@@ -20,21 +20,31 @@ from std.collections.string.string_span import get_static_string
 from std.format._utils import _FixedWriteBuffer, _FlushingWriteBuffer
 from std.sys import _libc as libc
 from std.ffi import (
+    c_char,
     c_size_t,
     c_ssize_t,
     external_call,
     CStringSpan,
 )
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.sys import (
     is_gpu,
     stdin,
     stdout,
 )
-from std.sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
+from std.sys._libc import (
+    BufferMode,
+    close as libc_close,
+    dup,
+    fclose,
+    fdopen,
+    fflush,
+    FILE_ptr,
+    setvbuf,
+)
 from std.sys.info import CompilationTarget
 
-from .file_descriptor import RawFileDescriptor
+from .file_descriptor import BorrowedFileDescriptor, RawFileDescriptor
 
 
 # FIXME(MOCO-3871): Alias is to workaround function type comparison bug.
@@ -60,29 +70,49 @@ comptime _PrintfEmitPluginHookFnType[*types: AnyType] = def(
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
-struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
-    var handle: FILE_ptr
+struct _fdopen[mode: StaticString = "a"](Movable):
+    """Owning C stream over a duplicate of a borrowed descriptor.
 
-    def __init__(out self, stream_id: RawFileDescriptor):
-        """Creates a file handle to the stdout/stderr stream.
+    The descriptor is duplicated so that closing the stream never closes the
+    descriptor passed in. `fdopen` takes ownership of the duplicate and
+    `fclose`, run from `__deinit__`, releases both, so the value is movable
+    but not copyable and nothing leaks when it is dropped without a `with`
+    block.
+    """
+
+    var handle: FILE_ptr
+    """The C stream, or null if the stream could not be opened."""
+
+    def __init__(out self, stream: BorrowedFileDescriptor[_]):
+        """Creates a C stream over a duplicate of `stream`.
 
         Args:
-            stream_id: The stream id
+            stream: The descriptor to duplicate.
         """
+        # `debug_assert` reports through `_printf` and so through this
+        # constructor, so it must not raise or format: the raising
+        # `FileDescriptor` APIs would instantiate `print` recursively.
+        var fd = dup(stream._raw())
+        if fd < 0:
+            self.handle = {}
+            return
+        self.handle = fdopen(fd, Self.mode.as_c_string_span())
+        if not self.handle:
+            # `fdopen` takes ownership of the descriptor only on success.
+            _ = libc_close(fd)
 
-        self.handle = fdopen(
-            dup(stream_id._value),
-            Self.mode.as_c_string_span(),
-        )
+    def __deinit__(deinit self):
+        """Closes the C stream and the duplicated descriptor."""
+        if self.handle:
+            _ = fclose(self.handle)
 
-    def __enter__(self) -> Self:
-        """Open the file handle for use within a context manager"""
-        return self
+    def __enter__(var self) -> Self:
+        """Transfers the stream into a `with` block.
 
-    def __exit__(self):
-        """Closes the file handle."""
-        _ = fclose(self.handle)
+        Returns:
+            The stream.
+        """
+        return self^
 
     def readline(self) raises -> String:
         """Reads an entire line from stdin or until EOF. Lines are delimited by a newline character.
@@ -111,15 +141,21 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         """
         return self.read_until_delimiter("\n")
 
-    def read_until_delimiter(self, delimiter: StringSlice) raises -> String:
+    def read_until_delimiter(self, delimiter: StringSpan) raises -> String:
         """Reads an entire line from a stream, up to the `delimiter`.
         Does not include the delimiter in the result.
 
         Args:
-            delimiter: The delimiter to read until.
+            delimiter: The delimiter to read until. Must be a single
+                codepoint.
 
         Returns:
             The text read from the stdin.
+
+        Raises:
+            Error: If `delimiter` is empty or contains more than one
+                codepoint, or if reading fails or reaches EOF before any
+                input.
 
         Examples:
 
@@ -140,6 +176,8 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         Hello
         ```
         """
+        if not self.handle:
+            raise Error("stream is not open")
         # getdelim will allocate the buffer using malloc().
         var buffer = Optional[Pointer[UInt8, MutUntrackedOrigin]]()
         var n = c_size_t(0)
@@ -156,19 +194,19 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
+            libc.free(unsafe_cast[Type=NoneType](buffer))
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=buffer.unsafe_value(), length=bytes_read - 1
                 )
             )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
-        libc.free(unsafe_cast[Type=NoneType, origin=MutAnyOrigin](buffer))
+        libc.free(unsafe_cast[Type=NoneType](buffer))
         return s^
 
 
@@ -178,7 +216,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
 
 
 @inline(.never)
-def _flush(file: RawFileDescriptor = stdout):
+def _flush(file: BorrowedFileDescriptor[_] = stdout):
     with _fdopen(file) as fd:
         _ = fflush(fd.handle)
 
@@ -190,22 +228,20 @@ def _flush(file: RawFileDescriptor = stdout):
 
 def _printf_cpu[
     fmt: StaticString, *types: AnyType
-](*args: *types, file: RawFileDescriptor = stdout):
+](*args: *types, file: BorrowedFileDescriptor[_] = stdout):
     with _fdopen(file) as fd:
         # int fprintf(FILE *restrict stream, const char *restrict fmt, ...);
-        # The pack is loaded so the variadic arguments are the values
-        # themselves rather than references to them.
         _ = external_call["KGEN_CompilerRT_fprintf", Int32, num_fixed_args=2](
             fd,
             get_static_string[fmt]().as_c_string_span(),
-            args.get_loaded_kgen_pack(),
+            *args,
         )
 
 
 @inline(.never)
 def _printf[
     fmt: StaticString, *types: AnyType
-](*args: *types, file: RawFileDescriptor = stdout):
+](*args: *types, file: BorrowedFileDescriptor[_] = stdout):
     if __is_run_in_comptime_interpreter:
         _printf_cpu[fmt](*args, file=file)
         return
@@ -213,7 +249,7 @@ def _printf[
     comptime if case .Some(_printf_emit) = CurrentPlugin.printf_emit_fn[
         fmt, *types
     ]:
-        _printf_emit(*args, file=file)
+        _printf_emit(*args, file=file._value)
     elif case .Some(_emit) = CurrentPlugin.print_emit_fn:
         # Checked before the host path so an accelerator that is not a GPU
         # still prints through its plugin rather than through a libc it may not
@@ -224,8 +260,7 @@ def _printf[
         buffer.write_string(fmt)
         var cstr = buffer.nul_terminate()
 
-        # FIXME: The origin param of `_emit` should be inferred from `cstr`.
-        _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
+        _emit[ImmOrigin(origin_of(buffer))](cstr, file._value)
     elif not is_gpu():
         _printf_cpu[fmt](*args, file=file)
     else:
@@ -259,14 +294,12 @@ def _snprintf[
     """
 
     # int snprintf(char *restrict s, size_t n, const char *restrict fmt, ...);
-    # The pack is loaded so the variadic arguments are the values themselves
-    # rather than references to them.
     return Int(
         external_call["snprintf", Int32, num_fixed_args=3](
             str,
             size,
             get_static_string[fmt]().as_c_string_span(),
-            args.get_loaded_kgen_pack(),
+            *args,
         )
     )
 
@@ -281,10 +314,10 @@ def print[
     *Ts: Writable
 ](
     *values: *Ts,
-    sep: StringSlice = " ",
-    end: StringSlice = "\n",
+    sep: StringSpan = " ",
+    end: StringSpan = "\n",
     flush: Bool = False,
-    var file: RawFileDescriptor = stdout,
+    var file: BorrowedFileDescriptor[_] = stdout,
 ):
     """Prints elements to the text stream. Each element is separated by `sep`
     and followed by `end`.
@@ -322,7 +355,8 @@ def print[
         sep: The separator used between elements.
         end: The String to write after printing the elements.
         flush: If set to true, then the stream is forcibly flushed.
-        file: The output stream.
+        file: The output stream. May be `stdout` (default) for normal
+            output or `stderr` for diagnostics.
     """
 
     comptime assert Ts.all_conforms_to[
@@ -330,7 +364,7 @@ def print[
     ]()  # satisfy _write_to where clause.
 
     if __is_run_in_comptime_interpreter:
-        var buffer = _FlushingWriteBuffer(file)
+        var buffer = _FlushingWriteBuffer(file._value)
         values._write_to(buffer, sep=sep, end=end)
 
         buffer.flush()
@@ -345,14 +379,13 @@ def print[
 
         var cstr = buffer.nul_terminate()
 
-        # FIXME: The origin param of `_emit` should be inferred from `cstr`.
-        _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
+        _emit[ImmOrigin(origin_of(buffer))](cstr, file._value)
     elif is_gpu():
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
         ]()
     else:
-        var buffer = _FlushingWriteBuffer(file)
+        var buffer = _FlushingWriteBuffer(file._value)
         values._write_to(buffer, sep=sep, end=end)
 
         buffer.flush()
@@ -391,4 +424,15 @@ def input(prompt: String = "") raises -> String:
     """
     if prompt != "":
         print(prompt, end="")
-    return _fdopen["r"](stdin).readline()
+    with _fdopen["r"](stdin) as fd:
+        # Each call opens a fresh stream on stdin, so it must be unbuffered:
+        # a buffered stream reads past the newline and those bytes are lost
+        # when it closes, starving the next `input()` call.
+        if fd.handle:
+            _ = setvbuf(
+                fd.handle,
+                Optional[Pointer[c_char, MutUntrackedOrigin]](),
+                BufferMode.unbuffered,
+                0,
+            )
+        return fd.readline()

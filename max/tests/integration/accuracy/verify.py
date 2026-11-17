@@ -73,9 +73,10 @@ class VerificationError(click.ClickException):
 
 
 class AccuracyError(VerificationError):
+    exit_code = 2
+
     def __init__(self, message: str) -> None:
         super().__init__(message)
-        self.exit_code = 2
 
 
 class ModelModality(str, Enum):

@@ -14,7 +14,8 @@
 from std.math import ceildiv
 from std.random import rand
 
-from layout import Coord, LTToTTLayout, Layout, TileTensor
+from layout import Coord, TileTensor, row_major
+from layout.layout import Layout
 from max.gpu.host import DeviceContext
 from nn.conv.conv import (
     Naive2dConvolution,
@@ -40,16 +41,16 @@ def test_conv3d_gpu[
     atol: Float64 = 1e-4,
 ](ctx: DeviceContext) raises:
     print("test_conv3d: Testing 3D Convolution")
-    comptime N = Int(input_layout.shape[0])
-    comptime D = Int(input_layout.shape[1])
-    comptime H = Int(input_layout.shape[2])
-    comptime W = Int(input_layout.shape[3])
-    comptime C = Int(input_layout.shape[4])
+    comptime N = input_layout.static_shape[0]
+    comptime D = input_layout.static_shape[1]
+    comptime H = input_layout.static_shape[2]
+    comptime W = input_layout.static_shape[3]
+    comptime C = input_layout.static_shape[4]
 
-    comptime Q = Int(filter_layout.shape[0])
-    comptime R = Int(filter_layout.shape[1])
-    comptime S = Int(filter_layout.shape[2])
-    comptime F = Int(filter_layout.shape[4])
+    comptime Q = filter_layout.static_shape[0]
+    comptime R = filter_layout.static_shape[1]
+    comptime S = filter_layout.static_shape[2]
+    comptime F = filter_layout.static_shape[4]
 
     comptime pad_d = IndexList[2](pad[0], pad[0])
     comptime pad_h = IndexList[2](pad[1], pad[1])
@@ -66,7 +67,7 @@ def test_conv3d_gpu[
         W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1
     ) // stride[2] + 1
 
-    comptime output_layout = Layout.row_major(N, D_out, H_out, W_out, F)
+    comptime output_layout = row_major[N, D_out, H_out, W_out, F]()
 
     # calculate flattened sizes, gotta know how much memory we need
     var input_size = comptime (input_layout.size())
@@ -117,15 +118,9 @@ def test_conv3d_gpu[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     # Create dense tensor views for the GPU kernel.
-    var input_buf = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_buf = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_buf = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
-    )
+    var input_buf = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_buf = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_buf = TileTensor(output_dev.unsafe_ptr(), output_layout)
 
     # define grid and block dimensions for the gpu kernel
     comptime block_size = 16
@@ -196,16 +191,16 @@ def test_conv3d_gpu_dispatch[
     path that the naive-only tests miss.
     """
     print("test_conv3d_gpu_dispatch: Testing conv_gpu with epilogue")
-    comptime N = Int(input_layout.shape[0])
-    comptime D = Int(input_layout.shape[1])
-    comptime H = Int(input_layout.shape[2])
-    comptime W = Int(input_layout.shape[3])
-    comptime C = Int(input_layout.shape[4])
+    comptime N = input_layout.static_shape[0]
+    comptime D = input_layout.static_shape[1]
+    comptime H = input_layout.static_shape[2]
+    comptime W = input_layout.static_shape[3]
+    comptime C = input_layout.static_shape[4]
 
-    comptime Q = Int(filter_layout.shape[0])
-    comptime R = Int(filter_layout.shape[1])
-    comptime S = Int(filter_layout.shape[2])
-    comptime F = Int(filter_layout.shape[4])
+    comptime Q = filter_layout.static_shape[0]
+    comptime R = filter_layout.static_shape[1]
+    comptime S = filter_layout.static_shape[2]
+    comptime F = filter_layout.static_shape[4]
 
     comptime pad_d = IndexList[2](pad[0], pad[0])
     comptime pad_h = IndexList[2](pad[1], pad[1])
@@ -221,7 +216,7 @@ def test_conv3d_gpu_dispatch[
         W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1
     ) // stride[2] + 1
 
-    comptime output_layout = Layout.row_major(N, D_out, H_out, W_out, F)
+    comptime output_layout = row_major[N, D_out, H_out, W_out, F]()
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_layout.size())
@@ -267,16 +262,10 @@ def test_conv3d_gpu_dispatch[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
-    )
+    comptime output_layout_ = row_major[N, D_out, H_out, W_out, F]()
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout_)
 
     @inline(.always)
     def scale_compute[
@@ -344,16 +333,16 @@ def test_conv3d_im2col_multi_tile[
         " with_epilogue=",
         with_epilogue,
     )
-    comptime N = Int(input_layout.shape[0])
-    comptime D = Int(input_layout.shape[1])
-    comptime H = Int(input_layout.shape[2])
-    comptime W = Int(input_layout.shape[3])
-    comptime C = Int(input_layout.shape[4])
+    comptime N = input_layout.static_shape[0]
+    comptime D = input_layout.static_shape[1]
+    comptime H = input_layout.static_shape[2]
+    comptime W = input_layout.static_shape[3]
+    comptime C = input_layout.static_shape[4]
 
-    comptime Q = Int(filter_layout.shape[0])
-    comptime R = Int(filter_layout.shape[1])
-    comptime S = Int(filter_layout.shape[2])
-    comptime F = Int(filter_layout.shape[4])
+    comptime Q = filter_layout.static_shape[0]
+    comptime R = filter_layout.static_shape[1]
+    comptime S = filter_layout.static_shape[2]
+    comptime F = filter_layout.static_shape[4]
 
     comptime pad_d = IndexList[2](pad[0], pad[0])
     comptime pad_h = IndexList[2](pad[1], pad[1])
@@ -371,9 +360,7 @@ def test_conv3d_im2col_multi_tile[
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_layout.size())
-    var output_size = comptime (
-        Layout.row_major(N, D_out, H_out, W_out, F).size()
-    )
+    var output_size = comptime (row_major[N, D_out, H_out, W_out, F]().size())
 
     var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
     var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
@@ -414,16 +401,10 @@ def test_conv3d_im2col_multi_tile[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
-    )
+    comptime output_layout_ = row_major[N, D_out, H_out, W_out, F]()
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout_)
 
     comptime if with_epilogue:
 
@@ -517,14 +498,14 @@ def test_conv2d_im2col_multi_tile[
         " with_epilogue=",
         with_epilogue,
     )
-    comptime N = Int(input_layout.shape[0])
-    comptime H = Int(input_layout.shape[1])
-    comptime W = Int(input_layout.shape[2])
-    comptime C = Int(input_layout.shape[3])
+    comptime N = input_layout.static_shape[0]
+    comptime H = input_layout.static_shape[1]
+    comptime W = input_layout.static_shape[2]
+    comptime C = input_layout.static_shape[3]
 
-    comptime R = Int(filter_layout.shape[0])
-    comptime S = Int(filter_layout.shape[1])
-    comptime F = Int(filter_layout.shape[3])
+    comptime R = filter_layout.static_shape[0]
+    comptime S = filter_layout.static_shape[1]
+    comptime F = filter_layout.static_shape[3]
 
     comptime pad_h = IndexList[2](pad[0], pad[0])
     comptime pad_w = IndexList[2](pad[1], pad[1])
@@ -538,7 +519,7 @@ def test_conv2d_im2col_multi_tile[
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_layout.size())
-    var output_size = comptime (Layout.row_major(N, H_out, W_out, F).size())
+    var output_size = comptime (row_major[N, H_out, W_out, F]().size())
 
     var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
     var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
@@ -580,16 +561,10 @@ def test_conv2d_im2col_multi_tile[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    comptime output_layout_ = Layout.row_major(N, H_out, W_out, F)
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
-    )
+    comptime output_layout_ = row_major[N, H_out, W_out, F]()
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout_)
 
     var handled: Bool
     comptime if with_epilogue:
@@ -654,6 +629,205 @@ def test_conv2d_im2col_multi_tile[
         _ = output_dev^
 
 
+def test_conv2d_im2col_chain_lifetime[
+    input_layout: Layout,
+    filter_layout: Layout,
+    dtype: DType,
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    pad: IndexList[2],
+    chain_len: Int,
+    m_tile_byte_budget: Int = 256 * 1024 * 1024,
+    rtol: Float64 = 1e-2,
+    atol: Float64 = 1e-2,
+](ctx: DeviceContext) raises:
+    """A conv chain whose scratch is freed mid-flight must still produce exactly
+    the outputs of the same convs run one at a time.
+
+    `dispatch_im2col_matmul_conv2d` frees its im2col and filter-transpose
+    scratch right after the last launch, so the block goes back on the
+    context's free list while the GEMMs that read it are still queued. This
+    runs such a chain -- no drain between any two convs -- across two pooled
+    streams with its own input and filter slab per slot, and compares every
+    output against the same conv done alone and drained. A free that landed
+    ahead of its kernels shows up as a mismatch here.
+
+    What this cannot establish: which block the allocator hands to the next
+    conv. Reuse is stream-ordered, and Mojo's buffers expose no address to
+    assert against, while the caching allocator is free to split a larger block
+    or carve a fresh one, so an aliasing check would be speculative. The
+    allocator-level guarantees this change leans on -- gated migration to the
+    shared parent free list, and stream views that live as long as their base
+    context -- are argued from the allocator source in the PR, not from here.
+    """
+    print("test_conv2d_im2col_chain_lifetime: chain_len=", chain_len)
+    # Two slots per stream, and both streams must be exercised.
+    comptime assert (
+        chain_len == 4
+    ), "this test drives four slots, two per stream"
+    comptime N = input_layout.static_shape[0]
+    comptime H = input_layout.static_shape[1]
+    comptime W = input_layout.static_shape[2]
+    comptime C = input_layout.static_shape[3]
+
+    comptime R = filter_layout.static_shape[0]
+    comptime S = filter_layout.static_shape[1]
+    comptime F = filter_layout.static_shape[3]
+
+    comptime pad_h = IndexList[2](pad[0], pad[0])
+    comptime pad_w = IndexList[2](pad[1], pad[1])
+
+    comptime H_out = (
+        H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1
+    ) // stride[0] + 1
+    comptime W_out = (
+        W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1
+    ) // stride[1] + 1
+    comptime out_layout = row_major[N, H_out, W_out, F]()
+
+    var input_size = comptime (input_layout.size())
+    var filter_size = comptime (filter_layout.size())
+    var output_size = comptime (out_layout.size())
+
+    # One slab per operand: `rand` fills the whole slab, so slot `i` reads a
+    # different sub-range than slot `j`.
+    var input_host = ctx.enqueue_create_host_buffer[dtype](
+        chain_len * input_size
+    )
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](
+        chain_len * filter_size
+    )
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](
+        chain_len * output_size
+    )
+    var output_chain_host = ctx.enqueue_create_host_buffer[dtype](
+        chain_len * output_size
+    )
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](chain_len * input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](chain_len * filter_size)
+    var output_ref_dev = ctx.enqueue_create_buffer[dtype](
+        chain_len * output_size
+    )
+    var output_chain_dev = ctx.enqueue_create_buffer[dtype](
+        chain_len * output_size
+    )
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+    ctx.synchronize()
+
+    var handled = True
+
+    # Reference: one conv at a time, each followed by a device drain.
+    var slot = 0
+    while slot < chain_len:
+        var in_tt = TileTensor(
+            input_dev.unsafe_ptr().unsafe_offset(slot * input_size),
+            input_layout,
+        )
+        var filter_tt = TileTensor(
+            filter_dev.unsafe_ptr().unsafe_offset(slot * filter_size),
+            filter_layout,
+        )
+        var out_tt = TileTensor(
+            output_ref_dev.unsafe_ptr().unsafe_offset(slot * output_size),
+            out_layout,
+        )
+        handled = dispatch_im2col_matmul_conv2d[
+            m_tile_byte_budget=m_tile_byte_budget
+        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, ctx)
+        ctx.synchronize()
+        slot += 1
+
+    # Chained, part 1: two convs back to back on a pooled stream, no drain
+    # between them or before part 2. A stream view owns its own free list, so
+    # these frees stay in that view's cache and are gated -- on this stream and
+    # on the base stream -- before they can reach the device-wide parent list.
+    _ = ctx.create_stream()
+    _ = ctx.create_stream()
+    var alt = ctx.select_stream(1)
+    slot = 0
+    while slot < 2:
+        var in_tt = TileTensor(
+            input_dev.unsafe_ptr().unsafe_offset(slot * input_size),
+            input_layout,
+        )
+        var filter_tt = TileTensor(
+            filter_dev.unsafe_ptr().unsafe_offset(slot * filter_size),
+            filter_layout,
+        )
+        var out_tt = TileTensor(
+            output_chain_dev.unsafe_ptr().unsafe_offset(slot * output_size),
+            out_layout,
+        )
+        handled = dispatch_im2col_matmul_conv2d[
+            m_tile_byte_budget=m_tile_byte_budget
+        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, alt)
+        slot += 1
+    _ = alt^
+
+    # Part 2: the consumer runs on a second pooled stream whose free list
+    # starts empty, so its same-size scratch comes from the shared parent or a
+    # fresh carve. Nothing drains part 1's stream first, so part 1's kernels can
+    # still be running when part 2's land.
+    var alt2 = ctx.select_stream(2)
+    while slot < chain_len:
+        var in_tt = TileTensor(
+            input_dev.unsafe_ptr().unsafe_offset(slot * input_size),
+            input_layout,
+        )
+        var filter_tt = TileTensor(
+            filter_dev.unsafe_ptr().unsafe_offset(slot * filter_size),
+            filter_layout,
+        )
+        var out_tt = TileTensor(
+            output_chain_dev.unsafe_ptr().unsafe_offset(slot * output_size),
+            out_layout,
+        )
+        handled = dispatch_im2col_matmul_conv2d[
+            m_tile_byte_budget=m_tile_byte_budget
+        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, alt2)
+        slot += 1
+    _ = alt2^
+
+    # Join both streams before reading their outputs.
+    var join1 = ctx.select_stream(1)
+    join1.synchronize()
+    _ = join1^
+    var join2 = ctx.select_stream(2)
+    join2.synchronize()
+    _ = join2^
+
+    if not handled:
+        print("SKIP: dispatcher declined this shape (likely 1x1 or K<16)")
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_ref_dev^
+        _ = output_chain_dev^
+        return
+
+    ctx.enqueue_copy(output_ref_host, output_ref_dev)
+    ctx.enqueue_copy(output_chain_host, output_chain_dev)
+    ctx.synchronize()
+
+    try:
+        for i in range(chain_len * output_size):
+            assert_almost_equal(
+                output_chain_host[i], output_ref_host[i], rtol=rtol, atol=atol
+            )
+        print("RESULT: PASS - chained outputs match isolated outputs")
+    except e:
+        print("RESULT: FAIL - ", String(e))
+        raise e^
+    finally:
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_ref_dev^
+        _ = output_chain_dev^
+
+
 def test_conv3d_1x1x1_matmul_direct[
     input_layout: Layout,
     filter_layout: Layout,
@@ -669,16 +843,16 @@ def test_conv3d_1x1x1_matmul_direct[
     fp32-accumulator reference narrowed back to `dtype`.
     """
     print("test_conv3d_1x1x1_matmul_direct: with_epilogue=", with_epilogue)
-    comptime N = Int(input_layout.shape[0])
-    comptime D = Int(input_layout.shape[1])
-    comptime H = Int(input_layout.shape[2])
-    comptime W = Int(input_layout.shape[3])
-    comptime C = Int(input_layout.shape[4])
+    comptime N = input_layout.static_shape[0]
+    comptime D = input_layout.static_shape[1]
+    comptime H = input_layout.static_shape[2]
+    comptime W = input_layout.static_shape[3]
+    comptime C = input_layout.static_shape[4]
 
-    comptime Q = Int(filter_layout.shape[0])
-    comptime R = Int(filter_layout.shape[1])
-    comptime S = Int(filter_layout.shape[2])
-    comptime F = Int(filter_layout.shape[4])
+    comptime Q = filter_layout.static_shape[0]
+    comptime R = filter_layout.static_shape[1]
+    comptime S = filter_layout.static_shape[2]
+    comptime F = filter_layout.static_shape[4]
     comptime assert (
         Q == 1 and R == 1 and S == 1
     ), "test_conv3d_1x1x1_matmul_direct requires a 1x1x1 filter"
@@ -689,7 +863,7 @@ def test_conv3d_1x1x1_matmul_direct[
 
     comptime input_size = input_layout.size()
     comptime filter_size = filter_layout.size()
-    comptime output_layout_ = Layout.row_major(N, D, H, W, F)
+    comptime output_layout_ = row_major[N, D, H, W, F]()
     comptime output_size = output_layout_.size()
 
     var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
@@ -731,15 +905,9 @@ def test_conv3d_1x1x1_matmul_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var input_tt = TileTensor(
-        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
-    )
-    var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
-    )
-    var output_tt = TileTensor(
-        output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
-    )
+    var input_tt = TileTensor(input_dev.unsafe_ptr(), input_layout)
+    var filter_tt = TileTensor(filter_dev.unsafe_ptr(), filter_layout)
+    var output_tt = TileTensor(output_dev.unsafe_ptr(), output_layout_)
 
     comptime if with_epilogue:
 
@@ -807,8 +975,8 @@ def main() raises:
     with DeviceContext() as ctx:
         # test case 1: small dimensions, starting simple
         test_conv3d_gpu[
-            Layout.row_major(1, 4, 4, 4, 2),  # input (NDHWC)
-            Layout.row_major(2, 2, 2, 2, 3),  # filter (QRSCF)
+            row_major[1, 4, 4, 4, 2](),  # input (NDHWC)
+            row_major[2, 2, 2, 2, 3](),  # filter (QRSCF)
             DType.float32,
             (1, 1, 1),  # stride
             (1, 1, 1),  # dilation
@@ -817,8 +985,8 @@ def main() raises:
 
         # test case 2: medium dimensions with padding
         test_conv3d_gpu[
-            Layout.row_major(2, 6, 6, 6, 4),  # input (NDHWC)
-            Layout.row_major(3, 3, 3, 4, 8),  # filter (QRSCF)
+            row_major[2, 6, 6, 6, 4](),  # input (NDHWC)
+            row_major[3, 3, 3, 4, 8](),  # filter (QRSCF)
             DType.float32,
             (2, 2, 2),  # stride
             (1, 1, 1),  # dilation
@@ -827,8 +995,8 @@ def main() raises:
 
         # test case 3: non-square dimensions
         test_conv3d_gpu[
-            Layout.row_major(1, 5, 7, 9, 3),  # input (NDHWC)
-            Layout.row_major(2, 3, 2, 3, 4),  # filter (QRSCF)
+            row_major[1, 5, 7, 9, 3](),  # input (NDHWC)
+            row_major[2, 3, 2, 3, 4](),  # filter (QRSCF)
             DType.float32,
             (1, 1, 1),  # stride
             (1, 1, 1),  # dilation
@@ -837,8 +1005,8 @@ def main() raises:
 
         # test case 4: varying filter dimensions, getting creative
         test_conv3d_gpu[
-            Layout.row_major(1, 9, 8, 5, 1),  # input (NDHWC)
-            Layout.row_major(2, 2, 3, 1, 32),  # filter (QRSCF)
+            row_major[1, 9, 8, 5, 1](),  # input (NDHWC)
+            row_major[2, 2, 3, 1, 32](),  # filter (QRSCF)
             DType.float32,
             (1, 3, 2),  # stride - mixed stride values
             (1, 1, 1),  # dilation
@@ -847,8 +1015,8 @@ def main() raises:
 
         # test case 5: with padding on all dimensions
         test_conv3d_gpu[
-            Layout.row_major(1, 5, 7, 6, 7),  # input (NDHWC)
-            Layout.row_major(3, 4, 3, 7, 24),  # filter (QRSCF)
+            row_major[1, 5, 7, 6, 7](),  # input (NDHWC)
+            row_major[3, 4, 3, 7, 24](),  # filter (QRSCF)
             DType.float32,
             (1, 1, 1),  # stride
             (1, 1, 1),  # dilation
@@ -857,8 +1025,8 @@ def main() raises:
 
         # test case 6: large dimensions with asymmetric padding
         test_conv3d_gpu[
-            Layout.row_major(1, 10, 11, 6, 2),  # input (NDHWC)
-            Layout.row_major(3, 4, 3, 2, 31),  # filter (QRSCF)
+            row_major[1, 10, 11, 6, 2](),  # input (NDHWC)
+            row_major[3, 4, 3, 2, 31](),  # filter (QRSCF)
             DType.float32,
             (2, 3, 1),  # stride - mixed stride
             (1, 1, 1),  # dilation
@@ -867,8 +1035,8 @@ def main() raises:
 
         # test case 7: 3d-unet style small dimensions
         test_conv3d_gpu[
-            Layout.row_major(1, 8, 8, 8, 320),  # input (NDHWC)
-            Layout.row_major(3, 3, 3, 320, 320),  # filter (QRSCF)
+            row_major[1, 8, 8, 8, 320](),  # input (NDHWC)
+            row_major[3, 3, 3, 320, 320](),  # filter (QRSCF)
             DType.float32,
             (2, 2, 2),  # stride - downsampling
             (1, 1, 1),  # dilation
@@ -878,8 +1046,8 @@ def main() raises:
         # --- bfloat16 coverage ---
         # WAN VAE post_quant_conv: 1x1x1, C_in=16, F=16.
         test_conv3d_gpu[
-            Layout.row_major(1, 4, 8, 8, 16),
-            Layout.row_major(1, 1, 1, 16, 16),
+            row_major[1, 4, 8, 8, 16](),
+            row_major[1, 1, 1, 16, 16](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -890,8 +1058,8 @@ def main() raises:
 
         # WAN VAE conv_in: 3x3x3, C_in=16, F=96 (early-level Residual).
         test_conv3d_gpu[
-            Layout.row_major(1, 4, 8, 8, 16),
-            Layout.row_major(3, 3, 3, 16, 96),
+            row_major[1, 4, 8, 8, 16](),
+            row_major[3, 3, 3, 16, 96](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -902,8 +1070,8 @@ def main() raises:
 
         # WAN VAE mid Residual: 3x3x3, C_in=96, F=96. Exercises main vec loop.
         test_conv3d_gpu[
-            Layout.row_major(1, 4, 8, 8, 96),
-            Layout.row_major(3, 3, 3, 96, 96),
+            row_major[1, 4, 8, 8, 96](),
+            row_major[3, 3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -914,8 +1082,8 @@ def main() raises:
 
         # WAN VAE time_conv temporal: 3x1x1, C_in=192, F=384.
         test_conv3d_gpu[
-            Layout.row_major(1, 4, 6, 6, 192),
-            Layout.row_major(3, 1, 1, 192, 384),
+            row_major[1, 4, 6, 6, 192](),
+            row_major[3, 1, 1, 192, 384](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -926,8 +1094,8 @@ def main() raises:
 
         # Tail-only C_in case (C_in < vec_w=8 for bf16).
         test_conv3d_gpu[
-            Layout.row_major(1, 4, 6, 6, 3),
-            Layout.row_major(3, 3, 3, 3, 16),
+            row_major[1, 4, 6, 6, 3](),
+            row_major[3, 3, 3, 3, 16](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -938,8 +1106,8 @@ def main() raises:
 
         # Main + tail C_in case (C_in = vec_w + remainder).
         test_conv3d_gpu[
-            Layout.row_major(1, 4, 6, 6, 10),
-            Layout.row_major(3, 3, 3, 10, 16),
+            row_major[1, 4, 6, 6, 10](),
+            row_major[3, 3, 3, 10, 16](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -956,8 +1124,8 @@ def main() raises:
 
         # WAN VAE conv_in through dispatch + epilogue.
         test_conv3d_gpu_dispatch[
-            Layout.row_major(1, 4, 8, 8, 16),
-            Layout.row_major(3, 3, 3, 16, 96),
+            row_major[1, 4, 8, 8, 16](),
+            row_major[3, 3, 3, 16, 96](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -968,8 +1136,8 @@ def main() raises:
 
         # WAN VAE mid residual through dispatch + epilogue.
         test_conv3d_gpu_dispatch[
-            Layout.row_major(1, 4, 8, 8, 96),
-            Layout.row_major(3, 3, 3, 96, 96),
+            row_major[1, 4, 8, 8, 96](),
+            row_major[3, 3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -980,8 +1148,8 @@ def main() raises:
 
         # WAN VAE time_conv 3x1x1 through dispatch + epilogue.
         test_conv3d_gpu_dispatch[
-            Layout.row_major(1, 4, 6, 6, 192),
-            Layout.row_major(3, 1, 1, 192, 384),
+            row_major[1, 4, 6, 6, 192](),
+            row_major[3, 1, 1, 192, 384](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -1001,8 +1169,8 @@ def main() raises:
         # No-epilogue multi-tile: shape M=1*4*8*8=256, K=3*3*3*16=432,
         # bytes/row=864. Budget=64 KiB -> ~75 rows/tile -> ~4 tiles.
         test_conv3d_im2col_multi_tile[
-            Layout.row_major(1, 4, 8, 8, 16),
-            Layout.row_major(3, 3, 3, 16, 96),
+            row_major[1, 4, 8, 8, 16](),
+            row_major[3, 3, 3, 16, 96](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -1019,8 +1187,8 @@ def main() raises:
         # (tests use the naive kernel directly). If `m_offset` capture
         # across iterations is broken, this is what catches it.
         test_conv3d_im2col_multi_tile[
-            Layout.row_major(1, 4, 8, 8, 16),
-            Layout.row_major(3, 3, 3, 16, 96),
+            row_major[1, 4, 8, 8, 16](),
+            row_major[3, 3, 3, 16, 96](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -1034,8 +1202,8 @@ def main() raises:
         # Larger multi-tile epilogue case: batch=2 to exercise the
         # batch-decomposition in the epilogue's coord-unpack math.
         test_conv3d_im2col_multi_tile[
-            Layout.row_major(2, 4, 8, 8, 96),
-            Layout.row_major(3, 3, 3, 96, 96),
+            row_major[2, 4, 8, 8, 96](),
+            row_major[3, 3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -1049,8 +1217,8 @@ def main() raises:
         # 3x1x1 multi-tile epilogue case: the time_conv filter shape.
         # Different K (non-3x3x3) to exercise the K-unpack math.
         test_conv3d_im2col_multi_tile[
-            Layout.row_major(1, 4, 6, 6, 192),
-            Layout.row_major(3, 1, 1, 192, 384),
+            row_major[1, 4, 6, 6, 192](),
+            row_major[3, 1, 1, 192, 384](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -1070,8 +1238,8 @@ def main() raises:
         # ---------------------------------------------------------------
         # Stride (2,1,1) via conv_gpu dispatch + epilogue.
         test_conv3d_gpu_dispatch[
-            Layout.row_major(1, 8, 6, 6, 192),
-            Layout.row_major(3, 1, 1, 192, 384),
+            row_major[1, 8, 6, 6, 192](),
+            row_major[3, 1, 1, 192, 384](),
             DType.bfloat16,
             (2, 1, 1),
             (1, 1, 1),
@@ -1082,8 +1250,8 @@ def main() raises:
 
         # Stride (2,1,1) via direct dispatch, forced multi-tile, no epilogue.
         test_conv3d_im2col_multi_tile[
-            Layout.row_major(1, 8, 6, 6, 192),
-            Layout.row_major(3, 1, 1, 192, 384),
+            row_major[1, 8, 6, 6, 192](),
+            row_major[3, 1, 1, 192, 384](),
             DType.bfloat16,
             (2, 1, 1),
             (1, 1, 1),
@@ -1098,8 +1266,8 @@ def main() raises:
         # epilogue. This is the combination closest to what the encoder
         # runs in production on the temporal downsample.
         test_conv3d_im2col_multi_tile[
-            Layout.row_major(1, 8, 6, 6, 192),
-            Layout.row_major(3, 1, 1, 192, 384),
+            row_major[1, 8, 6, 6, 192](),
+            row_major[3, 1, 1, 192, 384](),
             DType.bfloat16,
             (2, 1, 1),
             (1, 1, 1),
@@ -1114,8 +1282,8 @@ def main() raises:
         # declines (non-128-aligned channels).
         # Single M-tile, no epilogue.
         test_conv2d_im2col_multi_tile[
-            Layout.row_major(1, 32, 32, 96),
-            Layout.row_major(3, 3, 96, 96),
+            row_major[1, 32, 32, 96](),
+            row_major[3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -1129,8 +1297,8 @@ def main() raises:
         # Same shape with scale-by-2 epilogue: exercises the 4-D
         # coord-unpack closure inside the M-tile loop.
         test_conv2d_im2col_multi_tile[
-            Layout.row_major(1, 32, 32, 96),
-            Layout.row_major(3, 3, 96, 96),
+            row_major[1, 32, 32, 96](),
+            row_major[3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -1144,8 +1312,8 @@ def main() raises:
         # Force multi-tile execution: M=256, K=864, bytes/row=1728;
         # budget 32 KiB -> ~18 rows/tile.
         test_conv2d_im2col_multi_tile[
-            Layout.row_major(1, 16, 16, 96),
-            Layout.row_major(3, 3, 96, 96),
+            row_major[1, 16, 16, 96](),
+            row_major[3, 3, 96, 96](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -1159,8 +1327,8 @@ def main() raises:
         # batch>1, asymmetric filter (3x1 — spatial-only row conv),
         # covers non-square kernel geometry and batch outer dim.
         test_conv2d_im2col_multi_tile[
-            Layout.row_major(2, 16, 16, 192),
-            Layout.row_major(3, 1, 192, 96),
+            row_major[2, 16, 16, 192](),
+            row_major[3, 1, 192, 96](),
             DType.bfloat16,
             (1, 1),
             (1, 1),
@@ -1174,14 +1342,48 @@ def main() raises:
         # stride=2 case — the `h_in/w_in` stride math needs exercising
         # separately from stride=1.
         test_conv2d_im2col_multi_tile[
-            Layout.row_major(1, 16, 16, 64),
-            Layout.row_major(3, 3, 64, 128),
+            row_major[1, 16, 16, 64](),
+            row_major[3, 3, 64, 128](),
             DType.bfloat16,
             (2, 2),
             (1, 1),
             (1, 1),
             m_tile_byte_budget=256 * 1024 * 1024,
             with_epilogue=False,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Four convs enqueued back to back with no host drain between them
+        # must match the same convs run one at a time. The chain crosses two
+        # stream views, one of which is destroyed with its work possibly still
+        # queued, so a premature scratch free is observable here.
+        test_conv2d_im2col_chain_lifetime[
+            row_major[1, 16, 16, 96](),
+            row_major[3, 3, 96, 96](),
+            DType.bfloat16,
+            (1, 1),
+            (1, 1),
+            (1, 1),
+            chain_len=4,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Same chain, sized so the M-tile budget actually splits the work:
+        # M = 64*64 = 4096 rows at K = 864, and `_MIN_M_TILE` clamps the tile
+        # cap to 1024 rows, so a 32 KiB budget gives four tiles per conv. The
+        # im2col slab is then re-filled and re-read across tile boundaries
+        # inside one dispatch, on top of the cross-conv reuse.
+        test_conv2d_im2col_chain_lifetime[
+            row_major[1, 64, 64, 96](),
+            row_major[3, 3, 96, 96](),
+            DType.bfloat16,
+            (1, 1),
+            (1, 1),
+            (1, 1),
+            chain_len=4,
+            m_tile_byte_budget=32 * 1024,
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
@@ -1195,8 +1397,8 @@ def main() raises:
         # post_quant_conv shape through conv_gpu dispatch (exercises
         # Phase A since our wiring puts it before im2col+matmul).
         test_conv3d_gpu_dispatch[
-            Layout.row_major(1, 4, 8, 8, 16),
-            Layout.row_major(1, 1, 1, 16, 16),
+            row_major[1, 4, 8, 8, 16](),
+            row_major[1, 1, 1, 16, 16](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -1207,8 +1409,8 @@ def main() raises:
 
         # Larger 1x1x1 at conv_shortcut scale (192 -> 96).
         test_conv3d_gpu_dispatch[
-            Layout.row_major(1, 4, 8, 8, 192),
-            Layout.row_major(1, 1, 1, 192, 96),
+            row_major[1, 4, 8, 8, 192](),
+            row_major[1, 1, 1, 192, 96](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -1223,8 +1425,8 @@ def main() raises:
         # of bugs where the qslice outer batch loop uses the wrong
         # per-n input offset.
         test_conv3d_gpu_dispatch[
-            Layout.row_major(2, 5, 6, 6, 192),
-            Layout.row_major(3, 3, 3, 192, 192),
+            row_major[2, 5, 6, 6, 192](),
+            row_major[3, 3, 3, 192, 192](),
             DType.bfloat16,
             (1, 1, 1),
             (1, 1, 1),
@@ -1237,16 +1439,16 @@ def main() raises:
         # epilogue, over the post_quant_conv shape. Validates the
         # 2D->5D coord-unpack closure and confirms no-scratch allocation.
         test_conv3d_1x1x1_matmul_direct[
-            Layout.row_major(1, 4, 8, 8, 16),
-            Layout.row_major(1, 1, 1, 16, 16),
+            row_major[1, 4, 8, 8, 16](),
+            row_major[1, 1, 1, 16, 16](),
             DType.bfloat16,
             with_epilogue=False,
             rtol=2e-2,
             atol=2e-2,
         ](ctx)
         test_conv3d_1x1x1_matmul_direct[
-            Layout.row_major(1, 4, 8, 8, 16),
-            Layout.row_major(1, 1, 1, 16, 16),
+            row_major[1, 4, 8, 8, 16](),
+            row_major[1, 1, 1, 16, 16](),
             DType.bfloat16,
             with_epilogue=True,
             rtol=2e-2,
@@ -1257,8 +1459,8 @@ def main() raises:
         # with epilogue. Exercises the coord-unpack math at non-square
         # batch=2.
         test_conv3d_1x1x1_matmul_direct[
-            Layout.row_major(2, 4, 8, 8, 384),
-            Layout.row_major(1, 1, 1, 384, 192),
+            row_major[2, 4, 8, 8, 384](),
+            row_major[1, 1, 1, 384, 192](),
             DType.bfloat16,
             with_epilogue=True,
             rtol=2e-2,
@@ -1268,8 +1470,8 @@ def main() raises:
         # Direct dispatch at realistic latent resolution (matches VAE
         # post_quant_conv's actual shape: 1x16x21x30x52 -> ... x16).
         test_conv3d_1x1x1_matmul_direct[
-            Layout.row_major(1, 21, 30, 52, 16),
-            Layout.row_major(1, 1, 1, 16, 16),
+            row_major[1, 21, 30, 52, 16](),
+            row_major[1, 1, 1, 16, 16](),
             DType.bfloat16,
             with_epilogue=True,
             rtol=2e-2,

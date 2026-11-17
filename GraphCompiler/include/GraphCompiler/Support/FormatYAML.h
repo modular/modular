@@ -28,6 +28,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LLVMYAMLForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/Support/YAMLTraits.h"
 #include <optional>
 #include <string>
@@ -50,7 +51,7 @@ loadModelSpecFromYAML(std::unique_ptr<llvm::MemoryBuffer> yamlBuffer);
 /// Provide the ModelSpec mapping trait for YAML conversion.
 namespace llvm::yaml {
 template <>
-struct MappingTraits<M::ModelSpec> {
+struct MODULAR_CXX_EXPORT MappingTraits<M::ModelSpec> {
   static void mapping(IO &io, M::ModelSpec &modelSpec);
   static std::string validate(IO &io, M::ModelSpec &modelSpec);
 };
@@ -64,19 +65,20 @@ LLVM_FWD_YAML_IS_SEQUENCE_VECTOR(M::QuantTensorSpec)
 LLVM_FWD_YAML_IS_SEQUENCE_VECTOR(M::TensorResultInfo)
 
 template <>
-struct llvm::yaml::MappingTraits<M::TensorResultInfo> {
+struct MODULAR_CXX_EXPORT llvm::yaml::MappingTraits<M::TensorResultInfo> {
   static void mapping(IO &io, M::TensorResultInfo &info);
 };
 
 template <>
-struct llvm::yaml::MappingTraits<M::VariantResultInfo> {
+struct MODULAR_CXX_EXPORT llvm::yaml::MappingTraits<M::VariantResultInfo> {
   static void mapping(IO &io, M::VariantResultInfo &info);
 };
 
 LLVM_FWD_YAML_IS_SEQUENCE_VECTOR(std::shared_ptr<M::ResultInfo>)
 
 template <>
-struct llvm::yaml::MappingTraits<std::shared_ptr<M::ResultInfo>> {
+struct MODULAR_CXX_EXPORT
+    llvm::yaml::MappingTraits<std::shared_ptr<M::ResultInfo>> {
   static void mapping(IO &io, std::shared_ptr<M::ResultInfo> &info);
 };
 
@@ -86,7 +88,7 @@ using YamlDictKeyValuePair = std::pair<M::GML::Variant, M::GML::Variant>;
 /// Shallow-copies a composed model output `out`, replacing `Tensor` leaves with
 /// `TensorResultInfo`s for YAML and collecting the tensors in
 /// `processedResults` for binary output.
-ErrorOr<AnyAsyncValueRef>
+MODULAR_CXX_EXPORT ErrorOr<AnyAsyncValueRef>
 getResultForBinaryOutput(const M::AnyAsyncValueRef &out,
                          M::ProcessedResults &processedResults);
 } // namespace M
@@ -95,7 +97,7 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(M::GML::Variant)
 LLVM_YAML_IS_SEQUENCE_VECTOR(M::YamlDictKeyValuePair)
 
 template <>
-struct llvm::yaml::MappingTraits<M::GML::Variant> {
+struct MODULAR_CXX_EXPORT llvm::yaml::MappingTraits<M::GML::Variant> {
   class NormalizedVariant {
   public:
     NormalizedVariant(IO &);
@@ -117,27 +119,27 @@ struct llvm::yaml::MappingTraits<M::GML::Variant> {
 
 namespace llvm::yaml {
 template <>
-struct MappingTraits<M::GML::None> {
+struct MODULAR_CXX_EXPORT MappingTraits<M::GML::None> {
   static void mapping(IO &io, M::GML::None &list);
 };
 
 template <>
-struct MappingTraits<M::GML::List> {
+struct MODULAR_CXX_EXPORT MappingTraits<M::GML::List> {
   static void mapping(IO &io, M::GML::List &list);
 };
 
 template <>
-struct MappingTraits<M::GML::Tuple> {
+struct MODULAR_CXX_EXPORT MappingTraits<M::GML::Tuple> {
   static void mapping(IO &io, M::GML::Tuple &tuple);
 };
 
 template <>
-struct MappingTraits<M::YamlDictKeyValuePair> {
+struct MODULAR_CXX_EXPORT MappingTraits<M::YamlDictKeyValuePair> {
   static void mapping(IO &io, M::YamlDictKeyValuePair &kv);
 };
 
 template <>
-struct MappingTraits<M::GML::Dict> {
+struct MODULAR_CXX_EXPORT MappingTraits<M::GML::Dict> {
   class NormalizedDict {
   public:
     NormalizedDict(IO &);

@@ -18,8 +18,8 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged_gpu
+from max.nn._graph_ops import flash_attention_ragged_gpu
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm

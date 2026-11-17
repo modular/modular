@@ -326,11 +326,11 @@ def test_stop_truncation_never_touches_reasoning_text() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_settings_stream_min_chunk_tokens_default_is_one() -> None:
+def test_settings_stream_min_chunk_tokens_default_is_ten() -> None:
     if "MAX_SERVE_STREAM_MIN_CHUNK_TOKENS" in os.environ:
         del os.environ["MAX_SERVE_STREAM_MIN_CHUNK_TOKENS"]
     settings = Settings()
-    assert settings.stream_min_chunk_tokens == 1
+    assert settings.stream_min_chunk_tokens == 10
 
 
 def test_settings_stream_min_chunk_tokens_env_override() -> None:

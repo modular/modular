@@ -67,12 +67,16 @@ Python::createStorageView(const Python::BufferStorage &storage,
       return newBufOr.takeError();
     // A view inherits the source storage's usage; it aliases the same
     // memory, so the allocation intent is unchanged.
-    return std::make_shared<Python::BufferStorage>(newBufOr.takeValue(),
-                                                   newSpec, storage.usage);
+    auto view = std::make_shared<Python::BufferStorage>(newBufOr.takeValue(),
+                                                        newSpec, storage.usage);
+    view->borrowed = storage.borrowed;
+    return view;
   }
 
-  return std::make_shared<Python::BufferStorage>(storage.buf, newSpec,
-                                                 storage.usage);
+  auto view = std::make_shared<Python::BufferStorage>(storage.buf, newSpec,
+                                                      storage.usage);
+  view->borrowed = storage.borrowed;
+  return view;
 }
 
 ErrorOr<std::shared_ptr<Python::BufferStorage>>
@@ -89,8 +93,10 @@ Python::createStorageViewOn(const Python::BufferStorage &storage,
   newBuf->setContext(*targetCtx);
   // Retargeting to another context is still a view over the same memory, so
   // the allocation intent carries over unchanged.
-  return std::make_shared<Python::BufferStorage>(std::move(newBuf),
-                                                 storage.spec, storage.usage);
+  auto view = std::make_shared<Python::BufferStorage>(
+      std::move(newBuf), storage.spec, storage.usage);
+  view->borrowed = storage.borrowed;
+  return view;
 }
 
 std::shared_ptr<Python::BufferStorage>
@@ -104,6 +110,8 @@ Python::createBorrowedStorage(const std::shared_ptr<BufferStorage> &storage) {
                                    /*owning=*/false);
   // A borrowed wrapper is a non-owning alias of the same memory, so it
   // inherits the source storage's usage rather than deciding one of its own.
-  return std::make_shared<Python::BufferStorage>(std::move(borrowedBuffer),
-                                                 storage->spec, storage->usage);
+  auto borrowed = std::make_shared<Python::BufferStorage>(
+      std::move(borrowedBuffer), storage->spec, storage->usage);
+  borrowed->borrowed = true;
+  return borrowed;
 }

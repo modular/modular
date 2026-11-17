@@ -60,7 +60,7 @@ def bench_flash[
     num_keys: Int,
     batch_size: Int,
     bench: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var scale = rsqrt(Float32(depth))
     comptime kv_num_heads = num_heads // group
@@ -94,7 +94,7 @@ def bench_flash[
         k_ptr: ImmPointer[Scalar[qkv_type], _],
         v_ptr: ImmPointer[Scalar[qkv_type], _],
         o_ptr: MutPointer[Scalar[qkv_type], _],
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {imm}:
         var q = TileTensor(
             q_ptr,
@@ -129,7 +129,7 @@ def bench_flash[
         flash_attention(output, q, k, v, NullMask(), scale, ctx)
 
     def _kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_q, mut cb_k, mut cb_v, mut cb_o, imm}:
         _run_flash(
             cb_q.offset_ptr(iteration),
@@ -197,7 +197,7 @@ def bench_naive[
     num_keys: Int,
     batch_size: Int,
     bench: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var scale = rsqrt(Float32(depth))
     comptime kv_num_heads = num_heads // group
@@ -231,7 +231,7 @@ def bench_naive[
         k_ptr: ImmPointer[Scalar[qkv_type], _],
         v_ptr: ImmPointer[Scalar[qkv_type], _],
         o_ptr: MutPointer[Scalar[qkv_type], _],
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {imm}:
         var q = TileTensor(
             q_ptr,
@@ -280,7 +280,7 @@ def bench_naive[
         )
 
     def _kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_q, mut cb_k, mut cb_v, mut cb_o, imm}:
         _run_naive(
             cb_q.offset_ptr(iteration),
@@ -348,7 +348,7 @@ def bench_manual[
     num_keys: Int,
     batch_size: Int,
     bench: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     var scale = rsqrt(Float32(depth))
 
@@ -401,7 +401,7 @@ def bench_manual[
         v_base: ImmPointer[Scalar[qkv_type], _],
         o_base: MutPointer[Scalar[qkv_type], _],
         s_base: MutPointer[Scalar[qkv_type], _],
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {imm}:
         # Step 1: Q @ K^T * scale  (per-head 2D matmul with compute
         # epilogue so we keep TMA stores on H100).
@@ -418,7 +418,7 @@ def bench_manual[
                 s_base.unsafe_offset(h * seq_len * num_keys),
                 row_major((seq_len, num_keys)),
             )
-            matmul[transpose_b=True, target="gpu"](
+            matmul[transpose_b=True](
                 s_2d, q_2d, k_2d, scale_compute_lambda, ctx
             )
 
@@ -433,7 +433,7 @@ def bench_manual[
         ](coords: Coord) {var score_3d} -> SIMD[qkv_type, _simd_width]:
             return score_3d.load[width=_simd_width, alignment=1](coords)
 
-        softmax_inline[qkv_type, 1, 3, target="gpu"](
+        softmax_inline[qkv_type, 1, 3](
             input_fn,
             Coord(total_heads, seq_len, num_keys),
             score_3d,
@@ -455,10 +455,10 @@ def bench_manual[
                 o_base.unsafe_offset(h * seq_len * depth),
                 row_major((seq_len, Idx[depth])),
             )
-            matmul[target="gpu"](o_2d, s_2d, v_2d, ctx)
+            matmul(o_2d, s_2d, v_2d, ctx)
 
     def _kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_q, mut cb_k, mut cb_v, mut cb_o, mut score_device, imm,}:
         _run_manual(
             cb_q.offset_ptr(iteration),

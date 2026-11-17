@@ -23,11 +23,7 @@ from typing import cast
 
 import pytest
 from max.driver import CPU
-from max.nn.legacy.kv_cache import (
-    KVCacheGroupId,
-    KVCacheMemory,
-    KVConnectorType,
-)
+from max.nn.kv_cache import KVCacheGroupId, KVCacheMemory, KVConnectorType
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors import tier_connector
 

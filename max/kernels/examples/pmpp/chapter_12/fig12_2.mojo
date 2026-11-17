@@ -109,7 +109,7 @@ def main() raises:
 
         # Copy results and verify
         var errors = 0
-        with d_input.map_to_host() as h_input:
+        with d_input.map_to_host():
             with d_output.map_to_host() as h_output:
                 # Create reference on CPU
                 var expected_count = 0

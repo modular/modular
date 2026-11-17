@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from max.driver import (
@@ -40,28 +40,23 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy import kernels
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn import _graph_ops as kernels
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager
 from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
-from max.pipelines.architectures.mimo_v2_modulev3.memory_planner import (
-    ep_dispatch_row_budget,
-)
-from max.pipelines.architectures.mimo_v2_modulev3.model import (
-    MiMoV2ModuleV3Model,
-    _ep_config,
-)
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
+    ep_dispatch_row_budget,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.quant import (
     MXFP8_DISPATCH_QUANT_CONFIG,
 )
-from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.module_registration import device_mesh
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _Inputs,
 )
+from max.pipelines.lib.registration_runtime import ModuleRuntime
 from mimo_dflash_v3_fixtures import (
     BLOCK,
     DRAFTS,
@@ -129,7 +124,6 @@ def dp_built() -> Any:
         draft,
         kv_tree,
         structured_output=False,
-        ep_batch_manager=EPBatchManager(_p2p_ep_config(N_DEVICES)),
     )
     return module, config, draft, kv_tree
 
@@ -229,7 +223,8 @@ def test_the_tp_signature_declares_no_distributed_group() -> None:
     call = module.driver_call()
     types = call.input_types
     assert not call.driver.input_spec.distributed
-    assert len(types) == 35
+    # Each of the three paged leaves ends with its split record.
+    assert len(types) == 38
     # The single-device graph declares its own signal buffer at the
     # engine's slot; the batch inputs ahead of it are the TP three.
     assert isinstance(types[3], BufferType)
@@ -420,39 +415,6 @@ def test_a_degree_above_the_device_count_is_refused() -> None:
         DFlashMiMoV2(mismatched, mask_embedding=mask_embedding())
 
 
-def _load_context(model: object, runtime: object) -> ModelLoadContext:
-    """A load context carrying only what the build reads before its
-    checks."""
-    return cast(
-        ModelLoadContext,
-        SimpleNamespace(
-            pipeline_config=SimpleNamespace(model=model, runtime=runtime),
-            return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
-        ),
-    )
-
-
-def test_the_build_refuses_an_unservable_mesh_before_loading() -> None:
-    """The target's build refuses a dp x tp mesh, DP without EP over every
-    device, and EP without DP before it reads the checkpoint."""
-    four = SimpleNamespace(data_parallel_degree=2, device_specs=[None] * 4)
-    with pytest.raises(ValueError, match="must equal the device count"):
-        MiMoV2ModuleV3Model.build_module(
-            _load_context(four, SimpleNamespace(ep_size=4))
-        )
-    two = SimpleNamespace(data_parallel_degree=2, device_specs=[None] * 2)
-    with pytest.raises(ValueError, match="requires expert parallelism"):
-        MiMoV2ModuleV3Model.build_module(
-            _load_context(two, SimpleNamespace(ep_size=1))
-        )
-    # The TP spec signature has no slot for the EP buffers.
-    tp = SimpleNamespace(data_parallel_degree=1, device_specs=[None] * 2)
-    with pytest.raises(NotImplementedError, match="data-parallel attention"):
-        MiMoV2ModuleV3Model.build_module(
-            _load_context(tp, SimpleNamespace(ep_size=2))
-        )
-
-
 # --------------------------------------------------------------------------- #
 # The EP dispatch buffers' verify-row budget
 # --------------------------------------------------------------------------- #
@@ -477,22 +439,51 @@ def _pipeline_config(
     )
 
 
+def _ep_config_of(pipeline_config: Any, config: MiMoV2Config) -> EPConfig:
+    """The registered config's EP config, as ``initialize`` completes it.
+
+    The row budget the pipeline config carries lands on the config the
+    way ``MiMoV2Config.initialize`` sets it, and the runtime mirrors the
+    one the registered builder builds for the same deployment.
+    """
+    config = replace(
+        config,
+        ep_row_budget=(
+            ep_dispatch_row_budget(pipeline_config)
+            if pipeline_config.runtime.ep_size > 1
+            else 0
+        ),
+        chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
+    )
+    runtime = ModuleRuntime(
+        mesh=device_mesh(
+            [ref.to_device() for ref in config.devices],
+            pipeline_config.model.data_parallel_degree,
+        ),
+        data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+        max_batch_total_tokens=None,
+        ep_size=pipeline_config.runtime.ep_size,
+        ep_use_allreduce=pipeline_config.runtime.ep_use_allreduce,
+    )
+    return config.expert_parallel_config(runtime)
+
+
 def test_the_ep_config_counts_the_verify_rows() -> None:
     """A speculative build's dispatch buffers hold a full decode step's
     merged verify rows -- the scheduler's active-token budget plus every
     request's drafts -- where the base target's hold the budget alone,
-    and nothing else about the config differs. The planner reserves the
-    same budget the build sizes the buffers with."""
+    and nothing else about the config differs."""
     config, _draft, _kv_tree = build_parts(
         _gpu_refs(), data_parallel_degree=N_DEVICES
     )
     speculating = _pipeline_config(max_batch_size=32)
     base = _pipeline_config(max_batch_size=32, speculative=False)
-    built = _ep_config(speculating, N_DEVICES, N_DEVICES, config)
+    built = _ep_config_of(speculating, config)
     # 256 active rows + 32 requests x 7 draft rows; the P2P divide is a
     # no-op at DP, where tp_size is 1.
     assert built == replace(
-        _ep_config(base, N_DEVICES, N_DEVICES, config),
+        _ep_config_of(base, config),
         max_tokens_per_rank=256 + 32 * DRAFTS,
     )
     assert ep_dispatch_row_budget(speculating) == 256 + 32 * DRAFTS
@@ -507,6 +498,4 @@ def test_the_ep_config_refuses_an_unbounded_verify_batch() -> None:
         _gpu_refs(), data_parallel_degree=N_DEVICES
     )
     with pytest.raises(ValueError, match="needs max_batch_size"):
-        _ep_config(
-            _pipeline_config(max_batch_size=None), N_DEVICES, N_DEVICES, config
-        )
+        _ep_config_of(_pipeline_config(max_batch_size=None), config)

@@ -23,7 +23,7 @@ from layout import (
     row_major,
 )
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 from nn.topk import _top_k_cpu, _top_k_sampling
 

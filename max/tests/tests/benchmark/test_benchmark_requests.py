@@ -18,13 +18,17 @@ import json
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from max.benchmark.benchmark_serving import validate_task_and_endpoint
-from max.benchmark.benchmark_shared.config import SamplingConfig
+from max.benchmark.benchmark_shared.config import (
+    BenchmarkTask,
+    Endpoint,
+    SamplingConfig,
+)
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatMessage,
     ImageContentBlock,
@@ -41,6 +45,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncInput,
     ProgressBarRequestDriver,
     RequestCounter,
+    RequestDriver,
     RequestFuncInput,
     RequestFuncOutput,
     SglangPixelGenerationRequestDriver,
@@ -419,6 +424,30 @@ class TestOpenAIStreamRecorder:
         assert stats.completion_tokens == 1
         assert stats.total_tokens == 4
         assert stats.cached_tokens == 2
+        assert stats.cached_tokens_reported
+
+    def test_usage_without_prompt_details_reports_no_cached_tokens(
+        self,
+    ) -> None:
+        """A server that omits ``prompt_tokens_details`` reports nothing."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        recorder.on_event(
+            json.dumps(
+                {
+                    "choices": [{"delta": {"content": "x"}}],
+                    "usage": {
+                        "prompt_tokens": 3,
+                        "completion_tokens": 1,
+                        "total_tokens": 4,
+                    },
+                }
+            )
+        )
+
+        stats = recorder.output.server_token_stats
+        assert stats.cached_tokens == 0
+        assert not stats.cached_tokens_reported
 
     def test_finish_without_content_fails(self) -> None:
         """Choices present but no modeled text field must fail."""
@@ -463,6 +492,21 @@ class TestOpenAIStreamRecorder:
         assert output.latency == pytest.approx(1.0)
 
 
+def _streaming_response(
+    mocker: MockerFixture, chunks: Sequence[bytes]
+) -> AsyncMock:
+    """Returns a 200 response mock whose body streams ``chunks``."""
+
+    async def content() -> AsyncIterator[bytes]:
+        for chunk in chunks:
+            yield chunk
+
+    response = mocker.AsyncMock()
+    response.status = 200
+    response.content = content()
+    return response
+
+
 class TestRequestDriver:
     """Test cases for RequestDriver classes."""
 
@@ -494,17 +538,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        # Create async iterator for response.content
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        # Setup the response object
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAICompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -541,17 +577,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        # Create async iterator for response.content
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        # Setup the response object
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -599,14 +627,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -664,14 +687,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -730,14 +748,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -782,14 +795,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -830,14 +838,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -880,13 +883,14 @@ class TestRequestDriver:
             }
         )
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield f"data: {error_json}\n\n".encode()
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    f"data: {error_json}\n\n".encode(),
+                ],
+            )
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -929,14 +933,15 @@ class TestRequestDriver:
             tools=tool_schemas,
         )
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
-            yield b"data: [DONE]\n\n"
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -967,14 +972,15 @@ class TestRequestDriver:
             tools=None,
         )
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
-            yield b"data: [DONE]\n\n"
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -1045,14 +1051,15 @@ class TestRequestDriver:
             ignore_eos=False,
         )
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
-            yield b"data: [DONE]\n\n"
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
+        )
 
         result = await OpenAIChatCompletionsRequestDriver().request(
             request_input
@@ -1085,15 +1092,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAICompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -1121,16 +1122,14 @@ class TestRequestDriver:
         # Create a mock progress bar
         mock_pbar = mocker.Mock(spec=tqdm)
 
-        # Create async iterator for response.content
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"text_output": "Hello"}\n\n'
-
-        # Setup the response object
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"text_output": "Hello"}\n\n',
+                ],
+            )
+        )
 
         base_driver = TRTLLMRequestDriver()
         driver = ProgressBarRequestDriver(base_driver, mock_pbar)
@@ -1157,16 +1156,14 @@ class TestRequestDriver:
             ignore_eos=False,
         )
 
-        # Create async iterator for response.content
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"text_output": "Hello"}\n\n'
-
-        # Setup the response object
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"text_output": "Hello"}\n\n',
+                ],
+            )
+        )
 
         driver = TRTLLMRequestDriver()
         result = await driver.request(request_input)
@@ -1225,11 +1222,6 @@ class TestDriverExtraBody:
         "vendor_ext": {"flags": ["a", "b"]},
     }
 
-    @staticmethod
-    async def _single_chunk(chunk: bytes) -> AsyncIterator[bytes]:
-        yield chunk
-        yield b"data: [DONE]\n\n"
-
     def _make_input(self, api_url: str) -> RequestFuncInput:
         return RequestFuncInput(
             model="test-model",
@@ -1250,12 +1242,15 @@ class TestDriverExtraBody:
         mock_openai_env: None,
         mocker: MockerFixture,
     ) -> None:
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = self._single_chunk(
-            b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
         )
-        mock_aiohttp_session.setup_post_response(mock_response)
 
         driver = OpenAIChatCompletionsRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
@@ -1274,12 +1269,15 @@ class TestDriverExtraBody:
         mock_openai_env: None,
         mocker: MockerFixture,
     ) -> None:
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = self._single_chunk(
-            b'data: {"choices": [{"text": "ok"}]}\n\n'
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"text": "ok"}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
         )
-        mock_aiohttp_session.setup_post_response(mock_response)
 
         driver = OpenAICompletionsRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
@@ -1296,15 +1294,16 @@ class TestDriverExtraBody:
         mock_aiohttp_session: Any,
         mocker: MockerFixture,
     ) -> None:
-        async def trtllm_chunk() -> AsyncIterator[bytes]:
-            # The TRT-LLM driver validates every event as a chunk and has no
-            # ``[DONE]`` sentinel, so emit only a single data line.
-            yield b'data: {"text_output": "ok"}\n\n'
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = trtllm_chunk()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    # The TRT-LLM driver validates every event as a chunk and
+                    # has no ``[DONE]`` sentinel, so emit only one data line.
+                    b'data: {"text_output": "ok"}\n\n',
+                ],
+            )
+        )
 
         driver = TRTLLMRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
@@ -1331,82 +1330,83 @@ class TestRequestDriverSelection:
             is OpenAICompletionsRequestDriver
         )
 
-    def test_get_request_driver_class_chat(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/chat/completions"
-            )
-            is OpenAIChatCompletionsRequestDriver
-        )
-
-    def test_get_request_driver_class_generate_stream(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v2/models/ensemble/generate_stream"
-            )
-            is TRTLLMRequestDriver
-        )
+    @pytest.mark.parametrize(
+        ("path", "task", "driver"),
+        [
+            # task=None exercises the default (text-generation) argument.
+            pytest.param(
+                "/v1/chat/completions",
+                None,
+                OpenAIChatCompletionsRequestDriver,
+                id="chat",
+            ),
+            pytest.param(
+                "/v2/models/ensemble/generate_stream",
+                None,
+                TRTLLMRequestDriver,
+                id="generate_stream",
+            ),
+            pytest.param(
+                "/v1/responses",
+                "text-to-image",
+                OpenResponsesRequestDriver,
+                id="pixel_gen_responses",
+            ),
+            pytest.param(
+                "/v1/images/generations",
+                "text-to-image",
+                SglangPixelGenerationRequestDriver,
+                id="pixel_gen_sglang",
+            ),
+            pytest.param(
+                "/v1/chat/completions",
+                "text-to-image",
+                VllmOmniPixelGenerationRequestDriver,
+                id="pixel_gen_vllm_omni",
+            ),
+            pytest.param(
+                "/v1/images/generations",
+                "image-to-image",
+                SglangPixelGenerationRequestDriver,
+                id="pixel_gen_image_to_image",
+            ),
+            pytest.param(
+                "/v1/videos/sync",
+                "text-to-video",
+                VllmOmniVideoRequestDriver,
+                id="pixel_gen_vllm_omni_video",
+            ),
+            pytest.param(
+                "/v1/videos",
+                "text-to-video",
+                SglangVideoRequestDriver,
+                id="pixel_gen_sglang_video",
+            ),
+            # Chat completions must stay on the chat driver, not the vLLM-Omni
+            # pixel driver, when the task is text generation.
+            pytest.param(
+                "/v1/chat/completions",
+                "text-generation",
+                OpenAIChatCompletionsRequestDriver,
+                id="text_gen_chat_not_pixel",
+            ),
+        ],
+    )
+    def test_get_request_driver_class(
+        self,
+        path: str,
+        task: BenchmarkTask | None,
+        driver: type[RequestDriver],
+    ) -> None:
+        url = f"http://localhost:8000{path}"
+        if task is None:
+            assert get_request_driver_class(url) is driver
+        else:
+            assert get_request_driver_class(url, task=task) is driver
 
     def test_get_request_driver_class_invalid_url(self) -> None:
         with pytest.raises(ValueError, match="Unsupported API URL"):
             get_request_driver_class("http://localhost:8000/unsupported")
-
-    # Pixel generation driver selection tests
-
-    def test_get_request_driver_class_pixel_gen_responses(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/responses",
-                task="text-to-image",
-            )
-            is OpenResponsesRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_sglang(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/images/generations",
-                task="text-to-image",
-            )
-            is SglangPixelGenerationRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_vllm_omni(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/chat/completions",
-                task="text-to-image",
-            )
-            is VllmOmniPixelGenerationRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_image_to_image(self) -> None:
-        """image-to-image task should also dispatch to pixel gen drivers."""
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/images/generations",
-                task="image-to-image",
-            )
-            is SglangPixelGenerationRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_vllm_omni_video(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/videos/sync",
-                task="text-to-video",
-            )
-            is VllmOmniVideoRequestDriver
-        )
-
-    def test_get_request_driver_class_pixel_gen_sglang_video(self) -> None:
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/videos",
-                task="text-to-video",
-            )
-            is SglangVideoRequestDriver
-        )
 
     def test_get_request_driver_class_pixel_gen_invalid_url(self) -> None:
         with pytest.raises(ValueError, match="pixel-generation"):
@@ -1415,35 +1415,17 @@ class TestRequestDriverSelection:
                 task="text-to-image",
             )
 
-    def test_get_request_driver_class_text_gen_videos_sync_rejected(
-        self,
+    @pytest.mark.parametrize("path", ["/v1/videos/sync", "/v1/videos"])
+    def test_get_request_driver_class_text_gen_videos_rejected(
+        self, path: str
     ) -> None:
-        """text-generation + /v1/videos/sync should raise, not return the
+        """text-generation + a video endpoint should raise, not return the
         video driver."""
         with pytest.raises(ValueError, match="Unsupported API URL"):
             get_request_driver_class(
-                "http://localhost:8000/v1/videos/sync",
+                f"http://localhost:8000{path}",
                 task="text-generation",
             )
-
-    def test_get_request_driver_class_text_gen_videos_rejected(self) -> None:
-        """text-generation + /v1/videos should raise."""
-        with pytest.raises(ValueError, match="Unsupported API URL"):
-            get_request_driver_class(
-                "http://localhost:8000/v1/videos",
-                task="text-generation",
-            )
-
-    def test_get_request_driver_class_text_gen_chat_not_pixel(self) -> None:
-        """text-generation + /v1/chat/completions should return chat driver,
-        not VllmOmniPixelGenerationRequestDriver."""
-        assert (
-            get_request_driver_class(
-                "http://localhost:8000/v1/chat/completions",
-                task="text-generation",
-            )
-            is OpenAIChatCompletionsRequestDriver
-        )
 
 
 class TestPixelGenerationPayloadBuilders:
@@ -1687,74 +1669,103 @@ class TestCountGeneratedMedia:
 class TestValidateTaskAndEndpoint:
     """Tests for validate_task_and_endpoint."""
 
-    def test_text_gen_modular_chat_ok(self) -> None:
-        validate_task_and_endpoint("text-generation", "/v1/chat/completions")
+    @pytest.mark.parametrize(
+        ("task", "endpoint"),
+        [
+            pytest.param(
+                "text-generation", "/v1/chat/completions", id="text_gen_chat"
+            ),
+            pytest.param(
+                "text-generation", "/v1/completions", id="text_gen_completions"
+            ),
+            pytest.param(
+                "text-to-image", "/v1/responses", id="pixel_responses"
+            ),
+            pytest.param(
+                "text-to-image", "/v1/images/generations", id="pixel_images"
+            ),
+            pytest.param(
+                "text-to-image", "/v1/chat/completions", id="pixel_chat"
+            ),
+            pytest.param(
+                "text-to-video", "/v1/videos/sync", id="pixel_videos_sync"
+            ),
+            # i2v is a video task and may use the video endpoints.
+            pytest.param(
+                "image-to-video", "/v1/videos/sync", id="i2v_videos_sync"
+            ),
+            pytest.param("text-to-video", "/v1/videos", id="pixel_videos"),
+            pytest.param("image-to-video", "/v1/videos", id="i2v_videos"),
+            pytest.param("image-to-image", "/v1/responses", id="i2i_responses"),
+        ],
+    )
+    def test_accepts(self, task: BenchmarkTask, endpoint: Endpoint) -> None:
+        validate_task_and_endpoint(task, endpoint)
 
-    def test_text_gen_modular_completions_ok(self) -> None:
-        validate_task_and_endpoint("text-generation", "/v1/completions")
-
-    def test_text_gen_responses_rejected(self) -> None:
-        with pytest.raises(ValueError, match="does not support"):
-            validate_task_and_endpoint("text-generation", "/v1/responses")
-
-    def test_text_gen_images_rejected(self) -> None:
-        with pytest.raises(ValueError, match="does not support"):
-            validate_task_and_endpoint(
-                "text-generation", "/v1/images/generations"
-            )
-
-    def test_pixel_gen_responses_ok(self) -> None:
-        validate_task_and_endpoint("text-to-image", "/v1/responses")
-
-    def test_pixel_gen_images_ok(self) -> None:
-        validate_task_and_endpoint("text-to-image", "/v1/images/generations")
-
-    def test_pixel_gen_chat_ok(self) -> None:
-        validate_task_and_endpoint("text-to-image", "/v1/chat/completions")
-
-    def test_pixel_gen_completions_rejected(self) -> None:
-        with pytest.raises(ValueError, match="requires --endpoint"):
-            validate_task_and_endpoint("text-to-image", "/v1/completions")
-
-    def test_pixel_gen_videos_sync_ok(self) -> None:
-        validate_task_and_endpoint("text-to-video", "/v1/videos/sync")
-
-    def test_image_to_video_videos_sync_ok(self) -> None:
-        # i2v is a video task and may use the video endpoints.
-        validate_task_and_endpoint("image-to-video", "/v1/videos/sync")
-
-    def test_text_gen_videos_sync_rejected(self) -> None:
-        with pytest.raises(ValueError, match="does not support"):
-            validate_task_and_endpoint("text-generation", "/v1/videos/sync")
-
-    def test_text_to_image_videos_sync_rejected(self) -> None:
-        with pytest.raises(ValueError, match="only valid for"):
-            validate_task_and_endpoint("text-to-image", "/v1/videos/sync")
-
-    def test_image_to_image_videos_sync_rejected(self) -> None:
-        with pytest.raises(ValueError, match="only valid for"):
-            validate_task_and_endpoint("image-to-image", "/v1/videos/sync")
-
-    def test_pixel_gen_videos_ok(self) -> None:
-        validate_task_and_endpoint("text-to-video", "/v1/videos")
-
-    def test_image_to_video_videos_ok(self) -> None:
-        validate_task_and_endpoint("image-to-video", "/v1/videos")
-
-    def test_text_gen_videos_rejected(self) -> None:
-        with pytest.raises(ValueError, match="does not support"):
-            validate_task_and_endpoint("text-generation", "/v1/videos")
-
-    def test_text_to_image_videos_rejected(self) -> None:
-        with pytest.raises(ValueError, match="only valid for"):
-            validate_task_and_endpoint("text-to-image", "/v1/videos")
-
-    def test_image_to_image_videos_rejected(self) -> None:
-        with pytest.raises(ValueError, match="only valid for"):
-            validate_task_and_endpoint("image-to-image", "/v1/videos")
-
-    def test_image_to_image_responses_ok(self) -> None:
-        validate_task_and_endpoint("image-to-image", "/v1/responses")
+    @pytest.mark.parametrize(
+        ("task", "endpoint", "match"),
+        [
+            pytest.param(
+                "text-generation",
+                "/v1/responses",
+                "does not support",
+                id="text_gen_responses",
+            ),
+            pytest.param(
+                "text-generation",
+                "/v1/images/generations",
+                "does not support",
+                id="text_gen_images",
+            ),
+            pytest.param(
+                "text-to-image",
+                "/v1/completions",
+                "requires --endpoint",
+                id="pixel_completions",
+            ),
+            pytest.param(
+                "text-generation",
+                "/v1/videos/sync",
+                "does not support",
+                id="text_gen_videos_sync",
+            ),
+            pytest.param(
+                "text-to-image",
+                "/v1/videos/sync",
+                "only valid for",
+                id="t2i_videos_sync",
+            ),
+            pytest.param(
+                "image-to-image",
+                "/v1/videos/sync",
+                "only valid for",
+                id="i2i_videos_sync",
+            ),
+            pytest.param(
+                "text-generation",
+                "/v1/videos",
+                "does not support",
+                id="text_gen_videos",
+            ),
+            pytest.param(
+                "text-to-image",
+                "/v1/videos",
+                "only valid for",
+                id="t2i_videos",
+            ),
+            pytest.param(
+                "image-to-image",
+                "/v1/videos",
+                "only valid for",
+                id="i2i_videos",
+            ),
+        ],
+    )
+    def test_rejects(
+        self, task: BenchmarkTask, endpoint: Endpoint, match: str
+    ) -> None:
+        with pytest.raises(ValueError, match=match):
+            validate_task_and_endpoint(task, endpoint)
 
 
 class TestMarkCancelledIfPastDeadline:
@@ -2018,14 +2029,11 @@ async def test_cache_warmup_empty_stream_requires_completed_generation(
     if case != "missing_done":
         events.append("[DONE]")
 
-    async def stream() -> AsyncIterator[bytes]:
-        for event in events:
-            yield f"data: {event}\n\n".encode()
-
-    response = mocker.AsyncMock()
+    response = _streaming_response(
+        mocker, [f"data: {event}\n\n".encode() for event in events]
+    )
     response.status = 400 if case == "http_error" else 200
     response.reason = "Bad Request"
-    response.content = stream()
     mock_aiohttp_session.setup_post_response(response)
     driver = (
         OpenAIChatCompletionsRequestDriver()
@@ -2048,3 +2056,122 @@ async def test_cache_warmup_empty_stream_requires_completed_generation(
     # Without it the server sends no usage chunk, and the warmup cannot tell a
     # special-token-only generation from an empty one.
     assert payload["stream_options"] == {"include_usage": True}
+
+
+# A GLM-5.3-Flash stream captured at ``max_tokens=1``: the one token was
+# ``</think>``, which the glm45 reasoning parser consumes, so no text reaches
+# the client.
+_DELIMITER_ONLY_STREAM = [
+    json.dumps(
+        {
+            "id": "556c1d809b74424a829ca40d270f666b",
+            "choices": [
+                {
+                    "delta": {"content": ""},
+                    "finish_reason": "length",
+                    "index": 0,
+                    "token_ids": [154842],
+                }
+            ],
+            "model": "zai-org/GLM-5.3-Flash",
+            "object": "chat.completion.chunk",
+        }
+    ),
+    json.dumps(
+        {
+            "id": "556c1d809b74424a829ca40d270f666b",
+            "choices": [],
+            "model": "zai-org/GLM-5.3-Flash",
+            "object": "chat.completion.chunk",
+            "usage": {
+                "completion_tokens": 1,
+                "prompt_tokens": 127092,
+                "total_tokens": 127093,
+                "completion_tokens_details": {"reasoning_tokens": 1},
+                "prompt_tokens_details": {"cached_tokens": 126976},
+            },
+        }
+    ),
+    "[DONE]",
+]
+
+
+def _with_completion_tokens(events: list[str], tokens: int) -> list[str]:
+    usage_chunk = json.loads(events[1])
+    usage_chunk["usage"]["completion_tokens"] = tokens
+    return [events[0], json.dumps(usage_chunk), events[2]]
+
+
+def _with_finish_reason(events: list[str], reason: str) -> list[str]:
+    choice_chunk = json.loads(events[0])
+    choice_chunk["choices"][0]["finish_reason"] = reason
+    return [json.dumps(choice_chunk), *events[1:]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("max_tokens", "events", "success"),
+    [
+        pytest.param(1, _DELIMITER_ONLY_STREAM, True, id="captured"),
+        pytest.param(
+            2,
+            _with_completion_tokens(_DELIMITER_ONLY_STREAM, 2),
+            True,
+            id="two_token_budget",
+        ),
+        pytest.param(128, _DELIMITER_ONLY_STREAM, False, id="large_budget"),
+        pytest.param(
+            128,
+            _with_completion_tokens(_DELIMITER_ONLY_STREAM, 128),
+            False,
+            id="large_budget_exhausted",
+        ),
+        pytest.param(
+            2, _DELIMITER_ONLY_STREAM, False, id="budget_not_exhausted"
+        ),
+        pytest.param(
+            1,
+            _with_finish_reason(_DELIMITER_ONLY_STREAM, "stop"),
+            False,
+            id="stopped",
+        ),
+        pytest.param(
+            1, _DELIMITER_ONLY_STREAM[:1], False, id="missing_usage_and_done"
+        ),
+        pytest.param(None, _DELIMITER_ONLY_STREAM, False, id="no_budget"),
+    ],
+)
+async def test_measured_empty_stream_succeeds_only_when_tiny_budget_is_spent(
+    max_tokens: int | None,
+    events: list[str],
+    success: bool,
+    mock_aiohttp_session: MagicMock,
+    mock_openai_env: None,
+    mocker: MockerFixture,
+) -> None:
+    request_input = RequestFuncInput(
+        model="zai-org/GLM-5.3-Flash",
+        session_id=None,
+        sampling=SamplingConfig(),
+        prompt="hi",
+        images=[],
+        api_url="http://localhost:8000/v1/chat/completions",
+        prompt_len=127092,
+        max_tokens=max_tokens,
+        ignore_eos=True,
+    )
+
+    response = _streaming_response(
+        mocker, [f"data: {event}\n\n".encode() for event in events]
+    )
+    mock_aiohttp_session.setup_post_response(response)
+    result = await OpenAIChatCompletionsRequestDriver().request(request_input)
+
+    assert result.success == success
+    assert result.generated_text == ""
+    if success:
+        assert result.error == ""
+        assert result.server_token_stats.completion_tokens == max_tokens
+        assert 0.0 < result.ttft <= result.latency
+    else:
+        assert "No text content" in result.error

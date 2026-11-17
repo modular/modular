@@ -40,6 +40,9 @@ public:
   llvm::Module &operator*() { return *module; }
   llvm::Module *operator->() { return module.get(); }
 
+  /// False until `create` succeeds.
+  bool hasModule() const { return module != nullptr; }
+
   void reset();
 
   llvm::StringSet<> duplicatedFns;

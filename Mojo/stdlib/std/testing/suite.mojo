@@ -101,7 +101,7 @@ struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].length, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -592,10 +592,9 @@ struct TestSuite(
     def _should_skip(self, test: _Test) -> Bool:
         if test.name in self.skip_list:
             return True
-        if not self.allow_list:
+        __guard case .Some(allow_list) = self.allow_list else:
             return False
-        # SAFETY: We know that `self.allow_list` is not `None` here.
-        return test.name not in self.allow_list.unsafe_value()
+        return test.name not in allow_list
 
     def _validate_skip_list(self) raises:
         # TODO: _Test doesn't conform to Equatable, so we can't use

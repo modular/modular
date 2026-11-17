@@ -36,7 +36,8 @@ each rank argmaxes its own vocab shard of every row and only the per-row
 winners cross the mesh.
 
 The graph takes the trunk's own extras past the canonical tail, which the
-trunk's batch processor prepares for every batch.
+trunk's batch processor prepares for every batch, and a step's image span
+rows, which the verify merges as the trunk does.
 """
 
 from __future__ import annotations
@@ -50,13 +51,14 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, Dim, TensorType, TensorValue, Value, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     read_engram_lookback,
     record_engram_lookback,
 )
+from max.pipelines.lib.role_contracts import VisionInputs
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,
@@ -89,6 +91,7 @@ from .inputs import DeepseekV41Inputs
 from .interface import V41Config, extra_input_names
 from .layers.attention import absolute_positions
 from .model_config import DeepseekV41Config
+from .registration import RegisteredDeepseekV41Inputs
 
 __all__ = [
     "ADAPTER",
@@ -141,6 +144,28 @@ def _extras(
             f"the DSpark verify batch is missing graph inputs: {missing}"
         )
     return {name: as_tensors(batch.extra[name]) for name in names}
+
+
+def _vision(batch: BlockBatch, mesh: DeviceMesh) -> VisionInputs[Tensor] | None:
+    """The step's image span rows, replicated over the mesh.
+
+    A step that encodes images verifies no drafts, so the scatter indices,
+    which address the prompt rows, address the merged window too.
+
+    Returns:
+        ``None`` when the graph takes no image rows.
+    """
+    if not batch.vision_embeddings:
+        return None
+    replicated = DeviceMapping.replicated(mesh)
+    return VisionInputs(
+        embeddings=Tensor.from_shard_values(
+            batch.vision_embeddings, replicated
+        ),
+        scatter_indices=Tensor.from_shard_values(
+            batch.vision_scatter_indices, replicated
+        ),
+    )
 
 
 def _leaf_kv(
@@ -310,24 +335,26 @@ def _context_store_origins_local(
 
 
 def _sample_next(
-    sampler: DraftSampler,
+    sampler: DraftSampler, mesh: DeviceMesh
 ) -> Callable[[Tensor, int], Tensor]:
     """Bridges the driver's per-position sampler into the drafter's loop.
 
-    The bridge passes each step's mesh logits through unchanged, so it
-    serves only samplers that take distributed ``Tensor``s; the greedy
-    :class:`ArgmaxDraftSampler` is routed around it in :meth:`head`.
+    The driver's samplers take one single-device value and hold each row's
+    sampling parameters on the mesh's first device, while the drafter's
+    step logits are replicated on the mesh. So each step draws from rank
+    0's copy of the whole batch, and the picked ids are broadcast back onto
+    the mesh, where the next step's Markov bias reads them. The greedy
+    :class:`ArgmaxDraftSampler` is routed around the bridge in :meth:`head`.
     """
 
     # The framework's sampler protocol spells its inputs as graph values
-    # while the samplers this bridge serves take mesh ``Tensor``s (the
-    # ``_tensor_compat`` boundary is migrating off), so the logits pass
-    # through unchanged and the call itself crosses the boundary the same
-    # way ``_tensor_compat`` does: dynamically, on the runtime types.
+    # while the test samplers take ``Tensor``s, so the call crosses the
+    # boundary the same way ``_tensor_compat`` does: dynamically, on the
+    # runtime types.
     def sample(step_logits: Tensor, position: int) -> Tensor:
         sample_next: Any = sampler.sample_next
-        picked: Tensor = sample_next(step_logits, position)
-        return picked
+        picked = as_tensors(sample_next(_to_lead(step_logits), position))
+        return F.distributed_broadcast(picked, mesh)
 
     return sample
 
@@ -408,6 +435,7 @@ class DeepseekV41BlockTarget:
             draft_width=as_tensors(
                 ops.shape_to_tensor([batch.num_draft_tokens])[0]
             ),
+            vision=_vision(batch, target.mesh),
         )
         stream, pre = target.embed_stream(b)
         stream, pre, taps = target.run_trunk_with_taps(b, stream, pre)
@@ -703,10 +731,9 @@ class DSparkDeepseekV41Proposer:
             self.drafter.logits(block_hs, self.target.head.weight),
             self.mesh,
         )
-        # The driver's greedy sampler draws through ``ops.argmax``, a
-        # TensorValue op that rejects the mesh-replicated logits staged
-        # here (its ``Tensor.__tensorvalue__`` bridge refuses anything
-        # distributed). The drafter's own greedy is the same argmax over
+        # The driver's greedy sampler draws through ``ops.argmax`` on one
+        # device, so the bridge would broadcast every step's pick back onto
+        # the mesh. The drafter's own greedy is the same argmax over
         # ``F.argmax``, whose SPMD reduction rule runs replicated on the
         # mesh, so exactly the greedy class bypasses the bridge; a
         # subclass that overrides ``sample_next`` is its own sampler and
@@ -714,7 +741,7 @@ class DSparkDeepseekV41Proposer:
         drafts, _ = self.drafter.draft(
             logits,
             anchors,
-            sampler=None if greedy else _sample_next(sampler),
+            sampler=None if greedy else _sample_next(sampler, self.mesh),
         )
         return as_graph_values(_to_lead(drafts))
 
@@ -757,12 +784,12 @@ def block_proposer(
     return DSparkDeepseekV41Proposer(draft, verify.target, draft_config)
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the routed experts' expert-parallel inputs, if any."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the routed experts' EP inputs, if any."""
     assert isinstance(target, DeepseekV41)
     if target.ep_batch_manager is None:
-        return ()
-    return target.ep_batch_manager.input_types()
+        return None
+    return target.ep_batch_manager.input_tree()
 
 
 def trailing_input_types(
@@ -775,7 +802,9 @@ def trailing_input_types(
 
 def batch_trailing_buffers(target_inputs: object) -> list[Buffer]:
     """Returns the extras the trunk's batch processor prepared."""
-    assert isinstance(target_inputs, DeepseekV41Inputs)
+    assert isinstance(
+        target_inputs, (DeepseekV41Inputs, RegisteredDeepseekV41Inputs)
+    )
     return list(target_inputs.extras)
 
 
@@ -786,11 +815,19 @@ def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
     return dict(zip(names, trailing, strict=True))
 
 
+def _takes_prefill_rows(target_config: Any) -> bool:
+    """Returns whether the DSpark verify commits a prefill row.
+
+    Only the data-parallel (DEP) layout takes one.
+    """
+    return target_config.data_parallel_degree > 1
+
+
 ADAPTER = TargetAdapter(
     primary_kv=WINDOW_LEAF,
     verify=verify,
     block_proposer=block_proposer,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     # The graph takes no in-thinking input, as the fused graph the serving
     # engine binds doesn't.
     relaxed_thinking_acceptance=False,
@@ -798,4 +835,5 @@ ADAPTER = TargetAdapter(
     trailing_input_types=trailing_input_types,
     batch_trailing_buffers=batch_trailing_buffers,
     extra=extra,
+    verify_takes_prefill_rows=_takes_prefill_rows,
 )

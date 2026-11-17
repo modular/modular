@@ -13,8 +13,8 @@
 """Execution config placeholder for the NVIDIA Tesla P100 (Pascal datacenter) GPU."""
 
 from max.gpu.host import ConstantMemoryMapping, Dim, LaunchAttribute
+from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from . import (
-    LaunchAttributeHolderExecutionConfig,
     _CudaExecutionConfigDelegator,
     _BaseCudaExecutionConfig,
     _BaseCudaExecutionConfiguration,

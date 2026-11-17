@@ -26,7 +26,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, StaticDim, TensorType, ops
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.pipelines.architectures.deepseekV41.deepseekV41 import (
     HCStreams,
     _attend,

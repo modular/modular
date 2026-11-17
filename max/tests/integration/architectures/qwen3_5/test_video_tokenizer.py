@@ -13,7 +13,7 @@
 
 """Pins how a clip becomes a prompt and a set of vision encoder inputs.
 
-Three contracts meet in ``Qwen3VLTokenizer.new_context`` and none of them is
+Three contracts meet in ``Qwen3_5Tokenizer.new_context`` and none of them is
 visible from the image path:
 
 - A clip is ONE encoder grid item with ``t > 1`` but ``grid_t`` SEPARATE
@@ -41,18 +41,18 @@ from unittest.mock import MagicMock, NonCallableMock
 import av
 import numpy as np
 import pytest
-from max.pipelines.architectures.qwen3_5.tokenizer import Qwen3_5Tokenizer
-from max.pipelines.architectures.qwen3_5.vision_packing import (
-    _split_vision_data,
+from max.pipelines.architectures.qwen3_5.context import (
+    Qwen3_5TextAndVisionContext,
 )
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
+from max.pipelines.architectures.qwen3_5.tokenizer import (
+    VIDEO_PAD_TOKEN,
+    Qwen3_5Tokenizer,
 )
-from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
+from max.pipelines.architectures.qwen3_5.video_processing import (
     clip_grid,
 )
-from max.pipelines.architectures.qwen3vl_moe.tokenizer import (
-    VIDEO_PAD_TOKEN,
+from max.pipelines.architectures.qwen3_5.vision_packing import (
+    _split_vision_data,
 )
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.modeling.types import (
@@ -78,7 +78,7 @@ PATCH_ROW_WIDTH = 3 * 2 * 16 * 16
 def _mock_pipeline_config(model_path: str) -> MagicMock:
     """A PipelineConfig stand-in wrapping the real HF config.
 
-    ``Qwen3VLTokenizer`` reads the vision config and the vision token IDs
+    ``Qwen3_5Tokenizer`` reads the vision config and the vision token IDs
     straight off it, so the config has to be real; everything else is mocked.
     """
     hf_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
@@ -137,7 +137,7 @@ def _context(
     *,
     images: Sequence[bytes] = (),
     videos: Sequence[bytes] = (),
-) -> Qwen3VLTextAndVisionContext:
+) -> Qwen3_5TextAndVisionContext:
     request = TextGenerationRequest(
         request_id=RequestID("test-video-tokenizer"),
         model_name=MODEL_PATH,
@@ -151,7 +151,7 @@ def _context(
 
 
 def _runs(
-    ctx: Qwen3VLTextAndVisionContext, token_id: int
+    ctx: Qwen3_5TextAndVisionContext, token_id: int
 ) -> list[tuple[int, int]]:
     return find_contiguous_ranges(np.asarray(ctx.tokens.all), [token_id])
 

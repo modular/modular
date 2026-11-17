@@ -76,6 +76,7 @@ from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
     _INDEX_SWIZZLE,
+    KTMATileT,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
@@ -123,7 +124,7 @@ def _launch_scorer[
     batch_size: Int,
     seq_len: Int,
     max_num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     chunk_begin: Int = 0,
 ) raises:
     var k_cache = k_collection.get_key_cache(0)
@@ -160,9 +161,13 @@ def _launch_scorer[
         comptime assert kpool == 1, "the SM100 scorer has no pooled keys"
         if chunk_begin != 0:
             raise Error("the SM100 scorer has no row windows")
-        var k_tma_tile = k_cache.create_paged_tma_tile[
-            _INDEX_SWIZZLE, BN=_BM_KEY, BK=depth
-        ](ctx)
+        var k_tma_tile = rebind[
+            KTMATileT[KCollectionT.CacheType.dtype, _BM_KEY, depth]
+        ](
+            k_cache.create_paged_tma_tile[_INDEX_SWIZZLE, BN=_BM_KEY, BK=depth](
+                ctx
+            )
+        )
         fp8_index_score_sm100[
             KCollectionT.CacheType.dtype,
             type_of(k_op),
@@ -248,7 +253,7 @@ def execute_fp8_index_prefill[
     out_dtype: DType = DType.float32,
     kpool: Int = 1,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut m: Bench,
     batch_size: Int,
     seq_len: Int,
@@ -510,7 +515,7 @@ def execute_fp8_index_prefill[
     ctx.enqueue_memset(o_device, unwritten_score)
 
     @inline(.always)
-    def kernel_launch(launch_ctx: DeviceContext) raises {mut o_device, imm}:
+    def kernel_launch(launch_ctx: DeviceContext[]) raises {mut o_device, imm}:
         for chunk_begin in range(0, total_seq_len, rows_per_chunk):
             var chunk_rows = min(rows_per_chunk, total_seq_len - chunk_begin)
             var o_tile = TileTensor(

@@ -101,6 +101,7 @@ static int doc(const State &subcommandState) {
   mlir::DialectRegistry registry;
   registerAllKGENDialects(registry);
   mlir::MLIRContext context{registry};
+  configureKGENContext(&context);
 
   // Open the output file, or exit with an error.
   std::string outputError;

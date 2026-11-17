@@ -1,14 +1,14 @@
 // RUN: mo-opt %s --allow-unregistered-dialect --mgp-predicate-asserts-deps --mgp-simplify-chains --cse | FileCheck %s
 //
 
-// CHECK-LABEL: mgp.model @simple_case : mof devices [#M.device_ref<"cpu", 0>] init
+// CHECK-LABEL: mgp.model @simple_case devices [#M.device_ref<"cpu", 0>] init
 // CHECK: execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context,
 // CHECK: %[[CH2:.*]] = mgp.assert %{{.*}}, "input shapes must match"
 // CHECK: %[[CH3:.*]] = grt.chain.create (%[[CH0]], %[[CH2]])
 // CHECK: %[[BUF:.*]] = mgp.buffer.alloc %[[CH3]], %{{.*}}, %{{.*}}, align 16 : !mgp.buffer
 // CHECK: %{{.*}} = "kernel_execute"(%[[CH3]], %{{.*}}, %{{.*}}, %[[BUF]])
 
-mgp.model @simple_case : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @simple_case devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -39,7 +39,7 @@ mgp.model @simple_case : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
   mef.output %ch0, %10 : !mef.chain, !mgp.tensor<?x?xf32>
 }
 
-// CHECK-LABEL: mgp.model @two_asserts : mof devices [#M.device_ref<"cpu", 0>] init
+// CHECK-LABEL: mgp.model @two_asserts devices [#M.device_ref<"cpu", 0>] init
 // CHECK: execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context,
 // CHECK: %[[CH2:.*]] = mgp.assert %{{.*}}, "input shapes must match"
 // CHECK: %[[CH3:.*]] = mgp.assert %{{.*}}, "input dimension 0 must match"
@@ -47,7 +47,7 @@ mgp.model @simple_case : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
 // CHECK: %[[BUF:.*]] = mgp.buffer.alloc %[[CH4]], %{{.*}}, %{{.*}}, align 16 : !mgp.buffer
 // CHECK: %{{.*}} = "kernel_execute"(%[[CH4]], %{{.*}}, %{{.*}}, %[[BUF]])
 
-mgp.model @two_asserts : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @two_asserts devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -79,14 +79,14 @@ mgp.model @two_asserts : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
   mef.output %ch0, %10 : !mef.chain, !mgp.tensor<?x?xf32>
 }
 
-// CHECK-LABEL: mgp.model @assert_depends_on_control_flow : mof devices [#M.device_ref<"cpu", 0>] init
+// CHECK-LABEL: mgp.model @assert_depends_on_control_flow devices [#M.device_ref<"cpu", 0>] init
 // CHECK: execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context,
 // CHECK: %[[CH2:.*]] = mgp.assert %{{.*}}, "input shapes must match"
 // CHECK: %[[CH3:.*]] = grt.chain.create (%[[CH0]], %[[CH2]]
 // CHECK: %[[BUF:.*]] = mgp.buffer.alloc %[[CH3]], %{{.*}}, %{{.*}}, align 16 : !mgp.buffer
 // CHECK: %{{.*}} = "kernel_execute"(%[[CH3]], %{{.*}}, %{{.*}}, %[[BUF]])
 
-mgp.model @assert_depends_on_control_flow : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @assert_depends_on_control_flow devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -122,7 +122,7 @@ mgp.model @assert_depends_on_control_flow : mof devices [#M.device_ref<"cpu", 0>
 
 // NOTE: Currently the assert is ignored since nested blocks within control flow
 //       ops are ignored!
-// CHECK-LABEL: mgp.model @assert_in_control_flow : mof devices [#M.device_ref<"cpu", 0>] init
+// CHECK-LABEL: mgp.model @assert_in_control_flow devices [#M.device_ref<"cpu", 0>] init
 // CHECK: execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context,
 // CHECK: %[[CH2:.*]] = grt.if %{{.*}} (%{{.*}}: i1, %{{.*}}: i1, %{{.*}}: !mef.chain) -> !mef.chain {
 // CHECK:   %[[CH3:.*]] = mgp.assert %{{.*}}, "dimensions must match"
@@ -133,7 +133,7 @@ mgp.model @assert_depends_on_control_flow : mof devices [#M.device_ref<"cpu", 0>
 // CHECK: %[[BUF:.*]] = mgp.buffer.alloc %[[CH0]], %{{.*}}, %{{.*}}, align 16 : !mgp.buffer
 // CHECK: %{{.*}} = "kernel_execute"(%[[CH0]], %{{.*}}, %{{.*}}, %[[BUF]])
 
-mgp.model @assert_in_control_flow : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @assert_in_control_flow devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -169,12 +169,12 @@ mgp.model @assert_in_control_flow : mof devices [#M.device_ref<"cpu", 0>] init (
   mef.output %ch0, %10 : !mef.chain, !mgp.tensor<?x?xf32>
 }
 
-// CHECK-LABEL: mgp.model @no_predication : mof devices [#M.device_ref<"cpu", 0>] init
+// CHECK-LABEL: mgp.model @no_predication devices [#M.device_ref<"cpu", 0>] init
 // CHECK: execute (%[[CH0:.*]]: !mef.chain, %[[CTX:.*]]: !mgp.context,
 // CHECK: %{{.*}} = mgp.assert %{{.*}}, "input shapes must match"
 // CHECK-NEXT: mef.output %[[CH0]] : !mef.chain
 
-mgp.model @no_predication : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @no_predication devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -196,14 +196,14 @@ mgp.model @no_predication : mof devices [#M.device_ref<"cpu", 0>] init (%weights
   mef.output %ch0 : !mef.chain
 }
 
-// CHECK-LABEL: mgp.model @on_output_op : mof devices [#M.device_ref<"cpu", 0>] init
+// CHECK-LABEL: mgp.model @on_output_op devices [#M.device_ref<"cpu", 0>] init
 // CHECK: execute (%[[CH0:.*]]: !mef.chain,
 // CHECK: %[[CH1:.*]] = mgp.assert %{{.*}}, "Tensor type mismatch for argument 0"
 // CHECK: %[[CH2:.*]] = mgp.assert %{{.*}}, "Tensor type mismatch for argument 1"
 // CHECK: %[[CH3:.*]] = grt.chain.create (%[[CH0]], %[[CH1]], %[[CH2]])
 // CHECK: mef.output %[[CH3]]
 
-mgp.model @on_output_op : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @on_output_op devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

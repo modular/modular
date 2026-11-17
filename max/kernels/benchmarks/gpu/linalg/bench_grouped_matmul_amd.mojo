@@ -272,7 +272,7 @@ def bench_preb[
     topk: Int,
     lane_bytes: Int,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     M: Int,
     num_active_experts: Int,
@@ -377,7 +377,7 @@ def bench_preb[
     var ei_tt = TileTensor(expert_ids_dev, row_major(num_active_experts))
 
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+    def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
         var a_tt = TileTensor[mut=False](
             cb_a.offset_ptr(iteration),
             row_major(total_routes, Idx[packed_K]),

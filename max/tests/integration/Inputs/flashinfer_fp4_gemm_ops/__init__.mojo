@@ -19,7 +19,7 @@ from std.collections import Span
 from std.os import abort
 
 from std.ffi import OwnedDLHandle
-from extensibility import InputTensor, OutputTensor, ManagedTensorSlice
+from extensibility import Input, Output, Tensor, TileTensorable
 from std.utils import IndexList
 
 from max.gpu.host import DeviceContext
@@ -104,29 +104,52 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
-        out_tensor: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        mat1: InputTensor[dtype=.uint8, rank=2, ...],
-        mat2: InputTensor[dtype=.uint8, rank=2, ...],
-        mat1_scale: InputTensor[dtype=.uint8, rank=1, ...],
-        mat2_scale: InputTensor[dtype=.uint8, rank=1, ...],
-        global_scale: InputTensor[dtype=.float32, rank=1, ...],
-        workspace: InputTensor[dtype=.int8, rank=1, ...],
+    def execute(
+        out_tensor: Some[Output & Tensor],
+        mat1: Some[Input & Tensor],
+        mat2: Some[Input & Tensor],
+        mat1_scale: Some[Input & Tensor],
+        mat2_scale: Some[Input & Tensor],
+        global_scale: Some[Input & Tensor],
+        workspace: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
-        comptime assert target == "gpu"
+        comptime assert ctx.target.is_gpu()
+        comptime assert conforms_to(type_of(out_tensor), TileTensorable)
+        comptime assert conforms_to(type_of(mat1), TileTensorable)
+        comptime assert conforms_to(type_of(mat2), TileTensorable)
+        comptime assert conforms_to(type_of(mat1_scale), TileTensorable)
+        comptime assert conforms_to(type_of(mat2_scale), TileTensorable)
+        comptime assert conforms_to(type_of(global_scale), TileTensorable)
+        comptime assert conforms_to(type_of(workspace), TileTensorable)
+        comptime assert type_of(out_tensor).dtype == .bfloat16
+        comptime assert type_of(out_tensor).rank == 2
+        comptime assert type_of(mat1).dtype == .uint8
+        comptime assert type_of(mat1).rank == 2
+        comptime assert type_of(mat2).dtype == .uint8
+        comptime assert type_of(mat2).rank == 2
+        comptime assert type_of(mat1_scale).dtype == .uint8
+        comptime assert type_of(mat1_scale).rank == 1
+        comptime assert type_of(mat2_scale).dtype == .uint8
+        comptime assert type_of(mat2_scale).rank == 1
+        comptime assert type_of(global_scale).dtype == .float32
+        comptime assert type_of(global_scale).rank == 1
+        comptime assert type_of(workspace).dtype == .int8
+        comptime assert type_of(workspace).rank == 1
 
         var mod = Module(OwnedDLHandle(path=Self.lib_path))
 
         mod.fp4_gemm(
-            DLTensor(mat1),
-            DLTensor(mat2),
-            DLTensor(mat1_scale),
-            DLTensor(mat2_scale),
-            DLTensor(global_scale),
-            DLTensor(out_tensor),
-            DLTensor(workspace),
+            DLTensor[rank=2, dtype=.uint8](mat1.to_tile_tensor[.uint8]()),
+            DLTensor[rank=2, dtype=.uint8](mat2.to_tile_tensor[.uint8]()),
+            DLTensor[rank=1, dtype=.uint8](mat1_scale.to_tile_tensor[.uint8]()),
+            DLTensor[rank=1, dtype=.uint8](mat2_scale.to_tile_tensor[.uint8]()),
+            DLTensor[rank=1, dtype=.float32](
+                global_scale.to_tile_tensor[.float32]()
+            ),
+            DLTensor[rank=2, dtype=.bfloat16](
+                out_tensor.to_tile_tensor[.bfloat16]()
+            ),
+            DLTensor[rank=1, dtype=.int8](workspace.to_tile_tensor[.int8]()),
         )

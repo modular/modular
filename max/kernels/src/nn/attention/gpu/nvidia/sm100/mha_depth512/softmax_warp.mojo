@@ -54,7 +54,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
 from layout.swizzle import make_swizzle
-from layout.tensor_core_async import tile_layout_k_major
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
@@ -435,7 +434,7 @@ def depth512_softmax[
     # ---- SMEM pointers ---------------------------------------------------
     var p_smem = smem.p_smem()
     var correction_smem = smem.correction_smem()
-    # P SMEM must match tile_layout_k_major[BM, BN] for the MMA descriptor.
+    # P SMEM must match tile_layout_k_major_typed for the MMA descriptor.
     # The layout is hierarchical: BN/sw_K outer blocks of [BM, sw_K] each.
     # Decompose col into k_block + inner, swizzle only the inner part.
     comptime p_swizzle = make_swizzle[qkv_dtype, config.swizzle_mode]()

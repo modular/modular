@@ -192,7 +192,8 @@ def test_conversion[p: Int](x: Int):
 
 # CHECK: lit.fn @"def(::SIMD[DType.int, 1]) raises thin -> None|def(x: ::SIMD[DType.int, 1]) raises thin -> None
 # CHECK: [[TMP:%.*]] = lit.ref.immut
-# CHECK: call{{.*}}([[TMP]], %1, %2)
+# CHECK: [[RESULT_TMP:%.*]] = lit.var.decl "__call_result_tmp__"
+# CHECK: call{{.*}}([[TMP]], %1, [[RESULT_TMP]])
 
 
 # // -----
@@ -692,8 +693,9 @@ def do_thing(mut a: ZMemType, mut b: ZBool):
 # These check that it:
 #  * Is taking in two origins; one for the VariadicPack itself, and a common origin for its elements
 #  * It takes in a VariadicPack that references those origins correctly
+#  * It is a pack vararg with the target type's element convention
 # CHECK-SAME: [imm *"0_unnamed`"]
-# CHECK-SAME: (%0[*""]: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:scalar<bool> true}, :origin<true> _0, :!lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> _0>> _1, :meta<!AnyType> !ZAnyMemType_AnyType, :param_list<!ZAnyMemType_AnyType> [!ZMemType, !ZBool], :!Bool {:scalar<bool> false}, :!lit.struct<#TypeList <:meta<!AnyType> !ZAnyMemType_AnyType, :param_list<!ZAnyMemType_AnyType> [!ZMemType, !ZBool]>> {}>>, imm *"0_unnamed`"> imm_mem)
+# CHECK-SAME: (%0[*""]: !lit.ref<!lit.struct<#VariadicPack <:!Bool {:scalar<bool> true}, :origin<true> _0, :!lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> _0>> _1, :meta<!AnyType> !ZAnyMemType_AnyType, :param_list<!ZAnyMemType_AnyType> [!ZMemType, !ZBool], :!Bool {:scalar<bool> false}, :!lit.struct<#TypeList <:meta<!AnyType> !ZAnyMemType_AnyType, :param_list<!ZAnyMemType_AnyType> [!ZMemType, !ZBool]>> {}>>, imm *"0_unnamed`"> mut|pack_vararg)
 
 # // -----
 

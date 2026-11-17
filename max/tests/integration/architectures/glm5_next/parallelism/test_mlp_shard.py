@@ -10,44 +10,71 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""A sharded ``Glm5NextMLP`` still clamps before the activation.
+"""A distributed ``Glm5NextMLP`` still clamps before the activation, and the
+tensor-parallel MoE sums its shards before rounding.
 
-The model never runs the dense MLP or the shared expert unsharded: both get a
-sharding strategy at every device count and run through ``shard()``. A shard
-that falls back to the stock ``MLP`` applies ``silu`` and then clamps, which
-agrees with GLM below ``swiglu_limit`` and diverges above it, so only inputs
-past the limit can tell the shards apart.
+The model never runs the dense MLP or the shared expert on one device's
+whole batch: the decoder layer runs a dense MLP on each device's share of
+the rows, and the tensor-parallel MoE splits its shared expert's columns. An
+MLP that applies ``silu`` and then clamps agrees with GLM below
+``swiglu_limit`` and diverges above it, so only inputs past the limit can
+tell the two apart. The two-device mesh is two simulated CPUs.
 """
 
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import torch
-from max.driver import CPU, Buffer
+from max import functional as F
+from max.driver import CPU
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.pipelines.architectures.glm5_next.layers.mlp import Glm5NextMLP
+from max.nn.common_layers.quant_linear import tensor_parallel_mlp
+from max.pipelines.architectures.glm5_next.layers.mlp import (
+    Glm5NextMLP,
+    Glm5NextTensorParallelMoE,
+)
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Replicated,
+    Sharded,
+)
 
 _LIMIT = 10.0
 _DIM = 8
 
 # The +/-12 and +/-20 entries are the only ones that separate the orderings.
+# Two rows, so each device of the row-split case gets one.
 _X = np.array(
-    [[-20.0, -3.0, 0.0, 3.0, 9.9, 10.0, 12.0, 20.0]], dtype=np.float32
+    [
+        [-20.0, -3.0, 0.0, 3.0, 9.9, 10.0, 12.0, 20.0],
+        [20.0, 12.0, 10.0, 9.9, 3.0, 0.0, -3.0, -20.0],
+    ],
+    dtype=np.float32,
 )
 
 
-def _weights() -> dict[str, np.ndarray]:
+def _mesh() -> DeviceMesh:
+    return DeviceMesh((CPU(), CPU()), (2,), ("tp",))
+
+
+def _mlp() -> Glm5NextMLP:
     # Identity gate and down, negated up: the pre-activation gate is `x` and
     # the up half is `-x`, so `_X` straddles the limit on both halves.
     eye = np.eye(_DIM, dtype=np.float32)
-    return {
-        "gate_proj.weight": eye,
-        "up_proj.weight": -eye,
-        "down_proj.weight": eye,
-    }
+    mlp = Glm5NextMLP(
+        hidden_dim=_DIM, feed_forward_length=_DIM, swiglu_limit=_LIMIT
+    )
+    mlp.load_state_dict(
+        {
+            "gate_proj.weight": eye,
+            "up_proj.weight": -eye,
+            "down_proj.weight": eye,
+        }
+    )
+    return mlp
 
 
 def _glm_reference(x: np.ndarray) -> np.ndarray:
@@ -57,42 +84,49 @@ def _glm_reference(x: np.ndarray) -> np.ndarray:
     return (torch.nn.functional.silu(gate) * up).numpy()
 
 
-@pytest.mark.parametrize(
-    "strategy",
-    [ShardingStrategy.replicate(1), ShardingStrategy.tensor_parallel(2)],
-    ids=["replicate1", "tp2"],
-)
-def test_shards_clamp_before_the_activation(
-    strategy: ShardingStrategy,
-) -> None:
-    mlp = Glm5NextMLP(
-        dtype=DType.float32,
-        quantization_encoding=None,
-        hidden_dim=_DIM,
-        feed_forward_length=_DIM,
-        devices=[DeviceRef.CPU()],
-        swiglu_limit=_LIMIT,
-    )
-    # Names the weights; the shards' weights are views of these.
-    mlp.load_state_dict(_weights())
-    mlp.sharding_strategy = strategy
-    shards = mlp.shard([DeviceRef.CPU()] * strategy.num_devices)
-    for shard in shards:
-        assert isinstance(shard, Glm5NextMLP)
-
-    spec = TensorType(DType.float32, shape=_X.shape, device=DeviceRef.CPU())
-    with Graph("glm5_next_mlp_shard", input_types=[spec]) as graph:
-        (x,) = graph.inputs
-        # Tensor-parallel shards each hold a slice of the feed-forward axis
-        # and return a partial sum; the allreduce is a sum.
-        out = shards[0](x.tensor)
-        for shard in shards[1:]:
-            out = out + shard(x.tensor)
-        graph.output(out)
-
-    session = InferenceSession(devices=[CPU()])
-    model = session.load(graph, weights_registry=mlp.state_dict())
-    got = model.execute(Buffer.from_dlpack(_X))[0]
+def test_row_shards_clamp_before_the_activation() -> None:
+    """The dense layers' form: replicated weights over a split of the rows."""
+    mesh = _mesh()
+    with default_device(mesh), default_dtype(DType.float32):
+        mlp = _mlp()
+        x = Tensor.from_dlpack(_X).to(DeviceMapping(mesh, (Sharded(0),)))
+        y = mlp(x).to(DeviceMapping.replicated(mesh))
+    assert y.placements == (Replicated(),)
     np.testing.assert_allclose(
-        np.from_dlpack(got), _glm_reference(_X), rtol=1e-6, atol=1e-6
+        y.local_shards[0].to_numpy(), _glm_reference(_X), rtol=1e-6, atol=1e-6
     )
+
+
+def test_column_shards_clamp_before_the_activation() -> None:
+    """The shared expert's form: each device holds half the feed-forward axis
+    and returns a partial sum."""
+    mesh = _mesh()
+    with default_device(mesh), default_dtype(DType.float32):
+        mlp = tensor_parallel_mlp(_mlp())
+        x = Tensor.from_dlpack(_X).to(DeviceMapping.replicated(mesh))
+        partial = mlp(x)
+        assert partial.placements == (Partial(),)
+        y = partial.to(DeviceMapping.replicated(mesh))
+    np.testing.assert_allclose(
+        y.local_shards[0].to_numpy(), _glm_reference(_X), rtol=1e-6, atol=1e-6
+    )
+
+
+def test_tensor_parallel_moe_returns_the_reduced_sum() -> None:
+    """Its float32 combine is all-reduced before the cast that rounds it, so
+    the MoE returns the whole sum, replicated, in the input's dtype."""
+    mesh = _mesh()
+    with F.lazy(), default_dtype(DType.bfloat16):
+        with default_device(mesh):
+            moe = Glm5NextTensorParallelMoE(
+                hidden_dim=256,
+                num_experts=4,
+                num_experts_per_token=2,
+                moe_dim=128,
+                has_shared_experts=True,
+                shared_experts_dim=128,
+            )
+        x = Tensor.zeros([4, 256], device=DeviceMapping.replicated(mesh))
+        y = moe(x)
+    assert y.placements == (Replicated(),)
+    assert y.dtype == DType.bfloat16

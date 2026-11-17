@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=false" \
 // RUN:   -allow-unregistered-dialect | FileCheck %s
-// RUN: kgen-opt %s -mlir-disable-threading \
+// RUN: kgen-opt --asyncrt-single-thread %s -mlir-disable-threading \
 // RUN:   -elaborate-generators="use-parametric-interpret=false" \
 // RUN:   -allow-unregistered-dialect | FileCheck %s
 

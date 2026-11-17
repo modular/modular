@@ -36,10 +36,7 @@ from max.nn.common_layers.multi_latent_attention import (
     LatentAttentionWithRope,
     tensor_parallel_latent_attention_with_rope,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MLAKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import (
     DeviceMapping,

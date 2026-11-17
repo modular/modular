@@ -10,7 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The DeepSeek-V4.1 text trunk, tensor or data parallel over one mesh."""
+"""The DeepSeek-V4.1 trunk, tensor or data parallel over one mesh.
+
+Image span positions take the vision encoder's rows in place of their token
+embeddings; the router selects their experts with ``gate.bias_vl``, and no
+Engram n-gram spans them.
+"""
 
 from __future__ import annotations
 
@@ -24,18 +29,20 @@ from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.nn import Module
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     read_engram_lookback,
 )
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import VisionInputs
+from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import (
     DeviceMapping,
@@ -49,13 +56,18 @@ if TYPE_CHECKING:
 
 from .interface import V41Config, extra_input_names
 from .layer_resolver import resolve
-from .layers.attention import RaggedRows, absolute_positions, row_ids
+from .layers.attention import (
+    RaggedRows,
+    absolute_positions,
+    mask_padded_positions,
+    row_ids,
+)
 from .layers.block import DecoderLayer, leaf_values, slot_constants
 from .layers.engram import Engram
 from .layers.mhc import mhc_final_collapse, mhc_identity_writeback, mhc_post
 from .layers.norm import RMSNorm
 from .layers.rope import RopeParams
-from .model_config import DeepseekV41Config
+from .model_config import DeepseekV41Config, position_capacity
 
 __all__ = ["Batch", "DeepseekV41", "validate_dspark_taps"]
 
@@ -94,44 +106,12 @@ def validate_dspark_taps(config: DeepseekV41Config) -> tuple[int, ...]:
 
 
 def _hc_mean(stream: Tensor) -> Tensor:
-    """Averages ``[rows, hc, hidden]`` over the copies, accumulating f32.
-
-    The drafter's ``main_proj`` was trained on the hc-mean of the entering
-    stream, never on copy 0 (the V4 precedent's trap: taking copy 0 gives
-    the right shape and the wrong numbers).
-    """
-    return F.squeeze(F.mean(stream.cast(DType.float32), axis=1), 1).cast(
-        stream.dtype
-    )
-
-
-def _capture_tap(
-    y: Tensor, stream: Tensor, post: Tensor, comb: Tensor, hc_mult: int
-) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
-    """One tap layer's capture: ``(tap, stream, y, post, comb)``.
-
-    The stream entering a layer is deferred here: ``y`` (the previous
-    layer's feed-forward output) is still unwritten, described by ``post``
-    and ``comb``. The drafter's tap is the *written-back* stream, so the
-    pending boundary is materialized first -- the same ``mhc_post`` the
-    Engram path performs -- the tap is the hc-mean of that, and the
-    write-back is reset to identity so the layer body's own boundary does
-    not write ``y`` in a second time.
-
-    Returns:
-        ``(tap, materialized_stream, y, post, comb)`` where the last three
-        are the identity write-back of the materialized stream.
-    """
-    stream = mhc_post(
-        y,
-        stream,
-        post,
-        comb.reshape([stream.shape[0], hc_mult, hc_mult]),
-        hc_mult,
-    )
-    tap = _hc_mean(stream)
-    reset_y, reset_post, reset_comb = mhc_identity_writeback(stream)
-    return tap, stream, reset_y, reset_post, reset_comb
+    """Average copies, never copy 0 alone; a reduce would materialize float32."""
+    hc_mult = int(stream.shape[1])
+    total = stream[:, 0].cast(DType.float32)
+    for i in range(1, hc_mult):
+        total = total + stream[:, i].cast(DType.float32)
+    return (total * (1.0 / hc_mult)).cast(stream.dtype)
 
 
 def _split_replicated_batch(
@@ -368,6 +348,9 @@ class Batch:
     ``replay`` holds the decoder's kept rows when the export plans them;
     ``rows`` always describes the full batch the layers up to the last KV
     source run on.
+
+    ``vision`` holds the image span rows and the batch rows they replace,
+    replicated over the mesh and indexed in the pre-split batch.
     """
 
     tokens: Tensor
@@ -386,6 +369,7 @@ class Batch:
     input_row_offsets_i64: Tensor | None = None
     draft_width: Tensor | None = None
     replay: ReplayRows | None = None
+    vision: VisionInputs[Tensor] | None = None
 
     @property
     def row_offsets(self) -> Tensor:
@@ -508,7 +492,12 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                         info,
                         mesh,
                         rope=rope,
-                        max_position=config.max_seq_len,
+                        # The indexer's entry cap and RoPE table cover the
+                        # speculative slack too, as the graph-API model's
+                        # position_capacity sizes its indexer scratch: a
+                        # verify row in the slack must clamp onto a real
+                        # entry slot, not past the last one.
+                        max_position=position_capacity(config),
                         candidate_block_size=config.candidate_block_size,
                         engram=engram,
                         ep_batch_manager=ep_batch_manager,
@@ -535,6 +524,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: EPCommBuffers | None = None,
         draft_width: Tensor | None = None,
+        vision: VisionInputs[Tensor] | None = None,
     ) -> Batch:
         """Stages already-split inputs onto the mesh, as a :class:`Batch`.
 
@@ -559,6 +549,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         image_token_mask = F.distributed_broadcast(
             extras["image_token_mask"], mesh
         )
+        lookback_dead = extras["engram_lookback_dead"]
         if self.interface_config.engram_lookback_history:
             # The overlap export replaces the host window with the window
             # plus its device history: the row the source map names reads
@@ -567,20 +558,26 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             # Engram hash reads the same int32 window either way.
             history = extras["engram_lookback_history"].graph_values[0]
             assert isinstance(history, BufferValue)
+            source = extras["engram_lookback_source"]
             lookback = F.cast(
                 read_engram_lookback(
-                    extras["engram_lookback_ids"],
-                    extras["engram_lookback_source"],
-                    history,
+                    extras["engram_lookback_ids"], source, history
                 ),
                 DType.int32,
             )
+            if self.config.image_token_id is not None:
+                # The host's dead slots describe its own window, so a row
+                # that reads the history takes its dead slots from the
+                # recorded ids instead.
+                lookback_dead = F.where(
+                    (source >= 0).unsqueeze(-1),
+                    (lookback == self.config.image_token_id).cast(DType.uint8),
+                    lookback_dead,
+                )
         else:
             lookback = extras["engram_lookback"]
         lookback = F.distributed_broadcast(lookback, mesh)
-        lookback_dead = F.distributed_broadcast(
-            extras["engram_lookback_dead"], mesh
-        )
+        lookback_dead = F.distributed_broadcast(lookback_dead, mesh)
         tables = [
             extras[f"engram_table_{i}_{part}"]
             for i in range(len(self.config.engram_layer_ids))
@@ -678,6 +675,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             input_row_offsets_i64=input_row_offsets_i64,
             draft_width=draft_width,
             replay=replay,
+            vision=vision,
         )
 
     def _rebased(
@@ -852,11 +850,16 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         Under DP the embedding runs on the full replicated batch (the
         vocab-sharded gather all-reduces while every rank still holds the
         same rows) and the stream and ``pre`` are split afterwards, so the
-        per-rank trunk starts from its own rows.
+        per-rank trunk starts from its own rows. The image span rows merge
+        before the split, as their indices address the full batch.
         """
         hc = self.config.hc_mult
         full = b.tokens_full if b.tokens_full is not None else b.tokens
         h = self.embed(full)
+        if b.vision is not None:
+            h = F_merge_multimodal_embeddings(
+                h, b.vision.embeddings, b.vision.scatter_indices
+            )
         stream = F.stack([h] * hc, axis=1)
         rows = h.shape[0]
         pre = F.concat(
@@ -909,7 +912,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             carried ``pre``, and the captured taps keyed by layer id,
             ``None`` when ``tap_set`` is empty.
         """
-        rows = b.rows
+        rows = self._with_live_positions(b.rows)
         offsets = rows.offsets
         positions = rows.positions
         # The grouped MoE's tile-regime estimate: the batch's total token
@@ -940,11 +943,8 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                         last=self.dp,
                     )
                 b = self._cut_to_replay(b)
-                rows, offsets, positions = (
-                    b.rows,
-                    b.rows.offsets,
-                    b.rows.positions,
-                )
+                rows = self._with_live_positions(b.rows)
+                offsets, positions = rows.offsets, rows.positions
                 stream, pre, y, post, comb = (
                     self._gather_rows(t, src)
                     for t in (stream, pre, y, post, comb)
@@ -956,12 +956,13 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 stream = mhc_post(
                     y, stream, post, comb.reshape([stream.shape[0], hc, hc]), hc
                 )
+                # A constant per device: broadcasting it would cost a
+                # cross-GPU launch per Engram layer for a literal.
                 ordinal = F.constant(
                     self.config.engram_layer_ids.index(layer.layer_id),
                     DType.uint32,
-                    device=self.mesh.devices[0],
+                    device=DeviceMapping.replicated(self.mesh),
                 )
-                ordinal = F.distributed_broadcast(ordinal, self.mesh)
                 if self.dp > 1:
                     # The engram kernel wants the offsets' length tied to
                     # the batch it shares with ``lookback``. Under DP each
@@ -989,17 +990,12 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                     query_start_loc=tied_offsets,
                 )
                 y, post, comb = mhc_identity_writeback(stream)
-            if taps is not None and layer.layer_id in tap_set:
-                tap, stream, y, post, comb = _capture_tap(
-                    y, stream, post, comb, hc
-                )
-                taps[layer.layer_id] = tap
             routed = {
                 "reuse_r2": selection.get("top_k_r2"),
                 "reindex_r1": selection.get("pool"),
                 "reuse_r1": selection.get("top_k_r1"),
             }.get(layer.group)
-            stream, pre, y, post, comb, produced = layer(
+            stream, pre, y, post, comb, entry, produced = layer(
                 stream,
                 pre,
                 y,
@@ -1015,6 +1011,8 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 b.comm,
                 total_rows,
             )
+            if taps is not None and layer.layer_id in tap_set:
+                taps[layer.layer_id] = _hc_mean(entry)
             if layer.group == "full_r2":
                 selection["top_k_r2"] = produced[0]
             elif layer.group == "full_r1_cand":
@@ -1025,6 +1023,23 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             y, stream, post, comb.reshape([stream.shape[0], hc, hc]), hc
         )
         return stream, pre, taps
+
+    def _with_live_positions(self, rows: RaggedRows) -> RaggedRows:
+        if self.dp == 1:
+            live = mask_padded_positions(rows.offsets, rows.positions)
+        else:
+            live = Tensor.from_shard_values(
+                [
+                    mask_padded_positions(offsets, positions)
+                    for offsets, positions in zip(
+                        rows.offsets.local_shards,
+                        rows.positions.local_shards,
+                        strict=True,
+                    )
+                ],
+                rows.positions.mapping,
+            )
+        return replace(rows, live_positions=live)
 
     def _cut_to_replay(self, b: Batch) -> Batch:
         """The batch the decoder runs: the kept rows at their absolute slots.
@@ -1125,8 +1140,9 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *rest: Tensor,
+        vision: VisionInputs[Tensor] | None = None,
     ) -> ModuleV3Outputs:
-        """Runs the model over its graph inputs."""
+        """Runs the model over its graph inputs, and the batch's image rows."""
         data_parallel_splits: Tensor | None = None
         input_row_offsets_i64: Tensor | None = None
         if self.dp > 1:
@@ -1138,7 +1154,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             rest = rest[2:]
         n_kv = len(self.kv_params.flattened_kv_inputs())
         upstream = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in rest[:n_kv])
+            iter(kv_input_values(rest[:n_kv]))
         )
         # Replicas serve different requests, so their caches vary; under
         # tensor parallelism the devices all store the same latent cache.
@@ -1176,6 +1192,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             data_parallel_splits=data_parallel_splits,
             input_row_offsets_i64=input_row_offsets_i64,
             comm_buffers=comm_buffers,
+            vision=vision,
         )
         stream, pre = self.embed_stream(b)
         stream, pre, _ = self._run_trunk(b, stream, pre, ())

@@ -43,7 +43,7 @@ comptime _4x4 = RowMajorLayout[ComptimeInt[4], ComptimeInt[4]]
 
 def global_load_store_kernel(
     tensor: TileTensor[
-        mut=True, .float32, _4x4, MutAnyOrigin, address_space=.GLOBAL
+        mut=True, .float32, _4x4, MutUntrackedOrigin, address_space=.GLOBAL
     ],
 ):
     """Load and store through a TileTensor backed by global memory."""
@@ -52,9 +52,9 @@ def global_load_store_kernel(
 
 
 def shared_load_kernel(
-    src: TileTensor[.float32, _4x4, MutAnyOrigin, address_space=.SHARED],
+    src: TileTensor[.float32, _4x4, MutUntrackedOrigin, address_space=.SHARED],
     dst: TileTensor[
-        mut=True, .float32, _4x4, MutAnyOrigin, address_space=.GLOBAL
+        mut=True, .float32, _4x4, MutUntrackedOrigin, address_space=.GLOBAL
     ],
 ):
     """Load from a shared-memory TileTensor, store to global."""
@@ -64,9 +64,9 @@ def shared_load_kernel(
 
 def shared_store_kernel(
     dst: TileTensor[
-        mut=True, .float32, _4x4, MutAnyOrigin, address_space=.SHARED
+        mut=True, .float32, _4x4, MutUntrackedOrigin, address_space=.SHARED
     ],
-    src: TileTensor[.float32, _4x4, MutAnyOrigin, address_space=.GLOBAL],
+    src: TileTensor[.float32, _4x4, MutUntrackedOrigin, address_space=.GLOBAL],
 ):
     """Load from global, store to a shared-memory TileTensor."""
     var val = src.load(coord[0, 0])
@@ -74,9 +74,9 @@ def shared_store_kernel(
 
 
 def invariant_load_kernel(
-    src: TileTensor[.float32, _4x4, ImmutAnyOrigin, address_space=.GLOBAL],
+    src: TileTensor[.float32, _4x4, ImmUntrackedOrigin, address_space=.GLOBAL],
     dst: TileTensor[
-        mut=True, .float32, _4x4, MutAnyOrigin, address_space=.GLOBAL
+        mut=True, .float32, _4x4, MutUntrackedOrigin, address_space=.GLOBAL
     ],
 ):
     """Invariant load should produce a non-coherent (ld.global.nc) instruction.
@@ -87,7 +87,7 @@ def invariant_load_kernel(
 
 def vectorized_load_store_kernel(
     tensor: TileTensor[
-        mut=True, .float32, _4x4, MutAnyOrigin, address_space=.GLOBAL
+        mut=True, .float32, _4x4, MutUntrackedOrigin, address_space=.GLOBAL
     ],
 ):
     """Width-4 load/store should produce vectorized (v4) instructions."""
@@ -96,7 +96,7 @@ def vectorized_load_store_kernel(
 
 
 def host_scalar_kernel(
-    tensor: TileTensor[mut=True, DType.float16, _4x4, MutAnyOrigin],
+    tensor: TileTensor[mut=True, DType.float16, _4x4, MutUntrackedOrigin],
 ):
     """Scalar access taking whatever alignment the off-GPU default promises."""
     var val = tensor.load(coord[0, 0])
@@ -104,7 +104,7 @@ def host_scalar_kernel(
 
 
 def host_scalar_byte_aligned_kernel(
-    tensor: TileTensor[mut=True, DType.float16, _4x4, MutAnyOrigin],
+    tensor: TileTensor[mut=True, DType.float16, _4x4, MutUntrackedOrigin],
 ):
     """The same access asking for byte alignment, as the control arm."""
     var val = tensor.load[alignment=1](coord[0, 0])

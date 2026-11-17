@@ -74,6 +74,7 @@ __enum Payloads:
     case trait_payload(AnyType)
     # expected-error @+1 {{use of unknown declaration 'NotAType'}}
     case unknown_payload(NotAType)
+    # expected-note @below {{missing parameter 'T'}}
     # expected-error @+1 {{'Box[_]' is not concrete, use '[]' to bind missing parameters}}
     case unbound_payload(Box)
 

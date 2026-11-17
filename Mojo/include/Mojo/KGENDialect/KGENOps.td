@@ -70,11 +70,9 @@ def KGEN_FuncOp : KGENOp<"func", [
     `precompiledBodyRef` attribute, like so:
 
     ```mlir
-    kgen.func @someFn(%arg0: index) -> index attributes {
-      precompiledBodyRef = @importedLib
-    } {
+    kgen.func @someFn(%arg0: index) -> index {
       ...
-    }
+    } attributes {precompiledBodyRef = @importedLib}
     ```
 
     The presence of this attribute means that the function was already compiled
@@ -101,7 +99,8 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let assemblyFormat = [{
     `` custom<FuncOp>($exportKind, $sym_name, $funcTypeGenerator, $inlineLevel,
-                     $decorators, attr-dict, $bodyRegion)
+                     $decorators, $fnAttrs, $fnArgAttrs, $bodyRegion)
+    prop-dict attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -242,7 +241,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   let assemblyFormat = [{
     `` custom<GeneratorOp>($exportKind, $sym_name, $funcTypeGenerator,
                            $functionType, $inputParams, $inlineLevel,
-                           $decorators, attr-dict, $bodyRegion)
+                           $decorators, $fnAttrs, $fnArgAttrs, $bodyRegion)
+    prop-dict attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -340,7 +340,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
   let assemblyFormat = [{
     `` custom<SymbolExport>($exportKind) $sym_name ``
     custom<ExternGenerator>($funcTypeGenerator, $functionType, $inputParams)
-    attr-dict-with-keyword ($body^)?
+    ($body^)? prop-dict attr-dict-with-keyword
   }];
 }
 
@@ -381,7 +381,7 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [SymbolName, SymbolVisib
     $sym_name ``
     custom<StructGeneratorSpec>(
       $inputParams, $valueDomainType, $metaType, $body)
-    attr-dict-with-keyword
+    prop-dict attr-dict-with-keyword
   }];
 }
 
@@ -417,7 +417,7 @@ def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
 
   let assemblyFormat = [{
     $sym_name `` custom<StructInstanceSpec>($valueDomainType, $metaType, $body)
-    attr-dict-with-keyword
+    prop-dict attr-dict-with-keyword
   }];
 }
 
@@ -551,6 +551,7 @@ def KGEN_WitnessOp : KGENOp<"witness", [
                        TypedAttrInterface:$value);
 
   let assemblyFormat = [{
+    custom<SymVisibility>($sym_visibility) ``
     custom<WitnessEntry>($sym_name, $value) attr-dict-with-keyword
   }];
 }
@@ -1210,6 +1211,43 @@ def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// StructConcatOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructConcatOp : KGENOp<"struct.concat", [Pure,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "concatenate the elements of structs";
+  let description = [{
+    The `kgen.struct.concat` operation makes a struct from the elements of its
+    operands, in sequence. The operation must have one or more operands. The
+    element lists of the operands can be parametric. Thus, the result type is
+    explicit.
+
+    The same list can have multiple forms, for example
+    `variadic_ptr_map(concat(A, B))` and `concat(variadic_ptr_map(A),
+    variadic_ptr_map(B))`. These two forms are equal only when the lists are
+    resolved.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.struct.concat(%a, %b)
+      : !kgen.struct<(index)>, !kgen.struct<(f32, f64)>
+     -> !kgen.struct<(index, f32, f64)>
+    ```
+  }];
+
+  let arguments = (ins Variadic<KGEN_StructType>:$structs);
+  let results = (outs KGEN_StructType:$result);
+  let assemblyFormat = [{
+    `(` $structs `)` attr-dict `:` type($structs) `->` qualified(type($result))
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 
@@ -1375,6 +1413,24 @@ def KGEN_StructLoadIndirectOp : KGENOp<"struct.load_indirect", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// UntaggedUnionInitOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_UntaggedUnionInitOp : KGENOp<"untagged_union.init", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "Zero the complete store extent of an untagged union";
+  let description = [{
+    Initializes storage before constructing a new active member. Clears all
+    bytes within the store extent, including padding and inactive members,
+    without touching allocation tail padding or a following struct field.
+    The caller owns
+    the storage and must destroy any previous active member first.
+  }];
+  let arguments = (ins Arg<PointerOf<KGEN_UntaggedUnionType>, "", [MemWrite]>:$storage);
+  let assemblyFormat = "$storage attr-dict `:` type($storage)";
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 
@@ -1527,7 +1583,8 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
                                  $emission_kind,
                                  $emission_option,
                                  $emission_link_option,
-                                 $func) attr-dict `>` `:` type($result)
+                                 $func) `>` `:` type($result)
+    prop-dict attr-dict
    }];
 
    let extraClassDeclaration = [{

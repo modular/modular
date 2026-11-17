@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import dataclasses
 import json
 import os
 import statistics
@@ -309,6 +310,47 @@ def _empty_user_turns(messages: list[dict[str, Any]]) -> list[str]:
     return reasons
 
 
+@dataclasses.dataclass(frozen=True)
+class AgentTurns:
+    """What the agent generated over one simulation.
+
+    ``output_tokens`` and ``max_turn_output_tokens`` are ``None`` when a turn
+    came back without usage, since a partial sum would undercount silently.
+    """
+
+    turns: int
+    output_tokens: int | None
+    max_turn_output_tokens: int | None
+    length_capped_turns: int
+
+
+def _agent_turns(messages: list[dict[str, Any]]) -> AgentTurns:
+    """Counts the agent's generations and their output tokens.
+
+    A generation is an assistant message carrying the model's response in
+    ``raw_data``. tau2's canned opening greeting has none, so it is not a turn.
+    """
+    tokens: list[int] = []
+    turns = 0
+    length_capped = 0
+    usage_missing = False
+    for message in messages:
+        raw = message.get("raw_data")
+        if message.get("role") != "assistant" or not raw:
+            continue
+        turns += 1
+        if raw.get("finish_reason") == "length":
+            length_capped += 1
+        completion = (message.get("usage") or {}).get("completion_tokens")
+        if isinstance(completion, int):
+            tokens.append(completion)
+        else:
+            usage_missing = True
+    if usage_missing:
+        return AgentTurns(turns, None, None, length_capped)
+    return AgentTurns(turns, sum(tokens), max(tokens, default=0), length_capped)
+
+
 def parse_tau2_log(
     log: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -334,8 +376,14 @@ def parse_tau2_log(
     errors = 0
     hit_step_cap = 0
     empty_user_finish: collections.Counter[str] = collections.Counter()
+    output_tokens: list[int] = []
+    length_capped_turns = 0
     for sim in simulations:
         empty_user_turns = _empty_user_turns(sim.get("messages") or [])
+        agent = _agent_turns(sim.get("messages") or [])
+        if agent.output_tokens is not None:
+            output_tokens.append(agent.output_tokens)
+        length_capped_turns += agent.length_capped_turns
         empty_user_finish.update(empty_user_turns)
         reward_info = sim.get("reward_info") or {}
         reward = reward_info.get("reward")
@@ -359,6 +407,13 @@ def parse_tau2_log(
                 "reward": reward,
                 "db_match": db_check.get("db_match"),
                 "termination_reason": termination,
+                # A simulation ends on its termination reason, so that stands
+                # in for the finish reason a single-response eval records.
+                "finish_reason": termination,
+                "completion_tokens": agent.output_tokens,
+                "max_turn_completion_tokens": agent.max_turn_output_tokens,
+                "agent_turns": agent.turns,
+                "length_capped_turns": agent.length_capped_turns,
                 "error": (
                     termination
                     if termination in TAU2_ERROR_TERMINATIONS
@@ -397,10 +452,14 @@ def parse_tau2_log(
         "completed": len(rewards),
         "errors": errors,
         "hit_step_cap": hit_step_cap,
-        # tau2 records per-simulation cost, not token counts, so the token
-        # metrics the other evals report are not available here.
-        "mean_output_tokens": 0.0,
-        "p50_output_tokens": 0.0,
+        # Per simulation: every agent turn's output tokens, summed.
+        "mean_output_tokens": (
+            statistics.fmean(output_tokens) if output_tokens else 0.0
+        ),
+        "p50_output_tokens": (
+            statistics.median(output_tokens) if output_tokens else 0.0
+        ),
+        "length_capped_turns": length_capped_turns,
         "stop_ratio": None,
         # Provenance: the knobs that make a score comparable to OpenRouter's.
         "harness": "tau2-bench-verified",

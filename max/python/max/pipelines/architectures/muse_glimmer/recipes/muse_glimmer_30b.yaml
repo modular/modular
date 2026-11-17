@@ -15,6 +15,7 @@ model:
   model_path: meta-models/Muse-Glimmer-30B
 
 runtime:
+  prefer_module_v3: false
   max_batch_size: 64
   enable_in_flight_batching: true
 

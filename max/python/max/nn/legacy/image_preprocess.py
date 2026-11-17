@@ -99,25 +99,24 @@ def composite_on_white(image: TensorValue) -> TensorValue:
 def resize_bicubic_to(
     images: TensorValue, size: TensorValue, multiple: int
 ) -> TensorValue:
-    """Resizes uint8 RGB images with the antialiased bicubic filter of Pillow.
+    """Resizes RGB images with the antialiased bicubic filter of Pillow.
 
     A Hugging Face processor resizes a uint8 image to uint8, with Pillow or
-    torchvision, and only then rescales and normalizes it. This resize
-    accumulates in float32, as PyTorch's antialiased bicubic does, and
-    rounds half to even and clamps to [0, 255] once, at the end. It does not
-    round and clamp between its passes as Pillow's uint8 resize does, so it
-    is within a level or two of Pillow's on smooth content, and further
-    around hard edges near black or white, whose overshoot Pillow clamps.
+    torchvision, and only then rescales and normalizes it. A uint8 resize
+    here gives Pillow's uint8 ``BICUBIC`` resize bit for bit, rounding and
+    clamping to uint8 between its passes as Pillow does. A float32 resize
+    gives PyTorch's antialiased bicubic, to float32 rounding, unrounded.
 
     Args:
-        images: ``uint8 [frames, height, width, 3]`` RGB.
+        images: ``[frames, height, width, 3]`` RGB, uint8 or float32.
         size: ``int64 [2]``, the height and width to resize to. Each must be
             a multiple of ``multiple``, which the graph checks when it runs.
         multiple: What the resized sides are multiples of, such as the patch
             size times the merge size.
 
     Returns:
-        ``uint8 [frames, 3, height, width]``, channels first.
+        ``[frames, 3, height, width]``, channels first, in the dtype of
+        ``images``.
     """
     frames = images.shape[0]
     resized = ops.resize_bicubic(

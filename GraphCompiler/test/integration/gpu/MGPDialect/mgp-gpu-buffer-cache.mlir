@@ -11,7 +11,7 @@
 
 // CHECK-LABEL: --- Running 'cache'
 // CHECK-NEXT: tensor = tensor<4xui8> [255, 254, 253, 252]
-mgp.model @cache : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @cache devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 4
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -36,7 +36,7 @@ mgp.model @cache : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>
 }
 // CHECK-LABEL: --- Running 'cache_in_init'
 // CHECK-NEXT: tensor = tensor<4xui8> [255, 254, 253, 252]
-mgp.model @cache_in_init : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @cache_in_init devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 4
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

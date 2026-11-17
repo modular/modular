@@ -26,13 +26,12 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     eagle_prefill_shift_tokens,
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.legacy.sampling.penalties import LogitPenalties
-from max.nn.legacy.sampling.rejection_sampler import AcceptanceSampler
+from max.nn._graph_ops.sampling import AcceptanceSampler, LogitPenalties
 
 from .ragged_token_merger import (
     RaggedTokenMerger,

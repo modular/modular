@@ -20,9 +20,9 @@ then launches the warp-specialized kernel.
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     coord,
@@ -268,7 +268,6 @@ def _create_tma_and_launch[
     ](ctx, sfb_5d)
 
     # Shared Memory
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime SmemType = BlockScaledSmem[
         a_type,
         b_type,
@@ -311,7 +310,15 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
+        GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=(
+                32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
+            ),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -321,15 +328,6 @@ def _create_tma_and_launch[
         cluster_dim,
         mnk,
         workspace,
-        grid_dim=grid_dim,
-        block_dim=(
-            32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
-        ),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-        attributes=pdl_launch_attributes(pdl_level),
     )
 
     comptime if enable_profiling:

@@ -239,6 +239,36 @@ private:
   bool enabled = false;
 };
 
+/// This class collects the `--elaboration-stats` report of one compiler
+/// command and prints it through the timing sink, as text or JSON, when the
+/// command ends.
+class ElaborationStatsReport {
+public:
+  // The destructor prints the report and takes the collection, which is
+  // global to the process. A copy or a move of this object prints it again.
+  ElaborationStatsReport() = default;
+  ElaborationStatsReport(const ElaborationStatsReport &) = delete;
+  ElaborationStatsReport &operator=(const ElaborationStatsReport &) = delete;
+  ElaborationStatsReport(ElaborationStatsReport &&) = delete;
+  ElaborationStatsReport &operator=(ElaborationStatsReport &&) = delete;
+
+  /// Starts the collection if the command has the `--elaboration-stats`
+  /// option. `sink` takes the report and must outlive this object.
+  void configure(const KGEN::CompilationOptions &options,
+                 TimingReportSink &sink);
+
+  /// Prints the report. Does nothing if the option is off, or on a second
+  /// call. The destructor calls this function for a command that ends with
+  /// the compilation.
+  void finish();
+
+  ~ElaborationStatsReport() { finish(); }
+
+private:
+  TimingReportSink *sink = nullptr;
+  bool enabled = false;
+};
+
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module
 /// operation. If `driverOptions` asks to apply fix-its and the parser collects

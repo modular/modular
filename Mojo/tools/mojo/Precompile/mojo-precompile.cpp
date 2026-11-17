@@ -26,6 +26,7 @@
 #include "Mojo/Support/MojoPrecompiledFile.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
+#include "Mojo/ToolCommon/OptionNormalizers.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/Config.h"
 #include "Support/Driver/DiagnosticFormat.h"
@@ -47,6 +48,7 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 
@@ -73,11 +75,16 @@ namespace {
 /// This struct provides an in-memory representation of the arguments passed to
 /// the `precompile` subcommand for structured access.
 struct PrecompileArgs {
-  /// The name of the package being output.
-  std::string name;
+  /// The `--namespace` the package is imported under, outermost component
+  /// first.
+  SmallVector<std::string> outputNamespace;
+  /// The absolute path the package is imported by once precompiled:
+  /// `outputNamespace`, then the package's output name. Its components view
+  /// `outputNamespace`, `sourceName` and `outputPath`.
+  LIT::ImportPath importPath;
   /// The package's name while parsing: its source directory's name. Modules
   /// inside the package may import it absolutely under this name, so parsing
-  /// must happen under it; `name` is applied when packaging.
+  /// must happen under it; `importPath` is applied when packaging.
   std::string sourceName;
   /// The path to the Mojo package source directory to parse and output as a
   /// package.
@@ -144,12 +151,13 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
   std::string inputDirName = canonicalInput.filename().string();
   pkgArgs.sourceName = inputDirName;
 
+  StringRef name;
   if (args.hasArg(options::OPT_o)) {
     pkgArgs.outputPath = args.getLastArgValue(options::OPT_o);
     if (pkgArgs.outputPath == "-") {
       // If we're outputting to stdout, use the input directory name as the
       // package name.
-      pkgArgs.name = inputDirName;
+      name = pkgArgs.sourceName;
     } else {
       // Otherwise, validate the output path and infer the package name from it.
       std::filesystem::path outputPath(pkgArgs.outputPath);
@@ -167,12 +175,15 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
       if (outputPath.extension() != ".mojoc")
         return Error("output path must have a '.mojoc' extension");
 
-      pkgArgs.name = outputPath.stem().string();
+      name = llvm::sys::path::stem(pkgArgs.outputPath);
     }
   } else {
-    pkgArgs.name = pkgArgs.sourceName;
-    pkgArgs.outputPath = pkgArgs.name + extension;
+    name = pkgArgs.sourceName;
+    pkgArgs.outputPath = pkgArgs.sourceName + extension;
   }
+
+  llvm::append_range(pkgArgs.importPath.components, pkgArgs.outputNamespace);
+  pkgArgs.importPath.components.push_back(name);
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
@@ -215,6 +226,7 @@ static int precompile(const State &subcommandState) {
     KGEN::FrontendOptions &frontendOptions = precompileArgs.frontendOptions;
     KGEN::CompilationOptions &compilationOptions =
         precompileArgs.compileOptions;
+    SmallVector<std::string> &outputNamespace = precompileArgs.outputNamespace;
     MarshallingErrors errors;
 #define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
   PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
@@ -236,6 +248,7 @@ static int precompile(const State &subcommandState) {
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
   registerContext(precompileArgs.ctx, ctx);
+  configureKGENContext(&precompileArgs.ctx);
 
   //===--------------------------------------------------------------------===//
   // Build the package
@@ -266,9 +279,9 @@ static int precompile(const State &subcommandState) {
       [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
-            ctx, precompileArgs.inputPath, precompileArgs.sourceName, sourceMgr,
-            &precompileArgs.ctx, precompileArgs.compileOptions, parserOptions,
-            ts);
+            ctx, precompileArgs.inputPath, precompileArgs.sourceName,
+            precompileArgs.importPath, sourceMgr, &precompileArgs.ctx,
+            precompileArgs.compileOptions, parserOptions, ts);
         return moduleOp;
       });
   if (failed(module))
@@ -284,9 +297,10 @@ static int precompile(const State &subcommandState) {
 
   // Build a new package op based off of the parsed package op. This new op is
   // suitable for serialization as MLIR bytecode.
-  auto builtOrErr = buildPrecompiledPackage(
-      **module, packageOp, precompileArgs.sourceName, precompileArgs.name,
-      precompileArgs.compileOptions.bitcodeLibs);
+  auto builtOrErr =
+      buildPrecompiledPackage(**module, packageOp, precompileArgs.sourceName,
+                              precompileArgs.importPath.components,
+                              precompileArgs.compileOptions.bitcodeLibs);
   if (failed(builtOrErr))
     return state.reportError(builtOrErr.getError());
   OwningOpRef<ModuleOp> builtPackageModule = builtOrErr.takeValue();

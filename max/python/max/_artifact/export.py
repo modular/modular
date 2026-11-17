@@ -16,25 +16,30 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from max.driver import CPU
+import huggingface_hub
+from max.driver import CPU, Device
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import SymbolicDim
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheParams,
     KVLeafRegion,
     MHAKVCacheParams,
     MLAKVCacheParams,
+    MSAIndexKVCacheParams,
     MSAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
 )
+from max.pipelines.context import SamplingParams, SamplingParamsInput
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import SupportedArchitecture, memory_ledger
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.graph_specs import (
     GraphRole,
@@ -43,21 +48,28 @@ from max.pipelines.lib.graph_specs import (
     compile_roles_separately,
 )
 from max.pipelines.lib.interfaces import PipelineModel, PipelineModelWithKVCache
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    SpecDecodePipelineModel,
+)
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.lib.tokenizer import resolve_token_id_bound
 from max.pipelines.lib.weight_transform import WeightEntry, WeightNaming
+from max.pipelines.modeling.types import InputModality, PipelineTokenizer
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import BufferLayout, TensorLayout
 
 from .batch_processor import BatchProcessorDims
+from .block_diffusion import BlockDiffusionMetadata
 from .engine_config import (
     EngineConfig,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
+    SpecGraphFacts,
 )
 from .format_spec import FormatSpec
 from .kv_cache import (
@@ -67,14 +79,23 @@ from .kv_cache import (
     KVPoolLeaf,
     MHAKVCache,
     MLAKVCache,
+    MSAIndexKVCache,
     MSAKVCache,
     RecurrentStateCache,
     StateRegion,
 )
 from .model_artifact import ModelArtifact
+from .overlap_helpers import OverlapHelpers, export_spec_feeds, helper_builds
 from .pipeline_modules import PipelineModules
+from .sampling_defaults import SamplingDefaults
 from .serialization import serialize
-from .value_types import ARTIFACT_SUFFIX, ArtifactError
+from .tokenizer import Tokenizer
+from .value_types import (
+    ARTIFACT_SUFFIX,
+    ArtifactError,
+    HuggingFaceRef,
+    treedef_to_json,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -191,7 +212,10 @@ def model_artifact(
     engine_config: EngineConfig | None = None,
     kv_cache: KVCacheLayout | None = None,
     format_spec: FormatSpec | None = None,
+    tokenizer: Tokenizer | None = None,
+    sampling_defaults: SamplingDefaults | None = None,
     weight_loader: WeightNaming | None = None,
+    overlap_helpers: OverlapHelpers | None = None,
 ) -> ModelArtifact:
     """Assembles the artifact of a built pipeline's graphs.
 
@@ -207,25 +231,137 @@ def model_artifact(
         engine_config: The settings the pipeline is built with.
         kv_cache: The layout of the pipeline's KV cache, if it has one.
         format_spec: The FormatSpec document of the checkpoint it serves.
+        tokenizer: The tokenizer the checkpoint is served with.
+        sampling_defaults: The sampling a request that sets none gets.
         weight_loader: The entries that name each graph's weights.
+        overlap_helpers: The overlap helper MEFs a serving engine may load.
 
     Returns:
         The artifact to serialize.
+
+    Raises:
+        ArtifactError: If the model declares only one of its vision metadata
+            and its image preprocessing graph, since a serving engine needs
+            both to serve the ``vision`` graph.
     """
     vision = None
     if pipeline_model is not None and GraphRole.VISION in modules.roles:
-        modules = PipelineModules(
-            {**modules.roles, **vision_preprocess_modules(pipeline_model)}
-        )
+        preprocess = vision_preprocess_modules(pipeline_model)
         vision = pipeline_model.vision_metadata()
+        has_preprocess = GraphRole.VISION_PREPROCESS.value in preprocess
+        if has_preprocess != (vision is not None):
+            missing = (
+                "vision metadata"
+                if has_preprocess
+                else "vision_preprocess graph"
+            )
+            raise ArtifactError(
+                f"{type(pipeline_model).__qualname__} exports a vision graph"
+                f" with no {missing}; a serving engine needs both to serve it"
+            )
+        modules = PipelineModules({**modules.roles, **preprocess})
+    block_diffusion = None
+    if pipeline_model is not None and "block_diffusion" in modules.roles:
+        metadata = pipeline_model.block_diffusion_metadata()
+        if metadata is None:
+            raise ArtifactError(
+                f"{type(pipeline_model).__qualname__} exports a"
+                " block_diffusion graph but records no block-diffusion"
+                " contract; a serving engine cannot run its denoise loop"
+            )
+        block_diffusion = BlockDiffusionMetadata.from_config(**metadata)
+
     return ModelArtifact(
         model=modules,
+        tokenizer=tokenizer,
         format_spec=format_spec,
         engine_config=engine_config,
         kv_cache=kv_cache,
         batch_processor=batch_processor,
         weight_loader=weight_loader,
         vision=vision,
+        sampling_defaults=sampling_defaults,
+        overlap_helpers=overlap_helpers,
+        block_diffusion=block_diffusion,
+    )
+
+
+def ships_overlap_helpers(devices: Sequence[Device]) -> bool:
+    """Returns whether an export onto ``devices`` ships the overlap helpers.
+
+    Overlap scheduling runs only on accelerators, so a host-only artifact
+    could never load the helpers.
+
+    Args:
+        devices: The devices the exported pipeline runs on.
+
+    Returns:
+        ``True`` if any device is an accelerator.
+    """
+    return not all(device.is_host for device in devices)
+
+
+def _takes_mrope_positions(graph: CompiledCallable[..., Any]) -> bool:
+    """Returns whether ``graph`` takes 3-axis (M-RoPE) positions.
+
+    Its input tree names them with an ``mrope_positions`` node, the group
+    the serving engine stages them by.
+    """
+
+    def holds(node: object) -> bool:
+        if isinstance(node, Mapping):
+            if node.get("type") == "mrope_positions":
+                return True
+            return any(holds(child) for child in node.get("children", ()))
+        return False
+
+    return holds(treedef_to_json(graph.graph_signature()[1]))
+
+
+def pipeline_overlap_helpers(
+    pipeline_config: PipelineConfig,
+    pipeline_model: PipelineModel[Any, Any, Any],
+    modules: PipelineModules,
+    kv_params: CacheLeafParamInterface | None,
+) -> OverlapHelpers:
+    """Compiles the overlap helpers a serving engine may load for a pipeline.
+
+    A speculative pipeline's in-place spec feeds are sized from its devices,
+    its data-parallel degree, the attention caches in its KV tree, and the
+    dtype of the drafts its ``spec_decoder`` graph returns. An MTP pipeline
+    whose drafter ships in the target's checkpoint also gets the
+    shared-cache feed.
+
+    Args:
+        pipeline_config: The pipeline's configuration.
+        pipeline_model: The built pipeline model, whose devices the helpers
+            compile for.
+        modules: The pipeline's graphs, keyed by role.
+        kv_params: The pipeline's KV cache parameters, if it has a cache.
+
+    Returns:
+        The artifact's ``overlap_helpers`` component.
+    """
+    spec_decoder = modules.roles.get(GraphRole.SPEC_DECODER.value)
+    spec_feed = shared_feed = None
+    if spec_decoder is not None and kv_params is not None:
+        outputs = spec_decoder.out_layouts
+        speculative = pipeline_config.speculative
+        spec_feed, shared_feed = export_spec_feeds(
+            kv_params,
+            n_devices=len(pipeline_model.devices),
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            # The graph returns its next drafts third.
+            next_draft_dtype=outputs[2].dtype
+            if len(outputs) > 2
+            else DType.int64,
+            may_share_cache_lengths=speculative is not None
+            and speculative.speculative_method == "mtp"
+            and pipeline_config.draft_model is None,
+            positions=_takes_mrope_positions(spec_decoder),
+        )
+    return OverlapHelpers.compile(
+        pipeline_model.devices, helper_builds(spec_feed, shared_feed)
     )
 
 
@@ -251,9 +387,7 @@ def batch_processor_dims(
     if processor is None or processor.input_tree is None:
         return None
     return BatchProcessorDims(
-        processor.runtime.max_dims(
-            per_step_dims(decoder.in_layouts), model.kv_params
-        )
+        processor.max_dims(per_step_dims(decoder.in_layouts), model.kv_params)
     )
 
 
@@ -270,8 +404,28 @@ def per_step_dims(layouts: Sequence[TensorLayout]) -> list[str]:
     )
 
 
+def _verify_facts(pipeline: object) -> SpecGraphFacts | None:
+    """Returns the fused graph's verify facts off the built pipeline model.
+
+    ``None`` for a pipeline whose model is not a fused spec-decode one.
+    """
+    if not isinstance(pipeline, TextGenerationPipelineInterface):
+        return None
+    model = pipeline._pipeline_model
+    if not isinstance(model, SpecDecodePipelineModel):
+        return None
+    return SpecGraphFacts(
+        verify_takes_prefill_rows=model.verify_takes_prefill_rows,
+        verify_commits_long_rows=model.verify_commits_long_rows,
+        successor_replay=model.successor_replay,
+    )
+
+
 def pipeline_engine_config(
-    pipeline_config: PipelineConfig, memory_plan: MemoryPlan
+    pipeline_config: PipelineConfig,
+    memory_plan: MemoryPlan,
+    *,
+    verify_facts: SpecGraphFacts | None = None,
 ) -> EngineConfig:
     """Returns the settings a pipeline is built with, for its artifact.
 
@@ -282,6 +436,8 @@ def pipeline_engine_config(
     Args:
         pipeline_config: The pipeline's configuration.
         memory_plan: The memory plan the pipeline is built with.
+        verify_facts: The fused graph's verify facts, read off the built
+            spec-decode pipeline model; ``None`` for a pipeline without one.
 
     Returns:
         The artifact's ``engine_config`` component.
@@ -296,6 +452,11 @@ def pipeline_engine_config(
     runtime = pipeline_config.runtime
     sampling = pipeline_config.sampling
     speculative = pipeline_config.speculative
+    facts = (
+        SpecGraphFacts(False, False, False)
+        if verify_facts is None
+        else verify_facts
+    )
     spec_config: EngineSpeculativeConfig | None = None
     if speculative is not None:
         # The config keeps a speculative section only when a method is set.
@@ -304,7 +465,13 @@ def pipeline_engine_config(
             speculative_method=speculative.speculative_method,
             num_speculative_tokens=speculative.draft_width,
             draft_proposal=speculative.draft_proposal,
+            acceptance_mode=(
+                "greedy" if speculative.use_greedy_acceptance else "stochastic"
+            ),
             reasoning_parser=runtime.reasoning_parser,
+            verify_takes_prefill_rows=facts.verify_takes_prefill_rows,
+            verify_commits_long_rows=facts.verify_commits_long_rows,
+            successor_replay=facts.successor_replay,
         )
     return EngineConfig(
         max_batch_size=memory_plan.planned_max_batch_size,
@@ -348,6 +515,13 @@ def pipeline_kv_cache(params: CacheLeafParamInterface) -> KVCacheLayout:
     return KVCacheLayout(page_size=params.page_size, caches=caches)
 
 
+_MHA_RECORDS: dict[type[CacheLeafParamInterface], type[MHAKVCache]] = {
+    MHAKVCacheParams: MHAKVCache,
+    MSAKVCacheParams: MSAKVCache,
+    MSAIndexKVCacheParams: MSAIndexKVCache,
+}
+
+
 def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
     if isinstance(params, MultiKVCacheParams):
         for key, child in params.children.items():
@@ -360,9 +534,8 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
     )
     # Exact types: MSA subclasses MHA, and a subclass this function doesn't
     # know may carry parameters the component doesn't record.
-    if type(params) in (MHAKVCacheParams, MSAKVCacheParams):
+    if (cls := _MHA_RECORDS.get(type(params))) is not None:
         assert isinstance(params, MHAKVCacheParams)
-        cls = MSAKVCache if type(params) is MSAKVCacheParams else MHAKVCache
         yield cls(
             name=path,
             dtype=params.dtype,
@@ -376,6 +549,8 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             stride_alignment=params.stride_alignment,
             scratch=params.scratch,
             kvcache_quant_config=_quantization(params),
+            speculative_method=params.speculative_method,
+            num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
         )
     elif type(params) is MLAKVCacheParams:
@@ -393,6 +568,8 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             stride_alignment=params.stride_alignment,
             scratch=params.scratch,
             kvcache_quant_config=_quantization(params),
+            speculative_method=params.speculative_method,
+            num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
         )
     elif type(params) is RecurrentStateParams:
@@ -446,6 +623,37 @@ def _quantization(params: KVCacheParams) -> KVCacheQuantization | None:
     )
 
 
+def pipeline_sampling_defaults(
+    pipeline_config: PipelineConfig,
+) -> SamplingDefaults:
+    """Returns the sampling MAX Serve gives a request that sets none.
+
+    It resolves them with MAX Serve's own call: the server's ``--temperature``
+    and ``--top-k``, then the checkpoint's ``generation_config.json``, then
+    :class:`~max.pipelines.context.SamplingParams`'s defaults.
+
+    Args:
+        pipeline_config: The pipeline's configuration.
+
+    Returns:
+        The artifact's ``sampling_defaults`` component.
+    """
+    runtime = pipeline_config.runtime
+    params = SamplingParams.from_input_and_generation_config(
+        SamplingParamsInput(
+            temperature=runtime.temperature, top_k=runtime.top_k
+        ),
+        sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+    )
+    return SamplingDefaults(
+        temperature=float(params.temperature),
+        # MAX spells "no top-k limit" as a non-positive top_k.
+        top_k=params.top_k if params.top_k > 0 else None,
+        top_p=float(params.top_p),
+        repetition_penalty=float(params.repetition_penalty),
+    )
+
+
 def checkpoint_format_spec(
     arch: SupportedArchitecture | None, repo: HuggingFaceRepo
 ) -> Path | None:
@@ -465,6 +673,83 @@ def checkpoint_format_spec(
     return arch.format_spec
 
 
+def checkpoint_tokenizer(
+    arch: SupportedArchitecture | None,
+    repo: HuggingFaceRepo,
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+    pipeline_config: PipelineConfig | None,
+) -> Tokenizer | None:
+    """Returns the checkpoint's tokenizer files and the ids it is served with.
+
+    The files are the checkpoint's own, at its revision. The chat templates
+    are the ones the pipeline's tokenizer renders, including a
+    ``--chat-template`` override.
+
+    Args:
+        arch: The pipeline's architecture, which names the tokenizer family.
+        repo: The checkpoint.
+        tokenizer: The pipeline's tokenizer.
+        pipeline_config: The pipeline's configuration, which the vocab size
+            and EOS ids are read from.
+
+    Returns:
+        The component, or ``None`` for a tokenizer with no Hugging Face
+        ``delegate``.
+    """
+    delegate = getattr(tokenizer, "delegate", None)
+    if delegate is None:
+        return None
+    files: dict[str, HuggingFaceRef] = {}
+    for name in (
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "tiktoken.model",
+    ):
+        if repo.repo_type == "local":
+            if Path(repo.local_path, name).is_file():
+                files[name] = HuggingFaceRef(
+                    repo.local_path, repo.revision, name
+                )
+            continue
+        cached = huggingface_hub.try_to_load_from_cache(
+            repo.repo_id, name, revision=repo.revision
+        )
+        if isinstance(cached, str):
+            path = cached
+        else:
+            try:
+                path = huggingface_hub.hf_hub_download(
+                    repo.repo_id, name, revision=repo.revision
+                )
+            except huggingface_hub.errors.EntryNotFoundError:
+                continue
+        # The cache keeps each file at snapshots/<commit>/<name>, which pins
+        # the reference to the commit the weights resolved to.
+        files[name] = HuggingFaceRef(repo.repo_id, Path(path).parent.name, name)
+    template = delegate.chat_template
+    templates: dict[str, str | Path] = (
+        {"default": template}
+        if isinstance(template, str)
+        else dict(template or {})
+    )
+    named = arch.tokenizer_family if arch is not None else None
+    if callable(named):
+        named = named(repo)
+    family, flavor = named or (None, None)
+    vocab_size = resolve_token_id_bound(delegate, pipeline_config)
+    return Tokenizer(
+        family=family,
+        flavor=flavor,
+        files=files,
+        chat_templates=templates,
+        vocab_size=vocab_size,
+        sampleable_vocab_size=min(
+            max(delegate.get_vocab().values()) + 1, vocab_size
+        ),
+        eos_token_ids=tuple(sorted(tokenizer.eos_token_ids)),
+    )
+
+
 def export_pipeline(
     pipeline_config: PipelineConfig,
     path: str | os.PathLike[str],
@@ -474,8 +759,10 @@ def export_pipeline(
 
     Builds the pipeline the same way serving does, so the artifact holds the
     graphs a served pipeline compiles, the settings it is built with, the
-    FormatSpec document of the checkpoint it serves, and the entries that
-    name each graph's weights if its naming is rules.
+    FormatSpec document and tokenizer of the checkpoint it serves, the
+    sampling MAX Serve gives a request that sets none, the entries that
+    name each graph's weights if its naming is rules, and the overlap helper
+    MEFs a serving engine may load.
 
     Args:
         pipeline_config: The pipeline's configuration.
@@ -498,7 +785,8 @@ def export_pipeline(
         raise ArtifactError(f"artifact destination {dest} already exists")
     architecture = pipeline_config.models.main_architecture_name
     task = PIPELINE_REGISTRY.retrieve_pipeline_task(architecture)
-    with compile_roles_separately():
+    # Export records graphs; probing would load and warm the model twice.
+    with compile_roles_separately(), memory_ledger.measuring_off():
         retrieved = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config, task=task
         )
@@ -509,17 +797,32 @@ def export_pipeline(
             " not record its compiled graphs by role"
         )
     model = pipeline_modules(pipeline, architecture)
+    checkpoint_arch = PIPELINE_REGISTRY.retrieve_architecture(
+        architecture_name=architecture,
+        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+        task=task,
+    )
+    if (
+        checkpoint_arch is not None
+        and InputModality.IMAGE in checkpoint_arch.input_modalities
+        and GraphRole.VISION not in model.roles
+    ):
+        logger.warning(
+            "%s takes images, but its artifact holds no vision graph, so a"
+            " serving engine serves it text only.",
+            architecture,
+        )
+    decoder = model.roles.get("decoder") or model.roles.get("spec_decoder")
     dims = (
-        batch_processor_dims(pipeline._pipeline_model, model.roles["decoder"])
+        batch_processor_dims(pipeline._pipeline_model, decoder)
         if isinstance(pipeline, TextGenerationPipelineInterface)
-        and "decoder" in model.roles
+        and decoder is not None
         else None
     )
+    arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config, task)
+    repo = pipeline_config.model.huggingface_model_repo
     if format_spec is None:
-        format_spec = checkpoint_format_spec(
-            PIPELINE_REGISTRY.architecture_for_config(pipeline_config, task),
-            pipeline_config.model.huggingface_model_repo,
-        )
+        format_spec = checkpoint_format_spec(arch, repo)
     naming = (
         pipeline.weight_naming
         if isinstance(pipeline, SupportsWeightNaming)
@@ -529,22 +832,50 @@ def export_pipeline(
     named_graphs = {
         role: entries for role, entries in naming.items() if role in model.roles
     }
-    artifact = model_artifact(
-        model,
+    kv_params = (
+        pipeline.kv_manager.params
+        if isinstance(pipeline, SupportsKVManager)
+        else None
+    )
+    pipeline_model = (
         pipeline._pipeline_model
         if isinstance(pipeline, TextGenerationPipelineInterface)
-        else None,
+        else None
+    )
+    overlap_helpers = None
+    if pipeline_model is not None and ships_overlap_helpers(
+        pipeline_model.devices
+    ):
+        started = time.monotonic()
+        overlap_helpers = pipeline_overlap_helpers(
+            pipeline_config, pipeline_model, model, kv_params
+        )
+        logger.info(
+            "Compiled overlap helpers %s in %.1f s",
+            sorted(overlap_helpers.files),
+            time.monotonic() - started,
+        )
+    artifact = model_artifact(
+        model,
+        pipeline_model,
         dims,
         engine_config=pipeline_engine_config(
-            pipeline_config, retrieved.memory_plan
+            pipeline_config,
+            retrieved.memory_plan,
+            verify_facts=_verify_facts(pipeline),
         ),
-        kv_cache=pipeline_kv_cache(pipeline.kv_manager.params)
-        if isinstance(pipeline, SupportsKVManager)
+        kv_cache=pipeline_kv_cache(kv_params)
+        if kv_params is not None
         else None,
         format_spec=FormatSpec(format_spec)
         if format_spec is not None
         else None,
+        tokenizer=checkpoint_tokenizer(
+            arch, repo, retrieved.tokenizer, pipeline_config
+        ),
+        sampling_defaults=pipeline_sampling_defaults(pipeline_config),
         weight_loader=WeightNaming(named_graphs) if named_graphs else None,
+        overlap_helpers=overlap_helpers,
     )
     written = serialize(artifact, dest)
     assert artifact.model is not None

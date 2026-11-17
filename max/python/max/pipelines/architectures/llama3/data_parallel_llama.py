@@ -33,8 +33,8 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.legacy.data_parallelism import split_batch
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn._graph_ops.data_parallel import split_batch
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.transformer import DecoderOutputs
 

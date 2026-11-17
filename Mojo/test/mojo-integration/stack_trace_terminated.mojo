@@ -56,17 +56,17 @@ def main():
 # O3-FULL: #{{.*}} stack_trace_terminated::main() {{.*}}/stack_trace_terminated.mojo:{{.*}}:{{.*}}
 # O3-FULL: #{{.*}} std::builtin::_startup::__wrap_and_execute_main
 
-# O3-NONE: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) {{.*}}Signals
-# O3-NONE: #{{.*}} llvm::sys::RunSignalHandlers() {{.*}}Signals.cpp
+# O3-NONE: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int)
+# O3-NONE: #{{.*}} llvm::sys::RunSignalHandlers()
 # O3-NONE: #{{.*}} main
 
-# O0-FULL: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) {{.*}}Signals
-# O0-FULL: #{{.*}} llvm::sys::RunSignalHandlers() {{.*}}Signals.cpp
+# O0-FULL: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int)
+# O0-FULL: #{{.*}} llvm::sys::RunSignalHandlers()
 # O0-FULL: #{{.*}} stack_trace_terminated::main() {{.*}}/stack_trace_terminated.mojo:{{.*}}:{{.*}}
 # O0-FULL: #{{.*}} std::builtin::_startup::__wrap_and_execute_main
 
-# O0-NONE: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) {{.*}}Signals
-# O0-NONE: #{{.*}} llvm::sys::RunSignalHandlers() {{.*}}Signals.cpp
+# O0-NONE: #{{.*}} llvm::sys::PrintStackTrace(llvm::raw_ostream&, int)
+# O0-NONE: #{{.*}} llvm::sys::RunSignalHandlers()
 # O0-NONE: #{{.*}} stack_trace_terminated::main() stack_trace_terminated.mojo:{{.*}}:{{.*}}
 # O0-NONE: #{{.*}} std::builtin::_startup::__wrap_and_execute_main
 # O0-NONE: #{{.*}} main

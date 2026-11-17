@@ -59,8 +59,6 @@ def _mojo_merged_precompile_impl(ctx):
     args.add_all(mojo_toolchain.precompile_copts)
     args.add_all(ctx.attr.copts)
     args.add_all(transitive_mojodeps, map_each = _format_include)
-    for bc in ctx.files.bitcode_libs:
-        args.add("--bitcode-libs", bc)
 
     script_lines = [
         "#!/bin/bash",
@@ -101,7 +99,7 @@ def _mojo_merged_precompile_impl(ctx):
     script = ctx.actions.declare_file(ctx.label.name + "_build.sh")
     ctx.actions.write(script, "\n".join(script_lines), is_executable = True)
 
-    all_inputs = layer_inputs + ctx.files.bitcode_libs + [script, mojo_toolchain.mojo]
+    all_inputs = layer_inputs + [script, mojo_toolchain.mojo]
     ctx.actions.run(
         executable = script,
         inputs = depset(all_inputs, transitive = [transitive_mojodeps]),
@@ -147,10 +145,6 @@ mojo_merged_precompile = rule(
             doc = "Staged relative paths to drop from the tree, for example " +
                   "backend modules orphaned once an overlay replaces their " +
                   "only importer.",
-        ),
-        "bitcode_libs": attr.label_list(
-            allow_files = [".bc"],
-            doc = "Bitcode library files to pass to mojo precompile.",
         ),
         "copts": attr.string_list(
             default = [],

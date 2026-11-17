@@ -19,7 +19,7 @@ from std.sys import size_of
 from std.testing import assert_almost_equal, assert_equal
 from std.utils.numerics import get_accum_type
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from nn.attention.gpu.mha import mha_decoding_single_batch_pipelined
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
@@ -143,9 +143,6 @@ def _check_decode_pipelined[dtype: DType, keys: Int](ctx: DeviceContext) raises:
         grid_dim=(1, 1, 1),
         block_dim=32,
         shared_mem_bytes=smem,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem)
-        ),
     )
     ctx.enqueue_copy(out_host, out_buffer)
     ctx.synchronize()

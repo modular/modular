@@ -67,12 +67,14 @@ def mojo_cabi_test(name, platforms):
         ],
     )
 
-    # Built for the build machine as a genrule tool, so it carries no
-    # platform constraint of its own.
+    # Built for the build machine as a genrule tool. Each genrule pins its
+    # exec platform to one of `platforms`, so the constraint always holds
+    # there; it stops `//...` from compiling the manifest for another OS.
     mojo_binary(
         name = name + "_gen",
         testonly = True,
         srcs = [name + "_gen.mojo"],
+        target_compatible_with = compatible_with,
         deps = [
             ":" + name,
             "@mojo//:std",

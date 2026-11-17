@@ -55,10 +55,10 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
   if (!defaultType)
     return {};
   ASTType inferredType =
-      defaultType.getWithUnknownParametersReplaced(declScope.getShared());
+      defaultType.extractAndRelinkParamRef(declScope.getShared());
 
   CallOperands operands =
-      init.getOperandsForInferredType(inferredType, EC_CallArgValue, emitter);
+      init.getOperandsForInferredType(defaultType, EC_CallArgValue, emitter);
 
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
@@ -191,8 +191,8 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
       CallOperands callOperands(CallSyntax::kImplicitConvert, operand.expr,
                                 EC_OverloadResolution, {operand});
       FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
-          expectedType.getWithUnknownParametersReplaced(getShared()),
-          callOperands, getDeclScope(), forwardedNeedingOrigins);
+          expectedType.extractAndRelinkParamRef(getShared()), callOperands,
+          getDeclScope(), forwardedNeedingOrigins);
 
       // If we found one, we succeed if the returned type is compatible with the
       // expected type.  Infer the parameters of this overload candidate against
@@ -420,7 +420,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   /// we inferred a value for the parameter from previous arguments, substitute
   /// it into the expected types of subsequent arguments.  This allows us to
   /// handle dependent argument types like:
-  ///     def foo[dt: DType](p: UnsafePointer[Scalar[dt]], v:
+  ///     def foo[dt: DType](p: Pointer[Scalar[dt]], v:
   ///     Scalar[p.type.type]):
   /// where the type of 'v' depends on 'dt' being inferred.
 
@@ -436,15 +436,14 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
     //
     // On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
     // argument is an Int8, then we need the implicit conversion to infer the
-    // base element.  Our solution to this is to rip and replace parameters that
-    // contain unbound parameters, replacing them with UnboundAttr so inference
-    // can find them.
+    // base element.  Our solution to this is to turn the parameters that
+    // contain unbound parameters into inputs of a generator, so inference can
+    // find them.
     auto getImplicitConvertTarget =
         [&](CValue argVal, OperandsNeedingOriginsList *needingOrigins) -> Type {
       CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
                                 EC_TypeParamValue, {{argVal, operand.expr}});
-      auto nonParamType =
-          expectedType.getWithUnknownParametersReplaced(getShared());
+      auto nonParamType = expectedType.extractAndRelinkParamRef(getShared());
       FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
           nonParamType, ctorOperands, getDeclScope(), needingOrigins);
       if (failed(pValue) || !pValue->isYes())
@@ -513,7 +512,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
     //     dtype: DType
     //     width: Int = 1,
     // ](
-    //     self: UnsafePointer[Scalar[dtype], ...],
+    //     self: Pointer[Scalar[dtype], ...],
     //     val: SIMD[dtype, width],
     // )
     //
@@ -956,23 +955,6 @@ VerifiedParamBindings ParamInf::inferForStruct() {
             << "' declared here";
       }
     }
-
-    // Skip the unprovable-constraint diagnostic when the caller has asked
-    // the inference state to discard errors (i.e. it's filtering candidates,
-    // not committing to this binding).
-    if (!diag.isDiscarding() && !bodyUnprovableConstraints.empty()) {
-      // If the caller installed a deferred typing context, record
-      // the body-unprovable constraints there and suppress the error.
-      // Otherwise, fall back to the existing hard-error path.
-      if (deferredTypingContext) {
-        for (ConstraintAttr c : bodyUnprovableConstraints)
-          deferredTypingContext->addInconclusive(c, paramBindings.getExprLoc());
-      } else {
-        emitUnprovableConstraintsFromFitness(
-            bodyUnprovableConstraints, paramBindings.shared,
-            paramBindings.getExprLoc(), declIfKnown);
-      }
-    }
   });
 
   isInferForStruct = true;
@@ -994,6 +976,26 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   if (failed(checkBodyConstraints()))
     return {};
 
+  // Skip the unprovable-constraint diagnostic when the caller has asked
+  // the inference state to discard errors (i.e. it's filtering candidates,
+  // not committing to this binding).
+  if (!diag.isDiscarding() && !bodyUnprovableConstraints.empty()) {
+    // If the caller installed a deferred typing context, record
+    // the body-unprovable constraints there and suppress the error.
+    // Otherwise, fall back to the existing hard-error path.
+    if (deferredTypingContext) {
+      // if we have a deferred type context, all unprovable constraints will
+      // be passed over, for the current inference, mark them as discharged.
+      dischargedBodyConstraints.set();
+      for (ConstraintAttr c : bodyUnprovableConstraints)
+        deferredTypingContext->addInconclusive(c, paramBindings.getExprLoc());
+    } else {
+      emitUnprovableConstraintsFromFitness(
+          bodyUnprovableConstraints, paramBindings.shared,
+          paramBindings.getExprLoc(), declIfKnown);
+    }
+  }
+
   succeeded = true;
   ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
       getShared().getContext(), evaluator.getIndexBindings());
@@ -1013,13 +1015,10 @@ LogicalResult ParamInf::inferFromDefaults() {
 
     value = evaluator.getReboundAttribute(value);
 
-    // Don't try to infer from default values that have unresolved references
-    // to other parameters.
-    //
-    // TODO: If the references points to a `_` parameter, we might still want to
-    // install it without erasing the index reference.
+    // A default value can refer to other parameters of the current parameter
+    // scope; quote it before pulling it out.
     if (hasReferences(value))
-      return success();
+      value = QuoteAttr::get(value);
 
     ASTType argType = evaluator.getReboundType(declaredParamTypes[idx]);
     FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
@@ -1471,6 +1470,9 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   case ArgConvention::OwnedReg:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::Mut: {
     // The actual value must be an lvalue if callee takes things by-ref.
@@ -1718,11 +1720,25 @@ LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
   ParamMatcher matcher(getGivenBindings().callExpr, *this,
                        /*allowImplicitConversions=*/false);
 
+  SMLoc loc = getGivenBindings().callExpr->getLoc();
   if (failed(matcher.matchSingleEltStruct(actualRef.getAddressSpace(),
-                                          expectedRef.getAddressSpace())) ||
-      failed(matcher.matchSingleEltStruct(actualRef.getOrigin(),
-                                          expectedRef.getOrigin())))
+                                          expectedRef.getAddressSpace()))) {
+    auto &diag = getMojoDiag(loc);
+    diag << "cannot initialize a value in address space "
+         << ASTType::getAddressSpaceForDisplay(actualRef.getAddressSpace())
+         << " with an initializer for address space "
+         << ASTType::getAddressSpaceForDisplay(expectedRef.getAddressSpace());
+    matcher.failureReason->addExplanation(diag);
     return failure();
+  }
+  if (failed(matcher.matchSingleEltStruct(actualRef.getOrigin(),
+                                          expectedRef.getOrigin()))) {
+    auto &diag = getMojoDiag(loc);
+    diag << "cannot initialize a value with origin " << actualRef.getOrigin()
+         << " with an initializer for origin " << expectedRef.getOrigin();
+    matcher.failureReason->addExplanation(diag);
+    return failure();
+  }
   return success();
 }
 
@@ -1758,6 +1774,51 @@ LogicalResult CallParamInf::inferOptionalLiteralSize() {
     }
   }
   return success();
+}
+
+RefPackType CallParamInf::checkUnpackedPack(const OperandValue &operand,
+                                            ASTType expectedPackType) {
+  // The user can try to unpack a value that is not a pack, such as a List.
+  // FIXME: This is wrong for UValues.
+  ASTType actualPackType = operand.ir.getRValueTypeIfResolvable();
+  ASTDecl *actualDecl =
+      actualPackType ? actualPackType.getDecl(getShared()) : nullptr;
+  if (!actualDecl || actualDecl != expectedPackType.getDecl(getShared())) {
+    auto &diag = getMojoDiag(operand.expr->getLoc());
+    diag << "cannot unpack value";
+    if (actualPackType)
+      diag << " of type " << actualPackType;
+    diag << " into a variadic pack argument; expected a VariadicPack";
+    return {};
+  }
+
+  ASTType::VariadicPackInfo actualInfo = actualPackType.getVariadicPackInfo();
+  ASTType::VariadicPackInfo expectedInfo =
+      expectedPackType.getVariadicPackInfo();
+  if (actualInfo.isOwned != expectedInfo.isOwned) {
+    auto &diag = getMojoDiag(operand.expr->getLoc());
+    diag << "cannot unpack a variadic pack into a call that requires a "
+            "different ownership. Expected "
+         << expectedInfo.isOwned << ", got " << actualInfo.isOwned;
+    return {};
+  }
+
+  RefPackType actualRefPackType =
+      actualPackType.getVariadicPackInfo(getShared());
+  RefPackType expectedRefPackType =
+      expectedPackType.getVariadicPackInfo(getShared());
+  auto actualMutable = actualRefPackType.getOriginType().getIsMutable();
+  auto expectedMutable = expectedRefPackType.getOriginType().getIsMutable();
+  auto bothMutable =
+      ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
+  if (!isEqualCanon(bothMutable, expectedMutable)) {
+    auto &diag = getMojoDiag(operand.expr->getLoc());
+    diag << "cannot unpack a variadic pack into a call that requires a "
+            "stricter mutability. Expected "
+         << expectedMutable << ", got " << actualMutable;
+    return {};
+  }
+  return actualRefPackType;
 }
 
 VerifiedParamBindings CallParamInf::inferForCall() {
@@ -1971,9 +2032,10 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       SmallVector<TypedAttr> argOrigins;
       for (auto operandIdx : pogAssignment.posVariadicIdxs) {
         auto &operand = callOperands[operandIdx];
+        assert(operand.unpackStyle != ArgUnpackStyle::kStarStar &&
+               "`assignToPogs` never assigns a '**' unpack to a variadic");
 
-        if (operand.unpackStyle == ArgUnpackStyle::kStar ||
-            operand.unpackStyle == ArgUnpackStyle::kStarStar) {
+        if (operand.unpackStyle == ArgUnpackStyle::kStar) {
           getMojoDiag(operand.expr->getLoc())
               << "cannot unpack a value into a variadic argument";
           return {};
@@ -2017,52 +2079,16 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       size_t operandIdx = pogAssignment.posVariadicIdxs[0];
       auto &operand = callOperands[operandIdx];
 
-      ASTType actualPackType = // FIXME: This is wrong for UValues.
-          operand.ir.getRValueTypeIfResolvable();
-      assert(actualPackType &&
-             "unpacked positional operand must have a resolvable type");
-
-      // Check that the actual type is the same struct type as the expected
-      // VariadicPack. If not, the user tried to unpack a non-pack type
-      // (e.g., a List) which is not allowed.
-      ASTDecl *actualDecl = actualPackType.getDecl(getShared());
-      ASTDecl *expectedDecl = variadicPackType.getDecl(getShared());
-      if (!actualDecl || actualDecl != expectedDecl) {
-        auto &diag = getMojoDiag(operand.expr->getLoc());
-        diag << "cannot unpack value of type " << actualPackType
-             << " into a variadic pack argument; expected a VariadicPack";
+      RefPackType actualRefPackType =
+          checkUnpackedPack(operand, variadicPackType);
+      if (!actualRefPackType)
         return {};
-      }
-
-      ASTType::VariadicPackInfo actualInfo =
-          actualPackType.getVariadicPackInfo();
-      if (actualInfo.isOwned != expectedInfo.isOwned) {
-        auto &diag = getMojoDiag(operand.expr->getLoc());
-        diag << "cannot unpack a variadic pack into a call that requires a "
-                "different ownership. Expected "
-             << expectedInfo.isOwned << ", got " << actualInfo.isOwned;
-        return {};
-      }
 
       // Skip matching the origin, since the expected origin is an implicit
       // origin that will be filled in during call emission. Just make sure
       // that the element types match.
-      RefPackType actualRefPackType =
-          actualPackType.getVariadicPackInfo(getShared());
       RefPackType expectedRefPackType =
           variadicPackType.getVariadicPackInfo(getShared());
-
-      auto actualMutable = actualRefPackType.getOriginType().getIsMutable();
-      auto expectedMutable = expectedRefPackType.getOriginType().getIsMutable();
-      auto bothMutable =
-          ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
-      if (!isEqualCanon(bothMutable, expectedMutable)) {
-        auto &diag = getMojoDiag(operand.expr->getLoc());
-        diag << "cannot unpack a variadic pack into a call that requires a "
-                "stricter mutability. Expected "
-             << expectedMutable << ", got " << actualMutable;
-        return {};
-      }
 
       ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
       // Helper to format a diagnostic. `actualSide` and `expectedSide` get
@@ -2112,6 +2138,17 @@ VerifiedParamBindings CallParamInf::inferForCall() {
     ParamListAttr eltsTypesIfResolved =
         dyn_cast<ParamListAttr>(packType.getVariadic());
 
+    // A call such as `f(a, *p, b)` concatenates. Each run of plain operands is
+    // one segment, and each unpacked pack is its own segment. The list of the
+    // pack is the concatenation of the lists of the segments. The number of
+    // elements in an unpacked pack can be unknown at this time.
+    bool hasUnpackedOperand =
+        llvm::any_of(pogAssignment.posVariadicIdxs, [&](size_t operandIdx) {
+          return callOperands[operandIdx].unpackStyle == ArgUnpackStyle::kStar;
+        });
+    if (hasUnpackedOperand)
+      eltsTypesIfResolved = {};
+
     // Verify that the number of elements in the pack matches the arguments.
     if (eltsTypesIfResolved && eltsTypesIfResolved.getValues().size() !=
                                    pogAssignment.posVariadicIdxs.size()) {
@@ -2127,23 +2164,73 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       return {};
     }
 
+    auto variadicType =
+        sugarCast<ParamListType>(packType.getVariadic().getType());
+
     SmallVector<TypedAttr> types;
     SmallVector<TypedAttr> argOrigins;
+    SmallVector<TypedAttr> segmentLists;
+    size_t runStart = 0;
+    auto flushRun = [&] {
+      if (types.size() == runStart)
+        return;
+      segmentLists.push_back(ParamListAttr::get(
+          ArrayRef(types).drop_front(runStart), variadicType));
+      runStart = types.size();
+    };
+
     IREmitter emitter(getDeclScope(), EC_TypeParamValue);
     const ExprNode *packArgExpr = nullptr;
     for (auto operandIdx : pogAssignment.posVariadicIdxs) {
       const auto &operand = callOperands[operandIdx];
-
-      if (operand.unpackStyle == ArgUnpackStyle::kStar ||
-          operand.unpackStyle == ArgUnpackStyle::kStarStar) {
-        getMojoDiag(operand.expr->getLoc())
-            << "concatenating unpacked positional arguments is not supported";
-        return {};
-      }
+      assert(operand.unpackStyle != ArgUnpackStyle::kStarStar &&
+             "`assignToPogs` never assigns a '**' unpack to a pack");
 
       // Remember the first argument expression for the pack.
       if (packArgExpr == nullptr)
         packArgExpr = operand.expr;
+
+      if (operand.unpackStyle == ArgUnpackStyle::kStar) {
+        if (calleeSignature.getVariadicConvention(expectedArgIdx) ==
+            ArgConvention::OwnedMem) {
+          getMojoDiag(operand.expr->getLoc())
+              << "cannot concatenate an unpacked pack into an owned variadic "
+                 "pack";
+          return {};
+        }
+        RefPackType actualRefPackType =
+            checkUnpackedPack(operand, variadicPackType);
+        if (!actualRefPackType)
+          return {};
+
+        // A pack of a refining trait gets an upcast. ParamMatcher does the
+        // same when it forwards a complete pack.
+        TypedAttr segmentList = actualRefPackType.getVariadic();
+        ASTType actualTrait = actualRefPackType.getParamListElementType();
+        if (!actualTrait.isEqualCanon(elementType)) {
+          FailureOr<ConstraintResult> upcastable =
+              IREmitter::canMetaTypeUpCastToWithDetails(
+                  getShared(), operand.expr->getLoc(), actualTrait,
+                  ASTType(elementType), &getDeclScope(),
+                  /*scopeDependent=*/nullptr);
+          if (failed(upcastable) || !upcastable->isYes()) {
+            auto &diag = getMojoDiag(operand.expr->getLoc());
+            diag << "cannot unpack a pack of " << actualTrait
+                 << " into a pack of " << elementType;
+            return {};
+          }
+        }
+        // The concatenated lists must have the same type. A trait that is
+        // only a different spelling of the same trait also gets an upcast.
+        if (segmentList.getType() != variadicType)
+          segmentList = UpcastAttr::get(variadicType, segmentList);
+
+        flushRun();
+        segmentLists.push_back(segmentList);
+        argOrigins.push_back(OriginMutCastAttr::get(
+            actualRefPackType.getOrigin(), expectedOriginType));
+        continue;
+      }
 
       // If the element types for the pack were specified, convert the value
       // to that type.
@@ -2250,14 +2337,20 @@ VerifiedParamBindings CallParamInf::inferForCall() {
     if (failed(matcher.matchParams(commonOrigin, packType.getOrigin())))
       return {};
 
-    // Infer the value of type list from the types we have.
-    auto variadicType =
-        sugarCast<ParamListType>(packType.getVariadic().getType());
-
     // If there are no arguments for the pack, use the location of the call.
     if (!packArgExpr)
       packArgExpr = getGivenBindings().getExpr();
-    auto actualVA = ParamListAttr::get(types, variadicType);
+
+    // Infer the value of type list from the types we have.
+    TypedAttr actualVA;
+    if (hasUnpackedOperand) {
+      flushRun();
+      actualVA = segmentLists.size() == 1
+                     ? segmentLists.front()
+                     : ParamListConcatAttr::get(segmentLists);
+    } else {
+      actualVA = ParamListAttr::get(types, variadicType);
+    }
     if (succeeded(matcher.matchParams(actualVA, packType.getVariadic()))) {
       // Now that we bound the elements of the TypeList, we can infer the
       // value of the TypeList struct.
@@ -2266,6 +2359,19 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       auto typeListValue = LIT::getEmptyStructValue(typeListType);
       (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
       continue;
+    }
+
+    // The position of a plain operand in a resolved list can depend on the
+    // length of an unpacked pack. Thus, plain operands do not get an implicit
+    // conversion to the resolved element types.
+    if (hasUnpackedOperand && isa<ParamListAttr>(packType.getVariadic())) {
+      getMojoDiag({packArgExpr->getLoc()})
+          << "element types " << actualVA
+          << " of the concatenated pack do not match the specified element "
+             "types "
+          << packType.getVariadic()
+          << "; operands are not converted when a pack is unpacked";
+      return {};
     }
 
     // FIXME: This is a bad error, we could improve it.

@@ -30,16 +30,12 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     KEY_CACHE_INDEX,
     VALUE_CACHE_INDEX,
     kv_cache_gather_rows_ragged,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-    MLAKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, MLAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 PAGE_SIZE = 128

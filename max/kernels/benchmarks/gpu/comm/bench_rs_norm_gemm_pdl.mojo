@@ -85,7 +85,7 @@ def bench_rs_norm_gemm_pdl[
     bm: Int = 64,
     bn: Int = 64,
     prefetch_tiles_n: Int = 2,
-](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext[]]) raises:
     """Bench the fused RS+RMSNorm -> GEMM pair across the PDL configurations.
 
     Parameters:
@@ -415,13 +415,13 @@ def bench_rs_norm_gemm_pdl[
 
         @inline(.always)
         def bench_pair_iter(
-            mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+            mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_bufs, imm}:
             var local_rows = config.rank_units(ctx_idx)
 
             @inline(.always)
             def call_fn(
-                ctx_inner: DeviceContext, cache_iter: Int
+                ctx_inner: DeviceContext[], cache_iter: Int
             ) raises {mut in_bufs, imm}:
                 comptime if not consumer_only:
                     comptime for _j in range(ngpus):
@@ -515,7 +515,7 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 

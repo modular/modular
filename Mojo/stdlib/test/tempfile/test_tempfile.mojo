@@ -245,8 +245,9 @@ def test_optional_named_temporary_file_uses_niche() raises:
     )
 
     var maybe = Optional(NamedTemporaryFile())
-    assert_true(maybe)
-    var file_path = maybe.value().name
+    __guard case .Some(temp_file) = maybe else:
+        raise Error("expected a temporary file")
+    var file_path = temp_file.name
     maybe = None
     assert_false(maybe)
     assert_false(exists(file_path), "Failed to delete file " + file_path)

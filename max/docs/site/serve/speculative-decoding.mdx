@@ -34,7 +34,7 @@ DSpark, EAGLE, EAGLE3, and MTP.
 | Method    | Draft source                                                                                | Supported targets and hardware                                                                                       |
 |-----------|---------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
 | `dflash`  | A trained DFlash block draft paired with the target                                         | Llama 3 (1 GPU), Gemma 4 (1 GPU), Kimi K2.5 (8× B200).                                                               |
-| `dflash2` | A trained DFlash2 block draft paired with the target                                        | Qwen3.8-27B (1× B200).                                                                                               |
+| `dflash2` | A trained DFlash2 block draft paired with the target                                        | Qwen3.8-27B (1× B200), Beam-1.0 (4× B200).                                                                           |
 | `dspark`  | A trained DSpark block draft paired with the target                                         | Gemma 4 (1 GPU), Nemotron 3.5 Lightning.                                                                             |
 | `eagle`   | A trained EAGLE or EAGLE3 draft that shares the target's embedding and `lm_head`            | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                                                                       |
 | `mtp`     | A multi-token prediction head, either inside the target checkpoint or as an assistant draft | DeepSeek V3 and derivatives (8× B200), GLM-5.2 (8× B200), Gemma 4 (1 GPU), Inkling (8× B200), Qwen3.8-27B (1× B200). |
@@ -262,6 +262,7 @@ declared architecture:
 | GLM-5.2     | None (built-in MTP head)                       | `UnifiedMTPGlmMoeDsaForCausalLM`               |
 | Kimi K2.5   | DFlash draft                                   | `KimiK25ForConditionalGeneration+dflash`       |
 | Qwen3.8-27B | DFlash2 draft                                  | `Qwen3_5ForConditionalGeneration+dflash2`      |
+| Beam-1.0    | DFlash2 draft                                  | `BeamForCausalLM_ModuleV3+dflash2`             |
 
 ## Monitor acceptance rates
 

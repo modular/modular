@@ -22,5 +22,6 @@ model:
     kv_cache_format: float8_e4m3fn
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   max_batch_input_tokens: 8192

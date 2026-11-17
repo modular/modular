@@ -20,14 +20,14 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     spec_decode_cache_slack,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -39,6 +39,7 @@ from max.pipelines.modeling.config_enums import (
     supported_encoding_dtype,
 )
 from max.pipelines.speculative.config import SpeculativeMethod
+from max.support.math import ceildiv
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -70,6 +71,15 @@ class KVLeafSpec:
         )
 
 
+# Pad the window leaf's layer count to a multiple of this value. Jenga sets
+# one huge block to the least common multiple of all leaf page sizes, and each
+# leaf holds whole huge blocks. The page sizes of the other leaves have only
+# the prime factors 2, 3, 5 and 7. An odd prime factor in the window layer
+# count multiplies the huge block by that prime. The padded layers are never
+# read or written.
+_WINDOW_LAYER_MULTIPLE = 8
+
+
 def kv_leaf_specs(
     *,
     compress_ratios: Sequence[int],
@@ -95,7 +105,10 @@ def kv_leaf_specs(
             window_size=sliding_window,
             head_dim=head_dim,
             kv_dim=1,
-            num_layers=num_hidden_layers + num_dspark_stages,
+            num_layers=ceildiv(
+                num_hidden_layers + num_dspark_stages, _WINDOW_LAYER_MULTIPLE
+            )
+            * _WINDOW_LAYER_MULTIPLE,
             float32=False,
         )
     ]

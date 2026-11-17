@@ -35,14 +35,14 @@ from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn._graph_ops import (
     flash_attention_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.legacy.kv_cache import MHAKVCacheParams, SplitKVHeadDims
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -88,7 +88,9 @@ def _attention(
     group = q.shape[1] // k.shape[1]
     k = np.repeat(k, group, axis=1)
     v = np.repeat(v, group, axis=1)
-    scores = np.einsum("qhd,khd->hqk", q, k) / np.sqrt(K_DIM)
+    # Equivalent to: `np.einsum("qhd,khd->hqk", q, k) * K_DIM**-0.5`.
+    # Batched matmul uses BLAS. It is much faster than einsum.
+    scores = q.transpose(1, 0, 2) @ k.transpose(1, 2, 0) * K_DIM**-0.5
     n, keys = q.shape[0], k.shape[0]
     visible = np.tril(np.ones((n, keys), dtype=bool), k=keys - n)
     if window is not None:
@@ -103,7 +105,8 @@ def _attention(
     denom = weights.sum(axis=-1, keepdims=True)
     if sinks is not None:
         denom += np.exp(sinks[:, None, None] - row_max)
-    return np.einsum("hqk,khd->qhd", weights / denom, v)
+    # Equivalent to: `np.einsum("hqk,khd->qhd", weights / denom, v)`.
+    return ((weights / denom) @ v.transpose(1, 0, 2)).transpose(1, 0, 2)
 
 
 def test_split_cache_attention() -> None:
@@ -119,15 +122,7 @@ def test_split_cache_attention() -> None:
     )
     prompt_lens = [5, 130]
     total = sum(prompt_lens)
-    runtime = paged_kv_cache_inputs(params, prompt_lens)
-    leaves, treedef = tree.flatten(runtime)
     gpu = DeviceRef.GPU()
-    cache_types = [
-        BufferType(b.dtype, b.shape, DeviceRef.from_device(b.device))
-        if b is runtime.kv_blocks
-        else TensorType(b.dtype, b.shape, DeviceRef.from_device(b.device))
-        for b in leaves
-    ]
 
     with Graph(
         "split_attention",
@@ -136,14 +131,11 @@ def test_split_cache_attention() -> None:
             TensorType(DType.bfloat16, [total, NUM_KV_HEADS, V_DIM], gpu),
             TensorType(DType.bfloat16, [total, NUM_Q_HEADS, K_DIM], gpu),
             TensorType(DType.uint32, [len(prompt_lens) + 1], gpu),
-            *cache_types,
+            *params.flattened_kv_inputs(),
         ],
     ) as graph:
         k, v, q, offsets, *cache = graph.inputs
-        kv = dataclasses.replace(
-            tree.unflatten(treedef, cache),
-            split_head_dims=SplitKVHeadDims(),
-        )
+        (kv,) = params.unflatten_kv_inputs(iter(cache))
         layer_idx = ops.constant(LAYER, DType.uint32, device=DeviceRef.CPU())
         store_k_cache_ragged(
             kv, k.tensor, offsets.tensor, layer_idx, v_head_dim=V_DIM
@@ -165,6 +157,8 @@ def test_split_cache_attention() -> None:
 
     model = InferenceSession(devices=[device]).load(graph)
 
+    runtime = paged_kv_cache_inputs(params, prompt_lens)
+    leaves = tree.leaves(runtime)
     rng = np.random.default_rng(0)
     k_np = _bf16(rng.standard_normal([total, NUM_KV_HEADS, K_DIM]))
     v_np = _bf16(rng.standard_normal([total, NUM_KV_HEADS, V_DIM]))

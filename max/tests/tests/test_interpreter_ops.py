@@ -26,7 +26,7 @@ import numpy as np
 import pytest
 from max import _core, _eager_policy, engine
 from max import functional as F
-from max._core.dialects import mo, rmo
+from max._core.dialects import mo
 from max._interpreter_ops import (
     data_movement_gc,
     elementwise_binary_gc,
@@ -84,6 +84,7 @@ from max.tensor.sharding import (
     Sharded,
 )
 from max.tensor.tensor import Tensor, realization_context
+from PIL import Image
 
 
 @pytest.fixture(autouse=True)
@@ -1129,7 +1130,7 @@ class TestNonMaximumSuppressionOp:
     """Tests for NMS interpreter op (mo.non_maximum_suppression).
 
     Routes through F.non_maximum_suppression -> ops.non_maximum_suppression ->
-    rmo.MoNonMaximumSuppressionOp -> mo.NonMaximumSuppressionOp ->
+    mo.NonMaximumSuppressionOp ->
     _handle_non_maximum_suppression -> nms_gc.nms_model. CPU-only (MO_HostOnly).
 
     The reference is a pure-NumPy greedy NMS implementation applied
@@ -3903,7 +3904,7 @@ class TestLayerNormOps:
 class TestRmsNormOp:
     """Tests for rms_norm interpreter op via F.rms_norm.
 
-    Routes through F.rms_norm -> ops.rms_norm -> mo.ReduceRmsNormOp ->
+    Routes through F.rms_norm -> ops.rms_norm -> mo.CompositeReduceRmsNormOp ->
     _handle_rms_norm -> rms_norm_gc.rms_norm_model.
     """
 
@@ -5379,7 +5380,7 @@ class TestScatterAddOp:
     """Tests for scatter_add op via MO interpreter on CPU.
 
     Uses ``F.scatter_add`` which routes through ``ops.scatter_add`` ->
-    ``rmo.MoScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
+    ``mo.ScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
     The reference is ``numpy.add.at``, which accumulates duplicate indices.
     """
 
@@ -5540,7 +5541,7 @@ class TestScatterMaxOp:
     """Tests for scatter_max op via MO interpreter on CPU.
 
     Uses ``F.scatter_max`` which routes through ``ops.scatter_max`` ->
-    ``rmo.MoScatterMaxOp`` -> ``mo.scatter.max`` -> interpreter handler.
+    ``mo.ScatterMaxOp`` -> ``mo.scatter.max`` -> interpreter handler.
     The reference keeps ``max(existing, update)`` at duplicate indices.
     """
 
@@ -5651,7 +5652,7 @@ class TestScatterMinOp:
     """Tests for scatter_min op via MO interpreter on CPU.
 
     Uses ``F.scatter_min`` which routes through ``ops.scatter_min`` ->
-    ``rmo.MoScatterMinOp`` -> ``mo.scatter.min`` -> interpreter handler.
+    ``mo.ScatterMinOp`` -> ``mo.scatter.min`` -> interpreter handler.
     The reference keeps ``min(existing, update)`` at duplicate indices.
     """
 
@@ -5764,7 +5765,7 @@ class TestScatterMulOp:
     """Tests for scatter_mul op via MO interpreter on CPU.
 
     Uses ``F.scatter_mul`` which routes through ``ops.scatter_mul`` ->
-    ``rmo.MoScatterMulOp`` -> ``mo.scatter.mul`` -> interpreter handler.
+    ``mo.ScatterMulOp`` -> ``mo.scatter.mul`` -> interpreter handler.
     The reference multiplies ``output[...][idx] *= update`` at each index.
     """
 
@@ -5966,7 +5967,7 @@ class TestScatterNdOp:
     """Tests for scatter_nd op via the MO interpreter (CPU + GPU capable).
 
     Uses ``F.scatter_nd`` which routes through ``ops.scatter_nd`` ->
-    ``rmo.MoScatterNdOp`` -> ``mo.scatter_nd`` -> interpreter handler.
+    ``mo.ScatterNdOp`` -> ``mo.scatter_nd`` -> interpreter handler.
     The NumPy reference iterates over update positions via ``np.ndindex``
     to mirror the kernel's exact flat-index semantics.
     """
@@ -6114,7 +6115,7 @@ class TestScatterNdAddOp:
     """Tests for scatter_nd_add op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_add`` which routes through ``ops.scatter_nd_add`` ->
-    ``rmo.MoScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
+    ``mo.ScatterNdAddOp`` -> ``mo.scatter_nd.add`` -> interpreter handler.
     Duplicate index vectors are accumulated (summed).
     """
 
@@ -6262,7 +6263,7 @@ class TestScatterNdMaxOp:
     """Tests for scatter_nd_max op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_max`` which routes through ``ops.scatter_nd_max`` ->
-    ``rmo.MoScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
+    ``mo.ScatterNdMaxOp`` -> ``mo.scatter_nd.max`` -> interpreter handler.
     Duplicate index vectors keep the maximum.
     """
 
@@ -6388,7 +6389,7 @@ class TestScatterNdMinOp:
     """Tests for scatter_nd_min op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_min`` which routes through ``ops.scatter_nd_min`` ->
-    ``rmo.MoScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
+    ``mo.ScatterNdMinOp`` -> ``mo.scatter_nd.min`` -> interpreter handler.
     Duplicate index vectors keep the minimum.
     """
 
@@ -6514,7 +6515,7 @@ class TestScatterNdMulOp:
     """Tests for scatter_nd_mul op via the MO interpreter (CPU path).
 
     Uses ``F.scatter_nd_mul`` which routes through ``ops.scatter_nd_mul`` ->
-    ``rmo.MoScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
+    ``mo.ScatterNdMulOp`` -> ``mo.scatter_nd.mul`` -> interpreter handler.
     Duplicate index vectors multiply.
     """
 
@@ -7547,7 +7548,7 @@ class TestAvgPool2dOp:
 class TestRoiAlignOp:
     """Tests for roi_align interpreter op via F.roi_align.
 
-    Routes through F.roi_align -> ops.roi_align -> rmo.MoRoiAlignOp ->
+    Routes through F.roi_align -> ops.roi_align -> mo.RoiAlignOp ->
     mo.RoiAlignOp -> _handle_roi_align -> roi_align_gc.roi_align_model.
     The op is MO_SingleDeviceWithHostOperands: input/rois/output live on the
     input device, the four numeric scalars stay host-side. These tests run on
@@ -8054,7 +8055,7 @@ class TestTopKOp:
 class TestBottomKOp:
     """Tests for BottomK interpreter op (mo.bottom_k).
 
-    Uses F.bottom_k which routes through ops.bottom_k -> rmo.MoBottomKOp ->
+    Uses F.bottom_k which routes through ops.bottom_k -> mo.BottomKOp ->
     mo.bottom_k -> interpreter handler.  The reference implementation uses
     numpy stable argsort (ascending) to match the kernel's selection-sort
     ordering.
@@ -8160,7 +8161,7 @@ class TestBottomKOp:
 class TestArgNonzeroOp:
     """Tests for ArgNonzero interpreter op (mo.arg_nonzero).
 
-    Uses F.nonzero which routes through ops.nonzero -> rmo.MoArgNonzeroOp ->
+    Uses F.nonzero which routes through ops.nonzero -> mo.ArgNonzeroOp ->
     mo.ArgNonzeroOp -> interpreter handler. The reference is
     ``np.argwhere(x != 0).astype(np.int64)``, which returns row-major
     coordinates in the same order as the kernel.
@@ -8991,7 +8992,7 @@ class TestResizeLinearOp:
     """Tests for linear (bilinear) resize interpreter op (mo.resize.linear).
 
     Routes through F.resize_linear -> ops.resize_linear ->
-    rmo.MoResizeLinearOp -> mo.ResizeLinearOp -> _handle_resize_linear ->
+    mo.ResizeLinearOp -> _handle_resize_linear ->
     resize_gc.resize_model.  The CPU path is covered here; the GPU path is
     covered by TestResizeLinearGPU in test_interpreter_ops_gpu.py.
 
@@ -9297,7 +9298,7 @@ class TestResizeNearestOp:
     """Tests for nearest-neighbor resize interpreter op (mo.resize.nearest).
 
     Routes through F.resize_nearest -> ops.resize_nearest ->
-    rmo.MoResizeNearestOp -> mo.ResizeNearestOp -> _handle_resize_nearest ->
+    mo.ResizeNearestOp -> _handle_resize_nearest ->
     resize_gc.resize_model.  The CPU path is covered here; the GPU path is
     covered by TestResizeNearestGPU in test_interpreter_ops_gpu.py.
 
@@ -9728,8 +9729,7 @@ class TestResizeBicubicOp:
         )
 
     def test_antialias_uint8(self) -> None:
-        """A uint8 input resizes eagerly to uint8: the float32 resize rounded
-        half to even and clamped to [0, 255]."""
+        """A uint8 input resizes eagerly to uint8 as Pillow's BICUBIC does."""
         rng = np.random.default_rng(202)
         x_np = rng.integers(0, 256, (1, 3, 9, 23), dtype=np.uint8)
         out_shape = [1, 3, 20, 7]
@@ -9741,16 +9741,15 @@ class TestResizeBicubicOp:
             out = F.resize_bicubic(
                 Tensor.from_dlpack(x_np), out_shape, antialias=True
             )
-            as_f32 = F.resize_bicubic(
-                Tensor.from_dlpack(x_np.astype(np.float32)),
-                out_shape,
-                antialias=True,
-            )
 
         got = np.from_dlpack(out)
         assert got.dtype == np.uint8
-        want = np.clip(np.rint(np.from_dlpack(as_f32)), 0, 255)
-        np.testing.assert_array_equal(got, want.astype(np.uint8))
+        want = np.asarray(
+            Image.fromarray(
+                np.ascontiguousarray(x_np[0].transpose(1, 2, 0))
+            ).resize(out_shape[:1:-1], Image.Resampling.BICUBIC)
+        ).transpose(2, 0, 1)
+        np.testing.assert_array_equal(got[0], want)
 
     @pytest.mark.parametrize("antialias", [False, True])
     def test_rejects_an_empty_input_to_a_non_empty_size(
@@ -9957,25 +9956,6 @@ class TestLazyGCModelCompilation:
         # handed to load_all as an uncompilable graph.
         with pytest.raises(KeyError, match="Unsupported unary op/device/dtype"):
             unary_elementwise_gc.unary_model(mo.ExpOp, CPU(), DType.int32)
-
-    def test_unary_model_canonicalizes_rmo_alias(self) -> None:
-        """An rmo (Mo-prefixed) unary op resolves like its mo form.
-
-        Canonicalizing the op name keys ``rmo.MoExpOp`` to the same cache
-        entry as ``mo.ExpOp``; without it a supported op misses and raises
-        KeyError (see gc_compile.canonical_op_name).
-        """
-        rmo_exp = rmo.MoExpOp
-        cpu = CPU()
-        u = unary_elementwise_gc
-        assert u._graph_name(rmo_exp, cpu, DType.float32) == u._graph_name(
-            mo.ExpOp, cpu, DType.float32
-        )
-        assert u._is_supported(rmo_exp, cpu, DType.float32)
-        # Resolves to the same cached model rather than raising KeyError.
-        assert u.unary_model(rmo_exp, cpu, DType.float32) is u.unary_model(
-            mo.ExpOp, cpu, DType.float32
-        )
 
     # MXF-510: a residual precompile-mode cache miss used to raise KeyError.
     @pytest.mark.parametrize(

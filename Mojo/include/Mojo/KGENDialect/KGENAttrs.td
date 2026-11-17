@@ -2230,6 +2230,25 @@ def KGEN_StructExtractAttr : KGENAttr<"StructExtract", "struct.extract",
 }
 
 //===----------------------------------------------------------------------===//
+// UntaggedUnionAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_UntaggedUnionAttr : KGENAttr<"UntaggedUnion", "untagged_union", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "Union field bytes with interpreted pointer and symbol values";
+  let description = [{
+    A snapshot of an untagged union field. Each fragment is a byte, a pointer,
+    or a symbolic value. Keeping interpreted pointers as attributes lets the
+    interpreter externalize them without guessing which member is active.
+  }];
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$fragments,
+                        AttributeSelfTypeParameter<"", "UntaggedUnionType">:$type);
+  let assemblyFormat = "`<` `[` $fragments `]` `>`";
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // VariantAttr
 //===----------------------------------------------------------------------===//
 

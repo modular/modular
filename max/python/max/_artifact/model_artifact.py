@@ -23,11 +23,15 @@ from max.pipelines.lib.weight_transform import WeightNaming
 from typing_extensions import Self
 
 from .batch_processor import BatchProcessorDims
+from .block_diffusion import BlockDiffusionMetadata
 from .codec import collect_hf_refs
 from .engine_config import EngineConfig
 from .format_spec import FormatSpec
 from .kv_cache import KVCacheLayout
+from .overlap_helpers import OverlapHelpers
 from .pipeline_modules import PipelineModules
+from .sampling_defaults import SamplingDefaults
+from .tokenizer import Tokenizer
 from .value_types import ArtifactComponent, ArtifactError, HuggingFaceRef
 from .vision import VisionMetadata
 
@@ -37,13 +41,16 @@ class ModelArtifact:
     """Serializable serve-able pipeline."""
 
     model: PipelineModules | None = None
-    tokenizer: ArtifactComponent | None = None
+    tokenizer: Tokenizer | None = None
     format_spec: FormatSpec | None = None
     engine_config: EngineConfig | None = None
     kv_cache: KVCacheLayout | None = None
     batch_processor: BatchProcessorDims | None = None
     vision: VisionMetadata | None = None
+    sampling_defaults: SamplingDefaults | None = None
+    block_diffusion: BlockDiffusionMetadata | None = None
     weight_loader: WeightNaming | None = None
+    overlap_helpers: OverlapHelpers | None = None
 
     @classmethod
     def component_slots(cls) -> tuple[str, ...]:

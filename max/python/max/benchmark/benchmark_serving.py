@@ -55,6 +55,8 @@ from max.benchmark.benchmark_shared.config import (
     BenchmarkTask,
     Endpoint,
     ServingBenchmarkConfig,
+    current_option_name,
+    deprecated_env_vars_renamed,
     get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.all import sample_requests
@@ -112,14 +114,17 @@ from max.benchmark.benchmark_shared.request import (
     progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
+    MACH_METRICS_QUIET_S,
     MissingEngineMetricsError,
     collect_benchmark_metrics,
     fetch_spec_decode_metrics,
+    wait_for_metrics_to_settle,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
     build_pixel_generation_result,
     build_text_generation_result,
     compute_output_len,
+    run_cache_hit_rate,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     BenchmarkRunResultLabels,
@@ -151,8 +156,10 @@ from max.benchmark.benchmark_shared.workload import (
     load_workload_file,
 )
 from max.benchmark.benchmark_shared.workload_stats import (
+    EngineState,
     WorkloadStats,
     compute_workload_stats,
+    write_engine_state,
     write_workload_stats,
 )
 from max.profiler.cpu import (
@@ -311,7 +318,7 @@ async def benchmark(
         request_rate=request_rate,
         max_concurrency=max_concurrency,
         ignore_first_turn_stats=args.ignore_first_turn_stats,
-        warmup_to_steady_state=args.warmup_to_steady_state,
+        warmup_multiturn=args.warmup_multiturn,
     )
 
     if args.warm_shared_prefix:
@@ -334,10 +341,9 @@ async def benchmark(
             )
 
     if isinstance(session.samples, ChatJudgeChatSamples):
-        if args.warmup_to_steady_state:
+        if args.warmup_multiturn:
             raise NotImplementedError(
-                "--warmup-to-steady-state is not yet implemented for"
-                " chat-judge."
+                "--warmup-multiturn is not yet implemented for chat-judge."
             )
 
     logger.info("Starting benchmark run")
@@ -454,11 +460,11 @@ async def benchmark(
             if args.max_concurrent_conversations is not None
             else max_concurrency
         )
-        if args.warmup_to_steady_state and warmup_count:
+        if args.warmup_multiturn and warmup_count:
             chat_sessions, report = pick_warmup_population(
                 chat_sessions,
                 warmup_count,
-                warmup_to_steady_state=True,
+                warmup_multiturn=True,
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or len(chat_sessions),
                 rng=np.random.default_rng(args.seed),
@@ -472,7 +478,7 @@ async def benchmark(
                 1 for s in chat_sessions[:warmup_count] if s.prefix_turns == 0
             )
             logger.info(
-                "Warming up to steady state: %d sessions (%d will"
+                "Warming up multi-turn sessions: %d sessions (%d will"
                 " pre-run, %d drew prefix_turns=0 and start cold).",
                 warmup_count,
                 warmup_count - cold_count,
@@ -495,6 +501,7 @@ async def benchmark(
     # don't affect the delta calculation.
     baseline_endpoints: Mapping[str, ParsedMetrics] = {}
     if args.collect_server_stats:
+        _settle_server_metrics(args, backend, session.base_url)
         try:
             baseline_endpoints = collect_benchmark_metrics(
                 args.metrics_urls, backend, session.base_url
@@ -646,6 +653,7 @@ async def benchmark(
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
                 disable_ignore_eos=args.disable_ignore_eos,
+                strip_harmony_wire_tags=args.strip_harmony_wire_tags,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -698,6 +706,7 @@ async def benchmark(
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
                 disable_ignore_eos=args.disable_ignore_eos,
                 max_output_len=args.max_output_len,
+                strip_harmony_wire_tags=args.strip_harmony_wire_tags,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -770,6 +779,7 @@ async def benchmark(
     # Collect server-side metrics from Prometheus endpoint (with delta from baseline)
     endpoint_metrics: Mapping[str, ParsedMetrics] = {}
     if args.collect_server_stats:
+        _settle_server_metrics(args, backend, session.base_url)
         try:
             endpoint_metrics = collect_benchmark_metrics(
                 args.metrics_urls,
@@ -788,6 +798,8 @@ async def benchmark(
 
     result: BenchmarkResult
     if session.benchmark_task in PIXEL_GENERATION_TASKS:
+        if args.goodput is not None:
+            logger.warning("--goodput is only supported for text-generation")
         result = build_pixel_generation_result(
             outputs=all_outputs,
             benchmark_duration=benchmark_duration,
@@ -816,7 +828,11 @@ async def benchmark(
             record_request_text=args.record_request_text,
             gpu_device_groups=gpu_device_groups,
             outputs_by_session=outputs_by_session,
+            steady_state_filtering=args.steady_state_filtering,
+            goodput_targets=args.goodput_targets,
+            num_gpus=args.num_gpus,
         )
+    result.record_run_cache_hit_rate(run_cache_hit_rate(all_outputs))
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics
 
@@ -1310,6 +1326,109 @@ def _emit_workload_stats(
         print_workload_stats(session.samples, stats)
 
 
+def _settle_server_metrics(
+    args: ServingBenchmarkConfig, backend: Backend, base_url: str
+) -> None:
+    """Lets a Mach engine publish its last metrics before they are read."""
+    if backend != "mach":
+        return
+    wait_for_metrics_to_settle(
+        lambda: collect_benchmark_metrics(args.metrics_urls, backend, base_url),
+        quiet_s=MACH_METRICS_QUIET_S,
+    )
+
+
+# Share of a run's requests that may fail before its engine state is dropped.
+MAX_FAILED_REQUEST_FRACTION = 0.01
+
+
+def _single_load_point(args: ServingBenchmarkConfig) -> bool:
+    return len(args.max_concurrency) * len(args.request_rate) == 1
+
+
+def _serving_engine(backend: Backend) -> Literal["max", "mach"] | None:
+    """Names the engine a backend drives, None for a third-party server."""
+    if backend == "mach":
+        return "mach"
+    if backend in ("modular", "modular-chat"):
+        return "max"
+    return None
+
+
+def _engine_state_or_reason(
+    result: BenchmarkResult,
+    max_concurrency: int | None,
+    validation_passed: bool,
+    backend: Backend,
+) -> EngineState | str:
+    """Returns the run's engine state, or why the run cannot supply one."""
+    if not validation_passed:
+        # Requests that errored leave the figures describing a different
+        # workload than the one run.
+        return "the run failed validation"
+    if result.text_data is None:
+        return "the run produced no text results"
+    # Validation does not fail a run for failed requests: the metrics leave
+    # them out (CENG-1381), so a run that lost most of its requests still
+    # passes. A few failures leave the figures close to the workload that
+    # was sent, so they are recorded rather than discarding the run.
+    records = [r for r in result.text_data.request_records if not r.cancelled]
+    failed = sum(1 for r in records if not r.success)
+    if failed > MAX_FAILED_REQUEST_FRACTION * len(records):
+        return f"{failed} of {len(records)} requests failed"
+    rate = result.run_cache_hit_rate
+    if rate is not None and rate > 1.0:
+        # The server reported more cached tokens than prompt tokens.
+        return f"the server reported a cache hit rate of {rate:.2f}"
+    return EngineState(
+        cache_hit_rate=result.run_cache_hit_rate,
+        decode_batch_size_mean=result.mean_decode_batch_size,
+        max_concurrency=max_concurrency,
+        engine=_serving_engine(backend),
+        failed_requests=failed,
+    )
+
+
+def _emit_engine_state(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    result: BenchmarkResult,
+    max_concurrency: int | None,
+    validation_passed: bool,
+) -> None:
+    # The stats file is first written before any request is sent. Once a run
+    # has measured the engine, it is rewritten with that state, so a real
+    # run no longer leaves the same file as a dry run. Both figures depend on
+    # the load, so a sweep over several load points has no single state.
+    into_stats = args.workload_stats_json is not None and _single_load_point(
+        args
+    )
+    if args.engine_state_json is None and not into_stats:
+        return
+    state = _engine_state_or_reason(
+        result, max_concurrency, validation_passed, args.backend
+    )
+    if isinstance(state, str):
+        logger.warning("No engine state written: %s", state)
+        return
+    if args.engine_state_json is not None:
+        write_engine_state(state, args.engine_state_json)
+        logger.info("Wrote engine state to %s", args.engine_state_json)
+    if into_stats:
+        assert args.workload_stats_json is not None
+        # Recomputed from the samples this run sent: the sweep draws a new
+        # sample for each concurrency level, so the file written before the
+        # run describes another draw of the same workload.
+        stats = _compute_session_stats(args, session).model_copy(
+            update={"engine_state": state}
+        )
+        write_workload_stats(stats, args.workload_stats_json)
+        logger.info(
+            "Wrote workload stats with the engine state to %s",
+            args.workload_stats_json,
+        )
+
+
 def _run_dry_run_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
@@ -1320,7 +1439,7 @@ def _run_dry_run_sweep(
 ) -> Iterator[BenchmarkRunResult]:
     if not args.print_workload_stats:
         print_workload_stats(session.samples, stats)
-    if isinstance(session.samples, ChatSamples) and args.warmup_to_steady_state:
+    if isinstance(session.samples, ChatSamples) and args.warmup_multiturn:
         rng = np.random.default_rng(args.seed or 0)
         for mc in concurrency_range:
             warmup_count = (
@@ -1335,7 +1454,7 @@ def _run_dry_run_sweep(
             _, report = pick_warmup_population(
                 session.samples.chat_sessions,
                 warmup_count,
-                warmup_to_steady_state=True,
+                warmup_multiturn=True,
                 warmup_oversample_factor=args.warmup_oversample_factor,
                 main_pool_target=args.num_chat_sessions or 0,
                 rng=rng,
@@ -1434,6 +1553,11 @@ def _run_benchmark_sweep(
             else:
                 idx = 0
             best_result = iteration_results[idx]
+            # Later iterations replay the same requests against a cache the
+            # first one filled, so only the first measures a cold start.
+            _emit_engine_state(
+                args, session, iteration_results[0], mc, validation_passed
+            )
 
             yield BenchmarkRunResult(
                 max_concurrency=mc,
@@ -1489,6 +1613,17 @@ def main_with_parsed_args(
 
     _load_workload_yaml(args)
     resolve_seed(args)
+
+    if args.engine_state_json is not None and not _single_load_point(args):
+        raise ValueError(
+            "--engine-state-json needs a single --max-concurrency and"
+            " --request-rate: the engine state depends on the load driven"
+        )
+    if args.engine_state_json is not None and args.dry_run:
+        raise ValueError(
+            "--engine-state-json needs a real run: a dry run sends no"
+            " requests, so it measures no engine state"
+        )
 
     end_condition = _resolve_end_condition(
         args=args, concurrency_range=args.max_concurrency
@@ -1595,6 +1730,26 @@ def _extract_metadata_args(
     return clean_args, metadata_values
 
 
+_ENV_PREFIX = "MODULAR_"
+
+
+def _rename_deprecated_flags(args: list[str]) -> list[str]:
+    """Rewrites renamed flags, including their negated forms, to their new names."""
+    renamed: list[str] = []
+    for arg in args:
+        flag, sep, value = arg.partition("=")
+        # cyclopts accepts ``_`` in place of ``-`` anywhere in a flag, so the
+        # negation prefix may be spelled either way.
+        prefix = next(
+            (p for p in ("--no-", "--no_") if flag.startswith(p)), "--"
+        )
+        if flag.startswith("--"):
+            name = flag.removeprefix(prefix)
+            arg = f"{prefix}{current_option_name(name)}{sep}{value}"
+        renamed.append(arg)
+    return renamed
+
+
 def parse_args(
     args: Sequence[str] | None = None,
     *,
@@ -1611,6 +1766,7 @@ def parse_args(
     raw_args = list(sys.argv[1:] if args is None else args)
 
     clean_args, metadata_values = _extract_metadata_args(raw_args)
+    clean_args = _rename_deprecated_flags(clean_args)
 
     parsed_configs: list[ServingBenchmarkConfig] = []
 
@@ -1618,7 +1774,7 @@ def parse_args(
         name=app_name,
         help=description,
         help_formatter="plain",
-        config=[Env(prefix="MODULAR_")],
+        config=[Env(prefix=_ENV_PREFIX)],
         result_action="return_value",
     )
 
@@ -1630,7 +1786,8 @@ def parse_args(
     ) -> None:
         parsed_configs.append(config)
 
-    app(clean_args)
+    with deprecated_env_vars_renamed(_ENV_PREFIX):
+        app(clean_args)
     if not parsed_configs:
         raise SystemExit(0)
     config = parsed_configs[0]

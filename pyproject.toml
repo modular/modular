@@ -51,6 +51,7 @@ extend-exclude = [
   "*max/python/max/_xgrammar/openai_tool_call_schema.py",
   # Vendored verbatim from the DeepSeek-V4-Flash-0731 checkpoint; same reason.
   "*max/python/max/pipelines/architectures/deepseekV4/encoding_dsv4.py",
+  "*max/python/max/pipelines/architectures/deepseekV4_modulev3/encoding_dsv4.py",
   # Vendored verbatim from the DeepSeek-V4.1-Flash checkpoint; same reason.
   "*max/python/max/pipelines/architectures/deepseekV41/encoding_dsv41.py",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
@@ -188,6 +189,13 @@ ignore_missing_imports = true
 # This file to add eager validation hooks in various parts of MAX.
 [[tool.mypy.overrides]]
 module = "max._validation_hooks"
+disable_error_code = ["import-not-found"]
+
+# The speculative package cannot depend on `max.pipelines.lib` (lib imports
+# speculative), so drafter_export's TYPE_CHECKING and function-local lib
+# imports have no stubs to follow.
+[[tool.mypy.overrides]]
+module = "max.pipelines.speculative.drafter_export"
 disable_error_code = ["import-not-found"]
 
 # Private MiniMax-M3 graph hooks diverge from the shared load_model template

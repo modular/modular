@@ -34,6 +34,7 @@
 #include "Support/ML/DType.h"
 #include "Support/Preprocessor.h"
 #include "Support/STLExtras.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringExtras.h"
@@ -367,25 +368,28 @@ void KGENParamPrinter::printKGENType(AsmPrinter &p, Type type) {
   if (succeeded(p.printAlias(type)))
     return;
 
-  if (auto printable = dyn_cast<ParamPrintableTypeInterface>(type)) {
-    printable.printWith(p, *this);
-  } else if (auto signature = dyn_cast<FuncType>(type)) {
+  if (auto signature = dyn_cast<FuncType>(type)) {
     printFuncType(p, signature);
   } else if (auto generator = dyn_cast<GeneratorType>(type)) {
     printGenerator(p, generator);
+  } else if (auto literal = dyn_cast<FuncLiteralType>(type)) {
+    // Not registered as a pretty type: it prints with its dialect prefix, and
+    // both registration paths would drop it for the bare mnemonic.
+    p << "!kgen." << literal.getMnemonic();
+    printFuncLiteralBody(p, literal);
   } else {
     auto *dialect = type.getContext()->getLoadedDialect<KGENDialect>();
     assert(dialect && "cannot print KGEN type without KGEN dialect");
+    auto paramIt = dialect->paramTypePrintFns.find(type.getTypeID());
+    if (paramIt != dialect->paramTypePrintFns.end()) {
+      paramIt->second(p, type, *this);
+      return;
+    }
     auto it = dialect->typePrintFns.find(type.getTypeID());
     if (it == dialect->typePrintFns.end()) {
       p << type;
       return;
     }
-    // TODO(MOCO-5077): types that POP and LIT register cannot implement
-    // ParamPrintableTypeInterface without a dependency cycle, so their nested
-    // parameters still print through a fresh printer and lose dedup and memref
-    // hashing. Upgrade trigger: let a registered printer take the
-    // KGENParamPrinter.
     it->second(p, type);
   }
 }
@@ -2176,35 +2180,6 @@ ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly) {
   return success();
 }
 
-void KGEN::printMinAlignment(AsmPrinter &p, TypedAttr minAlignment) {
-  // Skip printing if minAlignment is the default (1) to keep IR clean.
-  if (auto intAttr = dyn_cast<IntegerAttr>(minAlignment)) {
-    if (intAttr.getInt() == 1)
-      return;
-    p << " align(" << intAttr.getInt() << ")";
-  } else {
-    // Future parametric support may produce other TypedAttr types.
-    p << " align(" << minAlignment << ")";
-  }
-}
-
-ParseResult KGEN::parseMinAlignment(AsmParser &p, TypedAttr &minAlignment) {
-  if (succeeded(p.parseOptionalKeyword("align"))) {
-    if (p.parseLParen())
-      return failure();
-    uint64_t value;
-    if (p.parseInteger(value))
-      return failure();
-    if (p.parseRParen())
-      return failure();
-    minAlignment = IntegerAttr::get(IndexType::get(p.getContext()), value);
-  } else {
-    // Default alignment is 1 (no explicit alignment).
-    minAlignment = IntegerAttr::get(IndexType::get(p.getContext()), 1);
-  }
-  return success();
-}
-
 ParseResult KGEN::parseStructDefField(AsmParser &p, StringAttr &name,
                                       TypedAttr &typeValue,
                                       ArrayAttr &annotations) {
@@ -2782,6 +2757,11 @@ void KGENParamPrinter::printParameterValues(AsmPrinter &p,
   p << '>';
 }
 
+void KGENParamPrinter::printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait) {
+  p.printAttribute(trait.getSymbol());
+  printParameterValues(p, trait.getParamValues());
+}
+
 ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee) {
   Type type;
   llvm::SMLoc loc = p.getCurrentLocation();
@@ -3183,6 +3163,13 @@ static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
   return AttrT::get(type, values);
 }
 
+std::optional<int64_t> KGEN::matchConstantIndex(Value value) {
+  Attribute attr;
+  if (!matchPattern(value, m_Constant(&attr)))
+    return std::nullopt;
+  return getConstantIndex(attr);
+}
+
 OpFoldResult KGEN::foldCastToBuiltin(TypedAttr input, Type resultType) {
   // Look through sugar to fold.
   input = SugarAttr::strip(input);
@@ -3333,9 +3320,6 @@ TypedAttr splatLiteralToSIMDImpl(T literal, SIMDType target) {
   return SIMDSplatAttr::get(target.getContext(), scalar, target);
 }
 
-TypedAttr KGEN::splatFloatLiteralToSIMD(double literal, SIMDType target) {
-  return splatLiteralToSIMDImpl<double>(literal, target);
-}
 TypedAttr KGEN::splatIntLiteralToSIMD(uint64_t literal, SIMDType target) {
   return splatLiteralToSIMDImpl<uint64_t>(literal, target);
 }

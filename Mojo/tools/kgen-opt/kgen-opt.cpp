@@ -60,6 +60,16 @@ LogicalResult runMlirOptMain(int argc, char **argv,
   llvm::InitLLVM y(argc, argv);
   mlir::MlirOptMainConfig config =
       mlir::MlirOptMainConfig::createFromCLOptions();
+  // MlirOptMain creates its own context, so the linked backends' context
+  // settings cannot be applied to it directly. Probe a context for the
+  // settings MlirOptMain's config can carry (unregistered dialects) and
+  // forward those.
+  {
+    mlir::MLIRContext probe;
+    configureKGENContext(&probe);
+    if (probe.allowsUnregisteredDialects())
+      config.allowUnregisteredDialects(true);
+  }
 
   // When reading from stdin and the input is a tty, it is often a user
   // mistake and the process "appears to be stuck". Print a message to let the
@@ -116,10 +126,20 @@ int main(int argc, char **argv) {
   // bindings.
   KGEN::forceLinkMLIRC();
 
-  // HACK: Read in the option early.
-  bool asyncrtSingleThread = false;
-  if (argc >= 2 && StringRef(argv[1]) == "--asyncrt-single-thread")
-    asyncrtSingleThread = true;
+  // HACK: Read in the options early, since the CPUDevice is created before the
+  // command line is parsed. Disabling MLIR threading also forces a
+  // single-threaded AsyncRT: without the context's locks, passes that schedule
+  // work on AsyncRT (e.g. the elaborator) race in attribute/type uniquing.
+  // Match every spelling cl::opt<bool> accepts: one or two dashes, optionally
+  // followed by `=true` or `=1`.
+  bool asyncrtSingleThread =
+      llvm::any_of(ArrayRef(argv, argc).drop_front(), [](StringRef arg) {
+        auto [name, value] = arg.ltrim('-').split('=');
+        return (name == "asyncrt-single-thread" ||
+                name == "mlir-disable-threading") &&
+               (value.empty() || value.equals_insensitive("true") ||
+                value == "1");
+      });
 
   DialectRegistry registry;
 

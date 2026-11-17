@@ -27,12 +27,10 @@ import extensibility
 from extensibility import (
     Fused,
     Input,
-    InputTensor,
     LoadAccess,
     Loadable,
     MutableInput,
     Output,
-    OutputTensor,
     Stable,
     StoreAccess,
     Storable,
@@ -40,7 +38,6 @@ from extensibility import (
     TensorTuple,
     TileTensorable,
     _LegacyComputeOutput,
-    _MutableInputTensor as MutableInputTensor,
 )
 
 
@@ -49,7 +46,6 @@ from extensibility import (
 struct TraitAddExplicit:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable,
         X: Input & TileTensorable,
     ](z: Z, x: X, y: X, ctx: DeviceContext) raises:
@@ -61,9 +57,7 @@ struct TraitAddExplicit:
 @extensibility.register("trait_add_some")
 struct TraitAddSome:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         y: Some[Input & TileTensorable],
@@ -77,9 +71,7 @@ struct TraitAddSome:
 @extensibility.register("trait_fused_load")
 struct TraitFusedLoad:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Fused & Loadable],
         ctx: DeviceContext,
@@ -95,29 +87,8 @@ struct TraitFusedLoad:
 struct TraitBadConvention:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable,
     ](mut z: Z, ctx: DeviceContext) raises:
-        pass
-
-
-# Negative fixture (off-by-one guard for the trait exclusion in the legacy
-# borrow-check): a signature with a trait arg at position 0 (borrowed, fine) AND
-# a legacy `ManagedTensorSlice` (`OutputTensor`) at position 1 passed with a
-# non-borrowed (`mut`) convention. The legacy borrow-check must STILL fire for
-# the legacy arg at position 1; the `!getTensorArgTraitType(...)` exclusion must
-# skip ONLY the trait arg at position 0. An off-by-one there would silently
-# suppress the legacy diagnostic.
-@extensibility.register("trait_legacy_bad_convention")
-struct TraitLegacyBadConvention:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        x: Some[Input & TileTensorable],
-        mut z: OutputTensor,
-        ctx: DeviceContext,
-    ) raises:
         pass
 
 
@@ -127,9 +98,7 @@ struct TraitLegacyBadConvention:
 @extensibility.register("trait_multi_output")
 struct TraitMultiOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         a: Some[Output & TileTensorable],
         b: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
@@ -144,9 +113,7 @@ struct TraitMultiOutput:
 @extensibility.register("trait_mutable_input")
 struct TraitMutableInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[MutableInput & TileTensorable],
         ctx: DeviceContext,
@@ -166,7 +133,6 @@ struct TraitTensorTuple:
         As: TypeList[Trait=Input & TileTensorable, ...],
         Bs: TypeList[Trait=Input & TileTensorable, ...],
         //,
-        target: StaticString,
     ](
         outputs: TensorTuple[*Outs],
         a: TensorTuple[*As],
@@ -184,44 +150,9 @@ struct TraitTensorTupleFused:
     def execute[
         Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
         //,
-        target: StaticString,
     ](
         z: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# Mixed lane: a trait-bound dense output alongside legacy `ManagedTensorSlice`
-# (`InputTensor`) inputs. The trait output and the legacy inputs must classify
-# independently and coexist -- the legacy lane is unchanged.
-@extensibility.register("trait_mixed_legacy")
-struct TraitMixedLegacy:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        z: Some[Output & TileTensorable],
-        x: InputTensor,
-        y: InputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# Mirror of `trait_mixed_legacy` with a legacy `OutputTensor` and trait inputs:
-# the legacy output classifies as the DPS output, the trait inputs as borrowed
-# inputs.
-@extensibility.register("trait_mixed_legacy_out")
-struct TraitMixedLegacyOut:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        z: OutputTensor,
-        x: Some[Input & TileTensorable],
-        y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
         pass
@@ -235,7 +166,6 @@ struct TraitMixedLegacyOut:
 struct TraitMultiOutputExplicit:
     @staticmethod
     def execute[
-        target: StaticString,
         A: Output & TileTensorable,
         X: Input & TileTensorable,
     ](a: A, b: A, x: X, ctx: DeviceContext) raises:
@@ -246,7 +176,6 @@ struct TraitMultiOutputExplicit:
 struct TraitMutableInputExplicit:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable,
         X: MutableInput & TileTensorable,
     ](z: Z, x: X, ctx: DeviceContext) raises:
@@ -257,7 +186,6 @@ struct TraitMutableInputExplicit:
 struct TraitFusedLoadExplicit:
     @staticmethod
     def execute[
-        target: StaticString,
         Z: Output & TileTensorable,
         X: Input & Fused & Loadable,
     ](z: Z, x: X, ctx: DeviceContext) raises:
@@ -270,9 +198,7 @@ struct TraitFusedLoadExplicit:
 @extensibility.register("trait_leading_mutable")
 struct TraitLeadingMutable:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[MutableInput & TileTensorable],
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -286,9 +212,7 @@ struct TraitLeadingMutable:
 @extensibility.register("trait_all_outputs")
 struct TraitAllOutputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         a: Some[Output & TileTensorable],
         b: Some[Output & TileTensorable],
         c: Some[Output & TileTensorable],
@@ -303,9 +227,7 @@ struct TraitAllOutputs:
 @extensibility.register("trait_non_leading_output")
 struct TraitNonLeadingOutput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[Input & TileTensorable],
         z: Some[Output & TileTensorable],
         y: Some[Input & TileTensorable],
@@ -314,80 +236,13 @@ struct TraitNonLeadingOutput:
         pass
 
 
-# Mixed lane with a legacy MUTABLE arg: a legacy `MutableInputTensor`
-# (`mut=true`, non-DPS-output input) coexists with a trait output. The legacy
-# mutable arg must still render `[in] mut=true` and the trait output `[out]`.
-@extensibility.register("trait_mixed_legacy_mut")
-struct TraitMixedLegacyMut:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        z: Some[Output & TileTensorable],
-        x: MutableInputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# Mixed lane with a FUSED trait arg: a legacy `InputTensor` coexists with a
-# trait `Input & Fused & Loadable`. Confirms the two lanes coexist when a fused
-# trait arg (not just a dense one) is present.
-@extensibility.register("trait_mixed_legacy_fused")
-struct TraitMixedLegacyFused:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        z: Some[Output & TileTensorable],
-        x: InputTensor,
-        y: Some[Input & Fused & Loadable],
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# A trait-bound fused output with a legacy input. This combination exercises
-# contract conflicts when epilogue fusion captures the input.
-@extensibility.register("trait_fused_store_legacy_input")
-struct TraitFusedStoreLegacyInput:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        z: Some[Output & Fused & StoreAccess],
-        x: InputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
 @extensibility.register("trait_dense_and_fused_inputs")
 struct TraitDenseAndFusedInputs:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         y: Some[Input & Fused & Loadable],
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# Pure-legacy control: no trait args at all. A regression guard that this change
-# leaves the legacy `[out]`/`[in]`/`mut` split byte-for-byte unchanged. The
-# `MutableInputTensor` here pins `mut=true` on the legacy lane too.
-@extensibility.register("legacy_only_control")
-struct LegacyOnlyControl:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        z: OutputTensor,
-        x: InputTensor,
-        w: MutableInputTensor,
         ctx: DeviceContext,
     ) raises:
         pass
@@ -410,9 +265,7 @@ struct LegacyOnlyControl:
 @extensibility.register("trait_plain_tensor_input")
 struct TraitPlainTensorInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[Input & Tensor], ctx: DeviceContext) raises:
+    def execute(x: Some[Input & Tensor], ctx: DeviceContext) raises:
         pass
 
 
@@ -422,9 +275,7 @@ struct TraitPlainTensorInput:
 @extensibility.register("trait_fused_load_marker")
 struct TraitFusedLoadMarker:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[Input & Fused & LoadAccess], ctx: DeviceContext) raises:
+    def execute(x: Some[Input & Fused & LoadAccess], ctx: DeviceContext) raises:
         pass
 
 
@@ -433,9 +284,9 @@ struct TraitFusedLoadMarker:
 @extensibility.register("trait_fused_store_marker")
 struct TraitFusedStoreMarker:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Output & Fused & StoreAccess], ctx: DeviceContext) raises:
+    def execute(
+        z: Some[Output & Fused & StoreAccess], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -444,9 +295,7 @@ struct TraitFusedStoreMarker:
 @extensibility.register("trait_fused_store_capability")
 struct TraitFusedStoreCapability:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](z: Some[Output & Fused & Storable], ctx: DeviceContext) raises:
+    def execute(z: Some[Output & Fused & Storable], ctx: DeviceContext) raises:
         pass
 
 
@@ -455,9 +304,7 @@ struct TraitFusedStoreCapability:
 @extensibility.register("trait_fused_transform_marker")
 struct TraitFusedTransformMarker:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & Fused & _LegacyComputeOutput], ctx: DeviceContext
     ) raises:
         pass
@@ -468,9 +315,9 @@ struct TraitFusedTransformMarker:
 @extensibility.register("trait_mutable_fused_store")
 struct TraitMutableFusedStore:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[MutableInput & Fused & Storable], ctx: DeviceContext) raises:
+    def execute(
+        x: Some[MutableInput & Fused & Storable], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -479,9 +326,9 @@ struct TraitMutableFusedStore:
 @extensibility.register("trait_mutable_fused_load")
 struct TraitMutableFusedLoad:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[MutableInput & Fused & Loadable], ctx: DeviceContext) raises:
+    def execute(
+        x: Some[MutableInput & Fused & Loadable], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -491,9 +338,9 @@ struct TraitMutableFusedLoad:
 @extensibility.register("trait_nonfused_load_capability")
 struct TraitNonFusedLoadCapability:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](x: Some[Input & TileTensorable & Loadable], ctx: DeviceContext) raises:
+    def execute(
+        x: Some[Input & TileTensorable & Loadable], ctx: DeviceContext
+    ) raises:
         pass
 
 
@@ -508,9 +355,7 @@ struct TraitNonFusedLoadCapability:
 @extensibility.register("trait_nonfused_load_store_capability")
 struct TraitNonFusedLoadStoreCapability:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[MutableInput & TileTensorable & Loadable & Storable],
         ctx: DeviceContext,
     ) raises:
@@ -543,9 +388,7 @@ def trait_tile_tensorable_shape_fn[
 @extensibility.register("trait_stable_input")
 struct TraitStableInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable & Stable],
         ctx: DeviceContext,
@@ -557,9 +400,7 @@ struct TraitStableInput:
 @extensibility.register("trait_stable_mutable_input")
 struct TraitStableMutableInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         x: Some[MutableInput & TileTensorable & Stable], ctx: DeviceContext
     ) raises:
         pass
@@ -571,9 +412,7 @@ struct TraitStableMutableInput:
 @extensibility.register("trait_stable_tensor_input")
 struct TraitStableTensorInput:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
+    def execute(
         z: Some[Output & TileTensorable],
         x: Some[Input & Tensor & Stable],
         ctx: DeviceContext,

@@ -27,9 +27,12 @@ from _paged_cache_test_utils import build_paged_cache
 from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
+)
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
 )
 from max.tensor import Tensor, default_device
 
@@ -45,7 +48,7 @@ _PAGE_SIZE = 128
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_forward_ragged_matches_forward() -> None:
     rng = np.random.default_rng(0)
@@ -73,9 +76,7 @@ def test_forward_ragged_matches_forward() -> None:
             ),
             layer_idx=0,
         )
-        layer.q_a_proj.weight = Tensor(
-            arr(_Q_LORA_RANK, _HIDDEN), dtype=DType.float32
-        ).cast(DType.bfloat16)
+        q_a = arr(_Q_LORA_RANK, _HIDDEN)
         layer.q_a_layernorm.weight = Tensor(
             np.ones(_Q_LORA_RANK, dtype=np.float32), dtype=DType.float32
         ).cast(DType.bfloat16)
@@ -86,9 +87,7 @@ def test_forward_ragged_matches_forward() -> None:
             ),
             dtype=DType.float32,
         ).cast(DType.bfloat16)
-        layer.kv_a_proj_with_mqa.weight = Tensor(
-            arr(_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN), dtype=DType.float32
-        ).cast(DType.bfloat16)
+        kv_a = arr(_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN)
         layer.kv_a_layernorm.weight = Tensor(
             np.ones(_KV_LORA_RANK, dtype=np.float32), dtype=DType.float32
         ).cast(DType.bfloat16)
@@ -96,8 +95,11 @@ def test_forward_ragged_matches_forward() -> None:
             arr(_NUM_HEADS * (_QK_NOPE_HEAD_DIM + _V_HEAD_DIM), _KV_LORA_RANK),
             dtype=DType.float32,
         ).cast(DType.bfloat16)
-        layer.g_proj.weight = Tensor(
-            arr(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), dtype=DType.float32
+        layer.qkv_a_g_proj.weight = Tensor(
+            fuse_qkv_a_g_for_tp(
+                q_a, kv_a, arr(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), 1
+            ),
+            dtype=DType.float32,
         ).cast(DType.bfloat16)
         layer.o_proj.weight = Tensor(
             arr(_HIDDEN, _NUM_HEADS * _V_HEAD_DIM), dtype=DType.float32

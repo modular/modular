@@ -57,7 +57,7 @@ def test_matmul_sm100_epilogue[
     swapAB: Bool = False,
     k_group_size: Int = 1,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     m: MType,
     n: NType,
     k: KType,
@@ -150,7 +150,7 @@ def test_matmul_sm100_epilogue[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var c_tensor, var a_tensor, var b_tensor, imm}:
         comptime if test_lambda_fn:
             blackwell_matmul_tma_umma_warp_specialized[

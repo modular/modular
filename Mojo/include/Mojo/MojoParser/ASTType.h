@@ -86,13 +86,13 @@ public:
   ASTDecl *getDecl(SharedState &shared) const;
 
   /// If this is a parametric user defined type, return all parameter bindings
-  /// on this reference to the type.  Note that this is potentially a partial
-  /// binding set - incomplete bindings (missing bindings) are valid.
+  /// on this reference to the type. For a struct type generator, a binding can
+  /// refer to an input of the generator.
   ArrayRef<TypedAttr> getParamBindings() const;
-  TypeSignatureType getSignature() const;
 
-  /// Return this type with any parameter bindings removed.
-  ASTType getWithoutParameters(SharedState &shared) const;
+  /// Returns true if the parameter binding at `idx` is unresolved, i.e., the
+  /// param value depends on sibling parameters that are unbound.
+  bool isUnresolvedParam(size_t idx) const;
 
   /// Return true if this type has any unbound parameters.
   bool hasUnboundParameters() const;
@@ -149,12 +149,6 @@ public:
   bool isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                              SharedState &shared,
                                              ASTDecl &scope) const;
-  /// Return true if this type is provably 'trivially' moveable, as defined by
-  /// its '__move_ctor_is_trivial' member.
-  bool isProvablyTriviallyMoveable(llvm::SMLoc loc, SharedState &shared) const;
-  /// Return true if this type is provably 'trivially' deletable, as defined by
-  /// its '__del__is_trivial' member.
-  bool isProvablyTriviallyDeletable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is implicitly/explicitly copyable, either because
   /// it is trivial or conforms to (Implicitly)Copyable trait. Note:
@@ -177,11 +171,6 @@ public:
   /// `scope` is required so where-clause assumptions from the scope are used
   /// to prove conditional conformances.
   bool isMovable(llvm::SMLoc loc, SharedState &shared, ASTDecl &scope) const;
-
-  /// Return true if this type is register passable or conforms to
-  /// RegisterPassable trait.
-  /// Note: this resolves the body of a struct type.
-  bool isRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is trivial register passable
   /// or conforms to TrivialRegisterPassable trait.
@@ -276,20 +265,24 @@ public:
   /// needed.  This does NOT strip off the RefType for a 'ref[]' result.
   ASTType getSignatureUserResultType() const;
 
-  /// If this type is parameterized, and if any of the parameters refer to a
-  /// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
-  /// will infer it.
+  /// If this type is has any index ref referencing to parameter defined in the
+  /// current scope, extract those out and construct a new StructTypeGenerator
+  /// independent from the current scope. E.g., it turns
+  ///
+  /// def [a : Int, b : Int](a : Param[b]), in which,
+  /// `Param[*(0, 1)]` into
+  /// `#gen<b : Int> Param[*(0, 0)]`
   ///
   /// This makes parameter inference sensitive to what to propagate vs infer.
   /// For example, if expectedType is known to be 'SIMD[uint8, 1]', then we can
   /// infer which constructor to use when the input is an IntLiteral.
   ///
-  /// On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
-  /// argument is an Int8, then we need the implicit conversion to infer the
-  /// base element.  Our solution to this is to rip and replace parameters that
-  /// contain unbound parameters, replacing them with UnboundAttr so inference
-  /// can find them.
-  ASTType getWithUnknownParametersReplaced(SharedState &shared) const;
+  /// On the other hand, if expectedType is something like 'SIMD[*(0, 1), 1]'
+  /// and the argument is an Int8, then we need the implicit conversion to infer
+  /// the base element.  Our solution to this is to rip and replace parameters
+  /// that contain unresolved the parameter, and construct an new partially
+  /// bound struct type such that parameter inferences knows now to infer it.
+  ASTType extractAndRelinkParamRef(SharedState &shared) const;
 
   /// Return true if this type contains any origins that are unmaterializable
   /// from comptime to runtime.
@@ -348,6 +341,15 @@ public:
   /// field doesn't exist or the value isn't a struct type.
   static TypedAttr extractStructField(TypedAttr value, StringRef fieldName,
                                       llvm::SMLoc loc, SharedState &shared);
+
+  /// Return the index-typed address space a value denotes, either an index
+  /// itself or an `AddressSpace` struct. Returns null without diagnosing if it
+  /// is neither.
+  static TypedAttr extractAddressSpace(TypedAttr value, llvm::SMLoc loc,
+                                       SharedState &shared);
+
+  /// Return an index-typed address space in a human-readable form.
+  static TypedAttr getAddressSpaceForDisplay(TypedAttr addrSpace);
 
   /// Return the !lit.origin parameter if this type is a standard library
   /// `Origin` struct, otherwise return null.

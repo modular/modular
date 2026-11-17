@@ -46,7 +46,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 __all__ = [
     "UNQUANTIZED_ATTN_PROJECTIONS",
@@ -102,10 +102,6 @@ class Glm5NextQuantScheme:
     KDA projection and conv, ``kv_b_proj``, the indexer, the vision tower and
     the mHC mapping. Distinct from :attr:`Glm5NextConfig.dtype`, which is the
     *storage* dtype the resolved encoding implies."""
-
-    def mlp_config(self, layer_idx: int) -> QuantConfig | None:
-        """Returns the config for layer ``layer_idx``'s MLP, or None if BF16."""
-        return self.config if layer_idx in self.mlp_layers else None
 
     def attn_config(self, layer_idx: int) -> QuantConfig | None:
         """Returns the config for layer ``layer_idx``'s attention projections.

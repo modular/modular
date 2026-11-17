@@ -285,7 +285,7 @@ struct NumPyView[
         comptime for i in range(Self.rank):
             var extent = Int(self.shape[i])
             var index = Int(idx[i])
-            check_bounds(index, extent)
+            check_bounds(index, length=extent)
             offset = offset * extent + index
 
         return self.data[offset]

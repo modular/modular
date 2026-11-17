@@ -18,7 +18,6 @@ from pathlib import Path
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -36,7 +35,6 @@ lfm3_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     context_type=TextContext,
     config=Lfm3Config,
-    memory_planner=PagedMemoryPlanner,
     checkpoints_recurrent_state=True,
     format_spec=Path(__file__).parent / "formatspec.json",
 )

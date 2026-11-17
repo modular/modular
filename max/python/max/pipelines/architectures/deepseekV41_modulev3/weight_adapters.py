@@ -16,7 +16,8 @@ Every dense FP8 pair retains its compact E8M0 scales, wo_a included: the
 adapter never converts a byte, so the model loads the checkpoint's own
 codes and Mach hands the compiled graph the checkpoint's own tensors.
 Routed NVFP4 projections keep their separate per-expert input and weight
-scales.
+scales; routed MXFP4 projections keep their packed codes and E8M0 scales,
+relabeled to the tree's ``uint8`` and ``float8_e8m0fnu``.
 """
 
 from __future__ import annotations
@@ -35,17 +36,18 @@ from max.graph.weights import WeightData, Weights
 from ..deepseekV41.weight_adapters import (
     as_uint8,
     bfloat16_to_float32,
-    dequantize_fp8_blocks,
     resolve_quantization_info,
     with_dtype,
 )
-from .model_config import DeepseekV41Config
+from .interface import has_vision_tower
+from .model_config import DeepseekV41Config, EngramTableFormat, vision_config
 
 # (first, second, stacked, sharded) module-path suffixes: two projections
 # that read the same activation, stacked into one leaf that runs as one
 # GEMM. ``stacked`` holds ``[first; second]`` along N over one device;
 # ``sharded`` marks a pair whose leaf shards along N over the mesh, where
 # the interleave places each rank's slice as ``[first_r; second_r]``.
+# keep in sync with `STACKED_PROJECTIONS` in interface.py
 STACKED_PROJECTIONS = (
     (".attn.wq_a", ".attn.wkv", ".attn.wqa_wkv", False),
     (
@@ -55,24 +57,29 @@ STACKED_PROJECTIONS = (
         True,
     ),
 )
+# Only this pair splits at norm widths; add an entry if a new pair does.
+_STACKED_PROJECTION_NORMS = {
+    STACKED_PROJECTIONS[0]: (".attn.q_norm.weight", ".attn.kv_norm.weight"),
+}
 
 # The one-byte dtypes a safetensors header may spell differently from what
 # the tree declares; `_relabel` only ever relabels within this set.
 _E8M0 = DType.float8_e8m0fnu
 
-# Rename table A, the only checkpoint-name -> tree-name renames.
-_EXPERT_TENSOR = re.compile(
-    r"^(?P<head>.*\.ffn\.experts\.(?P<expert>\d+)\.w[123])"
-    r"\.(?P<kind>weight_scale_2|weight_scale|input_scale|weight)$"
-)
+# Rename table A, the only checkpoint-name -> tree-name rename: an MXFP4
+# expert's ``scale`` is its projection's ``weight_scale``.
+_EXPERT_SCALE = re.compile(r"^(?P<head>.*\.ffn\.experts\.\d+\.w[123])\.scale$")
+
+# A routed expert's packed weight, which an MXFP4 checkpoint stores as ``I8``.
+_EXPERT_WEIGHT = re.compile(r"^.*\.ffn\.experts\.\d+\.w[123]\.weight$")
 
 # The routed experts' static gate/up scalars a derived leaf reduces: the
 # EP dispatch quantizes with one uniform scale per layer, the max of the
-# layer's experts' ``w1`` and ``w3`` ``input_scale`` values (tree names,
-# post-rename) -- both projections read the same dispatched activation,
-# so either one's calibrated range can bind.
+# layer's experts' ``w1`` and ``w3`` ``input_scale`` values -- both
+# projections read the same dispatched activation, so either one's
+# calibrated range can bind.
 _EXPERT_GATE_INPUT_SCALE = re.compile(
-    r"^(?P<layer>layers\.\d+)\.ffn\.experts\.\d+\.w[13]\.weight\.input_scale$"
+    r"^(?P<layer>layers\.\d+)\.ffn\.experts\.\d+\.w[13]\.input_scale$"
 )
 
 _GLOBAL_INPUT_SCALE = "ffn.global_input_scale"
@@ -80,6 +87,19 @@ _GLOBAL_INPUT_SCALE = "ffn.global_input_scale"
 
 # The Engram embed tables: graph inputs, never module parameters.
 _ENGRAM_EMBED = re.compile(r"^layers\.\d+\.engram\.embed\.(weight|scale)$")
+# Bytes per pinned Engram weight row: 256 E4M3 codes.
+ENGRAM_WEIGHT_COLS = 256
+
+# The E4M3 code of each E2M1 code (+-0, 0.5, 1, 1.5, 2, 3, 4, 6), all exact.
+_E2M1_TO_E4M3 = np.array(
+    [0x00, 0x30, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C]
+    + [0x80, 0xB0, 0xB8, 0xBC, 0xC0, 0xC4, 0xC8, 0xCC],
+    dtype=np.uint8,
+)
+# A packed byte's two E4M3 codes, low nibble first in memory.
+_E2M1_PAIR_TO_E4M3 = _E2M1_TO_E4M3[np.arange(256) & 0x0F].astype("<u2") | (
+    _E2M1_TO_E4M3[np.arange(256) >> 4].astype("<u2") << 8
+)
 
 # Checkpoint tensors the tree does not hold, each for a stated reason; the
 # skip lists account for all 2,671 of them (2,401 mtp + 259 vision + 4
@@ -101,17 +121,25 @@ def is_skipped_checkpoint_tensor(name: str) -> bool:
       allows every stage tensor by design: the base trunk does not wire
       the drafter, so the whole subtree is intentionally filtered.
     * ``vision.*`` (259), ``aligner.*`` (4), and the three image delimiters
-      -- the VL tower the text-only tree does not build. ``gate.bias_vl``
-      is NOT here: the router holds it whenever the config has
-      ``vision_config``, and the adapter drops it with the config.
+      -- the vision encoder's (:func:`is_vision_tensor`), a module of its
+      own. ``gate.bias_vl`` is NOT here: the router holds it whenever the
+      config has ``vision_config``, and the adapter drops it with the
+      config.
     * ``layers.{EG}.engram.embed.{weight,scale}`` -- the 4 host tables,
       ABI graph inputs, returned by :func:`engram_embed_tables` instead.
     """
-    if name.startswith(_MTP_PREFIX):
-        return True
-    if name.startswith(_VISION_PREFIXES) or name in _IMAGE_DELIMITERS:
+    if name.startswith(_MTP_PREFIX) or is_vision_tensor(name):
         return True
     return _ENGRAM_EMBED.match(name) is not None
+
+
+def is_vision_tensor(name: str) -> bool:
+    """Returns whether ``name`` is a weight of the vision encoder.
+
+    Its checkpoint names are the encoder module's own parameter paths, so the
+    adapter passes them through unchanged.
+    """
+    return name.startswith(_VISION_PREFIXES) or name in _IMAGE_DELIMITERS
 
 
 def to_tree_name(name: str) -> str:
@@ -121,10 +149,10 @@ def to_tree_name(name: str) -> str:
     for nothing: names the tree does not hold are the caller's business
     (see :func:`is_skipped_checkpoint_tensor`).
     """
-    match = _EXPERT_TENSOR.match(name)
+    match = _EXPERT_SCALE.match(name)
     if match is None:
         return name
-    return f"{match['head']}.weight.{match['kind']}"
+    return f"{match['head']}.weight_scale"
 
 
 def _as_buffer(data: DLPackArray) -> Buffer:
@@ -181,6 +209,40 @@ def _relabel_dense_scale(name: str, data: WeightData) -> WeightData:
 # on its own weight rows, and a sharded stack's per-rank boundary must not
 # split one.
 _SCALE_BLOCK = 32
+
+
+def _check_compact_scale(weight: WeightData, scale: WeightData) -> None:
+    """Check each part's compact scale; aggregate totals can hide mismatches."""
+    if len(weight.shape) != 2 or len(scale.shape) != 2:
+        raise ValueError(f"{weight.name}: weight and scale must be rank-2")
+    rows, cols = (int(d) for d in weight.shape)
+    if rows == 0:
+        return
+    compact = [rows // _SCALE_BLOCK, cols // _SCALE_BLOCK]
+    if (
+        rows % _SCALE_BLOCK
+        or cols % _SCALE_BLOCK
+        or [int(d) for d in scale.shape] != compact
+    ):
+        raise ValueError(
+            f"{scale.name}: must be the compact {compact} scale over weight "
+            f"[{rows}, {cols}] in whole {_SCALE_BLOCK}x{_SCALE_BLOCK} "
+            f"blocks, got {list(scale.shape)}"
+        )
+
+
+def _check_norm_width(
+    weight: WeightData, norm: WeightData | None, label: str
+) -> None:
+    if norm is None:
+        return
+    if len(norm.shape) != 1:
+        raise ValueError(f"{norm.name}: norm weight must be rank-1")
+    if int(weight.shape[0]) != int(norm.shape[0]):
+        raise ValueError(
+            f"{weight.name}: {label} rows {int(weight.shape[0])} do not "
+            f"match {norm.name} width {int(norm.shape[0])}"
+        )
 
 
 def _row_bytes(weight: WeightData) -> np.ndarray:
@@ -289,6 +351,9 @@ def stack_projections(
     with no parts passes through untouched (a pre-stacked checkpoint).
     """
     for first, second, stacked, sharded in STACKED_PROJECTIONS:
+        first_norm, second_norm = _STACKED_PROJECTION_NORMS.get(
+            (first, second, stacked, sharded), (None, None)
+        )
         leaves = tuple(
             f"{side}.{part}"
             for side in (first, second)
@@ -325,41 +390,22 @@ def stack_projections(
                     f"{n_devices}"
                 )
             for side in (first, second):
-                # Each half's scale must match its own weight's compact
-                # shape before anything is popped or stacked: the sharded
-                # interleave slices both scales at the first's row count,
-                # so a mismatched half would silently truncate or
-                # mis-shape the stack (numpy slicing does not raise).
-                weight = state_dict[f"{prefix}{side}.weight"]
-                scale = state_dict[f"{prefix}{side}.scale"]
-                rows = int(weight.shape[0])
-                if rows == 0:
-                    # A zero-byte stand-in carries no geometry.
-                    continue
-                if rows % _SCALE_BLOCK:
-                    raise ValueError(
-                        f"{prefix}{side}.weight: {rows} rows are not whole "
-                        f"{_SCALE_BLOCK}-row scale blocks"
-                    )
-                cols = int(weight.shape[1])
-                if cols % _SCALE_BLOCK:
-                    # The compact shape derives cols // 32; a nonmultiple
-                    # would silently floor and mask a truncated weight.
-                    raise ValueError(
-                        f"{prefix}{side}.weight: {cols} columns are not "
-                        f"whole {_SCALE_BLOCK}-column scale blocks"
-                    )
-                expected = (
-                    rows // _SCALE_BLOCK,
-                    cols // _SCALE_BLOCK,
+                _check_compact_scale(
+                    state_dict[f"{prefix}{side}.weight"],
+                    state_dict[f"{prefix}{side}.scale"],
                 )
-                actual = tuple(int(d) for d in scale.shape)
-                if actual != expected:
-                    raise ValueError(
-                        f"{prefix}{side}.scale: scale shape {actual} does "
-                        f"not match the compact shape {expected} of "
-                        f"{prefix}{side}.weight"
-                    )
+            for side, norm_suffix, label in (
+                (first, first_norm, first.rsplit(".", 1)[-1]),
+                (second, second_norm, second.rsplit(".", 1)[-1]),
+            ):
+                norm = (
+                    state_dict.get(f"{prefix}{norm_suffix}")
+                    if norm_suffix is not None
+                    else None
+                )
+                _check_norm_width(
+                    state_dict[f"{prefix}{side}.weight"], norm, label
+                )
             for part in ("weight", "scale"):
                 a = f"{prefix}{first}.{part}"
                 b = f"{prefix}{second}.{part}"
@@ -561,6 +607,17 @@ class AdapterResult(dict[str, WeightData]):
         return self
 
 
+def unpack_e2m1_to_e4m3(packed: np.ndarray, out: np.ndarray) -> None:
+    """Writes packed E2M1 pairs into ``out`` as E4M3 codes, low nibble first.
+
+    Args:
+        packed: uint8 ``[..., K / 2]``, two E2M1 codes per byte.
+        out: uint8 ``[..., K]``, contiguous along its last axis.
+    """
+    # Every byte indexes the table, and "clip" writes ``out`` unbuffered.
+    np.take(_E2M1_PAIR_TO_E4M3, packed, out=out.view("<u2"), mode="clip")
+
+
 @dataclass(frozen=True)
 class EngramTable:
     """One Engram embed table, as zero-copy views for the loader.
@@ -568,8 +625,10 @@ class EngramTable:
     ``weight_codes``/``scale_codes`` alias the checkpoint's own mapping
     (``float8_e4m3fn`` [rows, 256] / ``float8_e8m0fnu`` [rows, 8], viewed
     as uint8 bytes; widening either would materialize ~12.3 GB per
-    table). The loader copies them into its pinned allocation and then
-    drops the table: at production size a held copy is ~98 GB of host
+    table). An MXFP4 checkpoint packs the weight codes as E2M1 pairs,
+    uint8 [rows, 128] (:attr:`packed`), which the loader unpacks to E4M3
+    as it pins them. The loader copies them into its pinned allocation and
+    then drops the table: at production size a held copy is ~98 GB of host
     RAM. ``layer`` is the tree layer id that owns it, so the loader can
     name the ABI inputs by ordinal.
     """
@@ -578,6 +637,11 @@ class EngramTable:
     rows: int
     weight_codes: np.ndarray
     scale_codes: np.ndarray
+
+    @property
+    def packed(self) -> bool:
+        """Whether ``weight_codes`` are E2M1 pairs, half the pinned width."""
+        return self.weight_codes.shape[-1] != ENGRAM_WEIGHT_COLS
 
     def table_names(self, ordinal: int) -> tuple[str, str]:
         """The ABI graph-input names this table feeds.
@@ -614,6 +678,19 @@ def _engram_tables(
         codes = as_uint8(data.data)
         weight, scale, rows = by_layer.get(layer, (None, None, 0))
         if match[1] == "weight":
+            # FP8 codes, or uint8 MXFP4 pairs at half their width.
+            if codes.ndim != 2 or (
+                codes.shape[1] != ENGRAM_WEIGHT_COLS
+                and (
+                    data.dtype != DType.uint8
+                    or 2 * codes.shape[1] != ENGRAM_WEIGHT_COLS
+                )
+            ):
+                raise ValueError(
+                    f"{name}: expected [rows, {ENGRAM_WEIGHT_COLS}] E4M3 "
+                    f"codes or uint8 [rows, {ENGRAM_WEIGHT_COLS // 2}] "
+                    f"MXFP4 pairs; got {data.dtype} {list(codes.shape)}"
+                )
             weight = codes
             rows = int(data.shape[0])
         else:
@@ -659,7 +736,7 @@ def convert_weight_data(
 
     The transform list, as data:
 
-    1. Rename table A on every routed-expert leaf (the only renames).
+    1. Rename table A on every MXFP4 expert scale (the only rename).
     2. Dtype relabel ``uint8`` -> ``float8_e8m0fnu`` on ``F8_E8M0`` scale
        leaves (dense ``.scale`` and the expert ``.weight_scale`` never
        needs it -- the expert scale is ``F8_E4M3``, one byte either way).
@@ -698,7 +775,8 @@ def convert_weight_data(
             map is injective), if a derived global scale reduces anything
             but one-value float32 scalars, or if a stacked pair arrives
             incomplete, beside its own stacked leaf, or off a whole
-            32-row scale-block or per-rank boundary.
+            32-row scale-block or per-rank boundary, or if an attention
+            projection's rows disagree with its norm width.
     """
     if engram_layer_ids:
         tables = _engram_tables(state_dict, engram_layer_ids)
@@ -734,10 +812,18 @@ def _rename_checkpoint(
                 "injective"
             )
         if name.endswith(".scale") and not name.endswith("weight_scale"):
-            # The only ``.scale`` leaves the tree holds are the dense
-            # FP8 compact E8M0 scales -- ``wo_a``'s included -- relabel
-            # only.
+            # The ``.scale`` leaves are E8M0: the dense FP8 compact scales
+            # (``wo_a``'s included) and the MXFP4 experts' -- relabel only.
             data = _relabel_dense_scale(name, data)
+        elif data.dtype == DType.int8 and _EXPERT_WEIGHT.match(tree_name):
+            # MXFP4 experts store their packed E2M1 pairs as ``I8``; the
+            # bytes are the tree's ``uint8`` codes.
+            data = WeightData(
+                _view_same_width(_as_buffer(data.data), DType.uint8),
+                data.name,
+                DType.uint8,
+                data.shape,
+            )
         out[tree_name] = data
     return out
 
@@ -761,6 +847,14 @@ def convert_safetensor_state_dict(
     this loader's own tables, not tree weights, and the adapter keeps
     only zero-copy views of them).
 
+    With a vision tower (:func:`~.interface.has_vision_tower`) the routers
+    keep ``gate.bias_vl``, which the leaf contract declares for such a
+    checkpoint. The vision encoder's tensors pass through under their
+    checkpoint names, which the encoder module declares, only when the
+    deployment builds the encoder (:func:`~.model_config.vision_config`); the
+    trunk declares none of them. Without ``pipeline_config`` the encoder
+    follows the tower.
+
     Returns :class:`AdapterResult`: ``state_dict`` feeds the module's
     parameter tree, and ``engram_tables`` -- the Engram embed tables as
     zero-copy uint8 views, in ``engram_layer_ids`` order -- feed the ABI
@@ -777,8 +871,10 @@ def convert_safetensor_state_dict(
     Raises:
         ValueError: Under expert parallelism (``ep_size > 1``), if any
             expert's ``w1`` and ``w3`` ``weight_scale_2`` disagree
-            (:func:`check_expert_gate_up_scale_pairs`); and everything
-            :func:`convert_weight_data` raises.
+            (:func:`check_expert_gate_up_scale_pairs`); if an Engram
+            table is stored in another format than ``quantization_config``
+            declares (:class:`.model_config.EngramTableFormat`); and
+            everything :func:`convert_weight_data` raises.
     """
     text = DeepseekV41Config.get_text_config(huggingface_config)
     resolve_quantization_info(
@@ -786,7 +882,11 @@ def convert_safetensor_state_dict(
         state_dict,
         int(text.num_hidden_layers),
     )
-    has_vision = False
+    table_format = EngramTableFormat.of(huggingface_config)
+    has_vision = has_vision_tower(huggingface_config)
+    builds_encoder = has_vision and (
+        pipeline_config is None or vision_config(pipeline_config) is not None
+    )
     engram_layer_ids = tuple(
         int(layer) for layer in getattr(text, "engram_layer_ids", ())
     )
@@ -816,12 +916,27 @@ def convert_safetensor_state_dict(
     }
     if ep_size > 1:
         check_expert_gate_up_scale_pairs(loaded)
-    return convert_weight_data(
+    result = convert_weight_data(
         loaded,
         has_vision=has_vision,
         engram_layer_ids=engram_layer_ids,
         n_devices=n_devices,
     )
+    # The memory planner sizes the tables from the declared format.
+    for table in result.engram_tables:
+        if table.packed != (table_format is EngramTableFormat.MXFP4):
+            raise ValueError(
+                f"layers.{table.layer}.engram.embed.weight is "
+                f"{list(table.weight_codes.shape)}, but quantization_config "
+                f"declares {table_format.value} Engram tables"
+            )
+    if builds_encoder:
+        result.update(
+            (name, value.data())
+            for name, value in sorted(state_dict.items())
+            if is_vision_tensor(name)
+        )
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -840,11 +955,6 @@ _DSPARK_EXPERT_TENSOR = re.compile(
     r"^(?P<stage>mtp\.\d+)\.ffn\.experts\.(?P<expert>\d+)\."
     r"w(?P<proj>[123])\.(?P<kind>weight|scale)$"
 )
-# The attention projections the drafter runs on bf16 host-dequantized
-# weights: the reference's MAX_QUANTIZED excludes them from activation
-# quantization, so the checkpoint's e4m3-plus-compact-e8m0 pairs become
-# plain bf16 GEMM operands at load time.
-_DSPARK_HOST_DEQUANT = ("wq_a", "wq_b", "wkv", "wo_a")
 
 
 def _stack_dspark_experts(
@@ -940,12 +1050,14 @@ def rewire_dspark_state_dict(
 ) -> dict[str, WeightData]:
     """Maps ``mtp.{i}.*`` tensors onto the DSpark drafter's parameter tree.
 
-    The drafter's tree keeps the trunk's shapes (no query-projection
-    fusing, no shared-expert ``gate_up`` fusion), so the mapping is renames
-    plus three real transforms: the four unquantized attention projections
-    are host-dequantized to bf16, the per-expert MXFP4 tensors are stacked
-    into the grouped kernels' packed layout, and the compact e8m0 scales
-    the tree keeps are relabeled to ``float8_e8m0fnu``. ``gate.bias_vl``
+    The drafter's tree keeps the trunk's shapes (no shared-expert
+    ``gate_up`` fusion), so the mapping is renames plus three real
+    transforms: ``wq_a`` and ``wkv`` stack into the one ``wqa_wkv``
+    projection the trunk's attention runs, the per-expert MXFP4
+    tensors are stacked into the grouped kernels' packed layout, and the
+    compact e8m0 scales the tree keeps are relabeled to
+    ``float8_e8m0fnu``. Every attention projection keeps the checkpoint's
+    e4m3 codes and compact scales, as the trunk's do. ``gate.bias_vl``
     drops (the drafter routes text only); the confidence head's
     projection drops by default -- the reference never runs adaptive
     verification -- and ``load_confidence_head`` loads and
@@ -963,9 +1075,10 @@ def rewire_dspark_state_dict(
 
     Raises:
         ValueError: On a tensor outside ``mtp.{i}.*``, a missing partner
-            (a dequant weight without its scale, a hoisted tensor under
-            the wrong stage), non-dense expert ids, a requested-but-missing
-            confidence head, or any input name the mapping does not consume.
+            (a projection without its scale, a hoisted tensor under
+            the wrong stage), mismatched projection and norm widths,
+            non-dense expert ids, a requested-but-missing confidence head,
+            or any input name the mapping does not consume.
     """
     stages: set[int] = set()
     for name in state_dict:
@@ -995,19 +1108,34 @@ def rewire_dspark_state_dict(
     for stage in sorted(stages):
         s, p = f"{d}.stages.{stage}", f"mtp.{stage}"
         put(f"{s}.attn.attn_sink", take(f"{p}.attn.attn_sink"))
-        put(f"{s}.attn.q_norm.weight", take(f"{p}.attn.q_norm.weight"))
-        put(f"{s}.attn.kv_norm.weight", take(f"{p}.attn.kv_norm.weight"))
-        for proj in _DSPARK_HOST_DEQUANT:
-            put(
-                f"{s}.attn.{proj}.weight",
-                dequantize_fp8_blocks(
-                    take(f"{p}.attn.{proj}.weight"),
-                    take(f"{p}.attn.{proj}.scale"),
-                    f"{s}.attn.{proj}.weight",
-                ),
-            )
-        put(f"{s}.attn.wo_b.weight", take(f"{p}.attn.wo_b.weight"))
-        keep_scale(f"{p}.attn.wo_b.scale", f"{s}.attn.wo_b.scale")
+        q_norm = take(f"{p}.attn.q_norm.weight")
+        kv_norm = take(f"{p}.attn.kv_norm.weight")
+        put(f"{s}.attn.q_norm.weight", q_norm)
+        put(f"{s}.attn.kv_norm.weight", kv_norm)
+        stacked = f"{s}.attn.wqa_wkv"
+        wq_a = take(f"{p}.attn.wq_a.weight")
+        wq_a_scale = take(f"{p}.attn.wq_a.scale")
+        wkv = take(f"{p}.attn.wkv.weight")
+        wkv_scale = take(f"{p}.attn.wkv.scale")
+        _check_compact_scale(wq_a, wq_a_scale)
+        _check_compact_scale(wkv, wkv_scale)
+        _check_norm_width(wq_a, q_norm, "wq_a")
+        _check_norm_width(wkv, kv_norm, "wkv")
+        put(
+            f"{stacked}.weight",
+            concat_rows(wq_a, wkv, f"{stacked}.weight"),
+        )
+        put(
+            f"{stacked}.scale",
+            concat_rows(
+                _relabel_e8m0(wq_a_scale),
+                _relabel_e8m0(wkv_scale),
+                f"{stacked}.scale",
+            ),
+        )
+        for proj in ("wq_b", "wo_a", "wo_b"):
+            put(f"{s}.attn.{proj}.weight", take(f"{p}.attn.{proj}.weight"))
+            keep_scale(f"{p}.attn.{proj}.scale", f"{s}.attn.{proj}.scale")
         put(f"{s}.attn_norm.weight", take(f"{p}.attn_norm.weight"))
         put(f"{s}.ffn_norm.weight", take(f"{p}.ffn_norm.weight"))
         for site in ("attn", "ffn"):

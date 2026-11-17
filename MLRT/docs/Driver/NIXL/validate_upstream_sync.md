@@ -47,32 +47,33 @@ What each subtree covers:
 
 ## Disaggregated inference benchmarks
 
-The shared-pool tests run the `nixl-validation-1p1d-b200` and
-`nixl-validation-1p1d-mi355` jobs of
-[`benchmarkMammothNightly`](../../../../.github/workflows/benchmarkMammothNightly.yaml);
-the nightly decides which jobs carry those ids. Today they are the P0 model's
-1p1d benchmark, with the nightly's concurrency sweep. Each takes about an hour,
-exercises the full MAX Serve stack end to end, and is the most reliable signal
-that an upstream NIXL bump didn't break disaggregated inference.
+The shared-pool tests run one lane of
+[`benchmarkMammothNightly`](../../../../.github/workflows/benchmarkMammothNightly.yaml)
+on B200: the Mach MiniMax-M3.1 1P1D single-turn lane, whose prefill-to-decode KV
+handoff goes over NIXL. `utils/benchmarking/mammoth/nixl-validation-lane.sh`
+names the lane, and a PR check fails any change to the nightly that drops it or
+points it at a dKV or aggregated config. The nightly has no MI355 lane, so the
+summary reports MI355 as not covered; the RoCE KV smoke rows are the AMD NIXL
+signal.
 
-To run one alone, copy `cluster_config` and `benchmark_config` from its job
-and trigger
-[`benchmarkMammoth`](../../../../.github/workflows/benchmarkMammoth.yaml).
-Use `--ref main` to test against `main`, or `--ref <branch>` for a feature
-branch; both auto-build the MAX Serve image from the target ref:
+Mach links NIXL from the in-tree pin, so the tests build a `mach-engine`
+image and export its MEF set from the dispatched ref before the lane runs.
+That adds the image build and about 25 minutes on an 8xB200 runner, plus
+that runner's queue, which the lane waits out. A failed image build shows as a
+failure, since a NIXL change can break it. A failed export or staging step,
+which NIXL doesn't touch, reports the lane as not available with the reason,
+rather than running it on `main`'s engine.
+
+To run the lane alone, dispatch the shared-pool tests on the branch:
 
 ```bash
-gh workflow run benchmarkMammoth.yaml \
+gh workflow run nixlSharedPoolTests.yaml \
   --repo modularml/modular \
-  --ref <branch-or-main> \
-  -f cluster_config=<the job's cluster_config> \
-  -f benchmark_config=<the job's benchmark_config>
+  --ref <branch-or-main>
 ```
 
-Add `-f modelapp_wait_timeout=<value>` when the job sets one.
-
 To run the full validation (correctness gate, which also dispatches the
-shared-pool tests — KV smoke + the nixl-validation benchmarks — as an
+shared-pool tests — KV smoke + the nixl-validation benchmark — as an
 informational companion run):
 
 ```bash

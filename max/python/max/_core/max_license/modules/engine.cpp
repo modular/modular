@@ -129,10 +129,20 @@ void M::Graph::Python::bindEngineModule(nb::module_ m) {
                      return M::Core::getModelTensorSpecs(self.getInputNames(),
                                                          self.getInputSpecs());
                    })
-      .def_prop_ro("output_metadata", [](const M::Model &self) {
-        return M::Core::getModelTensorSpecs(self.getOutputNames(),
-                                            self.getOutputSpecs());
-      });
+      .def_prop_ro("output_metadata",
+                   [](const M::Model &self) {
+                     return M::Core::getModelTensorSpecs(self.getOutputNames(),
+                                                         self.getOutputSpecs());
+                   })
+      .def_prop_ro(
+          "kernel_summaries",
+          [](const M::Model &self) { return self.getKernelSummaries(); },
+          R"nbdoc(
+        Kernel fusion summaries, one per kernel in the compiled function.
+
+        The same as :attr:`Model.kernel_summaries`, read from the compiled
+        artifact rather than from an initialized model.
+      )nbdoc");
 
   nb::class_<M::CompiledModels>(m, "CompiledModels", R"nbdoc(
         A compiled model artifact containing one or more submodels.

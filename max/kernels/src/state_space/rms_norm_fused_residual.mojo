@@ -815,7 +815,6 @@ def _rms_norm_fused_residual_impl[
     & RegisterPassable
     & def[width: SIMDLength, alignment: Int](Coord, SIMD[dtype, width]) -> None,
     //,
-    target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
 ](
     input_0_fn: Input0FnType,
@@ -831,7 +830,7 @@ def _rms_norm_fused_residual_impl[
     seed: UInt64 = 0,
 ) raises:
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
-    comptime assert is_gpu[target](), (
+    comptime assert ctx.target.is_gpu(), (
         "`_rms_norm_fused_residual_impl` only handles the GPU path; the CPU"
         " path is dispatched directly from the op registration via"
         " `_rms_norm_fused_residual_cpu_entry`, where the runtime closures can"
@@ -888,7 +887,6 @@ def rms_norm_fused_residual[
     & RegisterPassable
     & def[width: SIMDLength, alignment: Int](Coord, SIMD[dtype, width]) -> None,
     //,
-    target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
 ](
     input_0_fn: Input0FnType,
@@ -920,7 +918,6 @@ def rms_norm_fused_residual[
         Output0FnType: Type of the `output_0_fn` lambda (inferred).
         OutputResidualFnType: Type of the `output_residual_fn` lambda
             (inferred).
-        target: Compilation target, e.g. `"cpu"` or `"gpu"`.
         multiply_before_cast: When `True`, multiplies by `gamma` before
             casting to the output dtype.
 
@@ -948,13 +945,12 @@ def rms_norm_fused_residual[
     def description_fn() {imm} -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "rms_norm_fused_residual",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
         _rms_norm_fused_residual_impl[
-            target=target,
             multiply_before_cast=multiply_before_cast,
         ](
             input_0_fn,

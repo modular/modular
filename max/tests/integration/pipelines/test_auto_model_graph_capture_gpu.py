@@ -50,6 +50,7 @@ def _load(device_graph_capture: bool) -> AutoModel:
         device_specs=[DeviceSpec.accelerator()],
         quantization_encoding="bfloat16",
         max_length=512,
+        prefer_module_v3=False,
     )
 
 

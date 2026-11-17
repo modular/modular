@@ -42,7 +42,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines.audio import AudioExecutorOutputs
 from max.pipelines.context import AudioContext
-from max.pipelines.lib.memory_estimation import FreeMemory
+from max.pipelines.lib.memory_plan import FreeMemory
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig

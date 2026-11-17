@@ -76,8 +76,8 @@ jobs:
           ./bazelw test --config=ci \
             --config=public-cache \
             "${args[@]}" \
-            --build_tag_filters=-skip-external-ci,-requires-network \
-            --test_tag_filters=-skip-external-ci,-requires-network \
+            --build_tag_filters=-skip-external-ci,-postsubmit,-requires-network \
+            --test_tag_filters=-skip-external-ci,-postsubmit,-requires-network \
             -- \
             //...
         env:

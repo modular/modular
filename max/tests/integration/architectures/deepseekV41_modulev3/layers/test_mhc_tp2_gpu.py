@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from max import functional as F
 from max.dtype import DType
 from max.nn.module import Module
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
@@ -93,7 +94,8 @@ def test_initial_identity_collapse_tp2() -> None:
     stream = round_bf16(
         (rng.standard_normal((5, HC, HIDDEN)) * 0.3).astype(np.float32)
     )
-    module = _Initial(devices)
+    with F.lazy():
+        module = _Initial(devices)
     run = module.compile(
         TensorLayout(
             DType.bfloat16,

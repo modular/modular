@@ -17,12 +17,12 @@ from __future__ import annotations
 import os
 from typing import get_args
 
-from max.config import ConfigFileModel
+from max.config import ConfigModel
 from max.engine import GPUProfilingMode
 from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 
-class ProfilingConfig(ConfigFileModel):
+class ProfilingConfig(ConfigModel):
     """Configuration for the GPU (NVTX/Nsight) profiler and kernel tracing.
 
     ``max serve`` has no command-line flags for the ``kernel_trace_*``

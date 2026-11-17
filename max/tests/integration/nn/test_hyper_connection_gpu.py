@@ -15,7 +15,7 @@
 Covers the whole ModuleV2 layer: the unweighted RMSNorm, the stream
 projection, the fused gate op, and the stream collapse under each ``pre_mix``
 state. At DeepSeek-V4 widths on bf16 streams, the site without ``pre_mix`` runs
-as the fused ``mo.mhc.pre`` op on gfx950 and as the op chain elsewhere.
+as the fused ``hyper_connection.mhc.pre`` op on gfx950 and as the op chain elsewhere.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ from max.driver import accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn._graph_ops import mhc_pre_supports
 from max.nn.legacy import HyperConnection
-from max.nn.legacy.kernels import mhc_pre_supports
 from test_common.hyper_connection_reference import hyper_connection_reference
 from torch.utils.dlpack import from_dlpack
 
@@ -319,7 +319,7 @@ def test_fused_site_in_graph_only_without_pre_mix(
     cfg: _FusedConfig, with_pre_mix: bool
 ) -> None:
     graph = _fused_graph(cfg, with_pre_mix)
-    assert ("mo.mhc.pre" in str(graph)) == (
+    assert ("hyper_connection.mhc.pre" in str(graph)) == (
         _uses_fused(cfg) and not with_pre_mix
     )
 

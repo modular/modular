@@ -88,7 +88,7 @@ from std.utils import IndexList
 from layout import Coord, Idx, TileTensor, TensorLayout
 from layout.coord import crd2idx
 from layout._utils import make_amd_buffer_resource
-from layout.tile_layout import Layout, row_major, col_major
+from layout.layout import Layout, row_major, col_major
 from layout.swizzle import Swizzle
 from layout.tensor_engine import DefaultEngine, TensorEngine
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
@@ -1003,6 +1003,23 @@ def _load_from_lds[
                 _type=SIMD[.float16, 8]._mlir_type
             ](llvm_res)
         )
+    elif dtype.is_float8() and width == 4:
+        # A dword: one row of E8M0 scale bytes, as the A8W4 down strip reads
+        # them. The scopes are the wider float8 tiers': the load is noalias
+        # against `amdgpu.AsyncCopies`, so the backend may move it across a
+        # DMA into the bytes it reads. A caller must have drained that DMA
+        # (`s_waitcnt vmcnt`) and barred the waves that issued it before its
+        # first such read, as the strip does after its fill.
+        var llvm_res = __mlir_op.`llvm.load`[
+            _type=__mlir_type.`vector<4 x i8>`,
+            alignment=to_i64(Int64(alignment)),
+            noalias_scopes=alias_scope_attr,
+            alias_scopes=no_alias_scope_attr,
+        ](shared_ptr3)
+        var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
+            _type=SIMD[.uint8, 4]._mlir_type
+        ](llvm_res)
+        return bitcast[dtype, width](rebind[SIMD[.uint8, width]](uint8_vec))
     elif dtype.is_float8() and width == 8:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<8 x i8>`,
@@ -1798,6 +1815,46 @@ struct TileLoaderLDS[
 # ===----------------------------------------------------------------------=== #
 
 
+@inline(.always)
+def _buffer_resource_ptr[
+    in_registers: Bool
+](bc: AMDBufferResource) -> __mlir_type.`!llvm.ptr<8>`:
+    """Returns the `ptr addrspace(8)` form of a buffer resource descriptor.
+
+    The legacy form reloads the descriptor from a stack slot, which LLVM
+    cannot fold (addrspace 8 is non-integral). With spare LDS,
+    AMDGPUPromoteAlloca moves that slot to LDS, leaving a dead LDS store
+    and a `vmcnt(0)` drain behind each burst of DMAs. `in_registers`
+    builds the pointer with `inttoptr` instead.
+
+    Parameters:
+        in_registers: Skip the stack slot.
+
+    Args:
+        bc: The buffer resource descriptor.
+
+    Returns:
+        The descriptor as an LLVM buffer resource pointer.
+    """
+    comptime if in_registers:
+        return __mlir_op.`llvm.inttoptr`[_type=__mlir_type.`!llvm.ptr<8>`](
+            __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.`i128`](
+                bitcast[DType.uint128, 1](bc.desc)._mlir_value
+            )
+        )
+    var desc_ptr = MutPointer[
+        BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
+    ].unsafe_dangling()
+    var ptr_to_ptr = Pointer(to=desc_ptr)
+    var ptr_to_simd = Pointer(to=bc.desc)
+    ptr_to_ptr[0] = ptr_to_simd.unsafe_bitcast[
+        MutPointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
+    ]()[0]
+    return __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<8>`
+    ](desc_ptr)
+
+
 struct SubTileLoaderLDS[
     dtype: DType,
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
@@ -1870,6 +1927,7 @@ struct SubTileLoaderLDS[
     @inline(.always)
     def load[
         hoist_scalar_offset: Bool = False,
+        desc_in_registers: Bool = False,
     ](
         self,
         dst: TileTensor[Self.dtype, _, _, address_space=.SHARED, ...],
@@ -1926,6 +1984,8 @@ struct SubTileLoaderLDS[
             hoist_scalar_offset: Comptime flag selecting between legacy
                 per-iter codegen (`False`, default) and the explicit
                 caller-supplied hoisted base (`True`).
+            desc_in_registers: Build the descriptor pointer without a
+                stack slot; see `_buffer_resource_ptr`.
         """
         comptime M = type_of(src).static_shape[0]
         comptime N = type_of(src).static_shape[1]
@@ -1990,19 +2050,7 @@ struct SubTileLoaderLDS[
             ](umod(swizzled_worker_idx, WARP_SIZE))
             var dst_ptr = dst_partitions.ptr
 
-            var desc_ptr_ = MutPointer[
-                BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
-            ].unsafe_dangling()
-            var ptr_to_ptr = Pointer(to=desc_ptr_)
-            var ptr_to_simd = Pointer(to=self.bc.desc)
-            ptr_to_ptr[0] = ptr_to_simd.unsafe_bitcast[
-                MutPointer[
-                    BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
-                ]
-            ]()[0]
-            var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
-                _type=__mlir_type.`!llvm.ptr<8>`
-            ](desc_ptr_)
+            var desc_ptr_llvm = _buffer_resource_ptr[desc_in_registers](self.bc)
             var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
                 _type=__mlir_type.`!llvm.ptr<3>`
             ](dst_ptr)

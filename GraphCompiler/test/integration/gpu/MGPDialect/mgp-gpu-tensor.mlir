@@ -16,7 +16,7 @@
 // CHECK-LABEL: --- Running 'tensor_create_extract'
 // CHECK-NEXT: tensor = tensor<1x4xui8> [255, 254, 253, 252]
 // CHECK-NEXT: [mgp_test] debug string
-mgp.model @tensor_create_extract : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @tensor_create_extract devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 4
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

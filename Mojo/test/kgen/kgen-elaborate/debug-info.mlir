@@ -118,9 +118,9 @@ kgen.generator export @top() {
 // CHECK: } loc([[LOC:#.*]])
 // CHECK-NEXT: } loc([[MODULE_LOC:#.*]])
 
-kgen.generator @"mangled::original_name"() attributes {linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>} {
+kgen.generator @"mangled::original_name"() {
   hlcf.return loc(#export_loc)
-} loc(#export_loc)
+} <linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>> loc(#export_loc)
 
 // CHECK-DAG: [[EXPORT_SP:#.*]] = #debuginfo.subprogram
 // CHECK-SAME:  sourceName = <"original_name">

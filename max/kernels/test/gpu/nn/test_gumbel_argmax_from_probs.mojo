@@ -248,6 +248,8 @@ def test_amd_split_matches_single(ctx: DeviceContext, rows: Int, d: Int) raises:
     var no_temperature: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
     var no_partials: Optional[MutPointer[UInt8, MutAnyOrigin]] = None
     var no_counters: Optional[MutPointer[Int32, MutAnyOrigin]] = None
+    var no_sub: Optional[ImmPointer[Float32, ImmutAnyOrigin]] = None
+    var no_fallback: Optional[ImmPointer[Int64, ImmutAnyOrigin]] = None
     var partials = Optional[MutPointer[UInt8, MutAnyOrigin]](
         partials_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
     )
@@ -283,6 +285,8 @@ def test_amd_split_matches_single(ctx: DeviceContext, rows: Int, d: Int) raises:
         Int32(1),
         no_partials,
         no_counters,
+        no_sub,
+        no_fallback,
         grid_dim=rows,
         block_dim=block_size,
         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -295,6 +299,8 @@ def test_amd_split_matches_single(ctx: DeviceContext, rows: Int, d: Int) raises:
         blocks_per_row,
         partials,
         counters,
+        no_sub,
+        no_fallback,
         grid_dim=rows * Int(blocks_per_row),
         block_dim=block_size,
         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -316,10 +322,280 @@ def test_amd_split_matches_single(ctx: DeviceContext, rows: Int, d: Int) raises:
     _ = counters_dev^
 
 
+def _draw_residual(
+    ctx: DeviceContext,
+    rows: Int,
+    d: Int,
+    probs: List[Float64],
+    proposal: List[Float64],
+    seeds: List[UInt64],
+    fallback: List[Int64],
+) raises -> List[Int]:
+    """Runs one residual launch and returns the drawn token per row."""
+    var probs_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
+    var proposal_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
+    var seeds_host = ctx.enqueue_create_host_buffer[.uint64](rows)
+    var fallback_host = ctx.enqueue_create_host_buffer[.int64](rows)
+    for row in range(rows):
+        for col in range(d):
+            probs_host[row * d + col] = Float32(probs[row * d + col])
+            proposal_host[row * d + col] = Float32(proposal[row * d + col])
+        seeds_host[row] = seeds[row]
+        fallback_host[row] = fallback[row]
+
+    var probs_dev = ctx.enqueue_create_buffer[.float32](rows * d)
+    var proposal_dev = ctx.enqueue_create_buffer[.float32](rows * d)
+    var seeds_dev = ctx.enqueue_create_buffer[.uint64](rows)
+    var fallback_dev = ctx.enqueue_create_buffer[.int64](rows)
+    var out_dev = ctx.enqueue_create_buffer[.int64](rows)
+    ctx.enqueue_copy(probs_dev, probs_host)
+    ctx.enqueue_copy(proposal_dev, proposal_host)
+    ctx.enqueue_copy(seeds_dev, seeds_host)
+    ctx.enqueue_copy(fallback_dev, fallback_host)
+
+    var seed_tile = (
+        TileTensor(seeds_dev, row_major(rows)).as_unsafe_any_origin().as_imm()
+    )
+    gumbel_sampling_fused_gpu[from_probs=False, subtract=True](
+        ctx,
+        TileTensor(probs_dev, row_major(rows, d)),
+        TileTensor(out_dev, row_major(rows)),
+        seed=seed_tile,
+        sub=TileTensor(proposal_dev, row_major(rows, d))
+        .as_unsafe_any_origin()
+        .as_imm(),
+        fallback=TileTensor(fallback_dev, row_major(rows))
+        .as_unsafe_any_origin()
+        .as_imm(),
+    )
+
+    var out_host = ctx.enqueue_create_host_buffer[.int64](rows)
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    var out = List[Int]()
+    for row in range(rows):
+        out.append(Int(out_host[row]))
+
+    _ = probs_dev^
+    _ = proposal_dev^
+    _ = seeds_dev^
+    _ = fallback_dev^
+    _ = out_dev^
+    return out^
+
+
+def _draw_materialized_residual(
+    ctx: DeviceContext,
+    rows: Int,
+    d: Int,
+    probs: List[Float64],
+    proposal: List[Float64],
+    seeds: List[UInt64],
+    fallback: List[Int64],
+) raises -> List[Int]:
+    """Draws the same rows from a `relu(p - q)` written out to HBM first.
+
+    This is the two-tensor reference the fused kernel has to reproduce: the
+    residual is formed and clamped on the host (bit-identically to the
+    subtract-then-clamp the kernel does in registers), then sampled through
+    `from_probs`. A row whose `fallback` entry is non-negative subtracts a
+    one-hot at that token instead of its proposal row.
+    """
+    var residual_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
+    var seeds_host = ctx.enqueue_create_host_buffer[.uint64](rows)
+    for row in range(rows):
+        for col in range(d):
+            var q = proposal[row * d + col]
+            if fallback[row] >= 0:
+                q = 1.0 if Int(fallback[row]) == col else 0.0
+            var value = probs[row * d + col] - q
+            residual_host[row * d + col] = Float32(max(value, 0.0))
+        seeds_host[row] = seeds[row]
+
+    var residual_dev = ctx.enqueue_create_buffer[.float32](rows * d)
+    var seeds_dev = ctx.enqueue_create_buffer[.uint64](rows)
+    var out_dev = ctx.enqueue_create_buffer[.int64](rows)
+    ctx.enqueue_copy(residual_dev, residual_host)
+    ctx.enqueue_copy(seeds_dev, seeds_host)
+
+    gumbel_sampling_fused_gpu[from_probs=True](
+        ctx,
+        TileTensor(residual_dev, row_major(rows, d)),
+        TileTensor(out_dev, row_major(rows)),
+        seed=TileTensor(seeds_dev, row_major(rows))
+        .as_unsafe_any_origin()
+        .as_imm(),
+    )
+
+    var out_host = ctx.enqueue_create_host_buffer[.int64](rows)
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    var out = List[Int]()
+    for row in range(rows):
+        out.append(Int(out_host[row]))
+
+    _ = residual_dev^
+    _ = seeds_dev^
+    _ = out_dev^
+    return out^
+
+
+def test_residual_matches_materialized(ctx: DeviceContext, d: Int) raises:
+    """The fused draw equals sampling a materialized `relu(p - q)`.
+
+    Both arms draw with the same per-row seed, so the only way to disagree
+    is for the fused kernel to add noise in a different order or to form a
+    different residual. This pins both: it is the value-level check that the
+    RNG sequence and the arithmetic did not move. Odd `d` also covers the
+    kernel's ragged tail, which loads the proposal one element at a time.
+    """
+    var rows = 64
+    var probs = List[Float64]()
+    var proposal = List[Float64]()
+    var seeds = List[UInt64]()
+    var fallback = List[Int64]()
+    for row in range(rows):
+        for col in range(d):
+            var p = Float64((row * 8191 + col * 65537) % 1009) / 1009.0
+            var q = Float64((row * 4099 + col * 8191) % 997) / 997.0
+            # Both sides of the clamp: half the entries leave the proposal
+            # heavier than the target, so the residual is zero there.
+            probs.append(p if (row + col) % 3 != 0 else p * 0.25)
+            proposal.append(q)
+        seeds.append(UInt64(row * 104729 + 11))
+        fallback.append(-1)
+
+    var fused = _draw_residual(ctx, rows, d, probs, proposal, seeds, fallback)
+    var reference = _draw_materialized_residual(
+        ctx, rows, d, probs, proposal, seeds, fallback
+    )
+    for row in range(rows):
+        assert_equal(
+            fused[row],
+            reference[row],
+            String(t"d={d}, row={row}: fused {fused[row]} != {reference[row]}"),
+        )
+
+
+def test_residual_fallback_subtracts_one_hot(ctx: DeviceContext) raises:
+    """Rows with a fallback id subtract a one-hot at that token.
+
+    A row that carries no proposal distribution has to lose exactly the
+    token that was rejected. Splitting the batch between fallback rows and
+    proposal rows checks that the per-row choice is honoured in one launch:
+    a kernel that applied one of them to the whole batch fails on the other
+    half. `d` is a multiple of the SIMD width so the fallback path runs on
+    full chunks.
+    """
+    comptime d = 1024
+    var rows = 48
+    var probs = List[Float64]()
+    var proposal = List[Float64]()
+    var seeds = List[UInt64]()
+    var fallback = List[Int64]()
+    for row in range(rows):
+        for col in range(d):
+            probs.append(Float64((col * 37) % 101) / 101.0 + 0.001)
+            proposal.append(Float64((col * 53) % 97) / 97.0)
+        seeds.append(UInt64(row * 7919 + 3))
+        # Every other row takes the one-hot branch, at a token that has
+        # residual mass so the rejection is visible in the reference.
+        fallback.append(Int64((row * 31) % d) if row % 2 == 0 else -1)
+
+    var fused = _draw_residual(ctx, rows, d, probs, proposal, seeds, fallback)
+    var reference = _draw_materialized_residual(
+        ctx, rows, d, probs, proposal, seeds, fallback
+    )
+    for row in range(rows):
+        assert_equal(
+            fused[row],
+            reference[row],
+            String(t"row {row}: fused {fused[row]} != {reference[row]}"),
+        )
+    for row in range(0, rows, 2):
+        assert_true(
+            fused[row] >= 0 and fused[row] < d,
+            String(t"row {row}: drew {fused[row]} outside the vocabulary"),
+        )
+
+
+def test_residual_frequencies_match_distribution(ctx: DeviceContext) raises:
+    """Pooled draws follow `max(p - q, 0)`, not `p` and not `p - q`.
+
+    A residual that forgets the clamp draws from the negative lobes too, and
+    one that skips the subtract draws the target -- both land far outside
+    the bound here, because the proposal is built to zero out different
+    tokens than the target's head.
+    """
+    comptime d = 8
+    var rows = 16384
+    var target: List[Float64] = [
+        0.30,
+        0.20,
+        0.15,
+        0.12,
+        0.10,
+        0.08,
+        0.04,
+        0.01,
+    ]
+    var draft: List[Float64] = [
+        0.02,
+        0.02,
+        0.02,
+        0.02,
+        0.42,
+        0.30,
+        0.15,
+        0.05,
+    ]
+
+    var probs = List[Float64]()
+    var proposal = List[Float64]()
+    var seeds = List[UInt64]()
+    var fallback = List[Int64]()
+    for row in range(rows):
+        for col in range(d):
+            probs.append(target[col])
+            proposal.append(draft[col])
+        seeds.append(UInt64(row))
+        fallback.append(-1)
+
+    var out = _draw_residual(ctx, rows, d, probs, proposal, seeds, fallback)
+
+    var counts = List[Int]()
+    for _ in range(d):
+        counts.append(0)
+    for row in range(rows):
+        counts[out[row]] += 1
+
+    var residual = List[Float64]()
+    var total = 0.0
+    for col in range(d):
+        residual.append(max(target[col] - draft[col], 0.0))
+        total += residual[col]
+
+    for col in range(d):
+        var p = residual[col] / total
+        var freq = Float64(counts[col]) / Float64(rows)
+        var tol = 5.0 * sqrt(p * (1.0 - p) / Float64(rows)) + 1e-3
+        assert_true(
+            abs(freq - p) < tol,
+            String(t"token {col}: frequency {freq} != {p} (tol {tol})"),
+        )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_empty_batch(ctx)
         test_frequencies_match_distribution(ctx)
+        test_residual_frequencies_match_distribution(ctx)
+        test_residual_fallback_subtracts_one_hot(ctx)
+        # Even widths stay in full chunks; the odd ones take the ragged tail.
+        test_residual_matches_materialized(ctx, d=1024)
+        test_residual_matches_materialized(ctx, d=2049)
         test_zero_mass_never_wins(ctx, d=131)
         test_zero_mass_never_wins(ctx, d=1024)
         # Real Llama-3.1-8B vocabulary width.

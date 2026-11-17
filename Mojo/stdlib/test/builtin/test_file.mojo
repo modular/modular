@@ -452,7 +452,7 @@ def test_file_get_raw_fd() raises:
 
     print(
         "test from file 1",
-        file=RawFileDescriptor(f1),
+        file=f1,
         flush=True,
         end="",
     )
@@ -467,13 +467,13 @@ def test_file_get_raw_fd() raises:
 
     print(
         "test from file 2",
-        file=RawFileDescriptor(f2),
+        file=f2,
         flush=True,
         end="",
     )
     print(
         "test from file 3",
-        file=RawFileDescriptor(f3),
+        file=f3,
         flush=True,
         end="",
     )
@@ -712,8 +712,9 @@ def test_optional_file_handle_uses_niche() raises:
 
     var temp_file = Path(gettempdir().value()) / "test_file_optional_niche"
     var maybe: Optional[FileHandle] = open(temp_file, "w")
-    assert_true(maybe)
-    maybe.value().write("niche")
+    __guard case .Some(ref handle) = maybe else:
+        raise Error("expected an open file handle")
+    handle.write("niche")
     maybe = None
     assert_false(maybe)
 

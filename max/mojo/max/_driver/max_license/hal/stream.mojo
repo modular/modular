@@ -12,14 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from .plugin import OpaquePointer, FunctionHandle, OutParam, ContextHandle
-from ._plugin._overlay import HAL_PLUGINS
+from max._plugin import MaxPluginForTarget
 from std.collections import OptionalReg
 from .buffer import Buffer, BufferView
 from .context import Context
 from .queue import Queue
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable
+from .extensions.completion_flag import FlagCondition
+from .extensions.traits import SupportsCompletionFlagV1
+from .plugins import FlagHandle
 from .device import DeviceSpec
-from .status import STATUS_SUCCESS, HALError
+from .status import STATUS_SUCCESS, STATUS_UNKNOWN_SYMBOL, HALError
 from std.collections import OptionalReg
 from std.memory import (
     ArcPointer,
@@ -27,7 +30,9 @@ from std.memory import (
     MaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
-from max.gpu.host import GridBlockExecutionConfig
+from std.reflection import SourceLocation, call_location
+from max.gpu.host import ExecutionConfig, GridBlockExecutionConfig
+from max.gpu.host._launch_args import DeviceFunctionWrapper
 
 
 @fieldwise_init
@@ -46,9 +51,9 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
     var _queue_is_stream: Bool
     var _self_ref: WeakPointer[Self]
 
-    comptime HALExtensions = HAL_PLUGINS.for_target[
-        DeviceSpec._mlir_target[Self.device_spec]()
-    ].HookFor[DeviceSpec.target[Self.device_spec]()].extensions
+    comptime HALExtensions = MaxPluginForTarget[
+        DeviceSpec.target[Self.device_spec]()
+    ].HalHooks.extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
 
@@ -115,9 +120,152 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
             return
         self._chain_event = Optional(self._queue[].record_event())
 
+    @inline(.always)
+    def _launch[
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        Wrapper: DeviceFunctionWrapper,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        api_name: StringLiteral,
+        *Ts: AnyType,
+    ](
+        mut self,
+        func: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        *args: *Ts,
+    ) raises HALError:
+        """Packs and launches as `Queue._launch` does, after all previous
+        Stream ops."""
+        self._chain_wait()
+        self._queue[]._launch[Wrapper, declared_arg_types, api_name](
+            func, execution_config, *args
+        )
+        self._chain_signal()
+
     # ===-------------------------------------------------------------------===#
     # Stream operations
     # ===-------------------------------------------------------------------===#
+
+    @inline(.always)
+    def execute[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        kernel: def(*args: *declared_arg_types) thin -> None,
+        *Ts: AnyType,
+    ](
+        mut self,
+        *args: *Ts,
+        function: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        location: Optional[SourceLocation] = None,
+    ) raises HALError:
+        """Enqueues `function`, the loaded `kernel`, with `args` as
+        `execution_config` describes. Runs after all previous Stream ops.
+
+        See `Queue.execute` for what `function` and `args` must be.
+
+        Parameters:
+            declared_arg_types: The kernel's declared argument types.
+            ExecutionConfigType: The type of `execution_config`.
+            kernel: The kernel `function` was compiled from.
+            Ts: The argument types.
+
+        Args:
+            args: The kernel's arguments.
+            function: The loaded function.
+            execution_config: How to launch it.
+            location: Where the launch was requested, for errors; the
+                caller's location by default.
+
+        Raises:
+            If an argument can't be packed or the launch fails.
+        """
+        self._chain_wait()
+        self._queue[].execute[kernel](
+            *args,
+            function=function,
+            execution_config=execution_config,
+            location=location.or_else(call_location()),
+        )
+        self._chain_signal()
+
+    @doc_hidden
+    def execute[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        kernel: def(*args: *declared_arg_types) thin raises -> None,
+        *Ts: AnyType,
+    ](
+        mut self,
+        *args: *Ts,
+        function: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        location: Optional[SourceLocation] = None,
+    ) raises HALError:
+        # Only a raising kernel lands here; the overload above takes the rest.
+        comptime assert False, "a kernel launched by `execute` can't raise"
+
+    @inline(.always)
+    def execute[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        kernel: def(*args: *declared_arg_types) thin -> None,
+        *Ts: AnyType,
+    ](
+        mut self,
+        *args: *Ts,
+        execution_config: ExecutionConfigType,
+        location: Optional[SourceLocation] = None,
+    ) raises HALError:
+        """Compiles `kernel` for this stream's device, loads it, and enqueues
+        it with `args` as `execution_config` describes. Runs after all
+        previous Stream ops.
+
+        See `Queue.execute` for how `kernel` stays loaded and what `args` and
+        `execution_config` must be.
+
+        Parameters:
+            declared_arg_types: The kernel's declared argument types.
+            ExecutionConfigType: The type of `execution_config`.
+            kernel: The kernel to launch.
+            Ts: The argument types.
+
+        Args:
+            args: The kernel's arguments.
+            execution_config: How to launch it.
+            location: Where the launch was requested, for errors; the
+                caller's location by default.
+
+        Raises:
+            If `kernel` can't be loaded, an argument can't be packed or the
+            launch fails.
+        """
+        self._chain_wait()
+        self._queue[].execute[kernel](
+            *args,
+            execution_config=execution_config,
+            location=location.or_else(call_location()),
+        )
+        self._chain_signal()
+
+    @doc_hidden
+    def execute[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        kernel: def(*args: *declared_arg_types) thin raises -> None,
+        *Ts: AnyType,
+    ](
+        mut self,
+        *args: *Ts,
+        execution_config: ExecutionConfigType,
+        location: Optional[SourceLocation] = None,
+    ) raises HALError:
+        # Only a raising kernel lands here; the overload above takes the rest.
+        comptime assert False, "a kernel launched by `execute` can't raise"
 
     def execute[
         args_origin: ImmOrigin, //
@@ -273,14 +421,41 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
         self._queue[].copy(dst=dst, src=src)
         self._chain_signal()
 
-    def wait_value64(
-        mut self, device_address: UInt64, value: UInt64
+    def wait_flag(
+        mut self,
+        flag: FlagHandle,
+        value: UInt64,
+        cond: FlagCondition,
     ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` equals
-        `value`. Runs after all previous Stream ops."""
-        self._chain_wait()
-        self._queue[].wait_value64(device_address, value)
-        self._chain_signal()
+        """Enqueues a wait until `flag` meets `cond` against `value`. Runs
+        after all previous Stream ops.
+
+        Args:
+            flag: The flag to wait on, created by this stream's plugin.
+            value: The target value. Keep it below 2^63: HIP compares flag
+                values as signed.
+            cond: The comparison, one the plugin reports.
+
+        Raises:
+            `STATUS_UNKNOWN_SYMBOL` if the stream's plugin has no completion
+            flags, or the plugin's error if it refuses the wait.
+        """
+        comptime if conforms_to(Self.HALExtensions, SupportsCompletionFlagV1):
+            if case .Some(flags) = self.extensions().completion_flag():
+                self._chain_wait()
+                flags.wait(
+                    self._queue[]._raw[],
+                    self._queue[]._handle,
+                    flag,
+                    value,
+                    cond,
+                )
+                self._chain_signal()
+                return
+        raise HALError(
+            STATUS_UNKNOWN_SYMBOL,
+            message="plugin does not export completion flags",
+        )
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,

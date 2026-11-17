@@ -23,6 +23,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 #include "Support/URI.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -41,7 +42,8 @@ namespace M::Cache {
 ///
 /// Conceptually, the backends form a linked-list that's sorted in priority
 /// order that the BlobCache below will use to find an item.
-class BlobCacheBackend : public ReferenceCounted<BlobCacheBackend> {
+class MODULAR_CXX_EXPORT BlobCacheBackend
+    : public ReferenceCounted<BlobCacheBackend> {
 public:
   virtual ~BlobCacheBackend() {}
 
@@ -244,33 +246,59 @@ private:
 };
 
 /// Returns an in-memory implementation of the BlobCacheBackend.
-RCRef<BlobCacheBackend> getInMemoryBackend();
+MODULAR_CXX_EXPORT RCRef<BlobCacheBackend> getInMemoryBackend();
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. If the
 /// base path is not specified, then the backend will use the CWD. The cache
 /// reads and writes to the filesystem by default, but if `readOnly` is
 /// specified, only reads are performed.
-RCRef<BlobCacheBackend>
+MODULAR_CXX_EXPORT RCRef<BlobCacheBackend>
 getFilesystemBackend(const std::filesystem::path &basePath = "",
                      bool readOnly = false);
+
+/// A binary that uses a versioned cache directory. Each version directory lists
+/// the binaries using it in `.owners`, one "<buildID>\t<path>" line each. A
+/// cache with two versions looks like this:
+///
+///     <cacheDir>/
+///       1.3.0<buildID>-production/       version, build ID, build type
+///         .owners                        <buildID>\t/env/bin/mojo
+///         M2VmYTJjNmZmY2QwYTk3MWM4...    cached blobs, named by key
+///       1.2.0<otherBuildID>-production/
+///         .owners                        <otherBuildID>\t/other-env/bin/mojo
+///         ...
+struct CacheOwner {
+  /// Canonical path of the binary.
+  std::string path;
+  /// Build ID of the binary, which changes when the binary at `path` is
+  /// replaced.
+  std::string buildID;
+};
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. The
 /// `cacheDir` is used to derive a path for use by the filesystem backend. The
 /// `version` specifies the version string of the cache, defaults to
 /// MODULAR_VERSION_STRING if the provided version is empty.
-ErrorOr<RCRef<BlobCacheBackend>>
+///
+/// Opening a backend prunes sibling version directories of the same build type.
+/// Without an `owner`, the backend prunes every such directory. With one, it
+/// records the owner in this version's directory. It then prunes a sibling only
+/// when every binary recorded there is gone or was replaced by the owner.
+MODULAR_CXX_EXPORT ErrorOr<RCRef<BlobCacheBackend>>
 getFilesystemBackend(const std::filesystem::path &cacheDir,
-                     std::string_view version);
+                     std::string_view version,
+                     const std::optional<CacheOwner> &owner = std::nullopt);
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `cacheDir` is used to derive a path for use
 /// by the filesystem backend. The `version` specifies the version string of the
 /// cache, defaults to MODULAR_VERSION_STRING if the provided version is empty.
-ErrorOr<RCRef<BlobCacheBackend>>
-getLocalDefaultBackendChain(const std::filesystem::path &cacheDir = "",
-                            std::string_view version = "");
+/// See getFilesystemBackend for `owner`.
+MODULAR_CXX_EXPORT ErrorOr<RCRef<BlobCacheBackend>> getLocalDefaultBackendChain(
+    const std::filesystem::path &cacheDir = "", std::string_view version = "",
+    const std::optional<CacheOwner> &owner = std::nullopt);
 
-ErrorOr<RCRef<BlobCacheBackend>>
+MODULAR_CXX_EXPORT ErrorOr<RCRef<BlobCacheBackend>>
 getDefaultBackendChain(const URI &cacheUri, std::string_view version = "");
 
 } // namespace M::Cache

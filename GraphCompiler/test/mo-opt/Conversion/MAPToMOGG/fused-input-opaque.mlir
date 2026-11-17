@@ -7,7 +7,7 @@
 // CHECK-LABEL: mo.graph @partial_fused
 // CHECK: %[[A:.*]] = mogg.tensor.create(%{{.*}}, %{{.*}}) <device = "cpu",{{.*}}mut = false{{.*}}> : !mogg.tensor
 // CHECK: %[[B:.*]] = mogg.tensor.create(%{{.*}}, %{{.*}}) <device = "cpu",{{.*}}mut = false{{.*}}> : !mogg.tensor
-// CHECK: %[[PRO:[^ ,)]+]] = mogg.tensor.create.prologue %{{.*}} (%[[I:[^ ,)]+]] : !map.index<2>) capturing {%[[CAP:[^ ,)]+]] = %[[A]] : !mogg.tensor} device = "cpu", elementType = f32, io = Input, mut = false {
+// CHECK: %[[PRO:[^ ,)]+]] = mogg.tensor.create.prologue %{{.*}} (%[[I:[^ ,)]+]] : !map.index<2>) capturing {%[[CAP:[^ ,)]+]] = %[[A]] : !mogg.tensor} contract = <{role = input, fused = true, access = load, capabilities = none}> device = "cpu", elementType = f32, io = Input, mut = false {
 // CHECK:   %[[V:.*]] = mogg.tensor.load %[[CAP]][%[[I]]] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
 // CHECK:   mogg.yield %[[V]] : !mogg.simd<f32>
 // CHECK: mogg.call.opaque @{{.*}}MapLowerPartialFusedInputs inputs(%[[PRO]], %[[B]] : !mogg.tensor, !mogg.tensor) outputs(%{{.*}} : !mogg.tensor) context(%{{.*}} : !mogg.context)

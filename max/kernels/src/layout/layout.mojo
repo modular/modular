@@ -10,765 +10,669 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides a high-performance tensor layout system for memory mapping and indexing.
+"""Provides a mixed compile-time/runtime layout system for tensor memory mapping.
 
-The layout module implements a comprehensive system for describing memory layouts
-of multi-dimensional tensors, enabling efficient mapping between logical tensor
-coordinates and physical memory locations. This is a critical component for
-high-performance tensor operations in machine learning and scientific computing.
-These low-level primitives require careful use to avoid errors.
-Understanding the relationship between tensor shapes, strides, and
-memory layout is essential for effective use.
+This module provides a layout system where some dimensions can be known at
+compile time and others determined at runtime, enabling ergonomic layout
+definitions while maintaining performance through compile-time specialization.
 
 Key components:
-- `Layout`: Primary struct implementing memory layout with shape and stride information
-- Layout algebra: Functions for composing, dividing, and transforming layouts
-- Tiling operations: Functions for hierarchical decomposition of layouts
 
-Performance features:
-- Zero-cost abstractions for mapping between logical and physical indices
-- Support for both compile-time and runtime-determined shapes
-- Efficient memory access patterns through layout transformations
-- Hierarchical tiling for cache-friendly memory access
+- [`TensorLayout`](/api/mojo/layout/layout/TensorLayout): Trait
+  defining the interface for all mixed layouts.
+- [`Layout`](/api/mojo/layout/layout/Layout): Primary struct
+  implementing a layout with mixed compile-time and runtime dimensions.
+- [`row_major`](/api/mojo/layout/layout/row_major): Create a
+  row-major layout from a shape.
+- [`col_major`](/api/mojo/layout/layout/col_major): Create a
+  column-major layout from a shape.
+- [`blocked_product`](/api/mojo/layout/layout/blocked_product):
+  Create a hierarchical blocked layout from block and tiler layouts.
+- [`zipped_divide`](/api/mojo/layout/layout/zipped_divide): Divide
+  a layout into inner and outer components by a tile shape.
+- [`coalesce`](/api/mojo/layout/layout/coalesce): Simplify a
+  layout by merging dimensions with contiguous strides.
+- [`composition`](/api/mojo/layout/layout/composition): Compose two
+  static layouts, such as an operand's layout after a thread-value layout.
 
-Common use cases:
-- Defining memory layouts for tensors with different storage formats (row-major, column-major)
-- Implementing efficient tensor operations with optimal memory access patterns
-- Supporting hardware-specific memory layouts for accelerators
-- Enabling zero-copy tensor views and reshaping operations
-
-Example:
+You can import these APIs from the `layout` package:
 
 ```mojo
-from std.collections import Optional
-from layout import Layout, IntTuple
-from layout.layout import blocked_product
-
-# Create a 3x4 row-major layout
-var layout = Layout.row_major(3, 4)
-
-# Access the memory location for logical coordinates (1, 2)
-var memory_idx = layout([1, 2])
-
-# Create a tiled layout for blocked matrix multiplication
-var tiled = blocked_product(layout^, Layout([2, 2]))
+from layout.layout import Layout, TensorLayout, row_major, col_major
 ```
 """
 
 import std.sys
-from std.math import ceildiv
-from std.collections.string.string import _calc_initial_buffer_size_int32
-from std.os import abort
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+from std.math.uutils import udivmod_unchecked
 
-
-from std.utils.coord import Coord
-
-from .int_tuple import (
-    UNKNOWN_VALUE,
-    IntTuple,
-    abs,
-    compact_order,
+from layout.coord import (
+    ComptimeInt,
+    Idx,
+    Coord,
+    CoordLike,
+    DynamicCoord,
     crd2idx,
-    flatten,
     idx2crd,
-    inner_product,
-    is_int,
-    is_tuple,
-    mul,
-    prefix_product,
-    product,
-    product_each,
-    reverse,
-    shape_div,
-    sorted,
-    to_unknown,
-    tuple_min,
+    _IntToComptimeInt,
+    _CoordToDynamic,
+    _NestedDynamicCoord,
+    _Divide,
+    _Multiply,
+    _MultiplyByScalar,
+    _Flattened,
+    _IsNotTuplePredicate,
 )
 
-# ===-----------------------------------------------------------------------===#
-# Layout                                                                       #
-# ===-----------------------------------------------------------------------===#
+
+@inline(.nodebug)
+def _divide_by_stride[StrideType: CoordLike](idx: Int, stride_val: Int) -> Int:
+    """Divide idx by stride, specializing for compile-time known values."""
+    comptime if StrideType.is_static_value and StrideType.static_value == 1:
+        return idx
+    elif StrideType.is_static_value:
+        var q, _ = udivmod_unchecked(idx, StrideType.static_value)
+        return q
+    else:
+        var q, _ = udivmod_unchecked(idx, stride_val)
+        return q
 
 
-def make_layout(*layouts: Layout) -> Layout:
-    """Creates a composite layout by concatenating multiple layouts.
+@inline(.nodebug)
+def _mod_by_shape[ShapeType: CoordLike](val: Int, shape_val: Int) -> Int:
+    """Compute val % shape, specializing for compile-time known values.
 
-    This function combines multiple layouts into a single layout by concatenating
-    their shapes and strides. The resulting layout represents a hierarchical
-    structure where each input layout becomes a component of the output layout.
-
-    Args:
-        layouts: Variable number of `Layout` objects to combine.
-
-    Returns:
-        A new Layout with concatenated shapes and strides from the input layouts.
-
-    Example:
-
-    ```mojo
-    from layout import Layout, IntTuple
-    from layout.layout import make_layout
-
-    var layout1 = Layout(IntTuple(2, 3), IntTuple(3, 1))
-    var layout2 = Layout(IntTuple(4, 5), IntTuple(5, 1))
-    var combined = make_layout(layout1, layout2)
-    # Result: Layout with shape ((2, 3), (4, 5)) and stride ((3, 1), (5, 1))
-    ```
+    When the shape is compile-time known, uses the static value so LLVM can
+    constant-fold. Special-cases shape==1 to return 0 directly.
     """
-    var shape = IntTuple()
-    var stride = IntTuple()
-    for layout in layouts:
-        shape.append(layout.shape)
-        stride.append(layout.stride)
-    return Layout(shape, stride)
+    comptime if ShapeType.is_static_value and ShapeType.static_value == 1:
+        return 0
+    elif ShapeType.is_static_value:
+        _, var r = udivmod_unchecked(val, ShapeType.static_value)
+        return r
+    else:
+        _, var r = udivmod_unchecked(val, shape_val)
+        return r
 
 
-def make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
-    """Creates a composite layout from two layouts.
+trait TensorLayout(DevicePassable, TrivialRegisterPassable):
+    """Trait defining the interface for mixed compile-time/runtime layouts.
 
-    This is a specialized version of make_layout that takes exactly two layouts
-    and combines them into a single layout. This function exists as a workaround
-    for compiler limitations.
-
-    Args:
-        layout_a: The first layout to include in the composite.
-        layout_b: The second layout to include in the composite.
-
-    Returns:
-        A new `Layout` with concatenated shapes and strides from the input layouts.
+    Implementors map logical multi-dimensional coordinates to linear memory
+    indices, with support for dimensions that are known at compile time or
+    determined at runtime.
     """
-    return Layout(
-        [layout_a.shape, layout_b.shape],
-        [layout_a.stride, layout_b.stride],
-    )
 
+    comptime rank: Int
+    """The number of dimensions in the layout."""
+    comptime flat_rank: Int
+    """The number of dimensions after flattening nested coordinates."""
+    comptime shape_known: Bool
+    """Whether all shape dimensions are known at compile time."""
+    comptime stride_known: Bool
+    """Whether all stride dimensions are known at compile time."""
+    comptime all_dims_known: Bool = Self.shape_known and Self.stride_known
+    """Whether all shape and stride dimensions are known at compile time."""
+    comptime is_affine: Bool = True
+    """Whether the layout's offset is a sum of coordinate times stride.
 
-def make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
-    """Creates a layout with strides ordered according to a specified traversal order.
-
-    This function generates a compact (bijective) layout where the stride values
-    follow the traversal order specified by the order parameter. This allows
-    creating layouts with custom memory traversal patterns while maintaining
-    a compact memory representation.
-
-    Args:
-        shape: The shape of the layout.
-        order: The traversal order priority (lower values indicate higher priority).
-
-    Returns:
-        A `Layout` with the specified shape and strides ordered according to the
-        traversal order.
-
-    Example:
-
-    ```mojo
-    from layout import IntTuple, Layout
-    from layout.layout import make_ordered_layout
-
-    # Create a layout with shape (2,3,4,5) where dimensions are traversed
-    # in the order: dim0, dim3, dim2, dim1
-    var layout = make_ordered_layout(
-        IntTuple(2, 3, 4, 5),
-        IntTuple(1, 4, 3, 2)
-    )
-    # Result: Layout with shape (2,3,4,5) and stride (1,40,10,2)
-    ```
+    Code that steps through memory by adding a stride to an offset must check
+    this first: only an affine layout makes that step exact.
     """
-    var stride = compact_order(shape, order)
-    return Layout(shape, stride)
-
-
-@fieldwise_init
-struct _LayoutIter[origin: ImmOrigin](ImplicitlyCopyable, Iterable, Iterator):
-    """Iterator for traversing Layout dimensions.
-
-    This internal iterator allows traversing the dimensions of a Layout object,
-    yielding sub-layouts for each dimension. Each sub-layout contains the shape
-    and stride for that dimension.
+    comptime static_shape[i: Int]: Int
+    """Returns the compile-time value of the i-th shape dimension.
 
     Parameters:
-        origin: The origin type for the `Layout` pointer, must be `ImmOrigin`.
-
-    Attributes:
-        index: Current position in the iteration.
-        layout: Pointer to the `Layout` being iterated.
+        i: The dimension index.
     """
-
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    comptime Element = Layout
-    var index: Int
-    var layout: Pointer[Layout, Self.origin]
-
-    def __next__(mut self) raises StopIteration -> Self.Element:
-        """Returns the next sub-layout in the iteration.
-
-        Advances the iterator and returns a Layout containing the shape and stride
-        for the next dimension.
-
-        Returns:
-            A Layout representing the next dimension.
-
-        Raises:
-            `StopIteration` when iteration is complete.
-        """
-
-        if self.__len__() <= 0:
-            raise StopIteration()
-
-        var idx = self.index
-        self.index += 1
-        return Layout(
-            self.layout[].shape[idx],
-            self.layout[].stride[idx],
-        )
-
-    @inline(.nodebug)
-    def __len__(self) -> Int:
-        """Returns the number of remaining dimensions.
-
-        Returns:
-            Number of dimensions left to iterate.
-        """
-        return len(self.layout[].shape) - self.index
-
-    @inline(.always)
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self
-
-    @inline(.always)
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var size = len(self.layout[].shape) - self.index
-        return (size, {size})
-
-
-struct Layout(
-    Copyable,
-    Defaultable,
-    Equatable,
-    Iterable,
-    Sized,
-    Writable,
-):
-    """Represents a memory layout for multi-dimensional data.
-
-    Layout provides a concrete representation of memory layouts using shape and
-    stride information. It maps between logical coordinates and linear
-    memory indices, enabling efficient access to multi-dimensional data.
-
-    A Layout consists of:
-    - shape: Defines the dimensions of the logical coordinate space
-    - stride: Defines the step sizes in memory for each dimension
-
-    The Layout struct supports various operations including:
-    - Creation of row-major and column-major layouts
-    - Conversion between coordinates and indices
-    - Composition with other layouts
-    - Iteration over sub-layouts
-
-    Layouts can be hierarchical, with nested shapes and strides, allowing
-    for complex memory access patterns like blocked or tiled layouts.
-    """
-
-    var shape: IntTuple
-    """The dimensions of the layout.
-
-    This field defines the size of each dimension in the logical coordinate space.
-    For example, a shape of (3, 4) represents a 3x4 grid of elements.
-    """
-
-    var stride: IntTuple
-    """The memory step sizes for each dimension.
-
-    This field defines how many elements to skip in memory when moving one unit
-    in each dimension. For example, in a row-major 3x4 layout, the strides might
-    be (4, 1), meaning moving one unit in the first dimension requires skipping
-    4 elements in memory, while moving one unit in the second dimension requires
-    skipping 1 element.
-    """
-
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _LayoutIter[ImmOrigin(iterable_origin)]
-    """The iterator type for Layout iteration.
+    comptime static_stride[i: Int]: Int
+    """Returns the compile-time value of the i-th stride dimension.
 
     Parameters:
-        iterable_mut: Whether the iterable is mutable.
-        iterable_origin: The origin of the iterable.
+        i: The dimension index.
+    """
+    comptime is_static_shape[i: Int]: Bool
+    """Returns whether the i-th shape dimension is known at compile time.
+
+    Parameters:
+        i: The dimension index.
     """
 
-    # ===------------------------------------------------------------------===#
-    # Initializers
-    # ===------------------------------------------------------------------===#
+    comptime static_product: Int
+    """The compile-time product of all shape dimensions."""
 
-    @inline(.nodebug)
-    def __init__(out self):
-        """Initializes an empty layout with no dimensions.
+    comptime static_cosize: Int
+    """The compile-time size of the memory region spanned by the layout."""
 
-        Creates a layout with empty shape and stride tuples, which can be
-        populated later using append operations.
-        """
-        self.shape = IntTuple()
-        self.stride = IntTuple()
+    comptime _NestedTileLayout[
+        TileShape: TypeList[Trait=CoordLike, ...]
+    ]: TensorLayout
+    """The layout of `TileTensor.tile` with tile shape `TileShape`.
 
-    def __init__(out self, shape: IntTuple):
-        """Initializes a layout with the given shape and column-major strides.
+    A member of the layout rather than a free alias, so generic code that
+    tiles a symbolic layout carries one reference to it instead of its whole
+    definition.
 
-        Creates a layout with the specified shape and automatically calculates
-        column-major strides (where the first dimension varies fastest in memory).
+    Parameters:
+        TileShape: The tile's extent along each mode.
+    """
 
-        Args:
-            shape: The dimensions of the layout.
-        """
-        # FIXME: all these owned_copy() calls are annoying, fix copy ctor
-        self.shape = shape.owned_copy()
-        self.stride = prefix_product(self.shape)
+    comptime _TransposedLayout: TensorLayout
+    """The layout returned by `transpose`: the same modes, reversed."""
 
-    def __init__(out self, shape: IntTuple, stride: IntTuple):
-        """Initializes a layout with the given shape and stride.
+    comptime _DynamicLayout[dtype: DType]: TensorLayout
+    """The layout returned by `make_dynamic[dtype]`, with every dimension as a
+    runtime `Scalar[dtype]`.
 
-        Creates a layout with explicitly specified shape and stride values.
-        If an empty stride is provided, column-major strides are calculated.
+    Parameters:
+        dtype: The data type for the resulting `Scalar` values.
+    """
 
-        Args:
-            shape: The dimensions of the layout.
-            stride: The memory step size for each dimension, or empty for column-major.
-        """
-        self.shape = shape.owned_copy()
-        if len(stride) == 0:
-            self.stride = prefix_product(self.shape)
-        else:
-            self.stride = stride.owned_copy()
+    comptime __shape_types: TypeList[Trait=CoordLike, _]._mlir_type
+    comptime __stride_types: TypeList[Trait=CoordLike, _]._mlir_type
 
-    @inline(.nodebug)
-    def idx2crd(self, idx: IntTuple) -> IntTuple:
-        """Converts a linear index to logical coordinates.
+    comptime _shape_types: TypeList[Trait=CoordLike, Self.__shape_types]
+    comptime _stride_types: TypeList[Trait=CoordLike, Self.__stride_types]
 
-        This is the inverse operation of the __call__ method, mapping from
-        a memory index back to the corresponding logical coordinates.
-
-        Args:
-            idx: The linear index to convert.
-
-        Returns:
-            The logical coordinates corresponding to the given index.
-        """
-        return idx2crd(idx, self.shape, self.stride)
-
-    @staticmethod
-    def col_major(*dims: Int) -> Layout:
-        """Creates a column-major layout with the specified dimensions.
-
-        In a column-major layout, the first dimension varies fastest in memory,
-        which is the default layout in languages like Fortran and MATLAB.
-
-        Args:
-            dims: Variable number of dimension sizes.
-
-        Returns:
-            A column-major Layout with the specified dimensions
-
-        Example:
-
-        ```mojo
-        from layout import Layout
-
-        # Create a 3x4 column-major layout
-        var layout = Layout.col_major(3, 4)
-        # Result: Layout with shape (3,4) and stride (1,3)
-        ```
-        """
-        var shape = IntTuple(*dims)
-        return Self.col_major(shape)
-
-    @staticmethod
-    def col_major(shape: IntTuple) -> Layout:
-        """Creates a column-major layout with the specified shape.
-
-        In a column-major layout, the first dimension varies fastest in memory,
-        which is the default layout in languages like Fortran and MATLAB.
-
-        Args:
-            shape: An IntTuple specifying the dimensions.
-
-        Returns:
-            A column-major Layout with the specified shape
-
-        Example:
-
-        ```mojo
-        from layout import Layout
-        from layout.int_tuple import IntTuple
-
-        # Create a 3x4 column-major layout
-        var layout = Layout.col_major(IntTuple(3, 4))
-        # Result: Layout with shape (3,4) and stride (1,3)
-        ```
-        """
-        return Layout(shape, prefix_product(shape))
-
-    @staticmethod
-    def col_major(tuple: Coord) -> Layout:
-        """Creates a col-major layout from a `Coord` of dimensions.
-
-        This method creates a col-major layout where the first dimension varies fastest in memory.
-        It handles both known and unknown dimensions at compile time, properly calculating
-        strides for each dimension. If any dimension is unknown, subsequent strides will
-        also be marked as unknown.
-
-        Args:
-            tuple: A `Coord` containing the dimensions of the layout.
-
-        Returns:
-            A col-major Layout with the specified dimensions and computed strides.
-
-        Example:
-
-            ```mojo
-            from layout import Layout
-            from std.utils.coord import Coord
-
-            # Create a col-major layout
-            var layout = Layout.col_major(coord[3, 4])
-            # Result: Layout with shape (3,4) and stride (1,3)
-            ```
-        """
-        var c_stride = 1
-        var shape = IntTuple()
-        var stride = IntTuple(c_stride)
-
-        comptime for i in range(tuple.rank):
-            shape.append(Int(tuple[i]))
-
-        var unknown_flag = False
-
-        comptime for i in range(tuple.rank - 1):
-            var dim = Int(tuple[i])
-
-            if dim == UNKNOWN_VALUE:
-                unknown_flag = True
-
-            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
-            c_stride *= dim
-
-        return Layout(shape, stride)
-
-    @staticmethod
-    def row_major(*dims: Int) -> Layout:
-        """Creates a row-major layout with the specified dimensions.
-
-        In a row-major layout, the last dimension varies fastest in memory,
-        which is the default layout in languages like C, C++, and Python.
-
-        Args:
-            dims: Variable number of dimension sizes.
-
-        Returns:
-            A row-major Layout with the specified dimensions
-
-        Example:
-
-        ```mojo
-        from layout import Layout
-
-        # Create a 3x4 row-major layout
-        var layout = Layout.row_major(3, 4)
-        # Result: Layout with shape (3,4) and stride (4,1)
-        ```
-        """
-        var shape = IntTuple(*dims)
-        return Self.row_major(shape)
-
-    @staticmethod
-    def row_major(tuple: Coord) -> Layout:
-        """Creates a row-major layout from a `Coord` of dimensions.
-
-        This method creates a row-major layout where the last dimension varies fastest in memory.
-        It handles both known and unknown dimensions at compile time, properly calculating
-        strides for each dimension. If any dimension is unknown, subsequent strides will
-        also be marked as unknown.
-
-        Args:
-            tuple: A `Coord` containing the dimensions of the layout.
-
-        Returns:
-            A row-major Layout with the specified dimensions and computed strides.
-
-        Example:
-
-            ```mojo
-            from layout import Layout
-            from std.utils.coord import Coord
-
-            # Create a row-major layout with compile-time rank
-            var layout = Layout.row_major(coord[3, 4])
-            # Result: Layout with shape (3,4) and stride (4,1)
-            ```
-        """
-        var c_stride = 1
-        var shape = IntTuple()
-        var stride = IntTuple(c_stride)
-
-        var unknown_flag = False
-
-        comptime for i in range(tuple.rank):
-            shape.append(Int(tuple[i]))
-
-        comptime for i in range(tuple.rank - 1):
-            var dim = Int(tuple[tuple.rank - 1 - i])
-
-            if dim == UNKNOWN_VALUE:
-                unknown_flag = True
-
-            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
-            c_stride *= dim
-
-        return Layout(shape, reverse(stride))
-
-    @staticmethod
-    def row_major[rank: Int]() -> Layout:
-        """Creates a row-major layout with unknown values for each axis from a compile-time rank.
+    def shape[i: Int](self) -> Self._shape_types[i]:
+        """Returns the i-th shape dimension.
 
         Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
+            i: The dimension index.
 
         Returns:
-            A row-major Layout with the given rank.
-
-        Example:
-
-            ```mojo
-            from layout import Layout
-
-            var layout = Layout.row_major[2]()
-            # Result: Layout with shape (UNKNOWN_VALUE, UNKNOWN_VALUE)
-            ```
+            The shape value for dimension `i`.
         """
-        var shape = IntTuple()
+        ...
 
-        comptime for i in range(rank):
-            shape.append(UNKNOWN_VALUE)
-
-        return Layout.row_major(shape)
-
-    @staticmethod
-    def row_major(shape: IntTuple) -> Layout:
-        """Creates a row-major layout from an IntTuple of dimensions.
-
-        In a row-major layout, the last dimension varies fastest in memory.
-        This method computes the appropriate strides for a row-major layout
-        given the input shape.
-
-        Args:
-            shape: An IntTuple containing the dimensions of the layout.
-
-        Returns:
-            A row-major Layout with the specified shape and computed strides.
-
-        Example:
-
-        ```mojo
-        from layout import Layout
-        from layout.int_tuple import IntTuple
-
-        # Create a row-major layout from a shape tuple
-        var shape = IntTuple(3, 4)
-        var layout = Layout.row_major(shape)
-        # Result: Layout with shape (3,4) and stride (4,1)
-        ```
-        """
-        return Layout(shape, reverse(prefix_product(reverse(shape))))
-
-    @inline(.always)
-    def make_shape_unknown[axis: Int = UNKNOWN_VALUE](self) -> Layout:
-        """Creates a new Layout with unknown shape dimensions.
-
-        This method creates a copy of the current Layout but marks either all dimensions
-        or a specific dimension as unknown, while preserving the original strides.
-        This is useful for tiling tensors with runtime sizes where the tile's shape
-        is unknown but the memory layout (strides) remains constant.
+    def stride[i: Int](self) -> Self._stride_types[i]:
+        """Returns the i-th stride dimension.
 
         Parameters:
-            axis: The dimension to mark as unknown. If UNKNOWN_VALUE (default),
-                 all dimensions are marked as unknown.
+            i: The dimension index.
 
         Returns:
-            A new Layout with the specified dimension(s) marked as unknown and
-            original strides preserved.
-
-        Example:
-
-        ```mojo
-        from layout import Layout
-        from layout.int_tuple import IntTuple
-
-        # Mark all dimensions as unknown
-        var layout = Layout(IntTuple(2, 3))
-        var unknown = layout.make_shape_unknown()
-        # Result: Layout with shape (?, ?) and original strides
-
-        # Mark only first dimension as unknown
-        var partial = layout.make_shape_unknown[0]()
-        # Result: Layout with shape (?, 3) and original strides
-        ```
+            The stride value for dimension `i`.
         """
+        ...
 
-        comptime if axis == UNKNOWN_VALUE:
-            return Layout(to_unknown(self.shape), self.stride)
-        else:
-            # var shape_with_unknown = self.shape
-            # shape_with_unknown[axis] = to_unknown(self.shape[axis])
-            var shape_with_unknown = IntTuple()
-            for i in range(len(self.shape)):
-                if i != axis:
-                    shape_with_unknown.append(self.shape[i])
-                else:
-                    shape_with_unknown.append(to_unknown(self.shape[i]))
-            return Layout(shape_with_unknown, self.stride)
-
-    # ===------------------------------------------------------------------===#
-    # Methods
-    # ===------------------------------------------------------------------===#
-
-    @inline(.never)
-    def write_to(self, mut writer: Some[Writer]):
-        """Writes the layout to the specified writer.
-
-        Formats the layout as "(shape:stride)" and writes it to the provided writer.
-
-        Args:
-            writer: The writer to output the layout representation to.
-        """
-        writer.write("(", self.shape, ":", self.stride, ")")
-
-    @inline(.nodebug)
-    def __eq__(self, other: Layout) -> Bool:
-        """Checks if this layout is equal to another layout.
-
-        Two layouts are considered equal if they have identical shape and stride tuples.
-
-        Args:
-            other: The layout to compare with.
-
-        Returns:
-            True if the layouts are equal, False otherwise.
-        """
-        return self.shape == other.shape and self.stride == other.stride
-
-    @inline(.nodebug)
-    def __len__(self) -> Int:
-        """Returns the number of dimensions in the layout.
-
-        Returns:
-            The number of elements in the shape tuple.
-        """
-        return len(self.shape)
-
-    @inline(.nodebug)
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        """Returns an iterator over the layout's dimensions.
-
-        Each iteration yields a Layout containing the shape and stride for one dimension.
-
-        Returns:
-            An iterator over the layout's dimensions.
-        """
-        return _LayoutIter(0, Pointer(to=self))
-
-    def size(self) -> Int:
+    def product(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
-        Calculates the product of all dimensions in the shape.
+        Returns:
+            The product of all shape dimensions.
+        """
+        ...
+
+    def size(self) -> Int:
+        """Returns the total number of elements. Alias for `product()`.
 
         Returns:
-            The total number of elements in the layout.
+            The product of all shape dimensions.
         """
-        return product(self.shape)
+        ...
 
-    def cosize(self) -> Int:
-        """Returns the size of the memory region spanned by the layout.
+    def __call__[
+        index_type: CoordLike,
+        *,
+        linear_idx_type: DType = .int64,
+    ](self, index: index_type) -> Scalar[linear_idx_type]:
+        """Maps a logical coordinate to a linear memory index.
 
-        Calculates the maximum memory index plus one, representing the total
-        memory footprint required by the layout.
-
-        Returns:
-            The size of the memory region required by the layout.
-        """
-        return self(self.size() - 1) + 1
-        # return math.max(1, inner_product(self.shape, self.stride))
-
-    @inline(.nodebug)
-    def __getitem__(self, index: Int) -> Self:
-        """Returns a sub-layout for the specified dimension.
+        Parameters:
+            index_type: The coordinate type.
+            linear_idx_type: The data type for the returned linear index.
 
         Args:
-            index: The dimension index to extract.
-
-        Returns:
-            A Layout containing the shape and stride for the specified dimension.
-        """
-        return Layout(self.shape[index], self.stride[index])
-
-    @inline(.nodebug)
-    def rank(self) -> Int:
-        """Returns the number of dimensions in the layout.
-
-        This is equivalent to __len__ and returns the number of elements in the
-        shape tuple.
-
-        Returns:
-            The number of dimensions in the layout.
-        """
-        return len(self.shape)
-
-    @inline(.nodebug)
-    def __call__(self, idx: IntTuple) -> Int:
-        """Maps logical coordinates to a linear memory index.
-
-        This is the core functionality of a layout, converting multi-dimensional
-        coordinates to a linear memory location.
-
-        Args:
-            idx: The logical coordinates to map.
+            index: The logical coordinates to map.
 
         Returns:
             The linear memory index corresponding to the given coordinates.
         """
-        return crd2idx(idx, self.shape, self.stride)
+        ...
 
-    @inline(.nodebug)
-    def append(mut self, item: Layout):
-        """Appends another layout to this layout.
+    def idx2crd[
+        *,
+        out_dtype: DType = .int64,
+    ](self, idx: Int) -> Coord[
+        *_NestedDynamicCoord[out_dtype, *Self._shape_types]
+    ]:
+        """Maps a linear memory index back to logical coordinates.
 
-        This method adds the shape and stride from the provided layout to this layout,
-        effectively increasing its dimensionality.
+        This is the inverse of `__call__` (crd2idx). Given a linear index,
+        it computes the corresponding multi-dimensional coordinates.
+        For hierarchical layouts (e.g. from `zipped_divide`), the result
+        preserves the nested coordinate structure.
+
+        Parameters:
+            out_dtype: The data type for the output coordinate values.
 
         Args:
-            item: The layout to append to this layout.
-        """
-        self.shape.append(item.shape)
-        self.stride.append(item.stride)
-
-    @inline(.nodebug)
-    def all_dims_known(self) -> Bool:
-        """Checks if all dimensions in the layout have known values.
-
-        A dimension is considered unknown if its shape or stride is set to the
-        special `UNKNOWN_VALUE` constant.
+            idx: The linear memory index to convert to coordinates.
 
         Returns:
-            True if all dimensions have known shape and stride values, False otherwise.
-        """
-        return self.shape.all_known() and self.stride.all_known()
+            A Coord containing the logical coordinates corresponding to
+            the linear index. For nested layouts, the result mirrors the
+            shape nesting with Scalar leaves.
 
-    @inline(.nodebug)
-    def transpose(self) -> Layout:
+        Examples:
+            For a layout with shape (3, 4) and row-major strides:
+            - layout.idx2crd(0) returns (0, 0).
+            - layout.idx2crd(5) returns (1, 1).
+            - layout.idx2crd(11) returns (2, 3).
+        """
+        ...
+
+    def shape_coord(self) -> Coord[*Self._shape_types]:
+        """Returns the full shape as a `Coord`.
+
+        Returns:
+            A Coord containing all shape dimensions.
+        """
+        ...
+
+    def stride_coord(self) -> Coord[*Self._stride_types]:
+        """Returns the full stride as a `Coord`.
+
+        Returns:
+            A Coord containing all stride dimensions.
+        """
+        ...
+
+    def transpose(self) -> Self._TransposedLayout:
         """Transposes the layout by reversing the order of dimensions.
 
-        For an n-dimensional layout, this reverses the order of both shapes and strides.
-        For nested layouts, only the top-level dimensions are transposed, not the
-        hierarchical structure within nested tuples.
+        For an n-dimensional layout, this reverses the order of both shapes
+        and strides. For 2D layouts, this swaps rows and columns.
+
+        Returns:
+            A new layout with transposed dimensions.
+        """
+        ...
+
+    def make_dynamic[dtype: DType](self) -> Self._DynamicLayout[dtype]:
+        """Converts all dimensions to runtime values of the given dtype.
+
+        Parameters:
+            dtype: The data type for the resulting `Scalar` values.
+
+        Returns:
+            A new layout with all dimensions as `Scalar[dtype]`.
+        """
+        ...
+
+
+comptime RowMajorLayout[*shape_types: CoordLike] = Layout[
+    shape_types, _RowMajor[*shape_types]
+]
+"""A `Layout` with row-major (C-order) strides for a flat shape. For nested
+shapes use `RowMajorNestedLayout`.
+
+Parameters:
+    shape_types: The types for the shape dimensions.
+"""
+
+
+comptime RowMajorNestedLayout[*shape_types: CoordLike] = Layout[
+    shape_types, _RowMajorNested[*shape_types]
+]
+"""A `Layout` with row-major strides for a nested shape (CuTe semantics).
+
+For shape `((a, b), (c, d))` the strides are `((b*c*d, c*d), (d, 1))`:
+row-major over the flattened shape, re-nested.
+
+Parameters:
+    shape_types: The types for the shape dimensions.
+"""
+
+
+struct Layout[
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+](
+    DevicePassable,
+    ImplicitlyCopyable,
+    TensorLayout,
+    TrivialRegisterPassable,
+    Writable,
+):
+    """A layout that supports mixed compile-time and runtime dimensions.
+
+    This layout provides a unified interface for layouts where some dimensions
+    are known at compile time and others are determined at runtime. It enables
+    more ergonomic layout definitions while maintaining performance.
+
+    A Layout's shape and strides must be non-negative.
+
+    Parameters:
+        shape_types: The types for the shape dimensions.
+        stride_types: The types for the stride dimensions.
+    """
+
+    var _shape: Coord[*Self.shape_types]
+    """The shape of the layout as a Coord."""
+
+    var _stride: Coord[*Self.stride_types]
+    """The stride of the layout as a Coord."""
+
+    comptime rank = Self.shape_types.length
+    """The number of dimensions in the layout."""
+    comptime flat_rank = _Flattened[*Self.shape_types].length
+    """The number of dimensions after flattening nested coordinates."""
+    comptime shape_known = Coord[*Self.shape_types].all_dims_known
+    """Whether all shape dimensions are known at compile time."""
+    comptime stride_known = Coord[*Self.stride_types].all_dims_known
+    """Whether all stride dimensions are known at compile time."""
+    comptime _flat_shape_types = _Flattened[*Self.shape_types]
+    comptime _flat_stride_types = _Flattened[*Self.stride_types]
+    comptime static_shape[i: Int]: Int = Self._flat_shape_types[i].static_value
+    """Returns the compile-time value of the i-th flattened shape dimension.
+
+    Parameters:
+        i: The dimension index.
+    """
+    comptime static_stride[i: Int]: Int = Self._flat_stride_types[
+        i
+    ].static_value
+    """Returns the compile-time value of the i-th flattened stride dimension.
+
+    Parameters:
+        i: The dimension index.
+    """
+    comptime is_static_shape[i: Int]: Bool = Self._flat_shape_types[
+        i
+    ].is_static_value
+    """Returns whether the i-th flattened shape dimension is known at compile
+    time.
+
+    Parameters:
+        i: The dimension index.
+    """
+
+    comptime _shape_types = Self.shape_types
+    comptime _stride_types = Self.stride_types
+    comptime __shape_types = Self.shape_types.values
+    comptime __stride_types = Self.stride_types.values
+
+    comptime static_product = Coord[*Self._flat_shape_types]().static_product
+    """The compile-time product of all shape dimensions (handles nested Coords)."""
+
+    comptime static_cosize = _StaticCosize[
+        Self._flat_shape_types, Self._flat_stride_types
+    ]
+    """The compile-time size of the memory region spanned by the layout."""
+
+    comptime _NestedTileLayout[
+        TileShape: TypeList[Trait=CoordLike, ...]
+    ]: TensorLayout = Layout[
+        shape_types=TileShape, stride_types=Self.stride_types
+    ] if Self.rank == Self.flat_rank else Layout[
+        shape_types=TypeList.tabulate[
+            Trait=CoordLike,
+            Self.rank,
+            _NestedTileShapeTabulator[Self, TileShape, _],
+        ](),
+        stride_types=TypeList.tabulate[
+            Trait=CoordLike,
+            Self.rank,
+            _NestedTileStrideTabulator[Self, TileShape, _],
+        ](),
+    ]
+    """The layout of `TileTensor.tile`: a flat mode keeps its stride,
+    and a nested mode keeps the leading leaves the tile spans, the last one
+    possibly cut short, with their strides.
+
+    Parameters:
+        TileShape: The tile's extent along each mode.
+    """
+
+    comptime _TransposedLayout: TensorLayout = Layout[
+        shape_types=Self.shape_types.reverse(),
+        stride_types=Self.stride_types.reverse(),
+    ]
+    """The layout returned by `transpose`: shape and stride reversed."""
+
+    comptime _DynamicLayout[dtype: DType]: TensorLayout = Layout[
+        shape_types=_CoordToDynamic[dtype, Self.shape_types],
+        stride_types=_CoordToDynamic[dtype, Self.stride_types],
+    ]
+    """The layout returned by `make_dynamic[dtype]`, with every dimension as
+    a runtime `Scalar[dtype]`.
+
+    Parameters:
+        dtype: The data type for the resulting `Scalar` values.
+    """
+
+    @inline(.nodebug)
+    def __init__(out self):
+        """Default-initialize a layout from its compile-time type parameters.
+
+        Each dimension is initialized to its default value: compile-time
+        dimensions (`ComptimeInt`) get their static value, runtime dimensions
+        (`Scalar`) get 0. This is useful for constructing a fully-static
+        layout purely from its type, e.g. ``UpcastLayout[MyLayout, 2]()``.
+        """
+        self._shape = Coord[*Self.shape_types]()
+        self._stride = Coord[*Self.stride_types]()
+
+    @inline(.nodebug)
+    def __init__(
+        out self,
+        shape: Coord[*Self.shape_types],
+        stride: Coord[*Self.stride_types],
+    ):
+        """Initialize a layout with shape and stride.
+
+        Args:
+            shape: The shape as a Coord.
+            stride: The stride as a Coord.
+        """
+        comptime assert (
+            type_of(shape).__len__() == type_of(stride).__len__()
+        ), String(
+            (
+                "Shape and stride must have the same length, but got shape"
+                " length: "
+            ),
+            type_of(shape).__len__(),
+            " stride length: ",
+            type_of(stride).__len__(),
+        )
+        self._shape = shape
+        self._stride = stride
+
+    def __call__[
+        index_type: CoordLike,
+        *,
+        linear_idx_type: DType = .int64,
+    ](self, index: index_type) -> Scalar[linear_idx_type]:
+        """Maps a logical coordinate to a linear memory index.
+
+        Supports hierarchical indexing where the coordinate structure can
+        differ from the shape structure. For a layout with shape (4, (3, 2)):
+
+        - (1, (1, 1)): exact structure match, each element maps directly.
+        - (1, 1): rank-matching, the scalar 1 is decomposed within the
+          nested (3, 2) sub-dimension.
+        - (1): scalar index decomposed across all dimensions.
+
+        Parameters:
+            index_type: The coordinate type.
+            linear_idx_type: The data type for the returned linear index.
+
+        Args:
+            index: The logical coordinates to map.
+
+        Returns:
+            The linear memory index corresponding to the given coordinates.
+        """
+        comptime index_len = index_type.__len__()
+
+        comptime if index_len == Self.rank:
+            # Hierarchical: each coord element maps to one shape dimension.
+            # If a shape dimension is nested (e.g., (3, 2)) and the
+            # corresponding coord element is a scalar, crd2idx decomposes
+            # the scalar within that sub-dimension.
+            return crd2idx[out_type=linear_idx_type](
+                index, self._shape, self._stride
+            )
+        elif index_type.is_tuple and index_len > Self.rank:
+            # More coord elements than shape dimensions: flatten the coord
+            # and strides, then compute a direct element-wise dot product.
+            var flat_idx = index.tuple().flatten()
+            var flat_stride = self._stride.flatten()
+            var result: Scalar[linear_idx_type] = 0
+
+            comptime flat_len = type_of(flat_idx).__len__()
+            comptime for i in range(flat_len):
+                result += Scalar[linear_idx_type](flat_idx[i].value()) * Scalar[
+                    linear_idx_type
+                ](flat_stride[i].value())
+
+            return result
+        else:
+            # Scalar or single-element coord: decompose against full shape.
+            return crd2idx[out_type=linear_idx_type](
+                index, self._shape, self._stride
+            )
+
+    @inline(.nodebug)
+    def idx2crd[
+        *,
+        out_dtype: DType = .int64,
+    ](self, idx: Int) -> Coord[
+        *_NestedDynamicCoord[out_dtype, *Self.shape_types]
+    ]:
+        """Maps a linear memory index back to logical coordinates.
+
+        This is the inverse of `__call__` (crd2idx). Given a linear index,
+        it computes the corresponding multi-dimensional coordinates using
+        the per-element formula: ``coord[i] = (idx // stride[i]) % shape[i]``.
+        For hierarchical layouts (e.g. from `zipped_divide`), the result
+        preserves the nested coordinate structure.
+
+        Parameters:
+            out_dtype: The data type for the output coordinate values.
+
+        Args:
+            idx: The linear memory index to convert to coordinates.
+
+        Returns:
+            A Coord containing the logical coordinates corresponding to
+            the linear index. For nested layouts, the result mirrors the
+            shape nesting with Scalar leaves.
+
+        Examples:
+            For a layout with shape (3, 4) and row-major strides:
+            - layout.idx2crd(0) returns (0, 0).
+            - layout.idx2crd(5) returns (1, 1).
+            - layout.idx2crd(11) returns (2, 3).
+        """
+        comptime ResultType = Coord[
+            *_NestedDynamicCoord[out_dtype, *Self.shape_types]
+        ]
+        var result = ResultType()
+        var shape_t = self._shape.tuple()
+        var stride_t = self._stride.tuple()
+
+        comptime for i in range(Self.rank):
+            comptime if Self.shape_types[i].is_tuple:
+                # Nested dimension: compute sub-coordinates.
+                comptime sub_rank = Self.shape_types[i].__len__()
+                comptime SubResultType = DynamicCoord[out_dtype, sub_rank]
+                var sub_result = SubResultType()
+                var sub_shape = shape_t[i].tuple()
+                var sub_stride = stride_t[i].tuple()
+                comptime for j in range(sub_rank):
+                    var divided = _divide_by_stride[
+                        Self.stride_types[i].ParamListType[j]
+                    ](idx, Int(sub_stride[j]))
+                    var coord_val = _mod_by_shape[
+                        Self.shape_types[i].ParamListType[j]
+                    ](divided, Int(sub_shape[j]))
+                    Pointer(to=sub_result[j]).write(
+                        rebind[SubResultType.element_types[j]](
+                            Scalar[out_dtype](coord_val)
+                        )
+                    )
+                Pointer(to=result[i]).write(
+                    rebind[ResultType.element_types[i]](sub_result)
+                )
+            else:
+                var divided = _divide_by_stride[Self.stride_types[i]](
+                    idx, Int(stride_t[i])
+                )
+                var coord_val = _mod_by_shape[Self.shape_types[i]](
+                    divided, Int(shape_t[i])
+                )
+                Pointer(to=result[i]).write(
+                    rebind[ResultType.element_types[i]](
+                        Scalar[out_dtype](coord_val)
+                    )
+                )
+        return result
+
+    @inline(.nodebug)
+    def product(self) -> Int:
+        """Returns the total number of elements in the layout's domain.
+
+        For a layout with shape (m, n), this returns m * n, representing
+        the total number of valid coordinates in the layout.
+
+        Returns:
+            The total number of elements in the layout.
+        """
+        return Int(self._shape.product())
+
+    @inline(.nodebug)
+    def size(self) -> Int:
+        """Returns the total number of elements in the layout's domain.
+
+        Alias for `product()`. Compatible with the legacy Layout API.
+
+        Returns:
+            The total number of elements in the layout.
+        """
+        return self.product()
+
+    @inline(.nodebug)
+    def cosize[
+        linear_idx_type: DType = .int64
+    ](self) -> Scalar[linear_idx_type]:
+        """Returns the size of the memory region spanned by the layout.
+
+        For a layout with shape `(m, n)` and stride `(r, s)`, this returns
+        `(m-1)*r + (n-1)*s + 1`, representing the memory footprint.
+
+        Parameters:
+            linear_idx_type: The data type for the returned size value.
+
+        Returns:
+            The size of the memory region required by the layout.
+        """
+        return self[linear_idx_type=linear_idx_type](self.product() - 1) + 1
+
+    @inline(.nodebug)
+    def reverse(
+        self,
+    ) -> Layout[Self.shape_types.reverse(), Self.stride_types.reverse(),]:
+        """Reverse the order of dimensions in the layout.
+
+        Turns row-major into column-major ordering where the stride-1
+        dimension comes first, enabling coalesced scalar iteration.
+
+        Returns:
+            A new Layout with shape and stride Coords reversed.
+        """
+        return Layout(self._shape.reverse(), self._stride.reverse())
+
+    @inline(.nodebug)
+    def transpose(self) -> Self._TransposedLayout:
+        """Transposes the layout by reversing the order of dimensions.
+
+        For an n-dimensional layout, this reverses the order of both shapes
+        and strides. For 2D layouts, this swaps rows and columns, converting
+        row-major to column-major and vice versa.
 
         Returns:
             A new Layout with transposed dimensions.
@@ -776,814 +680,1919 @@ struct Layout(
         Example:
 
         ```mojo
-        from layout import Layout
-        from layout.int_tuple import IntTuple
+        from layout.layout import row_major
 
-        # Simple 2D transpose (row-major to column-major)
-        var layout = Layout.row_major(3, 4)  # shape (3,4), stride (4,1)
+        var layout = row_major[3, 4]()  # shape (3,4), stride (4,1)
         var transposed = layout.transpose()  # shape (4,3), stride (1,4)
-
-        # 3D transpose
-        var layout3d = Layout.row_major(2, 3, 4)  # shape (2,3,4), stride (12,4,1)
-        var trans3d = layout3d.transpose()        # shape (4,3,2), stride (1,4,12)
-
-        # Nested layout - only top level transposed
-        var nested = Layout(
-            IntTuple(IntTuple(2, 3), 4),
-            IntTuple(IntTuple(12, 4), 1)
-        )
-        var trans_nested = nested.transpose()
-        # Result: shape (4, (2,3)), stride (1, (12,4))
         ```
         """
-        # Reverse only the top level, not nested tuples
-        var reversed_shape = IntTuple()
-        var reversed_stride = IntTuple()
+        return self.reverse()
 
-        for i in reversed(range(len(self.shape))):
-            reversed_shape.append(self.shape[i])
-            reversed_stride.append(self.stride[i])
+    @inline(.nodebug)
+    def make_dynamic[dtype: DType](self) -> Self._DynamicLayout[dtype]:
+        """Convert all elements in shape and stride to Scalar[dtype].
 
-        return Layout(reversed_shape, reversed_stride)
+        Parameters:
+            dtype: The data type for the resulting Scalar values.
 
+        Returns:
+            A new Layout where all elements in shape and stride are
+            converted to Scalar[dtype].
 
-@inline(.nodebug)
-def size(l: Layout) -> Int:
-    """Returns the total number of elements in the layout's domain.
-
-    This is a standalone function equivalent to the Layout.size() method.
-
-    Args:
-        l: The layout to calculate the size for.
-
-    Returns:
-        The total number of elements in the layout.
-    """
-    return l.size()
-
-
-@inline(.nodebug)
-def cosize(l: Layout) -> Int:
-    """Returns the size of the memory region spanned by the layout.
-
-    This is a standalone function equivalent to the Layout.cosize() method.
-
-    Args:
-        l: The layout to calculate the cosize for.
-
-    Returns:
-        The size of the memory region required by the layout.
-    """
-    return l.cosize()
-
-
-comptime LayoutList = List[Layout]
-"""Type alias for a list of Layout objects."""
-
-
-@inline(.nodebug)
-def MakeLayoutList(var v0: Layout, var v1: Layout) -> LayoutList:
-    """Creates a list containing two layouts.
-
-    This is a convenience function for creating a LayoutList with two elements.
-
-    Args:
-        v0: The first layout to include in the list.
-        v1: The second layout to include in the list.
-
-    Returns:
-        A LayoutList containing the two provided layouts.
-    """
-    return [v0^, v1^]
-
-
-def MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
-    """Creates a list of layouts for tiling operations.
-
-    This function creates a list of simple layouts, each with a shape from the
-    provided tile_sizes and a stride of 1. These layouts can be used for tiling
-    operations.
-
-    Parameters:
-        tile_sizes: Variable number of integer tile dimensions.
-
-    Returns:
-        A LayoutList containing layouts for each tile size.
-    """
-    var layout_list = LayoutList(capacity=tile_sizes.length)
-
-    comptime for i in range(tile_sizes.length):
-        comptime arg = tile_sizes[i]
-        layout_list.append(Layout(arg, 1))
-
-    return layout_list^
-
-
-# The CUTE version has a second input to specify which modes to coalesce. We simplify
-# it to flag to indicate keeping the original rank.
-def coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
-    """Simplifies a layout by combining dimensions with contiguous strides.
-
-    This function reduces the rank of a layout by merging dimensions that have
-    contiguous memory layouts, resulting in a simpler but equivalent layout.
-
-    Args:
-        layout: The layout to coalesce.
-        keep_rank: If True, maintains the original rank of the layout. Default is False.
-
-    Returns:
-        A simplified layout with reduced rank where possible.
-
-    Example:
-
-    ```mojo
-    from layout import Layout, IntTuple
-    from layout.layout import coalesce
-
-    # A layout with shape (2, (1, 4)) and stride (1, (4, 2)) can be coalesced
-    var layout = Layout(IntTuple(2, IntTuple(1, 4)), IntTuple(1, IntTuple(4, 2)))
-    var coalesced = coalesce(layout)
-    # Result: Layout with shape (8) and stride (1)
-    ```
-    """
-    if keep_rank:
-        # Fast path for single-element layouts
-        if len(layout) == 1:
-            return Layout(
-                coalesce(layout[0], False).shape,
-                coalesce(layout[0], False).stride,
-            )
-
-        # Coalesce each mode and concat the results to preserve rank.
-        var shapes = IntTuple()
-        var strides = IntTuple()
-        for mode in layout:
-            var coalesced_mode = coalesce(mode, False)
-            shapes.append(coalesced_mode.shape)
-            strides.append(coalesced_mode.stride)
-
-        return Layout(shapes, strides)
-
-    var result_shape = IntTuple(1)
-    var result_stride = IntTuple(0)
-
-    for z in zip(flatten(layout.shape), flatten(layout.stride)):
-        var shape = Int(z[0])
-        var stride = Int(z[1])
-        var last_shape = len(result_shape) - 1
-        var last_stride = len(result_stride) - 1
-
-        # skip their shape-1s
-        if shape == 1:
-            continue
-        # replace our shape-1 with anything
-        elif result_shape[last_shape] == 1:
-            result_shape.replace_entry(last_shape, int_value=shape)
-            result_stride.replace_entry(last_stride, int_value=stride)
-
-        # merge modes if the shape*stride match and computable.
-        elif Int(result_shape[last_shape]) * Int(
-            result_stride[last_stride]
-        ) == stride and UNKNOWN_VALUE not in (
-            shape,
-            stride,
-            Int(result_shape[last_shape]),
-            Int(result_stride[last_stride]),
-        ):
-            result_shape.replace_entry(
-                last_shape,
-                int_value=Int(result_shape[last_shape]) * shape,
-            )
-
-        # append a new mode
-        else:
-            result_shape.append(shape)
-            result_stride.append(stride)
-
-    if len(result_shape) == 1:
-        return Layout(result_shape[0], result_stride[0])
-    return Layout(result_shape, result_stride)
-
-
-def composition(var layout_a: Layout, var layout_b: Layout) -> Layout:
-    """Composes two layouts to create a new layout.
-
-    This function creates a new layout by composing two layouts, where the first
-    layout defines the outer structure and the second layout defines the inner
-    structure.
-
-    The new layout is compatible with `layout_b` (that is, it has the same `size`
-    and every set of coordinates in `layout_b` has an equivalent in the new
-    layout). You can think of `layout_b` as selecting a subset of elements
-    from `layout_a`.
-
-    Args:
-        layout_a: The outer layout.
-        layout_b: The inner layout.
-
-    Returns:
-        A new layout representing the composition of the two layouts.
-
-    Example:
-
-    ```mojo
-    from layout.layout import Layout, IntTuple
-    from layout.layout import composition
-
-    # Compose a row-major layout with a tiling layout
-    var base = Layout.row_major(6, 8)
-    var tiling = Layout(IntTuple(3, 2), IntTuple(1, 3))
-    var composed = composition(base^, tiling^)
-    # Result: A layout that represents a 3x2 tile from
-    # layout_a
-    ```
-    """
-    if len(layout_b) == 0:
-        return layout_a^
-
-    if is_tuple(layout_b.shape):
-        var r = Layout()
-        for var layoutB_i in layout_b:
-            r.append(composition(layout_a.copy(), layoutB_i^))
-        return r^
-
-    if layout_b.stride == 0:
-        return Layout(layout_b.shape, 0)
-    else:
-        var result_shape = IntTuple()
-        var result_stride = IntTuple()
-        var rest_shape = layout_b.shape
-        var rest_stride = layout_b.stride
-        var flat_stride_a = flatten(layout_a.stride)
-
-        for z in zip(flatten(layout_a.shape)[:-1], flat_stride_a[:-1]):
-            var s = Int(z[0])
-            var d = Int(z[1])
-
-            var s1 = shape_div(s, rest_stride)
-            result_shape.append(tuple_min(s1, rest_shape))
-            result_stride.append(mul(rest_stride, d))
-            rest_shape = shape_div(rest_shape, abs(s1))
-            rest_stride = shape_div(rest_stride, s)
-
-        result_shape.append(rest_shape)
-        result_stride.append(
-            mul(
-                rest_stride,
-                Int(flat_stride_a[len(flat_stride_a) - 1]),
-            )
+        Examples:
+            ```mojo
+            from layout.layout import row_major
+            var layout = row_major[3, 4]()  # All compile-time
+            var dynamic = layout.make_dynamic[.int64]()
+            # dynamic has Int64 for all dimensions
+            ```
+        """
+        return Layout(
+            self._shape.make_dynamic[dtype](),
+            self._stride.make_dynamic[dtype](),
         )
 
-        return coalesce(Layout(result_shape, result_stride))
+    @inline(.nodebug)
+    def shape[i: Int](self) -> Self._shape_types[i]:
+        """Returns the i-th shape dimension.
+
+        Parameters:
+            i: The dimension index.
+
+        Returns:
+            The shape value for dimension `i`.
+        """
+        return self._shape[i]
+
+    @inline(.nodebug)
+    def stride[i: Int](self) -> Self._stride_types[i]:
+        """Returns the i-th stride dimension.
+
+        Parameters:
+            i: The dimension index.
+
+        Returns:
+            The stride value for dimension `i`.
+        """
+        return self._stride[i]
+
+    @inline(.nodebug)
+    def shape_coord(self) -> Coord[*Self._shape_types]:
+        """Returns the full shape as a `Coord`.
+
+        Returns:
+            A Coord containing all shape dimensions.
+        """
+        return self._shape
+
+    @inline(.nodebug)
+    def stride_coord(self) -> Coord[*Self._stride_types]:
+        """Returns the full stride as a `Coord`.
+
+        Returns:
+            A Coord containing all stride dimensions.
+        """
+        return self._stride
+
+    @inline(.nodebug)
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the Layout representation to a Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write(t"({self.shape_coord()}:{self.stride_coord()})")
+
+    comptime device_type = Self
+    """Device-side type for GPU kernel parameter passing."""
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Gets the name of the host type.
+
+        Returns:
+            The host type's name.
+        """
+        return String(
+            t"Layout[{Coord[*Self.shape_types].get_type_name()},"
+            t" {Coord[*Self.stride_types].get_type_name()}]"
+        )
 
 
-# Tuple of layouts
-def composition(var layout_a: Layout, tiler: LayoutList) -> Layout:
-    """Composes a layout with a list of layouts to create a hierarchical layout.
+# This is passed a pair of [shape, stride] as CoordLike values.
+comptime _StaticCosizeTabulator[
+    Shapes: TypeList[Trait=CoordLike, ...],
+    Strides: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: Int = (Shapes[idx].static_value - 1) * Strides[idx].static_value
 
-    This function creates a new layout by composing each element of the first layout
-    with the corresponding element in the tiler list. If the tiler list is shorter
-    than the layout, the remaining elements from the layout are appended unchanged.
+comptime _AddReducer[a: Int, b: Int]: Int = a + b
 
-    Args:
-        layout_a: The base layout to compose with the tiler.
-        tiler: A list of layouts to compose with the base layout.
-
-    Returns:
-        A new layout representing the composition of the base layout with the tiler.
-
-    Example:
-
-    ```mojo
-    from layout import Layout, LayoutList, IntTuple
-    from layout.layout import composition
-
-    # Compose a layout with a list of tiling layouts
-    var base = Layout.row_major(6, 8)
-    var tilers = LayoutList()
-    tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
-    tilers.append(Layout(IntTuple(3, 3), IntTuple(1, 3)))
-    var composed = composition(base^, tilers^)
-    # Result: A layout with hierarchical tiling based on the tiler list
-    ```
-    """
-    var result = Layout()
-    for layout_item, tiler_item in zip(layout_a, tiler):
-        result.append(composition(layout_item.copy(), tiler_item.copy()))
-
-    # Remainder if tiler is shorter.
-    for i in range(len(tiler), len(layout_a)):
-        result.append(layout_a[i])
-
-    return result^
+comptime _StaticCosize[
+    Shapes: TypeList[Trait=CoordLike, ...],
+    Strides: TypeList[Trait=CoordLike, ...],
+] = ParameterList.tabulate[
+    Shapes.length, _StaticCosizeTabulator[Shapes, Strides, _]
+]().reduce[
+    1, _AddReducer
+]
+"""The compile-time size of the memory region spanned by the layout."""
 
 
-def complement(layout: Layout, size: Int = 1) -> Layout:
-    """Computes the complement layout for a given layout.
+comptime _UnwrapSingleTuple[*element_types: CoordLike] = TypeList[
+    element_types[0]._ParamListType if element_types.length == 1
+    and element_types[0].is_tuple else element_types.values
+]()
 
-    This function creates a layout that represents the "gaps" or complementary
-    structure of the input layout. It's useful for creating hierarchical layouts
-    where you need to fill in the spaces between existing layout elements.
 
-    Args:
-        layout: The input layout to compute the complement for.
-        size: The total size of the memory region to consider. Defaults to 1.
+# ===-------------------------------------------------------------------=== #
+# Nested-shape support for `_RowMajor` / `_ColMajor` (CuTe `local_tile`).
+#
+# Strides over a nested shape `((a, b), (c, d))` = strides over the
+# flattened shape `(a, b, c, d)`, re-nested to mirror the original. The
+# helpers below splice the flat-strides list back into the nested shape.
+# Depth-1 only; the in-tree kernel suite never goes deeper.
+# ===-------------------------------------------------------------------=== #
 
-    Returns:
-        A new layout representing the complement of the input layout.
 
-    Example:
+comptime _ElementFlatRank[T: CoordLike] = (
+    _Flattened[*T.ParamListType].length if T.is_tuple else 1
+)
+"""Number of leaf dims contributed by one (possibly nested) `CoordLike`."""
 
-    ```mojo
-    from layout import Layout, IntTuple
-    from layout.layout import complement
 
-    # Compute the complement of a layout
-    var base = Layout(IntTuple(2, 3), IntTuple(3, 1))
-    var comp = complement(base, 10)
-    # Result: A layout that fills the gaps in the original layout
-    ```
-    """
-    var current_idx = 1
-    var sorted = sorted(
-        IntTuple(zip(flatten(layout.stride), flatten(layout.shape)))
-    )
-    var sorted_len = len(sorted)
+comptime _CumulativeFlatRankReducer[
+    upto: Int,
+    Prev: Int,
+    Element: CoordLike,
+    list_idx: Int,
+] = Prev + _ElementFlatRank[Element] if list_idx < upto else Prev
 
-    var result_shape = IntTuple(num_elems=sorted_len + 1)
-    var result_stride = IntTuple(num_elems=sorted_len + 1)
 
-    # for z in sorted(zip(flatten(layout.stride), flatten(layout.shape))):
-    var i = 0
-    for z in sorted:
-        var stride = Int(z[0])
-        var shape = Int(z[1])
+comptime _CumulativeFlatRankAt[
+    ShapeTL: TypeList[Trait=CoordLike, ...],
+    upto: Int,
+] = ShapeTL.reduce_idx[
+    0,
+    _CumulativeFlatRankReducer[upto, ...],
+]
+"""Flat-leaf offset of outer-mode `upto` in `ShapeTL`."""
 
-        if UNKNOWN_VALUE in (shape, stride) or stride == 0 or shape == 1:
-            continue
 
-        var in_bound = current_idx <= shape * stride
-        if not in_bound:
-            abort("Complement out of bounds.")
+# Re-nesting tabulators form a chain `Leaf → D1 → D2 → D3` mirroring the
+# `_FlattenOnce → _Flatten2 → _Flattened` doubling: each Dk handles up to
+# `k` levels of nesting under `SubShape[sub_idx]` by delegating to
+# `D(k-1)` in its tuple branch. The outer entry point is `D3` (depth-3
+# nesting at the entry), which is more than any in-tree kernel needs.
+# Mojo comptime aliases cannot self-recurse, hence the layered names.
 
-        result_shape.replace_entry(i, int_value=stride // current_idx)
-        result_stride.replace_entry(i, int_value=current_idx)
-        i += 1
-        current_idx = shape * stride
 
-    if size == UNKNOWN_VALUE:
-        result_shape.replace_entry(i, int_value=UNKNOWN_VALUE)
-    else:
-        result_shape.replace_entry(
-            i, int_value=ceildiv(size, current_idx)
-        )  # ceil_div
-    result_stride.replace_entry(i, int_value=current_idx)
-    i += 1
+comptime _NestedStrideLeaf[
+    SubShape: TypeList[Trait=CoordLike, ...],
+    FlatStrides: TypeList[Trait=CoordLike, ...],
+    base: Int,
+    sub_idx: Int,
+]: CoordLike = FlatStrides[base + _CumulativeFlatRankAt[SubShape, upto=sub_idx]]
+"""Scalar-leaf case: pick one entry of `FlatStrides`."""
 
-    result_shape._store[0] = i
-    result_stride._store[0] = i
 
-    return coalesce(Layout(result_shape, result_stride))
+comptime _NestedStrideD1[
+    SubShape: TypeList[Trait=CoordLike, ...],
+    FlatStrides: TypeList[Trait=CoordLike, ...],
+    base: Int,
+    sub_idx: Int,
+]: CoordLike = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        SubShape[sub_idx].ParamListType.length,
+        _NestedStrideLeaf[
+            SubShape[sub_idx].ParamListType,
+            FlatStrides,
+            base + _CumulativeFlatRankAt[SubShape, upto=sub_idx],
+            ...,
+        ],
+    ]()
+] if SubShape[
+    sub_idx
+].is_tuple else _NestedStrideLeaf[
+    SubShape, FlatStrides, base, sub_idx
+]
+
+
+comptime _NestedStrideD2[
+    SubShape: TypeList[Trait=CoordLike, ...],
+    FlatStrides: TypeList[Trait=CoordLike, ...],
+    base: Int,
+    sub_idx: Int,
+]: CoordLike = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        SubShape[sub_idx].ParamListType.length,
+        _NestedStrideD1[
+            SubShape[sub_idx].ParamListType,
+            FlatStrides,
+            base + _CumulativeFlatRankAt[SubShape, upto=sub_idx],
+            ...,
+        ],
+    ]()
+] if SubShape[
+    sub_idx
+].is_tuple else _NestedStrideLeaf[
+    SubShape, FlatStrides, base, sub_idx
+]
+
+
+comptime _NestedStrideTabulator[
+    SubShape: TypeList[Trait=CoordLike, ...],
+    FlatStrides: TypeList[Trait=CoordLike, ...],
+    base: Int,
+    sub_idx: Int,
+]: CoordLike = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        SubShape[sub_idx].ParamListType.length,
+        _NestedStrideD2[
+            SubShape[sub_idx].ParamListType,
+            FlatStrides,
+            base + _CumulativeFlatRankAt[SubShape, upto=sub_idx],
+            ...,
+        ],
+    ]()
+] if SubShape[
+    sub_idx
+].is_tuple else _NestedStrideLeaf[
+    SubShape, FlatStrides, base, sub_idx
+]
+"""Entry point: stride type for `sub_idx`-th element of `SubShape`
+rooted at flat offset `base`. Handles up to depth-3 nesting under
+`SubShape[sub_idx]` (four total levels including the entry's outer)."""
+
+
+comptime _RowMajorMapperIdx[
+    ShapeList: TypeList[Trait=CoordLike, ...],
+    Prev: TypeList.of[Trait=CoordLike]._mlir_type,
+    element: CoordLike,
+    list_idx: Int,
+] = TypeList._concat[
+    TypeList.of[Trait=CoordLike, ComptimeInt[1]]().values if list_idx
+    == 0 else (
+        TypeList.of[
+            Trait=CoordLike,
+            Scalar[
+                ShapeList[list_idx - 1]
+                .DTYPE if not ShapeList[list_idx - 1]
+                .is_static_value else TypeList[Prev]()[0]
+                .DTYPE
+            ],
+        ]()
+        .values if not ShapeList[list_idx - 1]
+        .is_static_value
+        or not TypeList[Prev]()[0]
+        .is_static_value else TypeList.of[
+            Trait=CoordLike,
+            ComptimeInt[
+                ShapeList[list_idx - 1].static_value
+                * TypeList[Prev]()[0].static_value
+            ],
+        ]()
+        .values
+    ),
+    Prev,
+]().values
+
+
+comptime _AnyTuple[*element_types: CoordLike] = (
+    not element_types.all[_IsNotTuplePredicate]()
+)
+"""True iff `element_types` contains at least one tuple element."""
+
+
+comptime _RowMajor[*element_types: CoordLike] = TypeList[
+    _UnwrapSingleTuple[*element_types]
+    .reverse()
+    .reduce_idx[
+        TypeList.of[Trait=CoordLike]().values,
+        _RowMajorMapperIdx[_UnwrapSingleTuple[*element_types].reverse(), ...],
+    ]
+]()
+"""Row-major (C-order) strides for a flat shape variadic. For nested
+shapes use `_RowMajorNested`."""
+
+
+comptime _RowMajorNested[*element_types: CoordLike] = TypeList.tabulate[
+    Trait=CoordLike,
+    element_types.length,
+    _NestedStrideTabulator[
+        TypeList[element_types.values](),
+        _RowMajor[*_Flattened[*element_types]],
+        0,
+        ...,
+    ],
+]()
+"""Row-major strides for a nested shape variadic (CuTe semantics):
+row-major over the flattened shape, then re-nested."""
 
 
 @inline(.always)
-def apply_tiler[
-    func: def(var Layout, var Layout) thin -> Layout
-](var layout_a: Layout, tiler: LayoutList) -> Layout:
-    """Applies a layout transformation function to each element of a layout with a tiler.
+def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
+    """Creates a row-major layout from a shape `Coord`.
 
-    This utility function applies the specified transformation function to each
-    corresponding pair of elements from the layout and tiler list. It's a generic
-    mechanism for implementing various tiling operations.
+    Row-major means the rightmost dimension has stride 1, and each preceding
+    dimension has stride equal to the product of all following dimensions.
+
+    For shape (M, N, K):
+    - row_major strides: (N*K, K, 1)
+    - col_major strides: (1, M, M*N)
+
+    Args:
+        shape: The shape as a Coord.
+
+    Returns:
+        A Layout with row-major strides.
+    """
+    comptime RowMajorTypes = _RowMajor[*shape.element_types]
+    comptime rank = shape.element_types.length
+
+    var strides = Tuple[*RowMajorTypes]()
+
+    comptime for i in range(rank):
+        comptime idx = rank - 1 - i  # Process in reverse order
+        var stride_ptr = Pointer(to=strides[idx])
+
+        comptime if i == 0:
+            # Rightmost dimension always has stride 1.
+            comptime StrideType = RowMajorTypes[idx]
+            stride_ptr.write(rebind[StrideType](Idx[1]))
+        else:
+            # stride[i] = shape[i+1] * stride[i+1]
+            comptime StrideType = RowMajorTypes[idx]
+
+            comptime if StrideType.is_static_value:
+                comptime stride_val = StrideType.static_value
+                stride_ptr.write(rebind[StrideType](Idx[stride_val]))
+            else:
+                var stride_val = Int(shape[idx + 1]) * Int(strides[idx + 1])
+                stride_ptr.write(
+                    rebind[StrideType](
+                        Scalar[StrideType.DTYPE](
+                            Scalar[StrideType.DTYPE](stride_val)
+                        )
+                    )
+                )
+
+    return {shape, Coord(strides^)}
+
+
+@inline(.always)
+def row_major[
+    *element_types: CoordLike
+](var *elements: *element_types) -> RowMajorLayout[*element_types]:
+    """Creates a row-major layout from a shape `Coord`.
+
+    Row-major means the rightmost dimension has stride 1, and each preceding
+    dimension has stride equal to the product of all following dimensions.
 
     Parameters:
-        func: A function that takes two layouts and returns a transformed layout.
+        element_types: The variadic pack of element types that implement `CoordLike`.
 
     Args:
-        layout_a: The base layout to transform.
-        tiler: A list of layouts to use in the transformation.
+        elements: The shape as a Coord.
 
     Returns:
-        A new layout resulting from applying the transformation function to each pair.
-
-    Example:
-
-    ```mojo
-    from layout import Layout, LayoutList, IntTuple
-    from layout.layout import apply_tiler, logical_divide
-
-    # Apply logical_divide to each element of a layout with a tiler
-    var base = Layout.row_major(6, 8)
-    var tilers = LayoutList()
-    tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
-    var result = apply_tiler[logical_divide](base^, tilers)
-    ```
+        A Layout with row-major strides.
     """
-    if len(tiler) == 0:
-        return layout_a^
-    var result = Layout()
-    for i in range(len(tiler)):
-        result.append(func(layout_a[i], tiler[i].copy()))
-    return result^
 
+    comptime RowMajorTypes = _RowMajor[*element_types]
+    comptime rank = element_types.length
 
-def logical_divide(layout_a: Layout, _layout_b: Layout) -> Layout:
-    """Divides a layout into blocks according to another layout.
+    var strides = Tuple[*RowMajorTypes]()
 
-    This function creates a hierarchical layout by dividing the first layout
-    according to the second layout. It's useful for creating blocked or tiled
-    representations of tensors.
+    # Compute row-major strides on the flattened shape (flat-only — the
+    # nested case has its own `row_major_nested` constructor).
+    comptime for i in range(rank):
+        comptime idx = rank - 1 - i  # Process in reverse order
+        var stride_ptr = Pointer(to=strides[idx])
 
-    Args:
-        layout_a: The layout to be divided.
-        _layout_b: The layout defining the division pattern.
-
-    Returns:
-        A new layout representing the hierarchical division.
-    """
-    return composition(
-        layout_a.copy(),
-        make_layout(_layout_b, complement(_layout_b, layout_a.size())),
-    )
-
-
-def logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
-    """Divides a layout into blocks according to a list of layouts.
-
-    This is a variant of logical_divide that works with a list of layouts
-    for more complex tiling patterns.
-
-    Args:
-        layout_a: The layout to be divided.
-        tiler: A list of layouts defining the division patterns.
-
-    Returns:
-        A new layout representing the hierarchical division.
-    """
-    return apply_tiler[logical_divide](layout_a.copy(), tiler)
-
-
-def logical_product(var _layout_a: Layout, var layout_b: Layout) -> Layout:
-    """Creates a product of two layouts.
-
-    This function creates a hierarchical layout by taking the logical product
-    of two layouts. It's a fundamental operation for creating blocked or tiled
-    layouts.
-
-    Args:
-        _layout_a: The first layout.
-        layout_b: The second layout.
-
-    Returns:
-        A new layout representing the logical product of the two layouts.
-    """
-    return make_layout(
-        _layout_a,
-        composition(
-            complement(_layout_a, _layout_a.size() * layout_b.cosize()),
-            layout_b.copy(),
-        ),
-    )
-
-
-def zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
-    """Combines corresponding modes from two layouts.
-
-    This function creates a new layout by combining corresponding dimensions
-    from two layouts. If a dimension in layout_b has a non-positive shape,
-    the corresponding dimension from layout_a is used directly.
-
-    Args:
-        layout_a: The first layout.
-        layout_b: The second layout.
-
-    Returns:
-        A new layout with combined dimensions from both input layouts.
-    """
-    var zipped = Layout()
-    for i in range(layout_a.rank()):
-        var bi = layout_b[i]
-        if is_int(bi.shape) and Int(bi.shape) <= 0:
-            zipped.append(layout_a[i])
+        comptime if i == 0:
+            # Rightmost dimension always has stride 1.
+            comptime StrideType = RowMajorTypes[idx]
+            stride_ptr.write(rebind[StrideType](Idx[1]))
         else:
-            zipped.append(make_layout(layout_a[i], bi))
-    return zipped^
+            # stride[i] = shape[i+1] * stride[i+1]
+            comptime StrideType = RowMajorTypes[idx]
+
+            comptime if StrideType.is_static_value:
+                comptime stride_val = StrideType.static_value
+                stride_ptr.write(rebind[StrideType](Idx[stride_val]))
+            else:
+                var stride_val = Int(elements[idx + 1]) * Int(strides[idx + 1])
+                stride_ptr.write(
+                    rebind[StrideType](
+                        Scalar[StrideType.DTYPE](
+                            Scalar[StrideType.DTYPE](stride_val)
+                        )
+                    )
+                )
+
+    return Layout(
+        Coord[*element_types](*elements^), Coord[*RowMajorTypes](strides^)
+    )
 
 
-# If there is a 0-shape mode in layout_b, then the corresponding mode in
-# layout_a is taken as is without adding any additional tiling modes.
-def blocked_product(
-    var layout_a: Layout,
-    var layout_b: Layout,
-    coalesce_output: Bool = False,
-) -> Layout:
-    """Creates a blocked layout by combining two layouts.
+@inline(.nodebug)
+def row_major[*idxs: Int]() -> RowMajorLayout[*_IntToComptimeInt[*idxs]]:
+    """Creates a row-major layout from compile-time shape dimensions.
 
-    This function creates a hierarchical blocked layout by combining an inner
-    (block) and an outer (base) layout. The result is a layout where each
-    element of the outer layout is replaced by a block defined by the
-    inner layout.
-
-    This is particularly useful for creating tiled layouts for efficient
-    cache utilization in tensor operations like matrix multiplication.
-
-    Args:
-        layout_a: Inner layout. The layout for an individual block, or tile.
-        layout_b: Outer layout. The layout of the tiles in the output layout.
-        coalesce_output: Whether to coalesce the output layout. Default is False.
+    Parameters:
+        idxs: The shape dimensions as compile-time integers.
 
     Returns:
-        A new layout representing the blocked structure
+        A Layout with row-major strides.
+    """
+    var shape = Coord[*_IntToComptimeInt[*idxs]]()
+    return row_major(shape)
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-major nested-shape constructor (CuTe semantics).
+# ===----------------------------------------------------------------------=== #
+
+
+@inline(.always)
+def row_major_nested(
+    var shape: Coord,
+) -> RowMajorNestedLayout[*shape.element_types]:
+    """Creates a row-major layout from a nested shape `Coord`.
+
+    For a nested shape `((a, b), (c, d))` the result has nested strides
+    `((b*c*d, c*d), (d, 1))`: row-major over the flattened shape, re-nested.
+
+    Currently restricted to all-static (compile-time) leaf dimensions
+    and one level of nesting. For flat shapes use `row_major`.
+
+    Args:
+        shape: The nested shape as a `Coord` whose top-level elements
+            are themselves `Coord`s.
+
+    Returns:
+        A `Layout` with the matching nested row-major strides.
+    """
+    comptime RowMajorTypes = _RowMajorNested[*shape.element_types]
+    comptime rank = shape.element_types.length
+
+    var strides = Tuple[*RowMajorTypes]()
+
+    comptime for i in range(rank):
+        comptime idx = rank - 1 - i
+        var stride_ptr = Pointer(to=strides[idx])
+        comptime StrideType = RowMajorTypes[idx]
+        stride_ptr.write(StrideType())
+
+    return {shape, Coord(strides^)}
+
+
+# ===----------------------------------------------------------------------=== #
+# Column Major Layout
+# ===----------------------------------------------------------------------=== #
+
+
+comptime ColMajorLayout[shape_types: TypeList[Trait=CoordLike, ...]] = Layout[
+    shape_types, _ColMajor[*shape_types]
+]
+"""A `Layout` with column-major (Fortran-order) strides for a flat shape.
+For nested shapes use `ColMajorNestedLayout`.
+
+Parameters:
+    shape_types: The types for the shape dimensions.
+"""
+
+
+comptime ColMajorNestedLayout[
+    shape_types: TypeList[Trait=CoordLike, ...]
+] = Layout[shape_types, _ColMajorNested[*shape_types]]
+"""A `Layout` with column-major strides for a nested shape (CuTe semantics).
+
+For shape `((a, b), (c, d))` the strides are `((1, a), (a*b, a*b*c))`:
+col-major over the flattened shape, re-nested.
+
+Parameters:
+    shape_types: The types for the shape dimensions.
+"""
+
+comptime _ColMajor[*element_types: CoordLike] = TypeList[
+    _UnwrapSingleTuple[*element_types].reduce_idx[
+        TypeList.of[Trait=CoordLike]().values,
+        _ColMajorMapperIdx[_UnwrapSingleTuple[*element_types], ...],
+    ]
+]()
+"""Column-major (Fortran-order) strides for a flat shape variadic. For
+nested shapes use `_ColMajorNested`."""
+
+
+comptime _ColMajorNested[*element_types: CoordLike] = TypeList.tabulate[
+    Trait=CoordLike,
+    element_types.length,
+    _NestedStrideTabulator[
+        TypeList[element_types.values](),
+        _ColMajor[*_Flattened[*element_types]],
+        0,
+        ...,
+    ],
+]()
+"""Column-major strides for a nested shape variadic (CuTe semantics):
+col-major over the flattened shape, then re-nested."""
+
+
+comptime _ColMajorMapperIdx[
+    ShapeList: TypeList[Trait=CoordLike, ...],
+    Prev: TypeList.of[Trait=CoordLike]._mlir_type,
+    element: CoordLike,
+    list_idx: Int,
+] = TypeList._concat[
+    Prev,
+    TypeList.of[Trait=CoordLike, ComptimeInt[1]]().values if list_idx
+    == 0 else (
+        TypeList.of[
+            Trait=CoordLike,
+            Scalar[
+                ShapeList[list_idx - 1]
+                .DTYPE if not ShapeList[list_idx - 1]
+                .is_static_value else TypeList[Prev]()[list_idx - 1]
+                .DTYPE
+            ],
+        ]()
+        .values if not ShapeList[list_idx - 1]
+        .is_static_value
+        or not TypeList[Prev]()[list_idx - 1]
+        .is_static_value else TypeList.of[
+            Trait=CoordLike,
+            ComptimeInt[
+                ShapeList[list_idx - 1].static_value
+                * TypeList[Prev]()[list_idx - 1].static_value
+            ],
+        ]()
+        .values
+    ),
+]().values
+
+
+@inline(.always)
+def col_major[
+    *element_types: CoordLike
+](var *elements: *element_types) -> ColMajorLayout[element_types]:
+    """Create a column-major layout from variadic arguments.
+
+    Column-major means the first dimension has stride 1, and each subsequent
+    dimension has stride equal to the product of all previous dimensions.
+
+    Parameters:
+        element_types: The variadic pack of element types that implement `CoordLike`.
+
+    Args:
+        elements: The shape dimensions.
+
+    Returns:
+        A Layout with column-major strides.
+    """
+    return col_major(Coord[*element_types](*elements^))
+
+
+@inline(.always)
+def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
+    """Create a column-major layout from a shape.
+
+    Column-major means the first dimension has stride 1, and each subsequent
+    dimension has stride equal to the product of all previous dimensions.
+
+    For shape (M, N, K):
+    - row_major strides: (N*K, K, 1)
+    - col_major strides: (1, M, M*N)
+
+    Args:
+        shape: The shape as a Coord.
+
+    Returns:
+        A Layout with column-major strides.
+    """
+    comptime ColMajorTypes = _ColMajor[*shape.element_types]
+    comptime rank = shape.element_types.length
+
+    var strides = Tuple[*ColMajorTypes]()
+
+    # Compute column-major strides (flat-only — the nested case has
+    # its own `col_major_nested` constructor).
+    comptime for i in range(rank):
+        var stride_ptr = Pointer(to=strides[i])
+
+        comptime if i == 0:
+            # Leftmost dimension always has stride 1.
+            comptime StrideType = ColMajorTypes[i]
+            stride_ptr.write(rebind[StrideType](Idx[1]))
+        else:
+            # stride[i] = shape[i-1] * stride[i-1]
+            comptime StrideType = ColMajorTypes[i]
+
+            comptime if StrideType.is_static_value:
+                comptime stride_val = StrideType.static_value
+                stride_ptr.write(rebind[StrideType](Idx[stride_val]))
+            else:
+                var stride_val = Int(shape[i - 1]) * Int(strides[i - 1])
+                stride_ptr.write(
+                    rebind[StrideType](
+                        Scalar[StrideType.DTYPE](
+                            Scalar[StrideType.DTYPE](stride_val)
+                        )
+                    )
+                )
+
+    return Layout(shape, Coord[*ColMajorTypes](strides^))
+
+
+@inline(.nodebug)
+def col_major[*idxs: Int]() -> ColMajorLayout[_IntToComptimeInt[*idxs]]:
+    """Create a column-major layout from compile-time shape dimensions.
+
+    Parameters:
+        idxs: The shape dimensions as compile-time integers.
+
+    Returns:
+        A Layout with column-major strides.
 
     Example:
 
     ```mojo
-    from layout import Layout
-    from layout.layout import blocked_product
+    from layout.layout import col_major
 
-    # Create a 2x3 matrix layout
-    var matrix = Layout.row_major(2, 3)
-    # Define 2x2 blocks
-    var block = Layout.row_major(2, 2)
-    # Create a blocked layout with 2x2 blocks
-    var blocked = blocked_product(block^, matrix^)
-    ```
-
-    Output:
-
-    ```plaintext
-    (((2, 2), (2, 3)):((2, 12), (1, 4)))
-          0    1    2    3    4    5
-       +----+----+----+----+----+----+
-    0  |  0 |  1 |  4 |  5 |  8 |  9 |
-       +----+----+----+----+----+----+
-    1  |  2 |  3 |  6 |  7 | 10 | 11 |
-       +----+----+----+----+----+----+
-    2  | 12 | 13 | 16 | 17 | 20 | 21 |
-       +----+----+----+----+----+----+
-    3  | 14 | 15 | 18 | 19 | 22 | 23 |
-       +----+----+----+----+----+----+
+    var layout = col_major[3, 4]()
+    # shape: (3, 4), stride: (1, 3)
     ```
     """
-    # ((a_0, a_1, ...), (tile_0, tile_1, ...))
-    var lp = logical_product(layout_a^, layout_b^)
-    # ((a_0, tile_0), (a_1, tile_1), ...)
-    var zipped = zip_modes(lp[0], lp[1])
-    if coalesce_output:
-        return coalesce(zipped, keep_rank=True)
-    else:
-        return zipped^
+    var shape = Coord[*_IntToComptimeInt[*idxs]]()
+    return col_major(shape)
 
 
-def tile_to_shape(
-    var tile: Layout, target_shape: IntTuple, order: Optional[IntTuple] = None
-) -> Layout:
-    """Creates a layout by tiling a base layout to match a target shape.
+@inline(.always)
+def col_major_nested(
+    var shape: Coord,
+) -> ColMajorNestedLayout[shape.element_types]:
+    """Creates a column-major layout from a nested shape `Coord`.
 
-    This function creates a hierarchical layout by repeating a tile layout to match
-    a target shape. It calculates how many times the tile needs to be repeated in
-    each dimension to reach the target shape, and creates a tiler layout with this
-    information.
+    For a nested shape `((a, b), (c, d))` the result has nested strides
+    `((1, a), (a*b, a*b*c))`: col-major over the flattened shape, re-nested.
+
+    Currently restricted to all-static (compile-time) leaf dimensions
+    and one level of nesting. For flat shapes use `col_major`.
 
     Args:
-        tile: The base layout to be tiled.
-        target_shape: The desired final shape to tile to.
-        order: Optional memory ordering for the tiler layout. If None, defaults to
-            column-major ordering.
+        shape: The nested shape as a `Coord` whose top-level elements
+            are themselves `Coord`s.
 
     Returns:
-        A new layout representing the tiled structure that matches the target shape.
-
-    Example:
-
-    ```mojo
-    from layout import Layout, IntTuple
-    from layout.layout import tile_to_shape
-
-    # Create a 2x2 tile layout
-    var tile = Layout.row_major(2, 2)
-    # Tile it to create a 6x4 layout
-    var tiled = tile_to_shape(tile^, IntTuple(6, 4))
-    # Result: A layout with 3x2 tiles of size 2x2 each
-    ```
+        A `Layout` with the matching nested column-major strides.
     """
-    var flat_tile_shape = product_each(tile.shape)
-    var flat_target_shape = product_each(target_shape)
-    var tiler_shape = IntTuple()
-    for i in range(len(flat_tile_shape)):
-        var a = Int(flat_target_shape[i])
-        var b = Int(flat_tile_shape[i])
-        if a <= 0:
-            tiler_shape.append(a)
-            continue
-        if a % b != 0:
-            abort(
-                "Tile to shape failed: target shape is not divisible by tile"
-                " shape"
+    comptime ColMajorTypes = _ColMajorNested[*shape.element_types]
+    comptime rank = shape.element_types.length
+
+    var strides = Tuple[*ColMajorTypes]()
+
+    comptime for i in range(rank):
+        var stride_ptr = Pointer(to=strides[i])
+        comptime StrideType = ColMajorTypes[i]
+        stride_ptr.write(StrideType())
+
+    return Layout(shape, Coord[*ColMajorTypes](strides^))
+
+
+@inline(.nodebug)
+def col_major(
+    idx: ComptimeInt[...],
+) -> Layout[
+    shape_types=Coord[type_of(idx)].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
+]:
+    """Creates a 1D column-major layout from a compile-time dimension.
+
+    Args:
+        idx: The shape dimension as a `ComptimeInt`.
+
+    Returns:
+        A 1D Layout with stride 1.
+    """
+    return Layout(Coord(idx), Coord(Idx[1]))
+
+
+@inline(.nodebug)
+def col_major(
+    idx: Scalar[...],
+) -> Layout[
+    shape_types=Coord[type_of(idx)].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
+]:
+    """Creates a 1D column-major layout from a runtime dimension.
+
+    Args:
+        idx: The shape dimension as a `Scalar`.
+
+    Returns:
+        A 1D Layout with stride 1.
+    """
+    return Layout(Coord(idx), Coord(Idx[1]))
+
+
+def zipped_divide[
+    LayoutType: TensorLayout, //, tile: Coord
+](layout: LayoutType) -> ZippedDivideLayout[LayoutType, tile.element_types]:
+    """Divides a layout into inner (tile) and outer (number-of-tiles) parts.
+
+    Given a layout and a tile shape, produces a hierarchical layout where the
+    inner component has the tile shape with the original strides, and the outer
+    component has shape = original_shape / tile with scaled strides.
+
+    Parameters:
+        LayoutType: The type of the input layout.
+        tile: The tile shape to divide by.
+
+    Args:
+        layout: The layout to divide.
+
+    Returns:
+        A `ZippedDivideLayout` with inner and outer components.
+    """
+    var shape = layout.shape_coord()
+    var outer_shape = Coord[
+        *_Divide[LayoutType._shape_types, tile.element_types]
+    ]()
+    var outer_stride = Coord[
+        *_Multiply[LayoutType._stride_types, tile.element_types]
+    ]()
+    var inner_shape = tile
+    var inner_stride = layout.stride_coord()
+
+    comptime for i in range(outer_shape.rank):
+        comptime if (
+            outer_shape.element_types[i].is_value
+            and not outer_shape.element_types[i].is_static_value
+        ):
+            outer_shape[i] = rebind[outer_shape.element_types[i]](
+                Scalar[outer_shape.element_types[i].DTYPE](
+                    Int(shape[i]) // Int(tile[i])
+                )
             )
-        tiler_shape.append(a // b)
 
-    var new_order: IntTuple
-    if case .Some(order) = order:
-        new_order = order
-    else:
-        new_order = prefix_product(tiler_shape)  # default to column major
-    var tiler = make_ordered_layout(tiler_shape, new_order)
-    return blocked_product(tile^, tiler^)
+        comptime if (
+            outer_stride.element_types[i].is_value
+            and not outer_stride.element_types[i].is_static_value
+        ):
+            outer_stride[i] = rebind[outer_stride.element_types[i]](
+                Scalar[outer_stride.element_types[i].DTYPE](
+                    Int(inner_stride[i]) * Int(tile[i])
+                )
+            )
+    var out_layout = Layout(
+        Coord(inner_shape, outer_shape), Coord(inner_stride, outer_stride)
+    )
+    return out_layout
 
 
-def logical_product(var layout_a: Layout, tiler: LayoutList) -> Layout:
-    """Creates a product of a layout with a list of layouts.
+comptime ZippedDivideLayout[
+    LayoutType: TensorLayout,
+    tile: TypeList[Trait=CoordLike, ...],
+] = Layout[
+    Coord[
+        Coord[*tile],  # inner_shape = tile
+        Coord[
+            *_Divide[LayoutType._shape_types, tile]
+        ],  # outer_shape = shape / tile
+    ].element_types,
+    Coord[
+        Coord[*LayoutType._stride_types],  # inner_stride = original stride
+        Coord[
+            *_Multiply[LayoutType._stride_types, tile]
+        ],  # outer_stride = stride * tile
+    ].element_types,
+]
+"""Type alias for the result of `zipped_divide`.
 
-    This is a variant of logical_product that works with a list of layouts
-    for more complex tiling patterns. It applies the logical_product operation
-    to each element of the layout with the corresponding element in the tiler list.
+Splits a layout into inner (tile-sized) and outer (number-of-tiles)
+components. The result is a 2-level hierarchical layout where:
+
+- ``inner_shape  = tile``
+- ``outer_shape  = shape / tile``
+- ``inner_stride = original stride``
+- ``outer_stride = stride * tile``
+
+For fully-static layouts, this can be used directly at the type level:
+
+```mojo
+comptime result = ZippedDivideLayout[type_of(my_layout), tile.element_types]()
+```
+
+Parameters:
+    LayoutType: The input layout type.
+    tile: Shape types of the tile used to divide the layout.
+"""
+
+
+def _shape_div(a: Int, b: Int) -> Int:
+    """Divides `a` by `b` when `b` divides it, else returns 1 (`a` divides
+    `b`): CuTe's `shape_div` on static values."""
+    if a % b == 0:
+        return a // b
+    return 1
+
+
+def _compose_leaf[
+    AS: TypeList[Trait=CoordLike, ...],
+    AD: TypeList[Trait=CoordLike, ...],
+    s: Int,
+    d: Int,
+    i: Int,
+    what: Int,
+]() -> Int:
+    """Composes a flat static layout `AS:AD` with one leaf `s:d`.
+
+    The leaf walks `AS:AD`'s domain in colexicographic order, so it splits
+    into one result leaf per mode of A it crosses. `what` selects the
+    answer: 0 for the number of result leaves, 1 for leaf `i`'s shape, 2
+    for its stride.
+    """
+    if d == 0:
+        if what == 0:
+            return 1
+        return s if what == 1 else 0
+    var n = 0
+    var rest_shape = s
+    var rest_stride = d
+    var shape_i = 1
+    var stride_i = 0
+    comptime for k in range(AS.length - 1):
+        var cs = AS[k].static_value
+        var cd = AD[k].static_value
+        var next_shape = _shape_div(cs, rest_stride)
+        var next_stride = _shape_div(rest_stride, cs)
+        if next_shape != 1 and rest_shape != 1:
+            var new_shape = min(next_shape, rest_shape)
+            if n == i:
+                shape_i = new_shape
+                stride_i = rest_stride * cd
+            n += 1
+            rest_shape = _shape_div(rest_shape, new_shape)
+        rest_stride = next_stride
+    if rest_shape != 1 or n == 0:
+        if n == i:
+            shape_i = rest_shape
+            stride_i = rest_stride * AD[AS.length - 1].static_value
+        n += 1
+    if what == 0:
+        return n
+    return shape_i if what == 1 else stride_i
+
+
+def _compose_mode[
+    AS: TypeList[Trait=CoordLike, ...],
+    AD: TypeList[Trait=CoordLike, ...],
+    BS: TypeList[Trait=CoordLike, ...],
+    BD: TypeList[Trait=CoordLike, ...],
+    j: Int,
+    what: Int,
+]() -> Int:
+    """Composes `AS:AD` with one mode of B, whose leaves are `BS:BD`, and
+    answers as `_compose_leaf` does for the mode's `j`-th result leaf."""
+    var base = 0
+    var out = 0
+    comptime for l in range(BS.length):
+        comptime s = BS[l].static_value
+        comptime d = BD[l].static_value
+        comptime count = _compose_leaf[AS, AD, s, d, 0, 0]()
+        if what != 0 and j >= base and j < base + count:
+            comptime for k in range(count):
+                if j - base == k:
+                    out = _compose_leaf[AS, AD, s, d, k, what]()
+        base += count
+    return base if what == 0 else out
+
+
+comptime _ComposeLeafTabulator[
+    AS: TypeList[Trait=CoordLike, ...],
+    AD: TypeList[Trait=CoordLike, ...],
+    BS: TypeList[Trait=CoordLike, ...],
+    BD: TypeList[Trait=CoordLike, ...],
+    what: Int,
+    j: Int,
+]: CoordLike = ComptimeInt[_compose_mode[AS, AD, BS, BD, j, what]()]
+
+
+comptime _ComposeModeTabulator[
+    A: TensorLayout,
+    B: TensorLayout,
+    what: Int,
+    m: Int,
+]: CoordLike = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        _compose_mode[
+            _Flattened[*A._shape_types],
+            _Flattened[*A._stride_types],
+            _Flattened[B._shape_types[m]],
+            _Flattened[B._stride_types[m]],
+            0,
+            0,
+        ](),
+        _ComposeLeafTabulator[
+            _Flattened[*A._shape_types],
+            _Flattened[*A._stride_types],
+            _Flattened[B._shape_types[m]],
+            _Flattened[B._stride_types[m]],
+            what,
+            ...,
+        ],
+    ]()
+]
+
+
+comptime ComposedLayout[A: TensorLayout, B: TensorLayout] = Layout[
+    TypeList.tabulate[
+        Trait=CoordLike, B.rank, _ComposeModeTabulator[A, B, 1, ...]
+    ](),
+    TypeList.tabulate[
+        Trait=CoordLike, B.rank, _ComposeModeTabulator[A, B, 2, ...]
+    ](),
+]
+"""Type alias for the result of `composition`: `A` after `B`.
+
+`B` maps its coordinates to a linear index into `A`'s domain, read in
+colexicographic order (the first mode fastest), and the result maps `B`'s
+coordinates through `A`. The result has `B`'s rank; each of its modes is the
+flat tuple of leaves `B`'s mode splits into as it crosses `A`'s modes.
+
+Both layouts must be fully static.
+
+Parameters:
+    A: The outer layout, applied second.
+    B: The inner layout, applied first.
+"""
+
+
+def composition[
+    A: TensorLayout, B: TensorLayout, //
+](a: A, b: B) -> ComposedLayout[A, B]:
+    """Composes two static layouts: the result maps `B`'s coordinates
+    through `B`, then through `A`.
+
+    This is CuTe's `composition`. A thread-value layout composed after an
+    operand's layout gives, per thread, the operand offsets of its values.
+
+    Parameters:
+        A: The outer layout's type.
+        B: The inner layout's type.
 
     Args:
-        layout_a: The base layout to create products with.
-        tiler: A list of layouts defining the product patterns.
+        a: The outer layout, applied second.
+        b: The inner layout, applied first.
 
     Returns:
-        A new layout representing the logical product with the tiler layouts.
+        The composed layout, with `B`'s rank.
+
+    Constraints:
+        Both layouts are fully static, and `B`'s image lies in `A`'s domain.
+    """
+    comptime assert (
+        A.all_dims_known and B.all_dims_known
+    ), "composition needs fully static layouts"
+    comptime assert (
+        B.static_cosize <= A.static_product
+    ), "composition: B's image exceeds A's domain"
+    return {}
+
+
+comptime _ModeLeaves[Mode: CoordLike] = _Flattened[*Mode.ParamListType]
+"""The leaves of one layout mode, in order. A scalar mode is its own leaf."""
+
+
+# ===----------------------------------------------------------------------=== #
+# Nested tiles (TileTensor.tile)
+#
+# A nested mode `(s0, s1, ...):(d0, d1, ...)` is tiled first leaf first, like
+# `crd2idx`: a tile of `t` elements keeps the leading leaves whose extents
+# multiply to `t`, the last one possibly cut short, with their strides.
+# ===----------------------------------------------------------------------=== #
+
+
+comptime _PrefixProductReducer[
+    j: Int, Prev: Int, Element: CoordLike, list_idx: Int
+]: Int = Prev * Element.static_value if list_idx < j else Prev
+
+comptime _LeafPrefixProduct[
+    Leaves: TypeList[Trait=CoordLike, ...], j: Int
+]: Int = Leaves.reduce_idx[1, _PrefixProductReducer[j, ...]]
+"""The product of the extents of the leaves before leaf `j`."""
+
+comptime _KeptLeafReducer[
+    Leaves: TypeList[Trait=CoordLike, ...],
+    size: Int,
+    Prev: Int,
+    Element: CoordLike,
+    list_idx: Int,
+]: Int = Prev + 1 if Prev == list_idx and (
+    list_idx == 0 or _LeafPrefixProduct[Leaves, list_idx] < size
+) else Prev
+
+comptime _TileKeptLeaves[
+    Leaves: TypeList[Trait=CoordLike, ...], size: Int
+]: Int = Leaves.reduce_idx[0, _KeptLeafReducer[Leaves, size, ...]]
+"""How many leading leaves of a nested mode a tile of `size` elements spans.
+Built from reductions rather than a function call, so that `where` clauses
+on the result can evaluate it."""
+
+comptime _TileShapeLeaf[
+    Leaves: TypeList[Trait=CoordLike, ...], size: Int, j: Int
+]: CoordLike = (
+    ComptimeInt[size // _LeafPrefixProduct[Leaves, j]] if j
+    == _TileKeptLeaves[Leaves, size] - 1 else Leaves[j]
+)
+
+comptime _NestedTileModeShape[ShapeMode: CoordLike, size: Int]: CoordLike = (
+    _TileShapeLeaf[_ModeLeaves[ShapeMode], size, 0] if _TileKeptLeaves[
+        _ModeLeaves[ShapeMode], size
+    ]
+    == 1 else Coord[
+        *TypeList.tabulate[
+            Trait=CoordLike,
+            _TileKeptLeaves[_ModeLeaves[ShapeMode], size],
+            _TileShapeLeaf[_ModeLeaves[ShapeMode], size, _],
+        ]()
+    ]
+)
+
+comptime _NestedTileModeStride[
+    ShapeMode: CoordLike, StrideMode: CoordLike, size: Int
+]: CoordLike = (
+    _ModeLeaves[StrideMode][0] if _TileKeptLeaves[_ModeLeaves[ShapeMode], size]
+    == 1 else Coord[
+        *_ModeLeaves[StrideMode].slice[
+            0, _TileKeptLeaves[_ModeLeaves[ShapeMode], size]
+        ]()
+    ]
+)
+
+comptime _NestedTileShapeTabulator[
+    ParentLayoutType: TensorLayout,
+    TileShape: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = (
+    _NestedTileModeShape[
+        ParentLayoutType._shape_types[idx], TileShape[idx].static_value
+    ] if ParentLayoutType._shape_types[idx].is_tuple else TileShape[idx]
+)
+
+comptime _NestedTileStrideTabulator[
+    ParentLayoutType: TensorLayout,
+    TileShape: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = (
+    _NestedTileModeStride[
+        ParentLayoutType._shape_types[idx],
+        ParentLayoutType._stride_types[idx],
+        TileShape[idx].static_value,
+    ] if ParentLayoutType._shape_types[
+        idx
+    ].is_tuple else ParentLayoutType._stride_types[
+        idx
+    ]
+)
+
+
+# ===----------------------------------------------------------------------=== #
+# Blocked Product
+# ===----------------------------------------------------------------------=== #
+
+comptime _BlockedProductShapeTabulator[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    idx: Int,
+]: CoordLike = Coord[
+    BlockLayoutType._shape_types[idx],
+    TilerLayoutType._shape_types[idx],
+]
+
+comptime _BlockedProductShapeTypes[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    BlockLayoutType._stride_types.length,
+    _BlockedProductShapeTabulator[
+        BlockLayoutType,
+        TilerLayoutType,
+        ...,
+    ],
+]()
+
+comptime _BlockedProductStrideTabulator[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    block_cosize: Int,
+    idx: Int,
+]: CoordLike = Coord[
+    BlockLayoutType._stride_types[idx],
+    ComptimeInt[block_cosize * TilerLayoutType._stride_types[idx].static_value],
+]
+
+comptime _BlockedProductStrideTypes[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    BlockLayoutType._stride_types.length,
+    _BlockedProductStrideTabulator[
+        BlockLayoutType,
+        TilerLayoutType,
+        Coord[*BlockLayoutType._shape_types].static_product,
+        ...,
+    ],
+]()
+
+comptime _CoalescedBlockedShapeTabulator[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    block_cosize: Int,
+    idx: Int,
+]: CoordLike = ComptimeInt[
+    # Coalesce: merge into flat ComptimeInt[block_s * tiler_s].
+    BlockLayoutType._shape_types[idx].static_value
+    * TilerLayoutType._shape_types[idx].static_value
+] if _can_coalesce_mode[
+    BlockLayoutType._shape_types[idx].static_value,
+    BlockLayoutType._stride_types[idx].static_value,
+    block_cosize * TilerLayoutType._stride_types[idx].static_value,
+] else Coord[  # No coalesce: keep nested Coord[*(block_s, tiler_s)].
+    BlockLayoutType._shape_types[idx],
+    TilerLayoutType._shape_types[idx],
+]
+
+
+comptime _CoalescedBlockedProductShapeTypes[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    BlockLayoutType._shape_types.length,
+    _CoalescedBlockedShapeTabulator[
+        BlockLayoutType,
+        TilerLayoutType,
+        Coord[*BlockLayoutType._shape_types].static_product,
+        ...,
+    ],
+]()
+
+
+comptime _CoalescedBlockedStrideTabulator[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    block_cosize: Int,
+    idx: Int,
+]: CoordLike = BlockLayoutType._stride_types[idx] if _can_coalesce_mode[
+    # Coalesce: stride is the inner (block) stride.
+    BlockLayoutType._shape_types[idx].static_value,
+    BlockLayoutType._stride_types[idx].static_value,
+    block_cosize * TilerLayoutType._stride_types[idx].static_value,
+] else Coord[
+    # No coalesce: keep nested Coord[*(block_d, outer_d)].
+    BlockLayoutType._stride_types[idx],
+    ComptimeInt[block_cosize * TilerLayoutType._stride_types[idx].static_value],
+]
+
+comptime _CoalescedBlockedProductStrideTypes[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    BlockLayoutType._stride_types.length,
+    _CoalescedBlockedStrideTabulator[
+        BlockLayoutType,
+        TilerLayoutType,
+        Coord[*BlockLayoutType._shape_types].static_product,
+        ...,
+    ],
+]()
+
+comptime BlockedProductLayout[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    coalesce_output: Bool = False,
+] = Layout[
+    TypeList[
+        _CoalescedBlockedProductShapeTypes[BlockLayoutType, TilerLayoutType]
+        .values if coalesce_output else _BlockedProductShapeTypes[
+            BlockLayoutType, TilerLayoutType
+        ]
+        .values
+    ](),
+    TypeList[
+        _CoalescedBlockedProductStrideTypes[BlockLayoutType, TilerLayoutType]
+        .values if coalesce_output else _BlockedProductStrideTypes[
+            BlockLayoutType, TilerLayoutType
+        ]
+        .values
+    ](),
+]
+"""Type alias for blocked product layout.
+
+Creates a hierarchical layout by combining a block (inner) layout with a
+tiler (outer) layout. The result zips corresponding dimensions so that
+each mode ``i`` pairs ``block[i]`` with ``tiler[i]``:
+
+- ``shape[i]  = (block.shape[i],  tiler.shape[i])``
+- ``stride[i] = (block.stride[i], block.cosize * tiler.stride[i])``
+
+When ``coalesce_output`` is True, contiguous inner/outer pairs per mode
+are merged into flat dimensions (``block_shape[i] * block_stride[i] ==
+outer_stride[i]``). This corresponds to the old
+``blocked_product(..., coalesce_output=True)`` with ``keep_rank=True``.
+
+For fully-static layouts, this can be used directly at the type level:
+
+```mojo
+comptime result = BlockedProductLayout[type_of(block), type_of(tiler)]()
+comptime coalesced = BlockedProductLayout[
+    type_of(block), type_of(tiler), coalesce_output=True
+]()
+```
+
+Parameters:
+    BlockLayoutType: The inner block layout type.
+    TilerLayoutType: The outer tiler layout type.
+    coalesce_output: Whether to coalesce contiguous modes. Default is False.
+"""
+
+
+comptime _can_coalesce_mode[
+    block_shape: Int, block_stride: Int, outer_stride: Int
+] = block_shape * block_stride == outer_stride
+"""Check if a blocked-product mode can be coalesced.
+
+A mode can be coalesced when the inner (block) elements are contiguous
+with the outer (tiler) elements, i.e., ``block_shape * block_stride ==
+outer_stride``.
+
+Args:
+    block_shape: The block shape for this mode.
+    block_stride: The block stride for this mode.
+    outer_stride: The outer stride (``block.cosize * tiler.stride``)
+        for this mode.
+
+Returns:
+    True if the mode can be merged into a single flat dimension.
+"""
+
+
+def blocked_product[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    //,
+](block: BlockLayoutType, tiler: TilerLayoutType) -> BlockedProductLayout[
+    BlockLayoutType, TilerLayoutType
+]:
+    """Creates a blocked layout by combining a block and tiler layout.
+
+    This function creates a hierarchical blocked layout where each element
+    of the tiler layout is replaced by a block. This is useful for creating
+    tiled layouts for efficient cache utilization.
+
+    Parameters:
+        BlockLayoutType: The type of the block layout.
+        TilerLayoutType: The type of the tiler layout.
+
+    Args:
+        block: The inner layout defining the structure of each tile.
+        tiler: The outer layout defining the arrangement of tiles.
+
+    Returns:
+        A new layout representing the blocked structure.
 
     Example:
 
     ```mojo
-    from layout import Layout, LayoutList, IntTuple
-    from layout.layout import logical_product
+    from layout.layout import row_major, blocked_product
 
-    # Create a product of a layout with a list of layouts
-    var base = Layout.row_major(6, 8)
-    var tilers = LayoutList()
-    tilers.append(Layout(IntTuple(2, 2)))
-    var result = logical_product(base^, tilers)
+    # Create a 2x2 block layout
+    var block = row_major[2, 2]()
+    # Create a 2x3 tiler (2 rows, 3 cols of blocks)
+    var tiler = row_major[2, 3]()
+    # Create blocked layout
+    var blocked = blocked_product(block, tiler)
+    # Result: shape ((2,2), (2,3)), stride ((2,12), (1,4))
     ```
     """
-    if len(tiler) == 1:
-        return logical_product(layout_a^, tiler[0].copy())
-    return apply_tiler[logical_product](layout_a^, tiler)
+    comptime BlockShape = Coord[*BlockLayoutType._shape_types]
+    comptime OuterStrideTypes = _MultiplyByScalar[
+        TilerLayoutType._stride_types,
+        BlockShape.static_product,
+    ]
+
+    # Build inner shape/stride from block layout
+    var inner_shape = block.shape_coord()
+    var inner_stride = block.stride_coord()
+
+    # Build outer shape from tiler layout
+    var outer_shape = tiler.shape_coord()
+
+    # Build outer stride = block.cosize * tiler.stride
+    var outer_stride = Coord[*OuterStrideTypes]()
+
+    comptime for i in range(outer_shape.rank):
+        comptime if OuterStrideTypes[i].is_static_value:
+            Pointer(to=outer_stride[i]).write(
+                rebind[OuterStrideTypes[i]](
+                    ComptimeInt[OuterStrideTypes[i].static_value]()
+                )
+            )
+        else:
+            var block_cosize = Int(block.shape_coord().product())
+            Pointer(to=outer_stride[i]).write(
+                rebind[OuterStrideTypes[i]](
+                    Scalar[OuterStrideTypes[i].DTYPE](
+                        Int(tiler.stride_coord()[i]) * block_cosize
+                    )
+                )
+            )
+
+    # Zip per dimension: mode i = (block[i], tiler[i])
+    comptime ResultType = BlockedProductLayout[BlockLayoutType, TilerLayoutType]
+    var result_shape = Coord[*ResultType._shape_types]()
+    var result_stride = Coord[*ResultType._stride_types]()
+
+    comptime for i in range(inner_shape.rank):
+        Pointer(to=result_shape[i]).write(
+            rebind[ResultType._shape_types[i]](
+                Coord(inner_shape[i], outer_shape[i])
+            )
+        )
+        Pointer(to=result_stride[i]).write(
+            rebind[ResultType._stride_types[i]](
+                Coord(inner_stride[i], outer_stride[i])
+            )
+        )
+
+    return Layout(result_shape, result_stride)
 
 
-def hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
-    """Hierarchically unzips a layout according to a list of layouts.
+def blocked_product[
+    BlockLayoutType: TensorLayout,
+    TilerLayoutType: TensorLayout,
+    //,
+    *,
+    coalesce_output: Bool,
+](block: BlockLayoutType, tiler: TilerLayoutType) -> BlockedProductLayout[
+    BlockLayoutType, TilerLayoutType, coalesce_output
+]:
+    """Creates a blocked layout with optional output coalescing.
 
-    This function creates a hierarchical layout by unzipping the first layout
-    according to the layouts in the tiler list. It's useful for decomposing
-    a layout into hierarchical components for more efficient memory access
-    patterns or to enable specialized tensor operations.
+    This overload accepts a ``coalesce_output`` keyword parameter.  When
+    True, contiguous inner/outer dimension pairs are merged into flat
+    dimensions, reducing the layout rank where possible.
+
+    Parameters:
+        BlockLayoutType: The type of the block layout.
+        TilerLayoutType: The type of the tiler layout.
+        coalesce_output: When True, merge contiguous inner/outer pairs.
 
     Args:
-        layout_a: The layout to be unzipped.
-        tiler: A list of layouts defining the unzipping patterns.
+        block: The inner layout defining the structure of each tile.
+        tiler: The outer layout defining the arrangement of tiles.
 
     Returns:
-        A new layout representing the hierarchical unzipping with components
-        from both the original layout and the tiler layouts.
+        A new layout representing the blocked structure, coalesced if
+        requested.
 
     Example:
 
     ```mojo
-    from layout import Layout, LayoutList, IntTuple
-    from layout.layout import hierarchical_unzip
+    from layout.layout import row_major, blocked_product
 
-    # Create a layout to unzip
-    var base = Layout.row_major(6, 8)
-    var tilers = LayoutList()
-    tilers.append(Layout(IntTuple(2, 2)))
-    var result = hierarchical_unzip(base, tilers)
+    var block = row_major[4]()
+    var tiler = row_major[3]()
+    # Coalesced: shape (12,), stride (1,) instead of ((4,), (3,))
+    var coalesced = blocked_product[coalesce_output=True](block, tiler)
     ```
     """
-    var res_1 = Layout()
-    var res_2 = Layout()
-
-    for i in range(len(tiler)):
-        var split = hierarchical_unzip(layout_a[i], tiler[i])
-        res_1.append(split[0])
-        res_2.append(split[1])
-
-    # Remainder if tiler is shorter.
-    for i in range(len(tiler), len(layout_a)):
-        res_2.append(layout_a[i])
-
-    return make_layout(res_1, res_2)
+    return BlockedProductLayout[
+        BlockLayoutType, TilerLayoutType, coalesce_output
+    ]()
 
 
-def hierarchical_unzip(
-    layout_a: Layout,
-    layout_b: Layout,
-) -> Layout:
-    """Hierarchically unzips a layout according to another layout.
+# ===----------------------------------------------------------------------=== #
+# Upcast / Downcast
+# ===----------------------------------------------------------------------=== #
 
-    This function creates a hierarchical layout by unzipping the first layout
-    according to the second layout. It's a fundamental operation for decomposing
-    a layout into hierarchical components, which enables more efficient memory
-    access patterns for various tensor operations.
+
+def _comptime_shape_div(a: Int, b: Int) -> Int:
+    """Compile-time shape_div: ``a // b`` if divisible, else ``signum(a * b)``.
+
+    This mirrors the int-int case of the legacy ``shape_div`` function.
+    Used by the upcast type-level reducers to compute result types.
 
     Args:
-        layout_a: The layout to be unzipped.
-        layout_b: The layout defining the unzipping pattern.
+        a: The dividend.
+        b: The divisor.
 
     Returns:
-        A new layout representing the hierarchical unzipping of layout_a
-        according to the pattern defined by layout_b.
-
-    Example:
-
-    ```mojo
-    from layout import Layout, IntTuple
-    from layout.layout import hierarchical_unzip
-
-    # Create layouts
-    var base = Layout.row_major(6, 8)
-    var pattern = Layout(IntTuple(2, 2))
-    var result = hierarchical_unzip(base, pattern)
-    ```
+        ``a // b`` when ``a`` is evenly divisible by ``b``, otherwise
+        1 if ``a * b > 0`` else -1.
     """
-    if len(layout_a) == 1 or len(layout_b) == 1:
-        return logical_divide(layout_a, Layout(layout_b.shape))
+    if a % b == 0:
+        return a // b
+    return 1 if a * b > 0 else -1
 
-    var res_1 = Layout()
-    var res_2 = Layout()
 
-    for i in range(layout_b.rank()):
-        var split = hierarchical_unzip(layout_a[i], layout_b[i])
-        res_1.append(split[0])
-        res_2.append(split[1])
+comptime _UpcastStrideReducer[
+    factor: Int,
+    coord: CoordLike,
+]: CoordLike = ComptimeInt[
+    _comptime_shape_div(coord.static_value, factor)
+] if coord.is_static_value else Scalar[
+    coord.DTYPE
+]
+"""Computes the type for each upcast stride dimension.
 
-    # Remainder if tiler is shorter.
-    for i in range(len(layout_b), len(layout_a)):
-        res_2.append(layout_a[i])
+For a compile-time stride ``d``, the result type is
+``ComptimeInt[shape_div(d, factor)]``. For a runtime stride, the result
+is ``Scalar``.
+"""
 
-    return make_layout(res_1, res_2)
+
+comptime _UpcastStrideTypes[
+    factor: Int,
+    stride_types: TypeList[Trait=CoordLike, ...],
+] = stride_types.map[_UpcastStrideReducer[factor, _]]()
+"""The stride types after upcast by ``factor``."""
+
+
+comptime _UpcastShapeTabulator[
+    factor: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = ComptimeInt[
+    _comptime_shape_div(
+        shape_types[idx].static_value,
+        _comptime_shape_div(factor, stride_types[idx].static_value),
+    )
+] if shape_types[
+    idx
+].is_static_value and stride_types[
+    idx
+].is_static_value else Scalar[
+    shape_types[idx].DTYPE
+]
+"""Computes the type for each upcast shape dimension.
+
+For compile-time shape ``s`` and stride ``d``, the result type is
+``ComptimeInt[shape_div(s, shape_div(factor, d))]``. When either is
+runtime, the result is ``Scalar``.
+"""
+
+
+comptime _UpcastShapeTypes[
+    factor: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    shape_types.length,
+    _UpcastShapeTabulator[factor, shape_types, stride_types, ...],
+]()
+"""The shape types after upcast by ``factor``."""
+
+
+comptime UpcastLayout[
+    LayoutType: TensorLayout,
+    factor: Int,
+] = Layout[
+    _UpcastShapeTypes[
+        factor, LayoutType._shape_types, LayoutType._stride_types
+    ],
+    _UpcastStrideTypes[factor, LayoutType._stride_types],
+]
+"""Type alias for the result of `upcast`.
+
+Fuses ``factor`` consecutive elements per dimension, producing a layout
+with coarser granularity. For fully-static layouts, this can be used
+directly at the type level without calling `upcast`:
+
+```mojo
+comptime result = UpcastLayout[type_of(my_layout), 2]()
+```
+
+Parameters:
+    LayoutType: The input layout type.
+    factor: The number of consecutive elements to fuse.
+"""
 
 
 @inline(.nodebug)
-def zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
-    """Divides a layout into blocks according to another layout.
+def _runtime_shape_div(a: Int, b: Int) -> Int:
+    """Runtime shape_div: ``a // b`` if divisible, else ``signum(a * b)``.
 
-    This function creates a hierarchical layout by dividing the first layout
-    according to the second layout. It's an alias for hierarchical_unzip that provides a
-    more intuitive name for the division operation. This is useful for creating
-    blocked or tiled representations of tensors.
+    Runtime counterpart of ``_comptime_shape_div``, used in the ``upcast``
+    function body for dimensions whose values are only known at runtime.
 
     Args:
-        layout_a: The layout to be divided.
-        layout_b: The layout defining the division pattern.
+        a: The dividend.
+        b: The divisor.
 
     Returns:
-        A new layout representing the hierarchical division of layout_a according
-        to layout_b.
+        ``a // b`` when ``a`` is evenly divisible by ``b``, otherwise
+        1 if ``a * b > 0`` else -1.
+    """
+    if a % b == 0:
+        return a // b
+    return 1 if a * b > 0 else -1
+
+
+def upcast[
+    LayoutType: TensorLayout, factor: Int, //
+](layout: LayoutType) -> UpcastLayout[LayoutType, factor]:
+    """Fuses consecutive elements in a layout to create a coarser layout.
+
+    This is useful for converting between different data type granularities.
+    For example, if a layout describes byte-level offsets and you want to
+    treat every 2 bytes as one ``bf16`` element, use ``upcast[2](layout)``.
+
+    For each dimension with shape ``s`` and stride ``d``:
+    - ``new_stride = shape_div(d, factor)``
+    - ``new_shape  = shape_div(s, shape_div(factor, d))``
+
+    where ``shape_div(a, b)`` returns ``a // b`` if ``a`` is divisible by
+    ``b``, otherwise ``signum(a * b)`` (i.e., 1 for positive values).
+
+    Parameters:
+        LayoutType: The type of the input layout.
+        factor: The number of consecutive elements to fuse into one.
+
+    Args:
+        layout: The layout to upcast.
+
+    Returns:
+        A new layout with adjusted shape and stride for the coarser
+        granularity.
 
     Example:
 
     ```mojo
-    from layout import Layout, IntTuple
-    from layout.layout import zipped_divide
+    from layout.layout import row_major, upcast
 
-    # Create layouts
-    var base = Layout.row_major(6, 8)
-    var pattern = Layout(IntTuple(2, 2))
-    var result = zipped_divide(base, pattern)
+    # 4x8 row-major, strides (8, 1)
+    var layout = row_major[4, 8]()
+    # Upcast by 2: treat pairs as single elements
+    var coarser = upcast[factor=2](layout)
+    # Result: shape (4, 4), strides (4, 1)
     ```
     """
-    return hierarchical_unzip(layout_a, layout_b)
+    comptime ResultType = UpcastLayout[LayoutType, factor]
+    comptime ResultShapeTypes = ResultType._shape_types
+    comptime ResultStrideTypes = ResultType._stride_types
+
+    var new_shape = Coord[*ResultShapeTypes]()
+    var new_stride = Coord[*ResultStrideTypes]()
+
+    comptime for i in range(LayoutType.rank):
+        comptime s_static = LayoutType._shape_types[i].static_value
+        comptime d_static = LayoutType._stride_types[i].static_value
+
+        # Compute new_stride[i] = shape_div(stride[i], factor).
+        comptime if ResultStrideTypes[i].is_static_value:
+            Pointer(to=new_stride[i]).write(ResultStrideTypes[i]())
+        else:
+            Pointer(to=new_stride[i]).write(
+                rebind[ResultStrideTypes[i]](
+                    Scalar[ResultStrideTypes[i].DTYPE](
+                        _runtime_shape_div(
+                            Int(layout.stride_coord()[i]), factor
+                        )
+                    )
+                )
+            )
+
+        # Compute new_shape[i] = shape_div(shape[i], shape_div(factor, stride[i])).
+        comptime if ResultShapeTypes[i].is_static_value:
+            Pointer(to=new_shape[i]).write(ResultShapeTypes[i]())
+        else:
+            Pointer(to=new_shape[i]).write(
+                rebind[ResultShapeTypes[i]](
+                    Scalar[ResultShapeTypes[i].DTYPE](
+                        _runtime_shape_div(
+                            Int(layout.shape_coord()[i]),
+                            _runtime_shape_div(
+                                factor,
+                                Int(layout.stride_coord()[i]),
+                            ),
+                        )
+                    )
+                )
+            )
+
+    return Layout(new_shape, new_stride)
+
+
+# ===----------------------------------------------------------------------=== #
+# Coalesce
+# ===----------------------------------------------------------------------=== #
+
+
+comptime _DropLast2[
+    types: TypeList.of[Trait=CoordLike]._mlir_type,
+] = TypeList[
+    types
+]().slice[0, TypeList[types].length - 2]()
+"""Remove the last two elements from a variadic."""
+
+
+comptime _CoalesceReducerIdx[
+    flat_stride_types: TypeList[Trait=CoordLike, ...],
+    Prev: TypeList.of[Trait=CoordLike]._mlir_type,
+    element: CoordLike,
+    list_idx: Int,
+] = Prev if element.static_value == 1 else (
+    # prev_shape == 1: replace last pair with current (shape, stride)
+    TypeList._concat[
+        _DropLast2[Prev].values,
+        TypeList.of[
+            Trait=CoordLike,
+            ComptimeInt[element.static_value],
+            ComptimeInt[flat_stride_types[list_idx].static_value],
+        ]().values,
+    ]()
+    .values if TypeList[Prev]()[TypeList[Prev].length - 2]
+    .static_value
+    == 1 else (
+        # Contiguous: merge into previous (prev_shape * cur_shape, prev_stride)
+        TypeList._concat[
+            _DropLast2[Prev].values,
+            TypeList.of[
+                Trait=CoordLike,
+                ComptimeInt[
+                    TypeList[Prev]()[TypeList[Prev].length - 2].static_value
+                    * element.static_value
+                ],
+                TypeList[Prev]()[TypeList[Prev].length - 1],
+            ]().values,
+        ]()
+        .values if TypeList[Prev]()[TypeList[Prev].length - 2]
+        .static_value
+        * TypeList[Prev]()[TypeList[Prev].length - 1].static_value
+        == flat_stride_types[list_idx].static_value else
+        # Non-contiguous: append new (shape, stride) pair
+        TypeList._concat[
+            Prev,
+            TypeList.of[
+                Trait=CoordLike,
+                ComptimeInt[element.static_value],
+                ComptimeInt[flat_stride_types[list_idx].static_value],
+            ]().values,
+        ]().values
+    )
+)
+"""Reducer for coalescing a flattened layout.
+
+Accumulates interleaved (shape, stride) pairs in ``Prev``.  At each step
+the current dimension is either skipped (shape == 1), merged into the
+previous pair (contiguous strides), or appended as a new pair.
+
+Parameters:
+    flat_stride_types: Flattened stride types of the input layout.
+    Prev: Accumulated interleaved (shape, stride) pairs so far.
+    element: The flattened shape type at ``list_idx``.
+    list_idx: Current dimension index.
+"""
+
+
+comptime _CoalescedInterleaved[
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList[
+    _Flattened[*shape_types].reduce_idx[
+        TypeList.of[Trait=CoordLike, ComptimeInt[1], ComptimeInt[0]]().values,
+        _CoalesceReducerIdx[
+            _Flattened[*stride_types],
+            ...,
+        ],
+    ]
+]()
+"""Interleaved (shape0, stride0, shape1, stride1, ...) after coalescing."""
+
+
+comptime _HalfSizeDriver[
+    N: Int,
+] = TypeList.splat[Trait=CoordLike, count=N // 2, type=ComptimeInt[0]]()
+"""A dummy variadic of size N//2 used to drive even/odd extraction."""
+
+
+comptime _ExtractEvenTabulator[
+    interleaved: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = interleaved[idx * 2]
+"""Extracts even-indexed elements from interleaved given as parameter."""
+
+
+comptime _ExtractOddTabulator[
+    interleaved: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = interleaved[idx * 2 + 1]
+"""Extracts odd-indexed elements from interleaved given as parameter."""
+
+
+comptime _CoalescedShapeTypes[
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    _HalfSizeDriver[
+        _CoalescedInterleaved[shape_types, stride_types].length
+    ].length,
+    _ExtractEvenTabulator[_CoalescedInterleaved[shape_types, stride_types], _],
+]()
+"""Coalesced shape types extracted from the interleaved result."""
+
+
+comptime _CoalescedStrideTypes[
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    _HalfSizeDriver[
+        _CoalescedInterleaved[shape_types, stride_types].length
+    ].length,
+    _ExtractOddTabulator[_CoalescedInterleaved[shape_types, stride_types], _],
+]()
+"""Coalesced stride types extracted from the interleaved result."""
+
+
+comptime CoalesceLayout[
+    LayoutType: TensorLayout,
+] = Layout[
+    _CoalescedShapeTypes[LayoutType._shape_types, LayoutType._stride_types],
+    _CoalescedStrideTypes[LayoutType._shape_types, LayoutType._stride_types],
+]
+"""Type alias for the result of `coalesce`.
+
+Simplifies a layout by merging dimensions with contiguous strides.
+Adjacent flattened dimensions where ``prev_shape * prev_stride ==
+current_stride`` are combined into a single dimension.  Shape-1
+dimensions are dropped.
+
+For fully-static layouts, this can be used directly at the type level:
+
+```mojo
+comptime result = CoalesceLayout[type_of(my_layout)]()
+```
+
+Parameters:
+    LayoutType: The input layout type (must have all dimensions known
+        at compile time).
+"""
 
 
 @inline(.nodebug)
-def zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
-    """Divides a layout into blocks according to a list of layouts.
+def coalesce[
+    LayoutType: TensorLayout,
+    //,
+](layout: LayoutType) -> CoalesceLayout[LayoutType]:
+    """Simplifies a layout by merging modes that are contiguous in memory.
 
-    This function creates a hierarchical layout by dividing the first layout
-    according to the layouts in the tiler list. It's an alias for hierarchical_unzip that
-    provides a more intuitive name for the division operation when working with
-    multiple tiling patterns.
+    Iterates over the flattened modes (shape, stride pairs) and:
+
+    1. Skips shape-1 modes.
+    2. Merges a mode into the previous one when
+       ``prev_shape * prev_stride == current_stride`` (contiguous).
+    3. Otherwise starts a new mode.
+
+    The result is the simplest layout that maps coordinates to the same
+    linear offsets as the original. A generalized column-major layout
+    (where strides increase left to right) coalesces to 1 dimension.
+
+    Parameters:
+        LayoutType: The type of the input layout.
 
     Args:
-        layout_a: The layout to be divided.
-        tiler: A list of layouts defining the division patterns.
+        layout: The layout to coalesce.
 
     Returns:
-        A new layout representing the hierarchical division of layout_a according
-        to the patterns in tiler.
+        A new layout with contiguous dimensions merged.
 
     Example:
 
     ```mojo
-    from layout import Layout, LayoutList, IntTuple
-    from layout.layout import zipped_divide
+    from layout.layout import Layout, coalesce, col_major, Idx
 
-    # Create layouts
-    var base = Layout.row_major(6, 8)
-    var tilers = LayoutList()
-    tilers.append(Layout(IntTuple(2, 2)))
-    var result = zipped_divide(base, tilers)
+    # A column-major 2x4 layout has contiguous strides -> coalesces to 1D
+    var layout = col_major[2, 4]()  # shape (2, 4), stride (1, 2)
+    var coalesced = coalesce(layout)  # shape (8,), stride (1,)
     ```
     """
-    return hierarchical_unzip(layout_a, tiler)
+    return CoalesceLayout[LayoutType]()
+
+
+# ===--- Weakly Compatible ---=== #
+# Checks structural compatibility between two CoordLike types up to 4 levels
+# of nesting.  A scalar coord is always compatible.  A tuple coord requires
+# the other type to be a tuple of the same length, with all sub-elements
+# recursively compatible.
+#
+# Because reducers cannot recurse, the check is manually unrolled into four
+# depth layers (_WCPair3 → _WCPair2 → _WCPair1 → top-level), each using
+# a dedicated reducer to AND-accumulate pair checks over element pairs.
+# Returns ``True`` (compatible) or ``False`` (incompatible) as a
+# compile-time Bool.
+
+
+comptime _WCPair3[L: CoordLike, C: CoordLike]: Bool = (
+    True if not C.is_tuple else (
+        False if not L.is_tuple else (
+            L.ParamListType.length == C.ParamListType.length
+        )
+    )
+)
+"""Depth-3 pair check (innermost): scalar coords pass, tuple coords only
+check length match without descending further."""
+
+comptime _WCPair2[L: CoordLike, C: CoordLike]: Bool = (
+    True if not C.is_tuple else (
+        False if not L.is_tuple else _AllEltsSatisfy[
+            L.ParamListType, C.ParamListType, _WCPair3
+        ]
+    )
+)
+"""Depth-2 pair check: delegates sub-element checks to depth-3."""
+
+comptime _WCPair1[L: CoordLike, C: CoordLike]: Bool = (
+    True if not C.is_tuple else (
+        False if not L.is_tuple else _AllEltsSatisfy[
+            L.ParamListType, C.ParamListType, _WCPair2
+        ]
+    )
+)
+"""Depth-1 pair check: delegates sub-element checks to depth-2."""
+
+
+comptime _BoolIsTrue[a: Bool]: Bool = a
+
+comptime _tabulatePredicate[
+    a: TypeList[Trait=CoordLike, ...],
+    b: TypeList[Trait=CoordLike, ...],
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
+    idx: Int,
+]: Bool = pred[a[idx], b[idx]]
+
+comptime _AllEltsSatisfy[
+    a: TypeList[Trait=CoordLike, ...],
+    b: TypeList[Trait=CoordLike, ...],
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
+]: Bool = a.length == b.length and ParameterList.tabulate[
+    a.length, _tabulatePredicate[a, b, pred, _]
+]().all[
+    _BoolIsTrue,
+]()
+
+
+comptime _WeaklyCompatible[
+    layout_types: TypeList[Trait=CoordLike, ...],
+    coord_types: TypeList[Trait=CoordLike, ...],
+] = _AllEltsSatisfy[layout_types, coord_types, _WCPair1]
+"""Top-level variadic pair check (depth 0): checks that both variadics have
+the same length and all element pairs are weakly compatible."""
+
+
+comptime WeaklyCompatible[
+    L: TensorLayout,
+    C: TypeList[Trait=CoordLike, ...],
+] = _WeaklyCompatible[L._shape_types, C]
+"""Check structural compatibility between a layout's shape and coordinate types.
+
+Returns ``True`` if compatible, ``False`` otherwise.  A scalar coordinate
+element is always compatible.  A tuple coordinate element requires the
+corresponding layout shape element to also be a tuple of the same length,
+with all sub-elements recursively compatible.  Handles up to 4 levels of
+nesting; beyond that, only length equality is verified.
+
+Parameters:
+    L: The layout type whose shape structure is checked.
+    C: The coordinate element types to check against.
+"""
+
+
+# ===----------------------------------------------------------------------=== #
+# Layout Printing Utilities
+# ===----------------------------------------------------------------------=== #
 
 
 @inline(.never)
-def print_layout(layout: Layout):
+def _print_layout(layout: Layout):
     """Prints a 2D layout to the standard output.
 
     This function visualizes a 2D layout by printing a formatted table showing
@@ -1592,17 +2601,32 @@ def print_layout(layout: Layout):
     Args:
         layout: The 2D layout to print.
     """
-    if layout.rank() != 2:
-        abort("print_layout only supports 2D layouts")
-
+    comptime assert layout.rank == 2, "_print_layout only supports 2D layouts"
     print(layout)
-    # make stdout mutable
     var stdout = std.sys.stdout
-    format_layout(layout, stdout)
+    _format_layout(layout, stdout)
+
+
+@inline(.nodebug)
+def _dim_size[T: CoordLike](dim: T) -> Int:
+    """Returns the element count for a single layout dimension.
+
+    For scalar CoordLike types (ComptimeInt, Scalar), returns the value.
+    For nested Coord types, returns the product of all sub-elements.
+    """
+    comptime if T.is_tuple:
+        comptime sub_rank = T.__len__()
+        var t = dim.tuple()
+        var result: Int = 1
+        comptime for j in range(sub_rank):
+            result *= _dim_size(t[j])
+        return result
+    else:
+        return Int(dim)
 
 
 @inline(.never)
-def format_layout[W: Writer](layout: Layout, mut writer: W):
+def _format_layout[W: Writer](layout: Layout, mut writer: W):
     """Formats a 2D layout as a table and writes it to the specified writer.
 
     This function creates a visual representation of a 2D layout as a table
@@ -1615,6 +2639,7 @@ def format_layout[W: Writer](layout: Layout, mut writer: W):
         layout: The 2D layout to format.
         writer: The writer to output the formatted layout to.
     """
+    comptime assert layout.rank == 2, "_format_layout only supports 2D layouts"
 
     def _write_divider(column_count: Int, cell_width: Int) {mut writer}:
         for _ in range(column_count):
@@ -1623,32 +2648,33 @@ def format_layout[W: Writer](layout: Layout, mut writer: W):
                 writer.write("-")
         writer.write("+\n")
 
-    var idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
+    var rows = _dim_size(layout.shape[0]())
+    var cols = _dim_size(layout.shape[1]())
+    # maximum column width is based on the width of the longest label plus 2 spaces
+    var idx_width = String(layout.cosize()).byte_length() + 2
 
     # Print column labels
     writer.write("    ")
-    for n in range(layout[1].size()):
+    for n in range(cols):
         writer.write("  ")
         n.write_padded(writer, width=idx_width - 2)
 
-        var is_last_column = n + 1 == layout[1].size()
-
-        if not is_last_column:
+        if n + 1 != cols:
             writer.write(" ")
 
     writer.write("\n")
 
-    for m in range(layout[0].size()):
+    for m in range(rows):
         writer.write("    ")
-        _write_divider(layout[1].size(), idx_width)
+        _write_divider(cols, idx_width)
 
         # Print row label
         m.write_padded(writer, width=2)
         writer.write("  ")
 
-        for n in range(layout[1].size()):
+        for n in range(cols):
             writer.write("| ")
-            layout([m, n]).write_padded(
+            Int(layout(Coord(m, n))).write_padded(
                 writer,
                 width=idx_width - 2,
             )
@@ -1658,329 +2684,4 @@ def format_layout[W: Writer](layout: Layout, mut writer: W):
     writer.write("    ")
 
     # Write the final horizontal dividing line
-    _write_divider(layout[1].size(), idx_width)
-
-
-def sublayout(layout: Layout, *modes: Int) -> Layout:
-    """Creates a sublayout by selecting specific dimensions from a layout.
-
-    This function extracts a subset of dimensions from a layout to create a new
-    layout with lower rank. For example, from a 3D layout, you could extract
-    a 2D layout containing only the first and third dimensions.
-
-    Args:
-        layout: The source layout to extract dimensions from.
-        modes: The indices of dimensions to include in the sublayout.
-
-    Returns:
-        A new layout containing only the specified dimensions.
-
-    Example:
-
-    From a layout with shape (3,4,5), sublayout(layout, 0, 2) would
-    create a layout with shape (3,5).
-    """
-    var shape = IntTuple()
-    var stride = IntTuple()
-    for mode in modes:
-        shape.append(layout.shape[mode])
-        stride.append(layout.stride[mode])
-    return Layout(shape, stride)
-
-
-def expand_strides(shape: IntTuple, stride: Int) -> IntTuple:
-    """Expands a scalar stride into a stride tuple matching a shape tuple.
-
-    This function creates a stride tuple that matches the structure of a shape tuple,
-    with each stride value calculated based on the cumulative product of shape
-    dimensions.
-
-    Args:
-        shape: The shape tuple to match.
-        stride: The base stride value to expand.
-
-    Returns:
-        A stride tuple matching the structure of the shape tuple.
-    """
-    var new_stride = IntTuple()
-    var cumulative_stride: Int = stride
-    for sz in shape:
-        if sz.is_tuple():
-            new_stride.append(expand_strides(sz, cumulative_stride))
-            cumulative_stride *= size(Layout(sz))
-        else:
-            new_stride.append(cumulative_stride)
-            cumulative_stride *= sz.value()
-    return new_stride
-
-
-def expand_modes_alike(
-    shape_a: IntTuple, stride_a: IntTuple, shape_b: IntTuple, stride_b: IntTuple
-) -> Array[IntTuple, 3]:
-    """Aligns two shape-stride pairs to have the same hierarchical structure.
-
-    This function is used to make two layouts compatible for operations by ensuring
-    they have the same hierarchical structure, expanding scalar values into tuples
-    as needed.
-
-    Args:
-        shape_a: The first shape tuple.
-        stride_a: The first stride tuple.
-        shape_b: The second shape tuple.
-        stride_b: The second stride tuple.
-
-    Returns:
-        An array containing three tuples: the common shape, the expanded stride_a,
-        and the expanded stride_b.
-    """
-    if shape_a.is_tuple() and shape_b.is_tuple():
-        var new_shape = IntTuple()
-        var new_stride_a = IntTuple()
-        var new_stride_b = IntTuple()
-        # TODO: lift this limitation, and instead require
-        # that size(shape_a) != size(shape_b):
-        # Ideally, we'd be able to call `coalesce` on two layouts prior
-        # to `uncoalesce` in functions like `copy_to` to first simplify.
-        if len(shape_a) != len(shape_b):
-            abort()
-        for i in range(len(shape_a)):
-            if shape_a[i].is_value() and shape_b[i].is_value():
-                new_shape.append(shape_a[i].value())
-                new_stride_a.append(stride_a[i].value())
-                new_stride_b.append(stride_b[i].value())
-            elif shape_a[i].is_value():
-                new_shape.append(shape_b[i])
-                new_stride_b.append(stride_b[i])
-                new_stride_a.append(
-                    expand_strides(shape_b[i], stride_a[i].value())
-                )
-            elif shape_b[i].is_value():
-                new_shape.append(shape_a[i])
-                new_stride_a.append(stride_a[i])
-                new_stride_b.append(
-                    expand_strides(shape_a[i], stride_b[i].value())
-                )
-            else:
-                var uc = expand_modes_alike(
-                    shape_a[i], stride_a[i], shape_b[i], stride_b[i]
-                )
-                new_shape.append(uc[0])
-                new_stride_a.append(uc[1])
-                new_stride_b.append(uc[2])
-
-        return [new_shape, new_stride_a, new_stride_b]
-    elif shape_a.is_tuple():
-        return [
-            shape_a.owned_copy(),
-            stride_a.owned_copy(),
-            expand_strides(shape_a, stride_b.value()),
-        ]
-    elif shape_b.is_tuple():
-        return [
-            shape_b.owned_copy(),
-            expand_strides(shape_b.owned_copy(), stride_a.value()),
-            stride_b.owned_copy(),
-        ]
-    else:
-        return [
-            shape_b.owned_copy(),
-            stride_a.owned_copy(),
-            stride_b.owned_copy(),
-        ]
-
-
-def expand_modes_alike(layout_a: Layout, layout_b: Layout) -> Array[Layout, 2]:
-    """Aligns two layouts to have the same hierarchical structure.
-
-    This function tiles both layouts so they mirror each other's structure,
-    making them compatible for operations that require matching hierarchies.
-
-    Args:
-        layout_a: The first layout to align.
-        layout_b: The second layout to align.
-
-    Returns:
-        An array containing two layouts with matching hierarchical structures.
-
-    Example:
-
-    Given layouts with different structures:
-
-    - layout_0: (((3, (5, 2)), 4):((1, (24, 12)), 3))
-    - layout_1: ((30, (2, 2)):(2, (60, 1)))
-
-    The result would be two layouts with matching structures:
-
-    - (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
-    - (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
-
-    ```mojo
-    from layout import Layout, IntTuple
-    from layout.layout import expand_modes_alike
-
-    comptime layout_0 = Layout(
-        IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
-        IntTuple(IntTuple(1, IntTuple(24, 12)), 3),
-    )
-    comptime layout_1 = Layout(
-        IntTuple(30, IntTuple(2, 2)), IntTuple(2, IntTuple(60, 1))
-    )
-    comptime uc = expand_modes_alike(layout_0, layout_1)
-    print(uc[0])
-    # (((3, (5, 2)), (2, 2)):((1, (24, 12)), (3, 6)))
-    print(uc[1])
-    # (((3, (5, 2)), (2, 2)):((2, (6, 30)), (60, 1)))
-    ```
-    """
-    var uc = expand_modes_alike(
-        layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
-    )
-    return [Layout(uc[0], uc[1]), Layout(uc[0], uc[2])]
-
-
-def right_inverse(layout: Layout) -> Layout:
-    """Creates a right inverse of a layout.
-
-    The right inverse of a layout maps memory indices back to logical coordinates.
-    This is useful for converting between different memory layouts.
-
-    Args:
-        layout: The layout to invert.
-
-    Returns:
-        A new layout representing the right inverse of the input layout.
-    """
-    var flat_layout = coalesce(layout)
-    var rstride = prefix_product(flat_layout.shape)
-    var shape = IntTuple()
-    var stride = IntTuple()
-    var next_stride = 1
-    for _ in range(flat_layout.rank()):
-        for j in range(flat_layout.rank()):
-            if Int(flat_layout.stride[j]) == next_stride:
-                var shape_j = flat_layout.shape[j]
-                shape.append(shape_j)
-                stride.append(rstride[j])
-                next_stride *= Int(shape_j)
-                break
-    return Layout(shape, stride)
-
-
-def upcast[check: Bool = True](var layout: Layout, factor: Int) -> Layout:
-    """Fuses consecutive elements in a layout to create a coarser layout.
-
-    This function is useful for converting between different data type granularities,
-    such as from bytes to larger data types like bfloat16 or tf32.
-
-    Parameters:
-        check: Whether to check for incompatible factors.
-
-    Args:
-        layout: The layout to upcast.
-        factor: The number of consecutive elements to fuse into one.
-
-    Returns:
-        A new layout with adjusted shape and stride for the coarser granularity.
-    """
-    if is_int(layout.shape):
-        if layout.stride == 0:
-            return layout^
-        else:
-            var fac = IntTuple(factor)
-            var up_shape = shape_div[check](
-                layout.shape, shape_div[check](fac, layout.stride)
-            )
-            var up_stride = shape_div[check](layout.stride, fac)
-            return Layout(up_shape, up_stride)
-    else:
-        var res = Layout()
-        for i in range(layout.rank()):
-            res.append(upcast(layout[i], factor))
-        return res^
-
-
-def downcast(layout: Layout, factor: Int) -> Layout:
-    """Splits elements in a layout to create a finer layout without changing the
-    total number of elements so that the alignment is preserved.
-
-    This function is useful for converting between different data type granularities,
-    such as from uint128 to bf16.
-
-    Args:
-        layout: The layout to downcast.
-        factor: The number of elements to split into.
-
-    Returns:
-        A new layout with adjusted shape and stride for the finer granularity.
-    """
-    return Layout(layout.shape, mul(layout.stride, factor))
-
-
-def is_row_major[rank: Int](layout: Layout) -> Bool:
-    """Checks if a layout has row-major ordering for the specified rank.
-
-    A row-major layout has strides that decrease from left to right, with the
-    rightmost dimension having a stride of 1.
-
-    Parameters:
-        rank: The expected rank of the layout.
-
-    Args:
-        layout: The layout to check.
-
-    Returns:
-        True if the layout has row-major ordering for the specified rank,
-        False otherwise.
-    """
-    var flat_shape = flatten(layout.shape)
-    var flat_rank = len(flat_shape)
-
-    if flat_rank != rank:
-        return False
-
-    var flat_stride = flatten(layout.stride)
-    if flat_stride[flat_rank - 1].value() != 1:
-        return False
-
-    var correct_stride = flat_shape[flat_rank - 1].value()
-
-    for i in reversed(range(flat_rank - 1)):
-        var stride_i = flat_stride[i].value()
-        if stride_i != correct_stride:
-            return False
-        correct_stride *= flat_shape[i].value()
-
-    return True
-
-
-def _compute_distribute_layout[
-    data_layout: Layout,
-    threads_layout: Layout,
-    axis: Optional[Int] = None,
-]() -> Layout:
-    """Computes a layout for distributing threads across data.
-
-    Distributes thread_layout into data_layout. If axis is provided, distributes
-    into threads_layout projected into this axis.
-
-    Parameters:
-        data_layout: The layout of the data to be distributed.
-        threads_layout: The layout of the threads.
-        axis: Optional axis for projection-based distribution.
-
-    Returns:
-        A layout representing the distribution of threads across data.
-    """
-    var thread_tile = LayoutList()
-
-    comptime if case .Some(axis_idx) = axis:
-        return zipped_divide(
-            materialize[data_layout](),
-            Layout(threads_layout.shape[axis_idx]),
-        )
-
-    else:
-        for dim in threads_layout.shape:
-            thread_tile.append(Layout(dim))
-
-        return zipped_divide(materialize[data_layout](), thread_tile)
+    _write_divider(cols, idx_width)

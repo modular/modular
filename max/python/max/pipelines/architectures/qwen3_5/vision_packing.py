@@ -21,14 +21,11 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    get_seqlens,
-)
 from max.pipelines.context import ImageMetadata
 from max.profiler import traced
+
+from .context import Qwen3_5TextAndVisionContext
+from .data_processing import get_seqlens
 
 
 @dataclass
@@ -44,6 +41,32 @@ class Qwen3_5VisionInputs:
     cu_seqlens: Buffer
     max_seqlen: Buffer
 
+    def graph_inputs(self, devices: Sequence[Device]) -> list[Buffer]:
+        """Returns the vision graph's inputs, signal buffers aside.
+
+        The graph takes each field once per device, field-major, as
+        ``Qwen3_5VisionTransformer.input_tree`` lays them out. The fields
+        are packed on the first device; each other device gets a copy, and
+        the host scalars are shared.
+        """
+        inputs: list[Buffer] = []
+        for value in (
+            self.pixel_values,
+            self.weights,
+            self.indices,
+            self.vision_position_ids,
+            self.max_grid_size,
+            self.grid_thw,
+            self.cu_seqlens,
+            self.max_seqlen,
+        ):
+            inputs.append(value)
+            inputs.extend(
+                value if value.device.is_host else value.to(device)
+                for device in devices[1:]
+            )
+        return inputs
+
 
 @dataclass
 class _ImagePiece:
@@ -57,7 +80,7 @@ class _ImagePiece:
 
 
 def _split_vision_data(
-    ctx: Qwen3VLTextAndVisionContext,
+    ctx: Qwen3_5TextAndVisionContext,
 ) -> list[_ImagePiece]:
     """Cut a context's per-image vision arrays back out of their concatenation.
 
@@ -99,7 +122,7 @@ def _split_vision_data(
 @traced
 def pack_uncached_images(
     selection: Sequence[
-        tuple[Qwen3VLTextAndVisionContext, Sequence[ImageMetadata]]
+        tuple[Qwen3_5TextAndVisionContext, Sequence[ImageMetadata]]
     ],
     devices: list[Device],
 ) -> Qwen3_5VisionInputs | None:

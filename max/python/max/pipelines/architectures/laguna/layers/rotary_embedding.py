@@ -32,8 +32,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, TensorValueLike, ops
-from max.nn.legacy.rotary_embedding import (
-    YarnRotaryEmbedding,
+from max.nn.legacy.rotary_embedding import YarnRotaryEmbedding
+from max.nn.rope_scaling import (
     YarnScalingParams,
     _yarn_find_correction_range,
     _yarn_get_mscale,

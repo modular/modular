@@ -56,6 +56,17 @@ Fields are merged onto every text-generation request (last-writer-wins, so a key
 that collides with a dedicated flag overrides it). See the [benchmark
 configuration guide](benchmark_config.md) for the config-file form and details.
 
+To report goodput, the requests per second whose own latency met given targets,
+pass `--goodput` with space-separated `key:value` pairs in milliseconds, as in
+vLLM (keys `ttft`, `tpot`, and `e2el`):
+
+```bash
+--goodput ttft:500 tpot:50
+```
+
+See [Reporting goodput against latency
+targets](benchmark_config.md#reporting-goodput-against-latency-targets).
+
 > [!NOTE]
 > This benchmarking script is also available with the `max benchmark` command,
 > which you can get by installing `modular` with pip, uv, conda, or pixi

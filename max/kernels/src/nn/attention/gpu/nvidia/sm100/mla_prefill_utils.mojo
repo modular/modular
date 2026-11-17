@@ -40,7 +40,7 @@ from nn.attention.mha_utils import OptionallyStaticInt, MHAPartitionScheme
 from layout import Coord, TileTensor
 from layout.tma_async import PipelineState
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
@@ -560,7 +560,6 @@ struct MLAKVLayouts[
     ].static_product
 
     comptime KPairType = TMADestination[Self.k_nope_dtype, Self.k_tma_layout]
-    comptime VPairType = TMADestination[Self.k_nope_dtype, Self.v_tma_layout]
     comptime k_elements = Self.k_nope_tma_layout + Self.k_rope_tma_layout
     comptime v_elements = Self.v_tma_layout
     comptime k_nope_bytes = Self.k_nope_tma_layout * size_of[

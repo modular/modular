@@ -284,11 +284,21 @@ def _compile_to_mef(
         )
         compiled = session.compile(module, custom_extensions=extensions)
         compiled.export_mef(mef_path)
-    except BaseException:
+    except engine.CompilationStopped as e:
+        # A `pre-jit` stop is not a failure; keep its type across the
+        # process boundary so callers can tell the two apart.
+        raise engine.CompilationStopped(str(e)) from None
+    except BaseException as e:
         # Tracebacks don't survive pickling.
         # Format the trace into the exception message.
+        trace = traceback.format_exc()
+        if "pre-jit" in str(e):
+            # The worker's session does not see the global `pre-jit` flag, so
+            # `compile` cannot raise CompilationStopped itself and the stop
+            # arrives untyped. Match the compiler's message, as api.py does.
+            raise engine.CompilationStopped(str(e)) from None
         raise RemoteCompileError(
-            f"failed to compile with error: {traceback.format_exc()}"
+            f"failed to compile with error: {trace}"
         ) from None
 
     return mef_path

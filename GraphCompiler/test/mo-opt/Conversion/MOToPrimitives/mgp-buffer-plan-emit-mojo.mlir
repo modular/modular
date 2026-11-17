@@ -4,7 +4,7 @@
 // The operation should be wrapped in mogg.routine.async with async pack/unpack.
 
 // CHECK-LABEL: mgp.model @buffer_plan_basic
-mgp.model @buffer_plan_basic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_plan_basic devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   mef.output %ch0, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -35,7 +35,7 @@ mgp.model @buffer_plan_basic : mof devices [#M.device_ref<"cpu", 0>] init (%weig
 // only one mogg.async.unpack for the remaining dynamic runtime size.
 
 // CHECK-LABEL: mgp.model @buffer_plan_existing_static_with_constant
-mgp.model @buffer_plan_existing_static_with_constant : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_plan_existing_static_with_constant devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
   mef.output %ch0, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>

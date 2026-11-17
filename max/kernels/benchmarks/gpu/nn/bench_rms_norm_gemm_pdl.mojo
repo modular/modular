@@ -87,7 +87,7 @@ def bench_rms_norm_gemm_pdl[
     num_pipeline_stages: Int = 16,
     swap_ab: Bool = False,
     prefetch_tiles_n: Int = 2,
-](num_rows: Int, mut b: Bench, ctx: DeviceContext) raises:
+](num_rows: Int, mut b: Bench, ctx: DeviceContext[]) raises:
     """Bench the RMSNorm -> GEMM pair across the PDL configurations.
 
     Parameters:
@@ -206,7 +206,7 @@ def bench_rms_norm_gemm_pdl[
         norm_only: Bool = False,
         gemm_only: Bool = False,
     ](
-        ctx_inner: DeviceContext,
+        ctx_inner: DeviceContext[],
         cache_iter: Int,
         mut c_tile: TileTensor[mut=True, dtype, ...],
         a_raw: ARawType,
@@ -341,7 +341,7 @@ def bench_rms_norm_gemm_pdl[
 
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {
             mut c_out,
             mut cb_weights,

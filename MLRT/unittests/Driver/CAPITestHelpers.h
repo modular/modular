@@ -144,6 +144,12 @@ private:
   M_DriverMapping *handle_ = nullptr;
 };
 
+/// The view of `size` bytes of `buffer` at `offset`.
+inline M_DriverBufferView view(const BufferHandle &buffer, uint64_t offset,
+                               uint64_t size) {
+  return M_DriverBufferView{buffer.get(), offset, size};
+}
+
 /// Builds a device handle for the CPU device.
 /// Plants a pending error through public API: the deferred free of an owning
 /// host buffer over foreign memory is refused and recorded, not returned, and

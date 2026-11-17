@@ -15,6 +15,6 @@ mo.graph @bad_shape<d0, d1>(%arg0: !mo.buffer<[5, 5], f32>, %arg1: !mo.tensor<[d
   %outTensor, %outChain = mo.mutable.load(%arg0, %0) : (!mo.buffer<[5, 5], f32>, !mo.chain) -> (!mo.tensor<[5, 5], f32>, !mo.chain)
   %4 = mo.negative(%outTensor) : !mo.tensor<[5, 5], f32>
   %5 = mo.mutable.store(%arg0, %4, %outChain) : (!mo.buffer<[5, 5], f32>, !mo.tensor<[5, 5], f32>, !mo.chain) -> !mo.chain
-  %6 = rmo.mo.mutable.store.slice(%arg0, %arg1, %2, %3, %1, %0) : (!mo.buffer<[5, 5], f32>, !mo.tensor<[d0, d1], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.chain) -> !mo.chain
+  %6 = mo.mutable.store.slice(%arg0, %arg1, %2, %3, %1, %0) : (!mo.buffer<[5, 5], f32>, !mo.tensor<[d0, d1], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.chain) -> !mo.chain
   mo.output %arg0, %6 : !mo.buffer<[5, 5], f32>, !mo.chain
 }

@@ -43,9 +43,11 @@ from max.benchmark.benchmark_shared.serving_result_output import (
 from max.benchmark.benchmark_shared.workload_stats import (
     WORKLOAD_STATS_SCHEMA_VERSION,
     Distribution,
+    EngineState,
     WorkloadStats,
     compute_workload_stats,
     workload_requests,
+    write_engine_state,
     write_workload_stats,
 )
 from openai.types.chat.completion_create_params import ResponseFormat
@@ -384,6 +386,56 @@ def test_written_json_round_trips(tmp_path: Path) -> None:
     assert blob["input_len"]["percentiles"]["50"] == 115.0
     assert blob["input_len"]["fraction_above"]["192000"] == 0.0
     assert WorkloadStats.model_validate(blob) == stats
+
+
+def test_dry_run_stats_have_no_engine_state() -> None:
+    samples = ChatSamples(chat_sessions=[_session((_user(100), 10))])
+    assert compute_workload_stats(samples).engine_state is None
+
+
+def test_stats_without_engine_state_still_load() -> None:
+    samples = ChatSamples(chat_sessions=[_session((_user(100), 10))])
+    blob = json.loads(compute_workload_stats(samples).model_dump_json())
+    del blob["engine_state"]
+    assert WorkloadStats.model_validate(blob).engine_state is None
+
+
+def test_engine_state_round_trips_through_stats(tmp_path: Path) -> None:
+    samples = ChatSamples(chat_sessions=[_session((_user(100), 10))])
+    state = EngineState(
+        cache_hit_rate=0.8, decode_batch_size_mean=12.5, max_concurrency=64
+    )
+    stats = compute_workload_stats(samples).model_copy(
+        update={"engine_state": state}
+    )
+    path = tmp_path / "stats.json"
+    write_workload_stats(stats, path)
+    assert WorkloadStats.model_validate_json(path.read_text()) == stats
+
+
+def test_written_engine_state_loads_as_engine_state(tmp_path: Path) -> None:
+    state = EngineState(cache_hit_rate=0.8, max_concurrency=64)
+    path = tmp_path / "state.json"
+    write_engine_state(state, path)
+    loaded = EngineState.model_validate_json(path.read_text())
+    assert loaded == state
+    assert loaded.decode_batch_size_mean is None
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"cache_hit_rate": 1.7},
+        {"cache_hit_rate": -0.1},
+        {"decode_batch_size_mean": -3.0},
+        {"max_concurrency": 0},
+    ],
+)
+def test_engine_state_rejects_out_of_range_figures(
+    fields: dict[str, float],
+) -> None:
+    with pytest.raises(ValueError):
+        EngineState.model_validate(fields)
 
 
 def test_print_workload_stats_prints_requests_sent(

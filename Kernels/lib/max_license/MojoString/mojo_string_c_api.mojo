@@ -33,9 +33,10 @@ def create_mojo_string(
     # Create the Mojo String by copying the UTF-8 data
     var s = String()
 
-    if data and size > 0:
-        var byte_span = Span(unsafe_ptr=data.value(), length=size)
-        s = String(unsafe_from_utf8=byte_span)
+    if case .Some(bytes) = data:
+        if size > 0:
+            var byte_span = Span(unsafe_ptr=bytes, length=size)
+            s = String(unsafe_from_utf8=byte_span)
 
     # Allocate and initialize the pointer
     var ptr = alloc[String]({length = 1}).unsafe_leak()

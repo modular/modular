@@ -205,3 +205,22 @@ kgen.func @pop_scalar_si64_bounds(%lb: !kgen.scalar<si64>, %ub: !kgen.scalar<si6
   }
   hlcf.return
 }
+
+// Preserve terminators that leave the loop body without continuing.
+// CHECK-LABEL: @unreachable_body
+kgen.func @unreachable_body() {
+  // CHECK: hlcf.loop
+  // CHECK:   hlcf.if
+  // CHECK:     hlcf.yield
+  // CHECK:   } else {
+  // CHECK:     hlcf.break
+  // CHECK:   }
+  // CHECK:   hlcf.unreachable
+  // CHECK: }
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  hlcf.for [%idx0 to %idx1 step %idx1 slt add] (%arg0 = %idx0 : index) {
+    hlcf.unreachable
+  }
+  hlcf.return
+}

@@ -248,7 +248,7 @@ def pick_warmup_population(
     chat_sessions: Sequence[ChatSession],
     warmup_count: int,
     *,
-    warmup_to_steady_state: bool,
+    warmup_multiturn: bool,
     warmup_oversample_factor: int,
     main_pool_target: int,
     rng: np.random.Generator,
@@ -258,7 +258,7 @@ def pick_warmup_population(
 ) -> tuple[list[ChatSession], _WarmupSamplingReport | None]:
     """Build the runner's task list with warmup picks at the head.
 
-    When ``warmup_to_steady_state=True`` and ``warmup_count > 0``, the
+    When ``warmup_multiturn=True`` and ``warmup_count > 0``, the
     helper picks ``warmup_count`` warmup sessions from the leading
     ``factor * warmup_count`` candidates (clamped to what's available)
     and assigns each a ``prefix_turns`` value. The remaining trailing
@@ -290,14 +290,14 @@ def pick_warmup_population(
     delay bias, falls back to the original uniform draw over ``{0, …, T-1}``.
 
     Returns ``(reordered_sessions, report)``. ``report`` is ``None``
-    only when warmup is off (``warmup_to_steady_state=False`` or
+    only when warmup is off (``warmup_multiturn=False`` or
     ``warmup_count == 0``).
     """
     n_total = len(chat_sessions)
     warmup_count = max(0, warmup_count)
     main_pool_target = max(0, main_pool_target)
 
-    if not warmup_to_steady_state or warmup_count == 0:
+    if not warmup_multiturn or warmup_count == 0:
         return list(chat_sessions), None
 
     if n_total < warmup_count:
@@ -495,7 +495,7 @@ def log_warmup_sampling_report(report: _WarmupSamplingReport) -> None:
 
     if report.cap_count > 0:
         logger.warning(
-            "Could not warmup to steady state: %d session(s) are too long for "
+            "Could not warm up multi-turn sessions evenly: %d session(s) are too long for "
             "a candidate pool of %d, so they get picked every time and bias "
             "the warmup. Increase --warmup-oversample-factor (currently %d) "
             "to enlarge the pool.",

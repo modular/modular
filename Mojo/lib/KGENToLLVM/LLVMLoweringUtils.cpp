@@ -15,6 +15,7 @@
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/POPDialect/POPAttrs.h"
@@ -27,6 +28,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/MathExtras.h"
@@ -48,6 +50,22 @@ static Type getLLVMTypeForKGENStringType(MLIRContext *ctx, Type strSizeType) {
 // LLVMDataLayout
 //===----------------------------------------------------------------------===//
 
+/// Lay out the fields of `type` in order, each at the next offset aligned for
+/// it. The fields of a packed struct are not aligned: each starts where the
+/// field before it ends. Append the offset of each field to `offsets`, and
+/// return the end of the last one.
+static int64_t layOutFields(const LLVMDataLayout &dataLayout,
+                            LLVM::LLVMStructType type,
+                            SmallVectorImpl<int64_t> &offsets) {
+  int64_t end = 0;
+  for (Type field : type.getBody()) {
+    int64_t align = type.isPacked() ? 1 : dataLayout.getTypeABIAlign(field);
+    offsets.push_back(llvm::alignTo(end, align));
+    end = offsets.back() + dataLayout.getTypeAllocSize(field);
+  }
+  return end;
+}
+
 int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
   if (type.isIntOrFloat())
     return type.getIntOrFloatBitWidth();
@@ -67,16 +85,23 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
            getTypeStoreSize(arrayType.getElementType()) * CHAR_BIT;
   }
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
-    int64_t size = 0;
+    SmallVector<int64_t> offsets;
+    int64_t size = layOutFields(*this, structType, offsets);
+    if (structType.isPacked())
+      return size * CHAR_BIT;
     int64_t strictest = 1;
-    for (Type type : structType.getBody()) {
-      int64_t eltABIAlign = getTypeABIAlign(type);
-      size = llvm::alignTo(size, eltABIAlign) + getTypeAllocSize(type);
-      strictest = std::max(strictest, eltABIAlign);
-    }
+    for (Type field : structType.getBody())
+      strictest = std::max(strictest, getTypeABIAlign(field));
     return llvm::alignTo(size, strictest) * CHAR_BIT;
   }
   llvm::report_fatal_error("unsupported LLVM dialect type");
+}
+
+SmallVector<int64_t>
+LLVMDataLayout::getStructFieldOffsets(LLVM::LLVMStructType type) const {
+  SmallVector<int64_t> offsets;
+  layOutFields(*this, type, offsets);
+  return offsets;
 }
 
 std::pair<int64_t, Type>
@@ -100,6 +125,11 @@ LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type))
     return getTypeABIAlignAndType(arrayType.getElementType());
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
+    // As in LLVM, a packed struct is byte aligned, whatever the data layout
+    // gives for aggregates.
+    if (structType.isPacked())
+      return {1, nullptr};
+
     std::pair<int64_t, Type> strictestPair(1, nullptr);
     for (Type type : structType.getBody()) {
       auto cur = getTypeABIAlignAndType(type);
@@ -154,7 +184,7 @@ static int64_t getUnionPayloadSize(const LLVMDataLayout &dl,
 
 /// The type heading the lowered struct, chosen to carry the union's alignment.
 /// It is sized independently of the payload: whatever it does not cover is
-/// made up by the trailing byte array.
+/// made up by the trailing storage array.
 static Type getUnionReprType(const LLVMDataLayout &dl, TargetInfoAttr target,
                              POP::UnionType unionType,
                              ArrayRef<UnionMember> members) {
@@ -186,6 +216,67 @@ static Type getUnionReprType(const LLVMDataLayout &dl, TargetInfoAttr target,
       reprType = widened;
   }
   return reprType;
+}
+
+/// Return the typed LLVM struct for a union value of `extent` bytes. Its first
+/// field has the type that `pop.union` lowering gives the same members
+/// (getUnionReprType()). Bytes fill the rest of `extent`. For example, members
+/// SIMD[DType.int64, 4] (32 bytes) and five Int64 (40 bytes) give
+/// `{ i64, [32 x i8] }`. Return a null type if `extent` is 0, or if LLVM would
+/// pad the struct past `extent`.
+static LLVM::LLVMStructType getTypedUnionStorage(const LLVMDataLayout &dl,
+                                                 TargetInfoAttr target,
+                                                 POP::UnionType unionType,
+                                                 ArrayRef<UnionMember> members,
+                                                 int64_t extent) {
+  // Use a typed first field if the struct fits in `extent`.
+  if (extent) {
+    Type reprType = getUnionReprType(dl, target, unionType, members);
+    int64_t reprSize = dl.getTypeAllocSize(reprType);
+    if (reprSize <= extent) {
+      SmallVector<Type> fields{reprType};
+      if (reprSize < extent)
+        fields.push_back(LLVM::LLVMArrayType::get(
+            IntegerType::get(unionType.getContext(), 8), extent - reprSize));
+      auto candidate =
+          LLVM::LLVMStructType::getLiteral(unionType.getContext(), fields);
+      // LLVM must not add tail padding. The next KGEN field, such as an enum
+      // tag, can start at `extent`.
+      if (dl.getTypeAllocSize(candidate) == extent)
+        return candidate;
+    }
+  }
+  return {};
+}
+
+/// Return the LLVM value type of the untagged union `type`, whose size is
+/// `extent` bytes. This is the struct from getTypedUnionStorage() if there is
+/// one, and `[extent x i8]` otherwise. For example, a union of one Int64 gives
+/// `{ i64 }`. Return a null type if the member list is not known yet, or if a
+/// member type does not convert.
+static Type getUntaggedUnionStorageType(const POPToLLVMTypeConverter &tc,
+                                        UntaggedUnionType type,
+                                        int64_t extent) {
+  // Convert each member type to LLVM.
+  auto list = dyn_cast<ParamListAttr>(type.getVariadic());
+  if (!list)
+    return {};
+  SmallVector<Type> types;
+  SmallVector<UnionMember> members;
+  for (TypedAttr member : list.getValues()) {
+    Type memberType = ParamType::get(member);
+    Type llvmType = tc.convertType(memberType);
+    if (!llvmType)
+      return {};
+    types.push_back(memberType);
+    members.push_back({memberType, llvmType});
+  }
+  if (auto storage = getTypedUnionStorage(
+          tc, tc.getTarget(), POP::UnionType::get(type.getContext(), types),
+          members, extent))
+    return storage;
+  return LLVM::LLVMArrayType::get(IntegerType::get(type.getContext(), 8),
+                                  extent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -316,12 +407,13 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   //===--------------------------------------------------------------------===//
   // POP
 
-  // Convert array types to LLVM array types.
+  // An array element uses the memory type of its KGEN type. Then the element
+  // stride is the KGEN allocation size, also for an untagged union.
   addConversion([this](POP::ArrayType array) -> std::optional<Type> {
     std::optional<int64_t> size = array.getResolvedSize();
     if (!size)
       return {};
-    Type elementType = convertType(array.getElementType());
+    Type elementType = convertMemoryType(array.getElementType());
     if (!elementType)
       return {};
     return LLVM::LLVMArrayType::get(elementType, *size);
@@ -340,7 +432,9 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   addConversion([this](StructType structType) -> std::optional<Type> {
     std::optional<SmallVector<Type>> elementTypes =
         structType.getElementTypes();
-    if (!elementTypes)
+    std::optional<SmallVector<int64_t>> kgenOffsets =
+        structType.getElementOffsets(getTarget());
+    if (!elementTypes || !kgenOffsets)
       return {};
 
     SmallVector<Type> llvmTypes;
@@ -352,24 +446,18 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
       if (!llvmType)
         return {};
 
-      // Get alignment and size from KGEN type (respects @align decorator).
-      std::optional<int64_t> kgenAlign =
-          DataLayoutInterface::getTypeABIAlign(getTarget(), kgenType);
+      // Get the size from KGEN type (respects @align decorator).
       std::optional<int64_t> kgenAllocSize =
-          DataLayoutInterface::getTypeAllocSize(getTarget(), kgenType);
-      if (!kgenAlign || !kgenAllocSize)
+          getStructFieldSize(getTarget(), kgenType);
+      if (!kgenAllocSize)
         return {};
 
-      // Get LLVM's natural alignment for this type.
-      // We always use LLVM's actual alignment to compare against KGEN's
-      // alignment, since LLVM doesn't know about KGEN's @align decorators
-      // or alignment inheritance from fields.
       int64_t llvmNaturalAlign = getTypeABIAlign(llvmType);
 
       // Compute where LLVM would naturally place this field and where KGEN
       // requires it.
       int64_t llvmOffset = llvm::alignTo(offset, llvmNaturalAlign);
-      int64_t kgenOffset = llvm::alignTo(offset, *kgenAlign);
+      int64_t kgenOffset = (*kgenOffsets)[logicalIdx];
 
       // Only add explicit padding if KGEN requires stricter alignment than
       // LLVM's natural alignment.
@@ -388,7 +476,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
              "inconsistent field index mapping for struct type");
       llvmTypes.push_back(llvmType);
 
-      // Advance offset using KGEN alloc size.
+      // Advance by the KGEN field size. For an untagged union, the field size
+      // does not include tail padding, so the next field can use those bytes.
       offset = kgenOffset + *kgenAllocSize;
     }
 
@@ -412,6 +501,16 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     }
 
     return llvmStructType;
+  });
+
+  // An untagged union value or struct field gets the union's size, without
+  // tail padding. convertMemoryType() adds the tail padding for memory.
+  addConversion([this](UntaggedUnionType type) -> std::optional<Type> {
+    auto size = type.getTypeSize(getTarget());
+    if (!size)
+      return {};
+    Type storage = getUntaggedUnionStorageType(*this, type, *size);
+    return storage ? std::optional<Type>(storage) : std::nullopt;
   });
 
   // Convert SIMD types to vector types.
@@ -445,9 +544,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     // They are resolved during monomorphization in the KGEN elaboration pass.
     assert(unionType.isResolved() &&
            "cannot lower unresolved union type to LLVM");
-    // TODO: The generated assembly is sensitive to the content type of the
-    // union type. This needs to be optimized. For now, use an array of
-    // word-size integers.
     SmallVector<UnionMember> members;
     members.reserve(unionType.getNumTypes());
     for (Type memberType : unionType.getTypes()) {
@@ -461,9 +557,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     if (payloadSize == 0)
       return LLVM::LLVMStructType::getLiteral(&getContext(), {});
 
-    // Lower union to {repr, [(payloadSize - sizeof(repr)) x i8]}. The
-    // representative gives the whole structure its alignment, the trailing
-    // array covers the payload it does not span.
+    // Lower union to {repr, tail}. The representative gives the structure its
+    // alignment, and the trailing array covers the payload it does not span.
     Type reprType = getUnionReprType(*this, getTarget(), unionType, members);
 
     SmallVector<Type, 2> structElemTp;
@@ -471,8 +566,23 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
     if (int64_t tailLen = payloadSize - getTypeAllocSize(reprType);
         tailLen != 0) {
-      structElemTp.push_back(LLVM::LLVMArrayType::get(
-          IntegerType::get(&getContext(), 8), tailLen));
+      // Choose integer storage that preserves the tail's size, offset, and
+      // alignment, falling back to bytes when necessary. Cap the element width
+      // at the pointer width to avoid introducing i64 tails on 32-bit targets.
+      // LLVM's SROA may scalarize byte arrays into individual byte accesses,
+      // making large union copies expensive to optimize and select.
+      unsigned tailBitWidth = std::min<unsigned>(
+          64, getTarget().getDataLayout().getPointerBitWidth());
+      Type tailType = IntegerType::get(&getContext(), tailBitWidth);
+      int64_t elementSize = getTypeAllocSize(tailType);
+      if (tailLen % elementSize != 0 ||
+          getTypeABIAlign(tailType) > getTypeABIAlign(reprType) ||
+          getTypeStoreSize(tailType) != elementSize) {
+        tailType = IntegerType::get(&getContext(), 8);
+        elementSize = 1;
+      }
+      structElemTp.push_back(
+          LLVM::LLVMArrayType::get(tailType, tailLen / elementSize));
     }
 
     auto ret = LLVM::LLVMStructType::getLiteral(&getContext(), structElemTp);
@@ -498,6 +608,78 @@ POPToLLVMTypeConverter::getRemappedFieldIndex(StructType structType,
   // calling getRemappedFieldIndex. The cache is populated during type
   // conversion, so a cache miss indicates a bug in the calling code.
   llvm_unreachable("struct type was not converted by this type converter");
+}
+
+Type POPToLLVMTypeConverter::convertMemoryType(Type type) const {
+  // Only an untagged union has a value type that is smaller than its
+  // allocation. Other types use the same type in memory.
+  Type compact = convertType(type);
+  if (!compact || !isa<UntaggedUnionType>(type))
+    return compact;
+  // Return a null type if the allocation size is not known, or if it is
+  // smaller than the value type.
+  auto allocSize = DataLayoutInterface::getTypeAllocSize(getTarget(), type);
+  if (!allocSize)
+    return {};
+  int64_t compactSize = getTypeAllocSize(compact);
+  if (compactSize > *allocSize)
+    return {};
+  if (compactSize == *allocSize)
+    return compact;
+  // Field 0 holds the value and field 1 holds the tail padding.
+  // padMemoryValue() and unpadMemoryValue() use field 0.
+  Type padding = LLVM::LLVMArrayType::get(IntegerType::get(&getContext(), 8),
+                                          *allocSize - compactSize);
+  return LLVM::LLVMStructType::getLiteral(&getContext(), {compact, padding});
+}
+
+Value POPToLLVMTypeConverter::padMemoryValue(OpBuilder &b, Location loc,
+                                             Value value,
+                                             Type memoryType) const {
+  if (value.getType() == memoryType)
+    return value;
+  Value storage = LLVM::UndefOp::create(b, loc, memoryType);
+  return LLVM::InsertValueOp::create(b, loc, storage, value, int64_t(0));
+}
+
+Value POPToLLVMTypeConverter::unpadMemoryValue(OpBuilder &b, Location loc,
+                                               Value value,
+                                               Type valueType) const {
+  if (value.getType() == valueType)
+    return value;
+  return LLVM::ExtractValueOp::create(b, loc, value, int64_t(0));
+}
+
+/// Return true if `type` is an untagged union, or if a struct field, an array
+/// element or a `pop.union` member of `type` contains one. A struct whose field
+/// types are not known yet does not count.
+static bool containsUntaggedUnionStorage(Type type) {
+  if (isa<UntaggedUnionType>(type))
+    return true;
+  if (auto structure = dyn_cast<StructType>(type)) {
+    auto fields = structure.getElementTypes();
+    return fields && llvm::any_of(*fields, containsUntaggedUnionStorage);
+  }
+  if (auto array = dyn_cast<POP::ArrayType>(type))
+    return containsUntaggedUnionStorage(array.getElementType());
+  if (auto unionType = dyn_cast<POP::UnionType>(type))
+    return llvm::any_of(unionType.getTypes(), containsUntaggedUnionStorage);
+  return false;
+}
+
+unsigned KGEN::getAlignment(const POPToLLVMTypeConverter *tc,
+                            PointerType ptrType, TypedAttr alignmentAttr) {
+  if (alignmentAttr)
+    return cast<IntegerAttr>(alignmentAttr).getInt();
+  Type elementType = ptrType.getElementType();
+  if (containsUntaggedUnionStorage(elementType)) {
+    auto alignment =
+        DataLayoutInterface::getTypeABIAlign(tc->getTarget(), elementType);
+    assert(alignment &&
+           "lowered untagged union storage must have known alignment");
+    return alignment.value();
+  }
+  return tc->getTypeABIAlign(tc->convertType(elementType));
 }
 
 //===----------------------------------------------------------------------===//
@@ -829,10 +1011,13 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
           {idx, Value(LLVM::BitcastOp::create(b, ptrType, ptr))});
 
     } else {
+      auto indexTy = SIMDType::getScalarIndexType(b.getContext());
       popAlloc = POP::AlignedAllocOp::create(
           b, PointerType::get(b.getI8Type()),
-          mlir::index::ConstantOp::create(b, hdl.getAlign()),
-          mlir::index::ConstantOp::create(b, hdl.getSize()));
+          ParamConstantOp::create(
+              b, SIMDAttr::get(uint64_t(hdl.getAlign()), indexTy)),
+          ParamConstantOp::create(
+              b, SIMDAttr::get(uint64_t(hdl.getSize()), indexTy)));
 
       Value ptr = mlir::UnrealizedConversionCastOp::create(b, ptrType, popAlloc)
                       .getResult(0);
@@ -1117,23 +1302,50 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
   return container;
 }
 
-void KGEN::replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
-                                   LLVM::CallOp call) {
-  SmallVector<Value> results;
-
-  // Unpack the struct if necessary.
-  if (op->getNumResults() <= 1) {
-    llvm::append_range(results, call.getResults());
-  } else {
-    results.reserve(op->getNumResults());
-    for (unsigned i = 0, e = op->getNumResults(); i < e; ++i) {
-      results.push_back(
-          LLVM::ExtractValueOp::create(b, op->getLoc(), call.getResult(), i));
-    }
+void KGEN::replaceCallWithResult(mlir::RewriterBase &b, Operation *op,
+                                 Value result) {
+  if (!result) {
+    b.eraseOp(op);
+    return;
   }
-
-  // Replace the call operation.
+  if (op->getNumResults() == 1) {
+    b.replaceOp(op, result);
+    return;
+  }
+  SmallVector<Value> results;
+  results.reserve(op->getNumResults());
+  for (unsigned i = 0, e = op->getNumResults(); i < e; ++i)
+    results.push_back(LLVM::ExtractValueOp::create(b, op->getLoc(), result, i));
   b.replaceOp(op, results);
+}
+
+/// Lower each fragment at its byte offset. The fragments must fill the union's
+/// size exactly.
+static ErrorOr<SmallVector<std::pair<int64_t, Value>>>
+collectUntaggedUnionFragments(
+    ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
+    InterpreterMemoryConverter *imc,
+    InterpreterMemoryConverter::MaterializationScope *scope,
+    UntaggedUnionAttr snapshot) {
+  auto size = snapshot.getType().getTypeSize(tc.getTarget());
+  if (!size)
+    return Error("cannot lower unresolved untagged union field");
+  SmallVector<std::pair<int64_t, Value>> fragments;
+  int64_t offset = 0;
+  for (TypedAttr fragment : snapshot.getFragments()) {
+    auto fragmentSize = DataLayoutInterface::getTypeStoreSize(
+        tc.getTarget(), fragment.getType());
+    if (!fragmentSize || *fragmentSize <= 0 || *fragmentSize > *size - offset)
+      return Error("untagged union fragments exceed the field extent");
+    auto value = convertParameterToLLVM(b, tc, imc, scope, fragment);
+    if (value.isError())
+      return value.takeError();
+    fragments.emplace_back(offset, *value);
+    offset += *fragmentSize;
+  }
+  if (offset != *size)
+    return Error("untagged union fragments do not fill the field extent");
+  return fragments;
 }
 
 ErrorOr<Value> KGEN::convertParameterToLLVM(
@@ -1198,17 +1410,21 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
         LLVM::DereferenceableAttr{});
   }
 
-  // We can lower `StoreToMemAttr` by writing the underlying value into a
-  // stack allocation.
+  // Store the value in a stack allocation of its memory type. The allocation
+  // then has the full KGEN allocation size, also for an untagged union.
   if (auto store = dyn_cast<StoreToMemAttr>(attr)) {
     ErrorOr<Value> loweredValue =
         convertParameterToLLVM(b, tc, imc, scope, store.getValue());
     if (loweredValue.isError())
       return loweredValue;
     auto value = loweredValue.get();
-    unsigned align = tc.getTypeABIAlign(value.getType());
+    Type kgenType = store.getValue().getType();
+    Type memoryType = tc.convertMemoryType(kgenType);
+    if (!memoryType)
+      return Error("cannot lower stored constant memory type");
+    unsigned align = getAlignment(&tc, cast<PointerType>(attr.getType()), {});
     Value ptr = LLVM::AllocaOp::create(
-        b, tc.convertType(attr.getType()), value.getType(),
+        b, tc.convertType(attr.getType()), memoryType,
         LLVM::ConstantOp::create(b, b.getI64IntegerAttr(1)), align);
     LLVM::StoreOp::create(b, value, ptr, align);
     return ptr;
@@ -1248,7 +1464,8 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   if (auto simd = dyn_cast<KGEN::SIMDAttr>(attr))
     return convertSIMDAttr(b, tc, simd);
 
-  // Convert array constants to LLVM array constants.
+  // Convert array constants to LLVM array constants. padMemoryValue() adds
+  // the tail padding of an untagged union element.
   if (auto arrayAttr = dyn_cast<POP::ArrayAttr>(attr)) {
     Type type = tc.convertType(arrayAttr.getType());
     if (!type)
@@ -1259,8 +1476,10 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
           convertParameterToLLVM(b, tc, imc, scope, value);
       if (loweredValue.isError())
         return loweredValue;
-      aggregate =
-          LLVM::InsertValueOp::create(b, aggregate, loweredValue.get(), idx);
+      auto elementType = cast<LLVM::LLVMArrayType>(type).getElementType();
+      Value element =
+          tc.padMemoryValue(b, b.getLoc(), loweredValue.get(), elementType);
+      aggregate = LLVM::InsertValueOp::create(b, aggregate, element, idx);
     }
     return aggregate;
   }
@@ -1285,6 +1504,54 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
     return aggregate;
   }
 
+  // Lower an untagged union constant. Its fragments hold the union's bytes in
+  // memory order. Each fragment is a plain byte, a pointer or a function
+  // address. Store the fragments into a stack slot, then load the union's value
+  // type from it. LLVM removes the slot when it can.
+  if (auto snapshot = dyn_cast<UntaggedUnionAttr>(attr)) {
+    // A global initializer has no stack. convertGlobalConstantToLLVM() lowers
+    // the unions in it.
+    Operation *parent = b.getInsertionBlock()->getParentOp();
+    if (isa<LLVM::GlobalOp>(parent) ||
+        parent->getParentOfType<LLVM::GlobalOp>())
+      return Error("cannot lower untagged union value in a global initializer");
+    auto function = dyn_cast<mlir::FunctionOpInterface>(parent);
+    if (!function)
+      function = parent->getParentOfType<mlir::FunctionOpInterface>();
+    if (!function)
+      return Error("cannot lower untagged union constant outside a function");
+
+    auto type = snapshot.getType();
+    auto align = type.getTypeAlign(tc.getTarget());
+    Type llvmType = tc.convertType(type);
+    Type memoryType = tc.convertMemoryType(type);
+    if (!align || !llvmType || !memoryType)
+      return Error("cannot lower unresolved untagged union field");
+    auto fragments = collectUntaggedUnionFragments(b, tc, imc, scope, snapshot);
+    if (fragments.isError())
+      return fragments.takeError();
+
+    // Keep the slot in the entry block so loops reuse it and SROA can promote
+    // it.
+    Value slot;
+    {
+      OpBuilder::InsertionGuard guard(b);
+      b.setInsertionPointToStart(&function.getFunctionBody().front());
+      auto ptrType = LLVM::LLVMPointerType::get(
+          b.getContext(), tc.getTarget().getDataLayout().getAllocaAddrSpace());
+      slot = LLVM::AllocaOp::create(
+          b, ptrType, memoryType,
+          LLVM::ConstantOp::create(b, b.getI64IntegerAttr(1)), *align);
+    }
+    for (auto [offset, value] : *fragments) {
+      Value index = LLVM::ConstantOp::create(b, b.getI64IntegerAttr(offset));
+      Value ptr = LLVM::GEPOp::create(b, slot.getType(), b.getI8Type(), slot,
+                                      ValueRange{index});
+      LLVM::StoreOp::create(b, value, ptr, llvm::MinAlign(*align, offset));
+    }
+    return LLVM::LoadOp::create(b, llvmType, slot, *align);
+  }
+
   // Bitpack union constants.
   if (auto unionAttr = dyn_cast<POP::UnionAttr>(attr)) {
     ErrorOr<Value> loweredValue =
@@ -1306,7 +1573,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   // If this is an param attribute that refused to fold, see if we're able to
   // get a custom error message from it to explain what is going on.
   if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-    auto errorMessage = itf.validateForElaborator();
+    auto errorMessage = itf.validateForElaborator(tc.getTarget());
     if (errorMessage.isError())
       return errorMessage.takeError();
   }
@@ -1314,6 +1581,133 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   // Unknown attribute to convert.
   return Error("cannot lower unknown attribute to LLVM: " +
                getParamAsString(attr));
+}
+
+/// Return a packed struct constant of `extent` bytes for a global initializer.
+/// Each entry of `fields` is a byte offset and the value to put at it. Zero
+/// bytes fill the gaps. The fields must be in offset order and must not
+/// overlap. For example, an i64 at offset 4 in 16 bytes gives the packed
+/// struct `<{ [4 x i8], i64, [4 x i8] }>`. Loads and stores of the global keep
+/// the original type and alignment, because LLVM pointers are opaque.
+static Value
+materializeGlobalStorage(ImplicitLocOpBuilder &b,
+                         const POPToLLVMTypeConverter &tc, int64_t extent,
+                         ArrayRef<std::pair<int64_t, Value>> fields) {
+  SmallVector<Type> types;
+  SmallVector<Value> values;
+  int64_t offset = 0;
+  // Fill the gap up to `end` with zero bytes.
+  auto padTo = [&](int64_t end) {
+    assert(end >= offset && "global storage fields must not overlap");
+    if (end != offset) {
+      Type padding = LLVM::LLVMArrayType::get(b.getI8Type(), end - offset);
+      types.push_back(padding);
+      values.push_back(LLVM::ZeroOp::create(b, padding));
+    }
+    offset = end;
+  };
+  for (auto [fieldOffset, value] : fields) {
+    padTo(fieldOffset);
+    types.push_back(value.getType());
+    values.push_back(value);
+    offset += tc.getTypeAllocSize(value.getType());
+  }
+  padTo(extent);
+  // LLVM adds no padding to a packed struct, so each value stays at its offset.
+  auto type = LLVM::LLVMStructType::getLiteral(b.getContext(), types,
+                                               /*isPacked=*/true);
+  return materializeLLVMStruct(b, type, values);
+}
+
+/// Return true if `attr` is an untagged union constant or contains one in a
+/// struct field or array element.
+static bool containsUntaggedUnion(TypedAttr attr) {
+  if (isa<UntaggedUnionAttr>(attr))
+    return true;
+  if (auto structure = dyn_cast<StructAttr>(attr))
+    return llvm::any_of(structure.getValues(), containsUntaggedUnion);
+  if (auto array = dyn_cast<POP::ArrayAttr>(attr))
+    return llvm::any_of(array.getValues(), containsUntaggedUnion);
+  return false;
+}
+
+/// Append each part of `attr` to `fields`, at its byte offset from `base`. A
+/// part is a constant without an untagged union, or one fragment of a union.
+/// The walk follows memory order, so `fields` stays in offset order.
+static ErrorOrSuccess collectGlobalConstantFields(
+    ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
+    InterpreterMemoryConverter &imc,
+    InterpreterMemoryConverter::MaterializationScope &scope, TypedAttr attr,
+    int64_t base, SmallVectorImpl<std::pair<int64_t, Value>> &fields) {
+  if (!containsUntaggedUnion(attr)) {
+    auto value = convertParameterToLLVM(b, tc, &imc, &scope, attr);
+    if (value.isError())
+      return value.takeError();
+    fields.emplace_back(base, *value);
+    return success();
+  }
+
+  if (auto snapshot = dyn_cast<UntaggedUnionAttr>(attr)) {
+    auto fragments =
+        collectUntaggedUnionFragments(b, tc, &imc, &scope, snapshot);
+    if (fragments.isError())
+      return fragments.takeError();
+    for (auto [offset, value] : *fragments)
+      fields.emplace_back(base + offset, value);
+    return success();
+  }
+
+  if (auto structure = dyn_cast<StructAttr>(attr)) {
+    auto type = cast<StructType>(structure.getType());
+    auto llvmType =
+        dyn_cast_or_null<LLVM::LLVMStructType>(tc.convertType(type));
+    if (!llvmType)
+      return Error("cannot lower struct constant with unknown type");
+    // The struct's LLVM type can have padding fields. They get no value.
+    SmallVector<int64_t> offsets = tc.getStructFieldOffsets(llvmType);
+    for (auto [logicalIndex, field] : llvm::enumerate(structure.getValues())) {
+      int64_t index = tc.getRemappedFieldIndex(type, logicalIndex);
+      auto result = collectGlobalConstantFields(b, tc, imc, scope, field,
+                                                base + offsets[index], fields);
+      if (result.isError())
+        return result;
+    }
+    return success();
+  }
+
+  auto array = cast<POP::ArrayAttr>(attr);
+  auto type =
+      dyn_cast_or_null<LLVM::LLVMArrayType>(tc.convertType(array.getType()));
+  if (!type)
+    return Error("cannot lower array constant with unknown type");
+  int64_t stride = tc.getTypeAllocSize(type.getElementType());
+  for (auto [index, field] : llvm::enumerate(array.getValues())) {
+    auto result = collectGlobalConstantFields(b, tc, imc, scope, field,
+                                              base + index * stride, fields);
+    if (result.isError())
+      return result;
+  }
+  return success();
+}
+
+ErrorOr<Value> KGEN::convertGlobalConstantToLLVM(
+    ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
+    InterpreterMemoryConverter &imc,
+    InterpreterMemoryConverter::MaterializationScope &scope, TypedAttr attr) {
+  Type memoryType = tc.convertMemoryType(attr.getType());
+  if (!memoryType)
+    return Error("cannot lower global constant memory type");
+  int64_t allocationSize = tc.getTypeAllocSize(memoryType);
+  SmallVector<std::pair<int64_t, Value>> fields;
+  auto result = collectGlobalConstantFields(b, tc, imc, scope, attr, 0, fields);
+  if (result.isError())
+    return result.takeError();
+  // A constant without an untagged union keeps its own LLVM type if that type
+  // fills the allocation.
+  if (!containsUntaggedUnion(attr) &&
+      tc.getTypeAllocSize(fields.front().second.getType()) == allocationSize)
+    return fields.front().second;
+  return materializeGlobalStorage(b, tc, allocationSize, fields);
 }
 
 //===----------------------------------------------------------------------===//

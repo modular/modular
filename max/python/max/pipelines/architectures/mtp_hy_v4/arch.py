@@ -14,12 +14,13 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..hy_v4.model_config import HYV4Config
 from ..hy_v4.tokenizer import HYV4Tokenizer
-from .model import MTPHYV4DraftArchConfig
+from .draft import HYV4MTPDraft, mtp_draft_registration
+from .model_config import MTPHYV4DraftArchConfig
 from .weight_adapters import convert_hy_v4_mtp_state_dict
 
 __all__ = ["mtp_hy_v4_draft_arch"]
@@ -35,7 +36,8 @@ mtp_hy_v4_draft_arch = SupportedArchitecture(
     supported_encodings=HYV4Config.SUPPORTED_ENCODINGS,
     # Split over the target's devices, as the target is.
     multi_gpu_supported=True,
-    pipeline_model=None,
+    modules={GraphRole.DRAFT: HYV4MTPDraft},
+    draft=mtp_draft_registration,
     tokenizer=HYV4Tokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,

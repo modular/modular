@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from importlib.util import spec_from_file_location
 from pathlib import Path
 
+from ._package_root import get_package_root
 from .paths import MojoCompilationError, MojoModulePath, find_mojo_module_in_dir
 from .run import subprocess_run_mojo
 
@@ -53,6 +54,11 @@ def _calculate_mojo_source_hash(mojo_dir: Path) -> str:
         )
 
     hasher = hashlib.sha256()
+    # The resulting binaries bake in an absolute path to the Mojo runtime, so __mojocache__
+    # entries need to account for being accessible through multiple envs.
+    # If running in Bazel, this is ephemeral anyways, no need to do anything.
+    if root := get_package_root():
+        hasher.update(str(root).encode("utf-8"))
     for file_path in source_files:
         try:
             # Add file path to hash to distinguish identical content in different files

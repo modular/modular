@@ -19,7 +19,7 @@ from collections.abc import Iterable, Sequence
 from typing import TypeGuard, Union
 
 import numpy as np
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo, rmo
 from max.dtype import DType
 
 from ..dim import Dim, DimLike, StaticDim
@@ -480,7 +480,7 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
 
     unsqueezed_type = TensorType(x.dtype, unsqueezed_shape, x.device)
     return Graph.current._add_op_generated(
-        rmo.MoSliceOp,
+        mo.SliceOp,
         result=unsqueezed_type,
         input=x,
         start=starts,

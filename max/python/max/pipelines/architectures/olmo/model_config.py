@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Literal
 
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.llama3.decoder import Llama3DecoderConfig
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding

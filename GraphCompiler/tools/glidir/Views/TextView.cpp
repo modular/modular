@@ -98,11 +98,6 @@ bool TextView::hasAnyBookmarks() const {
   return false;
 }
 
-llvm::SmallVector<int> TextView::sortedBookmarksForGroup(int idx) const {
-  return SmallVector<int>(coloredBookmarks[idx].begin(),
-                          coloredBookmarks[idx].end());
-}
-
 llvm::SmallVector<mlir::Operation *> TextView::opsForGroup(int idx) const {
   SmallVector<Operation *> ops;
   for (int lineNo : coloredBookmarks[idx]) {

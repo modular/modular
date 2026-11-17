@@ -122,10 +122,10 @@ def test_scaled_word_embedding(
     # Garbage collection to mitigate MODELS-958
     gc.collect()
 
-    torch_output = generate_torch_outputs(
+    max_output = generate_max_outputs(
         text_config, input_indices, embedding_weights
     )
-    max_output = generate_max_outputs(
+    torch_output = generate_torch_outputs(
         text_config, input_indices, embedding_weights
     )
 
@@ -159,10 +159,10 @@ def test_scaled_word_embedding_with_scale(
     gc.collect()
 
     embed_scale = 0.5
-    torch_output = generate_torch_outputs(
+    max_output = generate_max_outputs(
         text_config, input_indices, embedding_weights, embed_scale=embed_scale
     )
-    max_output = generate_max_outputs(
+    torch_output = generate_torch_outputs(
         text_config, input_indices, embedding_weights, embed_scale=embed_scale
     )
 

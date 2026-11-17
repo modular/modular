@@ -22,17 +22,20 @@ Usage:
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
+from std.atomic import Atomic
 from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_ui64
 from std.sys.intrinsics import llvm_intrinsic
+from std.testing import assert_equal
 
 from internal_utils import assert_almost_equal
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     BlockScaledMatmulAMD,
     _launch_block_scaled_split_k,
+    block_scaled_matmul_amd,
 )
 
 
@@ -270,6 +273,183 @@ def test_mxfp4_matmul[
     assert_almost_equal(
         c_host.unsafe_ptr(),
         c_host_ref.unsafe_ptr(),
+        c_size,
+        atol=0.05,
+        rtol=0.05,
+    )
+
+    print("  PASSED")
+
+
+def test_mxfp4_dispatch_plain_wide_n[
+    M_static: Int,
+    N_static: Int,
+    K_static: Int,
+](ctx: DeviceContext) raises:
+    """Value check for the wide-N short-K plain route, through dispatch.
+
+    The dispatcher sends a wide-N short-K shape with more blocks than
+    `_plain_min_blocks` to `_launch_block_scaled_impl` with the split route's
+    own `BM=64 / BN=128 / BK_ELEMS=256 / WM=64 / WN=32` tile instead of
+    splitting K. That configuration is not covered by the explicit-config
+    cases above, and the route changes which of the two writers stores `c`, so
+    this pins it two ways: the output must match the scalar dequant reference,
+    and the epilogue must be called at width > 1, which only the non-split
+    writer does (the reduce calls a closure at width 1). The second check is
+    what fails on the parent commit, where this shape splits.
+
+    `M_static` is deliberately not a multiple of `BM`, so the last M-tile is
+    mostly OOB rows: the plain writer must clip them, not fold them in. The
+    probe counts elements too, and the count must be *exactly* `M*N`: with the
+    writer's `m_global < M` guard removed, the OOB rows of that last tile would
+    call the epilogue as well, and the value check would not see it because
+    the probe's own stores are gone and the reference only covers in-bounds
+    rows.
+    """
+    comptime assert K_static % 128 == 0, "K must be a multiple of 128"
+    comptime assert (
+        ceildiv(N_static, 128) * ceildiv(M_static, 64) >= 48
+    ), "shape must clear the block floor, else it does not take this route"
+    comptime assert K_static <= 3072, "shape must be short-K for this route"
+
+    print(t"{M_static} x {N_static} x {K_static}  [dispatch, plain wide-N]")
+
+    comptime K_PACKED = K_static // 2
+    comptime K_SCALES = K_static // MXFP4_SF_VECTOR_SIZE
+
+    comptime a_size = M_static * K_PACKED
+    comptime b_size = N_static * K_PACKED
+    comptime c_size = M_static * N_static
+    comptime sf_a_size = M_static * K_SCALES
+    comptime sf_b_size = N_static * K_SCALES
+
+    var a_host = ctx.enqueue_create_host_buffer[DType.uint8](a_size)
+    var b_host = ctx.enqueue_create_host_buffer[DType.uint8](b_size)
+    var sfa_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+        sf_a_size
+    )
+    var sfb_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+        sf_b_size
+    )
+    for i in range(a_size):
+        a_host[i] = UInt8(random_ui64(0, 255))
+    for i in range(b_size):
+        b_host[i] = UInt8(random_ui64(0, 255))
+    for i in range(sf_a_size):
+        sfa_host[i] = bitcast[DType.float8_e8m0fnu](
+            UInt8(random_ui64(125, 129))
+        )
+    for i in range(sf_b_size):
+        sfb_host[i] = bitcast[DType.float8_e8m0fnu](
+            UInt8(random_ui64(125, 129))
+        )
+
+    var a_dev = ctx.enqueue_create_buffer[DType.uint8](a_size)
+    var b_dev = ctx.enqueue_create_buffer[DType.uint8](b_size)
+    var sfa_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](sf_a_size)
+    var sfb_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](sf_b_size)
+    var c_dev = ctx.enqueue_create_buffer[DType.float32](c_size)
+    var c_ref_dev = ctx.enqueue_create_buffer[DType.float32](c_size)
+    var wide_dev = ctx.enqueue_create_buffer[DType.int32](1)
+    var seen_dev = ctx.enqueue_create_buffer[DType.int32](1)
+    var zero_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    zero_h[0] = 0
+
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+    ctx.enqueue_copy(sfa_dev, sfa_host)
+    ctx.enqueue_copy(sfb_dev, sfb_host)
+    ctx.enqueue_copy(wide_dev, zero_h)
+    ctx.enqueue_copy(seen_dev, zero_h)
+
+    var a_tt = TileTensor(a_dev, row_major[M_static, K_PACKED]()).as_imm()
+    var b_tt = TileTensor(b_dev, row_major[N_static, K_PACKED]()).as_imm()
+    var c_tt = TileTensor(c_dev, row_major[M_static, N_static]())
+    var sfa_tt = TileTensor(sfa_dev, row_major[M_static, K_SCALES]()).as_imm()
+    var sfb_tt = TileTensor(sfb_dev, row_major[N_static, K_SCALES]()).as_imm()
+
+    var wide_ptr = wide_dev.unsafe_ptr()
+    var seen_ptr = seen_dev.unsafe_ptr()
+
+    @inline(.always)
+    def probe_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var wide_ptr, var seen_ptr}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        comptime if width > 1:
+            wide_ptr[0] = Int32(1)
+        _ = Atomic[Int32].fetch_add(seen_ptr, Int32(width))
+
+    # Public entry point, no explicit tile: this is the production route. The
+    # probe arm only reports the route -- it never stores, so the values come
+    # from the second, epilogue-free launch below.
+    block_scaled_matmul_amd[lane_bytes=16](
+        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, probe_fn, ctx
+    )
+    block_scaled_matmul_amd[lane_bytes=16](
+        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx
+    )
+
+    comptime BLOCK_DIM = 32
+    ctx.enqueue_function[block_scaled_matmul_ref](
+        a_dev,
+        b_dev,
+        sfa_dev,
+        sfb_dev,
+        c_ref_dev,
+        Int32(M_static),
+        Int32(N_static),
+        Int32(K_static),
+        grid_dim=(ceildiv(M_static, BLOCK_DIM), ceildiv(N_static, BLOCK_DIM)),
+        block_dim=(BLOCK_DIM, BLOCK_DIM),
+    )
+
+    var c_host = ctx.enqueue_create_host_buffer[DType.float32](c_size)
+    var c_ref_host = ctx.enqueue_create_host_buffer[DType.float32](c_size)
+    var wide_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    var seen_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    ctx.enqueue_copy(c_host, c_dev)
+    ctx.enqueue_copy(c_ref_host, c_ref_dev)
+    ctx.enqueue_copy(wide_h, wide_dev)
+    ctx.enqueue_copy(seen_h, seen_dev)
+    ctx.synchronize()
+
+    # The reduce calls a closure at width 1; the plain writer stores vectors.
+    assert_equal(
+        Int(wide_h[0]),
+        1,
+        msg=String(
+            "dispatch did not take the plain wide-N route at M=",
+            M_static,
+            " N=",
+            N_static,
+            " K=",
+            K_static,
+            " (epilogue never saw a vector call, so the reduce ran)",
+        ),
+    )
+    # Exactly the output, no more: the writer gates `m_global < M`, so an OOB
+    # row of the last M-tile must not reach the epilogue. A `>=` here would
+    # pass with the guard removed, because the probe stores nothing and the
+    # value check below only compares in-bounds elements.
+    assert_equal(
+        Int(seen_h[0]),
+        M_static * N_static,
+        msg=String(
+            "epilogue saw ",
+            Int(seen_h[0]),
+            " elements, output holds ",
+            M_static * N_static,
+            " at M=",
+            M_static,
+            " N=",
+            N_static,
+            " (extra calls are OOB rows of the last M-tile)",
+        ),
+    )
+    assert_almost_equal(
+        c_host.unsafe_ptr(),
+        c_ref_host.unsafe_ptr(),
         c_size,
         atol=0.05,
         rtol=0.05,
@@ -603,5 +783,14 @@ def main() raises:
         test_mxfp4_matmul_split_k[
             16, 7168, 2048, num_splits=4, BM=16, BN=128, WM=16, WN=64
         ](ctx)
+
+        print("\n--- Wide-N short-K: the plain route, through dispatch ---")
+
+        # Both shapes clear the 48-block floor and stay short-K, so dispatch
+        # takes the plain BM=64/BN=128 tile with no split; M=17 and M=72 are
+        # not multiples of BM, so the last M-tile is mostly (M=17) or partly
+        # (M=72) OOB rows that the writer must clip.
+        test_mxfp4_dispatch_plain_wide_n[17, 8192, 2048](ctx)
+        test_mxfp4_dispatch_plain_wide_n[72, 8192, 2048](ctx)
 
         print("\n==== All MXFP4 block-scaled matmul tests passed ====")

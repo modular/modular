@@ -33,14 +33,12 @@ import importlib
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TypeVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
-from max.nn.legacy.kv_cache import (
-    MultiKVCacheParams,
-    RecurrentStateInputsPerDevice,
-)
+from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 from ..block_driver import BlockBatch, BlockProposer
@@ -49,7 +47,16 @@ from ..driver import SequentialBatch, SequentialProposer
 from ..spec_target import Verified
 from .target_adapter import STAGE_BOUNDARY, TargetAdapter
 
+HISPARSE_INPUTS = "hisparse_inputs"
+"""The key of a driver batch's ``extra`` that holds the target's HiSparse
+graph inputs: the host and hot tables per device, then the host mirror, in
+the order the signature declares them.
+
+Only a target whose graph declares them reads the key; the draft never
+does, because its latent and indexer stay fully resident."""
+
 __all__ = [
+    "HISPARSE_INPUTS",
     "STAGE_BOUNDARY",
     "VerifyFn",
     "batch_distributed_buffers",
@@ -57,9 +64,13 @@ __all__ = [
     "batch_trailing_buffers",
     "block_proposer",
     "check",
+    "ep_input_tree",
     "ep_input_types",
+    "ep_tail",
     "export_contract",
     "extra",
+    "has_adapter",
+    "hisparse_input_types",
     "prepares_every_batch",
     "primary_kv",
     "relaxed_thinking_acceptance",
@@ -69,11 +80,13 @@ __all__ = [
     "sequential_proposer",
     "signal_buffer_index",
     "speculates_on_last_stage",
-    "tail_buffers",
-    "tail_kv",
+    "successor_replay",
     "trailing_buffers",
+    "trailing_input_tree",
     "trailing_input_types",
+    "verify_commits_long_rows",
     "verify_for",
+    "verify_takes_prefill_rows",
 ]
 
 
@@ -81,6 +94,7 @@ VerifyFn = Callable[[SequentialBatch | BlockBatch], Verified[Any]]
 """Verifies a driver batch on the target."""
 
 _TARGET_ADAPTERS: Mapping[str, str] = {
+    "BeamForCausalLM_ModuleV3": ".beam_modulev3.spec_adapters",
     "DeepseekV3ForCausalLM": ".deepseekV3.spec_adapters",
     "DeepseekV4ForCausalLM": ".deepseekV4.spec_adapters",
     "DeepseekV41ForCausalLM": ".deepseekV41.spec_adapters",
@@ -91,25 +105,39 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "Gemma4UnifiedForConditionalGeneration_ModuleV3": (
         ".gemma4_modulev3.spec_adapters"
     ),
-    "Glm5NextForConditionalGeneration": ".glm5_next.spec_adapters",
+    "Glm5NextForConditionalGeneration_ModuleV3": ".glm5_next.spec_adapters",
+    "GlmMoeDsaForCausalLM_ModuleV3": ".glm5_1_modulev3.spec_adapters",
     "GraniteForCausalLM": ".llama3.spec_adapters",
     "HYV4ForCausalLM": ".hy_v4.spec_adapters",
+    "HYV4ForCausalLM_ModuleV3": ".hy_v4.spec_adapters",
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
     "KimiK25ForConditionalGeneration": ".kimik2_5.spec_adapters",
     "KimiK3ForConditionalGeneration": "kimi_k3_spec",
+    "KimiK3ForConditionalGeneration_ModuleV3": (
+        ".kimi_k3_modulev3.dspark.spec_adapters"
+    ),
+    "LagunaForCausalLM_ModuleV3": ".laguna_modulev3.spec_adapters",
     "LlamaForCausalLM": ".llama3.spec_adapters",
-    "MiMoV2ForCausalLM": ".mimo_v2.spec_adapters",
-    "MiMoV2ForCausalLM_ModuleV3": ".mimo_v2_modulev3.spec_adapters",
+    "MiMoV2ForCausalLM": ".mimo_v2_modulev3.spec_adapters",
+    "MistralLarge4ForConditionalGeneration_ModuleV3": (
+        ".mistral_large4_modulev3.spec_adapters"
+    ),
+    "MuseSparkForConditionalGeneration_ModuleV3": ".muse_spark.spec_adapters",
     "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
+    "NemotronHForCausalLM_ModuleV3": ".nemotron_h_modulev3.spec_adapters",
     "Qwen3_5ForCausalLM": ".qwen3_5.spec_adapters",
+    "Qwen3_5ForCausalLM_ModuleV3": ".qwen3_5_modulev3.spec_adapters",
     "Qwen3_5ForConditionalGeneration": ".qwen3_5.spec_adapters",
+    "Qwen3_5ForConditionalGeneration_ModuleV3": (
+        ".qwen3_5_modulev3.spec_adapters"
+    ),
     "Qwen4ExpForConditionalGeneration": "qwen4_exp_spec",
 }
 
 
 def _target_adapter(target_arch: str) -> TargetAdapter:
     # A ModuleV3 variant without an adapter of its own is its target's only
-    # variant, as Nemotron-H is, and takes the adapter named for the target.
+    # variant, and takes the adapter named for the target.
     if target_arch not in _TARGET_ADAPTERS:
         target_arch = target_arch.removesuffix("_ModuleV3")
     if target_arch not in _TARGET_ADAPTERS:
@@ -121,6 +149,14 @@ def _target_adapter(target_arch: str) -> TargetAdapter:
     ).ADAPTER
     assert isinstance(adapter, TargetAdapter)
     return adapter
+
+
+def has_adapter(target_arch: str) -> bool:
+    """Returns whether spec decoding holds a call under exactly this name.
+
+    A ModuleV3 variant counts only when it names an adapter of its own.
+    """
+    return target_arch in _TARGET_ADAPTERS
 
 
 def _adapter(target_arch: str, method: str | None = None) -> TargetAdapter:
@@ -160,11 +196,40 @@ def primary_kv(target_arch: str, method: str) -> str:
     return _adapter(target_arch, method).primary_kv
 
 
+def ep_input_tree(target_arch: str, target: Module) -> object | None:
+    """Returns the group that names a target's expert-parallel inputs.
+
+    It is ``None`` when no group names them.
+    """
+    return _adapter(target_arch).ep_input_tree(target)
+
+
 def ep_input_types(
     target_arch: str, target: Module
 ) -> Sequence[TensorType | BufferType]:
-    """Returns the expert-parallel inputs of a built target module."""
+    """Returns the expert-parallel inputs of a built target module.
+
+    They are the leaves of :func:`ep_input_tree` when a group names them.
+    """
+    named = ep_input_tree(target_arch, target)
+    if named is not None:
+        return tree.leaves(named)
     return _adapter(target_arch).ep_input_types(target)
+
+
+def ep_tail(target_arch: str, target: Module) -> bool:
+    """Returns whether the target declares them on an undistributed signature."""
+    return _adapter(target_arch).ep_tail(target)
+
+
+def hisparse_input_types(
+    target_arch: str, method: str, target_config: Any
+) -> Sequence[TensorType | BufferType]:
+    """Returns the target's HiSparse inputs, which follow the EP inputs.
+
+    Empty when the target keeps every latent page resident.
+    """
+    return _adapter(target_arch, method).hisparse_input_types(target_config)
 
 
 def batch_distributed_buffers(
@@ -213,26 +278,6 @@ def speculates_on_last_stage(target_arch: str, method: str) -> bool:
     return _adapter(target_arch, method).speculates_on_last_stage
 
 
-def tail_kv(target_arch: str) -> str | None:
-    """Returns the target's KV child declared past the canonical tail.
-
-    The graph declares it there rather than among its KV inputs. The result is
-    none when it declares no such child.
-    """
-    return _adapter(target_arch).tail_kv
-
-
-def tail_buffers(
-    target_arch: str,
-    tail: Sequence[RecurrentStateInputsPerDevice[Buffer, Buffer]],
-) -> list[Buffer]:
-    """Returns the inputs of the :func:`tail_kv` child.
-
-    They come in the order the graph's tail declares them.
-    """
-    return _adapter(target_arch).tail_buffers(tail)
-
-
 def check(
     target_arch: str, speculative: SpeculativeConfig, structured_output: bool
 ) -> None:
@@ -256,6 +301,38 @@ def prepares_every_batch(target_arch: str) -> bool:
     return _adapter(target_arch).prepares_every_batch
 
 
+def verify_commits_long_rows(target_arch: str, method: str) -> bool:
+    """Returns whether the target's verify commits a long row.
+
+    A long row is longer than one token and its drafts, and the commit must
+    happen in every recurrent leaf under ``method``. Mach's ``gen_mef``
+    writes the answer to the export's sidecar.
+    """
+    return _adapter(target_arch, method).verify_commits_long_rows
+
+
+def verify_takes_prefill_rows(
+    target_arch: str, method: str, target_config: Any
+) -> bool:
+    """Returns whether the verify commits a prefill row in a verify step.
+
+    An engine may then mix a prompt row into the step, as Mach's artifact
+    boot decides from the export's record.
+    """
+    return _adapter(target_arch, method).verify_takes_prefill_rows(
+        target_config
+    )
+
+
+def successor_replay(target_arch: str, method: str) -> bool:
+    """Returns whether the draft head reads each position's successor.
+
+    An engine then replays a cached prompt row's boundary token, as Mach's
+    artifact boot decides from the export's record.
+    """
+    return _adapter(target_arch, method).successor_replay
+
+
 def signal_buffer_index(target_arch: str) -> int | None:
     """Returns where a fused graph takes its signal buffers.
 
@@ -270,6 +347,17 @@ def trailing_input_types(
 ) -> Sequence[TensorType | BufferType]:
     """Returns the inputs the target's call takes past the canonical tail."""
     return _adapter(target_arch, method).trailing_input_types(target_config)
+
+
+def trailing_input_tree(
+    target_arch: str, method: str, target_config: Any
+) -> Mapping[str, object] | None:
+    """Returns the groups that name :func:`trailing_input_types`.
+
+    ``None`` for a target whose trailing inputs an exported graph leaves
+    unnamed.
+    """
+    return _adapter(target_arch, method).trailing_input_tree(target_config)
 
 
 def trailing_buffers(
@@ -355,17 +443,6 @@ def replay_extra(
 ) -> dict[str, Any]:
     """Returns what the target's call reads of the replay graph's inputs."""
     return _adapter(target_arch, method).replay_extra(target_config, replay)
-
-
-def takes_vision_outputs(
-    target_arch: str, method: str, target_config: Any
-) -> bool:
-    """Returns whether the graph takes an external vision output.
-
-    Such an output comes from an engine that runs the encoder itself, so MAX
-    does not compute it.
-    """
-    return _adapter(target_arch, method).takes_vision_outputs(target_config)
 
 
 def block_proposer(

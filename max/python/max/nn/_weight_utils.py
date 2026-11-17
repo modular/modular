@@ -26,6 +26,7 @@ call site.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import weakref
 from collections.abc import Mapping
@@ -33,13 +34,14 @@ from typing import Any, NoReturn
 
 import numpy.typing as npt
 from max import tree
-from max.driver import CPU, Device, DLPackArray
+from max.driver import CPU, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import Graph, Shape, ShapeLike
 from max.tensor.realization_context import (
     EagerRealizationContext,
     GraphRealizationContext,
     LazyRealizationContext,
+    lazy,
 )
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 from max.tensor.sharding.mappings import as_device_mapping
@@ -69,7 +71,15 @@ _NOT_A_TRACE: dict[type, str] = {
 
 #: Dtypes that ``auto_cast`` may convert between. Intentionally narrow;
 #: widen as new pairs are validated.
-_SAFE_CAST_DTYPES: frozenset[DType] = frozenset({DType.float32, DType.bfloat16})
+_SAFE_CAST_DTYPES: frozenset[DType] = frozenset(
+    {DType.float32, DType.bfloat16, DType.float16}
+)
+
+#: Same-width casts that still lose information, keyed by ``(loaded, declared)``.
+_SAME_WIDTH_LOSS: dict[CastRecord, str] = {
+    (DType.bfloat16, DType.float16): "range loss",
+    (DType.float16, DType.bfloat16): "precision loss",
+}
 
 
 #: The external constants added to each graph, keyed by weight name. Weakly
@@ -330,11 +340,10 @@ def log_casts(casts: Mapping[CastRecord, int]) -> None:
         return
     parts = []
     for (loaded, declared), count in casts.items():
-        narrowing = (
-            " (precision loss)"
-            if declared.size_in_bytes < loaded.size_in_bytes
-            else ""
-        )
+        loss = _SAME_WIDTH_LOSS.get((loaded, declared))
+        if loss is None and declared.size_in_bytes < loaded.size_in_bytes:
+            loss = "precision loss"
+        narrowing = f" ({loss})" if loss else ""
         parts.append(
             f"{count} parameter(s) from {loaded} to {declared}{narrowing}"
         )
@@ -391,8 +400,8 @@ def shard_checkpoint(
             :meth:`~max.nn.Module.trace` does.
         arrays: The values of the parameters, keyed by the names that
             :attr:`~max.nn.Module.parameters` yields.
-        auto_cast: Whether to permit a cast between ``float32`` and
-            ``bfloat16``.
+        auto_cast: Whether to permit a cast between ``float32``,
+            ``bfloat16`` and ``float16``.
 
     Returns:
         A mapping from the name of each external constant to its data.
@@ -404,21 +413,30 @@ def shard_checkpoint(
     """
     casts: dict[CastRecord, int] = {}
     cpu = CPU()
+    # A virtual device cannot run the graph an eager cast realizes. Staged
+    # lazily, the registry still carries the cast dtypes that export records.
+    deferred = (
+        lazy()
+        if is_virtual_device_mode()
+        and current_realization_context(None) is None
+        else contextlib.nullcontext()
+    )
     registry: dict[str, Tensor] = {}
-    for path, declaration in tree.paths(root, leaf=Tensor).items():
-        array = _entry(arrays, path)
-        if cast := check_fits(path, array, declaration, auto_cast):
-            casts[cast] = casts.get(cast, 0) + 1
-            array = array.cast(declaration.dtype)
-        shards = array.local_shards
-        names = external_shard_names(path, len(shards))
-        for name, shard in zip(names, shards, strict=True):
-            if shard.real and shard.device != cpu:
-                shard = shard.to(cpu)
-            registry[name] = shard
-        if isinstance(declaration, _ExternalWeight):
-            declaration.source = _ExternalWeight(
-                array.shape, declaration.dtype, array._mapping, name=path
-            )
+    with deferred:
+        for path, declaration in tree.paths(root, leaf=Tensor).items():
+            array = _entry(arrays, path)
+            if cast := check_fits(path, array, declaration, auto_cast):
+                casts[cast] = casts.get(cast, 0) + 1
+                array = array.cast(declaration.dtype)
+            shards = array.local_shards
+            names = external_shard_names(path, len(shards))
+            for name, shard in zip(names, shards, strict=True):
+                if shard.real and shard.device != cpu:
+                    shard = shard.to(cpu)
+                registry[name] = shard
+            if isinstance(declaration, _ExternalWeight):
+                declaration.source = _ExternalWeight(
+                    array.shape, declaration.dtype, array._mapping, name=path
+                )
     log_casts(casts)
     return registry

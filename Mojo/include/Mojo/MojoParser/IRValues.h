@@ -560,13 +560,7 @@ protected:
 };
 
 template <typename DerivedType>
-struct VariantValueStorage : public VariantValueStorageBase {
-  static DerivedType getFromStorage(const Storage &storage) {
-    DerivedType result;
-    result.storage = storage;
-    return result;
-  }
-};
+struct VariantValueStorage : public VariantValueStorageBase {};
 
 template <typename DerivedType>
 struct VariantRValue {

@@ -87,7 +87,7 @@ kgen.generator @dtype_params() {
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{get_sizeof should return index}}
+// expected-error @below {{get_sizeof should return !kgen.scalar<index>}}
 "someop"() {a = #kgen.param.expr<get_sizeof, #kgen.type<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
@@ -104,7 +104,7 @@ kgen.generator @dtype_params() {
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{get_alignof should return index}}
+// expected-error @below {{get_alignof should return !kgen.scalar<index>}}
 "someop"() {a = #kgen.param.expr<get_alignof, #kgen.type<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
@@ -315,6 +315,27 @@ kgen.func @invalid(%arg0: !kgen.pointer<index> byref_result, %arg1: index) -> !k
 
 // -----
 
+// expected-error @below {{element #1 of pack argument #0 should be a `!kgen.pointer` but got: 'index'}}
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(pointer<index>, index) isParamPack>> pack_mut) {
+  hlcf.unreachable
+}
+
+// -----
+
+// expected-error @below {{element #0 of pack argument #0 should be a `!kgen.pointer` but got: '!kgen.struct<(pointer<none>)>'}}
+kgen.func @invalid(%arg0: !kgen.pointer<struct<(struct<(pointer<none>)>) isParamPack>> pack_imm_mem) {
+  hlcf.unreachable
+}
+
+// -----
+
+// expected-error @below {{argument #0 with convention 'pack_imm_mem' in func type should be a `!kgen.pointer`}}
+kgen.func @invalid(%arg0: !kgen.struct<(pointer<index>) isParamPack> pack_imm_mem) {
+  hlcf.unreachable
+}
+
+// -----
+
 kgen.generator @kernel() {
   hlcf.return
 }
@@ -474,5 +495,29 @@ kgen.generator @get_target_plugin_type_mismatch() {
       opaque_plugin = #kgen.param_list<1, 2> : !kgen.param_list<index>>
       : !kgen.target, :!kgen.param_list<!kgen.type> #kgen.param_list<f16>>
       : !kgen.param_list<!kgen.type>>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @struct_concat_wrong_count(%a: !kgen.struct<(index)>, %b: !kgen.struct<(f32, f64)>) {
+  // expected-error @below {{'kgen.struct.concat' op operands have 3 elements but the result has 2}}
+  %0 = kgen.struct.concat(%a, %b) : !kgen.struct<(index)>, !kgen.struct<(f32, f64)> -> !kgen.struct<(index, f32)>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @struct_concat_wrong_type(%a: !kgen.struct<(index)>, %b: !kgen.struct<(f32, f64)>) {
+  // expected-error @below {{'kgen.struct.concat' op element #2 has type 'f64' but the result has 'f32'}}
+  %0 = kgen.struct.concat(%a, %b) : !kgen.struct<(index)>, !kgen.struct<(f32, f64)> -> !kgen.struct<(index, f32, f32)>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @struct_concat_no_operands() {
+  // expected-error @below {{'kgen.struct.concat' op expected at least one operand}}
+  %0 = "kgen.struct.concat"() : () -> !kgen.struct<()>
   hlcf.return
 }

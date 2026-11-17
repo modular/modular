@@ -117,6 +117,33 @@ private:
                                        SmallVector<bool> &shouldContinue,
                                        int64_t loopLevel);
 
+  /// How control leaves a node (aggregate of every possible exit).
+  enum ExitOutcome {
+    /// The exits disagree, so neither answer holds.
+    kUnknownOutcome,
+    /// Every exit reaches the operation after the node.
+    kFallsThrough,
+    /// Every exit leaves the node's parent region instead.
+    kLeavesParent,
+  };
+
+  /// Return true if every path from `op`'s entry targets to its exit leaves
+  /// the parent region instead of reaching the operation that follows it.
+  bool exitsWithoutJoining(ControlFlowNode op, AnalysisStateType &state);
+
+  /// `root` is the node whose fallthrough is being decided.
+  ExitOutcome allExitWithOutcome(ControlFlowNode node,
+                                 std::optional<unsigned> regionIndex,
+                                 AnalysisStateType &state,
+                                 ControlFlowNode root);
+
+  ExitOutcome regionExitOutcome(ControlFlowNode node, unsigned regionIndex,
+                                AnalysisStateType &state, ControlFlowNode root);
+
+  static ExitOutcome mergeOutcomes(ExitOutcome lhs, ExitOutcome rhs) {
+    return lhs == rhs ? lhs : kUnknownOutcome;
+  }
+
   /// Process a ControlFlowTerminator operation.
   void processControlFlowTerminator(ControlFlowTerminator term,
                                     AnalysisStateType &state);
@@ -131,6 +158,11 @@ private:
   /// Get the lattice elements for op's operands.
   static void getValuesLattice(SmallVectorImpl<Attribute> &attributes,
                                ValueRange value, AnalysisStateType &state);
+
+  /// Like getValuesLattice, but a value without a known constant stays
+  /// unknown instead of asserting.
+  static void getBranchOperands(SmallVectorImpl<Attribute> &attributes,
+                                ValueRange values, AnalysisStateType &state);
 
   /// Set state to Unknown.
   static void setToEntryState(ConstantState *state);
@@ -232,6 +264,17 @@ void SCCPAnalysis::getValuesLattice(SmallVectorImpl<Attribute> &attributes,
   }
 }
 
+void SCCPAnalysis::getBranchOperands(SmallVectorImpl<Attribute> &attributes,
+                                     ValueRange values,
+                                     AnalysisStateType &state) {
+  for (Value value : values) {
+    ConstantState *lattice = getLatticeElement(value, state);
+    attributes.push_back(!lattice->getValue().isUninitialized()
+                             ? lattice->getValue().getConstantValue()
+                             : Attribute());
+  }
+}
+
 void SCCPAnalysis::setToEntryState(ConstantState *state) {
   (void)state->join(ConstantValue::getUnknownConstant());
 }
@@ -305,6 +348,92 @@ int64_t SCCPAnalysis::getLoopConvergeThreshold(Operation *op,
   return result;
 }
 
+bool SCCPAnalysis::exitsWithoutJoining(ControlFlowNode op,
+                                       AnalysisStateType &state) {
+  return allExitWithOutcome(op, /*regionIndex=*/std::nullopt, state,
+                            /*root=*/op) == kLeavesParent;
+}
+
+SCCPAnalysis::ExitOutcome SCCPAnalysis::allExitWithOutcome(
+    ControlFlowNode node, std::optional<unsigned> regionIndex,
+    AnalysisStateType &state, ControlFlowNode root) {
+  if (isa<LoopOp, ForOp, ComptimeForOp>(node.getOperation()))
+    return kUnknownOutcome;
+
+  ExitOutcome outcome = kFallsThrough;
+  if (regionIndex) {
+    outcome = regionExitOutcome(node, *regionIndex, state, root);
+  } else {
+    SmallVector<Attribute> operands;
+    getBranchOperands(operands, node->getOperands(), state);
+    llvm::SmallVector<ControlFlowTarget> entries;
+    node.getEntryTargets(operands, entries);
+    bool first = true;
+    for (ControlFlowTarget entry : entries) {
+      ExitOutcome entryOutcome =
+          entry.index ? regionExitOutcome(node, *entry.index, state, root)
+                      : kFallsThrough;
+      outcome = first ? entryOutcome : mergeOutcomes(outcome, entryOutcome);
+      first = false;
+    }
+  }
+
+  return outcome;
+}
+
+SCCPAnalysis::ExitOutcome
+SCCPAnalysis::regionExitOutcome(ControlFlowNode node, unsigned regionIndex,
+                                AnalysisStateType &state,
+                                ControlFlowNode root) {
+  Block &block = node->getRegion(regionIndex).front();
+
+  // Check if an op exits before the terminator is reached.
+  for (Operation &op : block) {
+    auto nested = dyn_cast<ControlFlowNode>(op);
+    if (!nested)
+      continue;
+    ExitOutcome nestedOutcome =
+        allExitWithOutcome(nested, /*regionIndex=*/std::nullopt, state, root);
+    if (nestedOutcome == kLeavesParent || nestedOutcome == kUnknownOutcome)
+      return nestedOutcome;
+  }
+
+  auto term = dyn_cast<ControlFlowTerminator>(block.getTerminator());
+  if (!term)
+    return kUnknownOutcome;
+
+  Operation *termParent = getParentNode(term);
+  if (termParent != root.getOperation() && !root->isProperAncestor(termParent))
+    return kLeavesParent;
+
+  if (termParent != node.getOperation())
+    return kUnknownOutcome;
+
+  // Check the reachable branches for exit types and merge them.
+  SmallVector<Attribute> operands;
+  getBranchOperands(operands, term->getOperands(), state);
+  llvm::SmallVector<ControlFlowTarget> branches;
+  term.getBranchTargets(operands, branches);
+  if (branches.empty()) {
+    if (isa<HLCF::UnreachableOp>(term.getOperation()))
+      return kLeavesParent;
+    return kUnknownOutcome;
+  }
+
+  ExitOutcome outcome = kFallsThrough;
+  bool first = true;
+  for (ControlFlowTarget branch : branches) {
+    if (branch.index && *branch.index == regionIndex)
+      return kUnknownOutcome;
+    ExitOutcome branchOutcome =
+        branch.index ? allExitWithOutcome(node, *branch.index, state, root)
+                     : kFallsThrough;
+    outcome = first ? branchOutcome : mergeOutcomes(outcome, branchOutcome);
+    first = false;
+  }
+  return outcome;
+}
+
 LogicalResult SCCPAnalysis::processControlFlowNode(
     ControlFlowNode node, AnalysisStateType &state,
     SmallVector<bool> &shouldContinue, int64_t loopLevel) {
@@ -332,8 +461,6 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
     SmallVector<ControlFlowTarget> targets;
     node.getEntryTargets(constantOperands, targets);
 
-    size_t numShouldNotJoin = 0;
-
     // Regions that no target selects cannot execute.
     llvm::SmallPtrSet<Region *, 2> executedRegions;
     for (ControlFlowTarget target : targets) {
@@ -356,18 +483,10 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
         if (failed(processRegion(node->getRegion(target.index.value()), state,
                                  hasEarlyExits, shouldContinue, loopLevel)))
           return failure();
-
-        if (hasEarlyExits)
-          ++numShouldNotJoin;
       }
     }
-    shouldContinue[loopLevel] = enclosingShouldContinue;
-
-    if (numShouldNotJoin == targets.size()) {
-      // A break or continue happened for all regions, we should not keep
-      // running the rest of the operations in the parent region.
-      shouldContinue[loopLevel] = false;
-    }
+    shouldContinue[loopLevel] =
+        enclosingShouldContinue && !exitsWithoutJoining(node, state);
     (void)mergeStates(state, getOrCreateCFState(node)->exitStates);
     controlFlowOperationStates.erase(node.getOperation());
     return success();
@@ -450,14 +569,16 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
 
   // Otherwise, process subregions if any and mark all results as Unknown.
   if (node->getNumRegions() > 0) {
+    bool enclosingShouldContinue = shouldContinue[loopLevel];
     for (Region &region : node->getRegions()) {
-      AnalysisStateType nestedState = state;
       bool hasEarlyExits = false;
-      if (failed(processRegion(region, nestedState, hasEarlyExits,
-                               shouldContinue, loopLevel)))
+      shouldContinue[loopLevel] = enclosingShouldContinue;
+      if (failed(processRegion(region, state, hasEarlyExits, shouldContinue,
+                               loopLevel)))
         return failure();
-      (void)mergeStates(state, nestedState);
     }
+    shouldContinue[loopLevel] =
+        enclosingShouldContinue && !exitsWithoutJoining(node, state);
   }
 
   for (Value result : node.getOperation()->getResults())

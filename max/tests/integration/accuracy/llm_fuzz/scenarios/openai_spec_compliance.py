@@ -1010,6 +1010,9 @@ class OpenAISpecCompliance(BaseScenario):
         resp_schema = await client.post_json(
             req(
                 "Return a greeting",
+                # Room for a reasoning model to finish thinking before the
+                # constrained JSON starts.
+                max_tokens=4096,
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
@@ -1114,7 +1117,8 @@ class OpenAISpecCompliance(BaseScenario):
                 "type": "function",
                 "function": {"name": "get_weather"},
             },
-            "max_tokens": 100,
+            # Room for a reasoning model to finish thinking before the call.
+            "max_tokens": 4096,
         }
         resp_tool = await client.post_json(tool_payload)
         if resp_tool.status == 200:

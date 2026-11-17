@@ -80,7 +80,7 @@ def run_remainder[
             idx, remainder(a, b)
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
+    elementwise[pack_size](func, Coord(length), ctx)
 
     with x_device.map_to_host() as x_host, y_device.map_to_host() as y_host, out_device.map_to_host() as out_host:
         for i in range(length):
@@ -170,7 +170,7 @@ def _run_unary[
             idx, math_fn(val)
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(padded), ctx)
+    elementwise[pack_size](func, Coord(padded), ctx)
 
     var out = List[Scalar[dtype]]()
     with out_device.map_to_host() as out_host:

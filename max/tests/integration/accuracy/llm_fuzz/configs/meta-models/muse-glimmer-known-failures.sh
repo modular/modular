@@ -117,6 +117,9 @@ _muse_glimmer_model_failures=(
   'tc_schema_enforcement:anyof_with_enum_branch[tool_choice=required]'
   # tc_schema_enforcement: the prompt asks for types the schema forbids, and
   # on some runs the model writes an empty array below the schema's minItems.
+  # anyof_deeply_nested's schema now sets minItems: 2 as well, so a short
+  # array there is a grammar enforcement failure; kept until this lane is
+  # re-validated at that schema.
   'tc_schema_enforcement:anyof_deeply_nested[tool_choice=required]'
   'tc_schema_enforcement:anyof_nested_in_array_items[tool_choice=required]'
   # tc_schema_enforcement: parameter values are free text, so the model can

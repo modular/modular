@@ -147,6 +147,12 @@ def geglu_tanh(gate: Float32, up: Float32) -> Float32:
 
 
 @inline(.always)
+def _round_to_bf16(x: Float32) -> Float32:
+    """Rounds `x` through bfloat16, as a BF16 activation buffer would."""
+    return x.cast[.bfloat16]().cast[.float32]()
+
+
+@inline(.always)
 def _named_swiglu_activation[
     name: StaticString, alpha: Float32, limit: Float32
 ](gate: Float32, up: Float32) -> Float32:
@@ -155,6 +161,10 @@ def _named_swiglu_activation[
             return swiglu[limit](gate, up)
         case "swigluoai":
             return swigluoai[alpha, limit](gate, up)
+        case "silu_bf16":
+            return _round_to_bf16(swiglu[limit](gate, up))
+        case "swigluoai_bf16":
+            return _round_to_bf16(swigluoai[alpha, limit](gate, up))
         case "gelu_tanh":
             return geglu_tanh(gate, up)
         case "situ":

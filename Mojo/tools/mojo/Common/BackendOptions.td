@@ -66,20 +66,21 @@ def llvm_timing: Flag<["--", "-"], "llvm-timing">,
 def timing_json: Flag<["--", "-"], "timing-json">,
   Group<CompilationOptionGroup>, Flags<[HelpHidden]>,
   HelpText<
-    "Writes the timing that `--mlir-timing` and `--llvm-timing` collect as "
-    "one JSON object rather than as text. The object holds a `mlir` member "
-    "and an `llvm` member, and only the members the command asks for, so it "
-    "is empty if the command asks for no timing. The `mlir` member keeps the "
-    "tree or the list that `--mlir-timing-display` selects. The `llvm` member "
-    "holds one entry for each pipeline, with the name of the pipeline and the "
-    "times of its passes.">,
+    "Writes the reports that `--mlir-timing`, `--llvm-timing` and "
+    "`--elaboration-stats` collect as one JSON object rather than as text. "
+    "The object holds a `mlir` member, an `llvm` member and an `elaboration` "
+    "member, and only the members the command asks for, so it is empty if "
+    "the command asks for none. The `mlir` member keeps the tree or the list "
+    "that `--mlir-timing-display` selects. The `llvm` and `elaboration` "
+    "members hold one entry for each pipeline, with the name of the pipeline "
+    "and the times of its passes, or its `comptime for` loops.">,
   MarshallingInfoFlag<DriverOpts<"timingJSON">>;
 
 defm timing_file: CommandOptionHidden<["--", "-"], "timing-file",
   CompilationOptionGroup, MetaVarName<"FILE">,
   HelpText<
-    "Writes the timing reports to FILE rather than to stderr. The reports are "
-    "text, or JSON with `--timing-json`.">>,
+    "Writes the timing and elaboration reports to FILE rather than to "
+    "stderr. The reports are text, or JSON with `--timing-json`.">>,
   MarshallingInfoString<DriverOpts<"timingFile">>;
 
 //===----------------------------------------------------------------------===//

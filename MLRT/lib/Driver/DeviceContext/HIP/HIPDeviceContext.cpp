@@ -22,18 +22,23 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
+#include "MLRT/lib/Driver/DeviceContext/AcceleratorArch.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/DeviceContext/PinnedCompletionFlag.h"
 #include "Support/ErrorOr.h"
 #include "Support/HashUtils.h"
 #include "Support/max_license/Tracy/Tracy.h"
 #include "Support/max_license/Tracy/TracyRocm.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Process.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -50,14 +55,6 @@
 
 // Helpers for logging.
 #define TWINE(val) (llvm::Twine(val))
-
-#define HIP_CHECK_ERR(hip_call)                                                \
-  do {                                                                         \
-    HIPDriver::Result hipResult = hip_call;                                    \
-    if (hipResult != HIPDriver::SUCCESS) {                                     \
-      return formatHipError(__FILE__, __LINE__, __FUNCTION__, hipResult);      \
-    }                                                                          \
-  } while (0)
 
 #define HIP_CHECK(hip_call)                                                    \
   do {                                                                         \
@@ -159,39 +156,6 @@ private:
   hipDevice_t prevDevice_;
   HIPDriver::Result status_;
 };
-
-static Error formatHipError(const char *file, int line, const char *func,
-                            HIPDriver::Result result,
-                            std::string extra_msg = "") {
-  ErrorOr<const HIPDriver &> errDriver = HIPDriver::get();
-  const char *errName = nullptr;
-  const char *errStr = nullptr;
-
-  if (!errDriver) {
-    // Ignore errors and use nullptr of char* instead.
-    errDriver->hipDrvGetErrorName(result, &errName);
-    errDriver->hipDrvGetErrorString(result, &errStr);
-  }
-
-  if (!extra_msg.empty())
-    extra_msg = std::string(" - ") + extra_msg;
-
-  if ((errName != nullptr) && (errStr != nullptr)) {
-    return DeviceContext::formatError(file, line, func,
-                                      llvm::Twine("HIP call failed: ") +
-                                          errName + " (" + errStr + ")" +
-                                          extra_msg);
-  } else if ((errName != nullptr) || (errStr != nullptr)) {
-    return DeviceContext::formatError(
-        file, line, func,
-        llvm::Twine("HIP call failed: ") +
-            (errName != nullptr ? errName : errStr) + extra_msg);
-  } else {
-    return DeviceContext::formatError(file, line, func,
-                                      llvm::Twine("HIP call failed: ") +
-                                          llvm::Twine(result) + extra_msg);
-  }
-}
 
 // The id of the capture `stream` is recording into, or 0 when it is not
 // capturing (or the runtime lacks capture introspection).
@@ -494,160 +458,21 @@ ErrorOr<std::string> HIPDevice::getPciBusId() const {
 
 ErrorOr<const char *> HIPDevice::getArchName() const { return arch_.c_str(); }
 
-ErrorOr<std::string> HIPDevice::getArchName(hipDevice_t device) {
-  // We do need the full AMD GPU architecture name in order to compie for the
-  // right LLVM target. Parsing via KFD, as used by amd-smi and rocm-smi seems
-  // to be one of the two reliable ways to get the full architecture name. The
-  // other way, which we use here, is through the HSA API and some PCIe device
-  // matching with the HIP API. The HIP API directly does provide the
-  // architecture name in the `hipDeviceProp_t::gcnArchName` field, but it is
-  // not always set. Likewise, `hipDeviceAttributeGcnArchName` is now
-  // deprecated. Major & minor versions are available via
-  // `hipDeviceAttributeComputeCapabilityMajor` and
-  // `hipDeviceAttributeComputeCapabilityMinor`, but lack the last digit.
-
-  DEFINE_OR_RETURN_ERROR(const HIPDriver &, driver, HIPDriver::get());
-
-  // Initialize HSA runtime if available.
-  if (driver.HsaInit() != HSA_STATUS_SUCCESS)
-    return Error("Failed to initialize HSA runtime");
-
-  // Get HIP device PCIe info via device attributes
-  int pciBusId = 0, pciDeviceId = 0, pciDomainId = 0;
-  HIP_CHECK_ERR(driver.hipDeviceGetAttribute(
-      &pciBusId, hipDeviceAttribute_t::hipDeviceAttributePciBusId, device));
-  HIP_CHECK_ERR(driver.hipDeviceGetAttribute(
-      &pciDeviceId, hipDeviceAttribute_t::hipDeviceAttributePciDeviceId,
-      device));
-  HIP_CHECK_ERR(driver.hipDeviceGetAttribute(
-      &pciDomainId, hipDeviceAttribute_t::hipDeviceAttributePciDomainID,
-      device));
-
-  // Data structure to pass to HSA agent and ISA iteration callbacks.
-  struct SearchData {
-    const HIPDriver *driver;
-    uint32_t targetPciBusID;
-    uint32_t targetPciDeviceID;
-    uint32_t targetPciDomainID;
-    std::string archName;
-  };
-
-  SearchData search = {&driver, static_cast<uint32_t>(pciBusId),
-                       static_cast<uint32_t>(pciDeviceId),
-                       static_cast<uint32_t>(pciDomainId), ""};
-
-  // Callback function for HSA agent iteration.
-  auto agentCallback = [](hsaAgent_t agent, void *data) -> hsaStatus_t {
-    auto *search = static_cast<SearchData *>(data);
-
-    // Match by PCIe address of HIP and HSA device.
-    uint32_t hsaDomain = 0;
-    uint32_t hsaBdfId = 0;
-
-    // Get PCIe domain. On failure, continue to next agent.
-    if (search->driver->HsaAgentGetInfo(
-            agent, hsaAgentInfo_t::HSA_AMD_AGENT_INFO_DOMAIN, &hsaDomain) !=
-            HSA_STATUS_SUCCESS ||
-        search->driver->HsaAgentGetInfo(
-            agent, hsaAgentInfo_t::HSA_AMD_AGENT_INFO_BDFID, &hsaBdfId) !=
-            HSA_STATUS_SUCCESS)
-      return HSA_STATUS_SUCCESS;
-
-    // BDFID is typically encoded as: (bus << 8) | (device << 3) | function
-    uint32_t hsaBus = (hsaBdfId >> 8) & 0xFF;
-    uint32_t hsaDevice = (hsaBdfId >> 3) & 0x1F;
-    // uint32_t hsaFunction = hsaBdfId & 0x7;
-
-    // Compare with HIP device PCIe info. On failure, continue to next agent.
-    if (hsaDomain != search->targetPciDomainID ||
-        hsaBus != search->targetPciBusID ||
-        hsaDevice != search->targetPciDeviceID)
-      return HSA_STATUS_SUCCESS;
-
-    // Callback to iterate through ISAs for this agent.
-    auto isaCallback = [](hsaIsa_t isa, void *data) -> hsaStatus_t {
-      auto *search = static_cast<SearchData *>(data);
-
-      // First, get the length of the ISA name.
-      uint32_t nameLen = 0;
-      if (search->driver->HsaIsaGetInfo(isa,
-                                        hsaIsaInfo_t::HSA_ISA_INFO_NAME_LENGTH,
-                                        &nameLen) != HSA_STATUS_SUCCESS)
-        return HSA_STATUS_SUCCESS;
-
-      // Continue if the ISA name length is invalid.
-      if (nameLen == 0 || nameLen > 256)
-        return HSA_STATUS_SUCCESS;
-
-      // Allocate memory for the ISA name
-      std::vector<char> isaName(nameLen);
-
-      // Get the actual ISA name. Continue to next ISA if it fails.
-      if (search->driver->HsaIsaGetInfo(isa, hsaIsaInfo_t::HSA_ISA_INFO_NAME,
-                                        isaName.data()) != HSA_STATUS_SUCCESS)
-        return HSA_STATUS_SUCCESS;
-
-      // Check if this ISA name contains "gfx".
-      std::string isaStr(isaName.data(), nameLen > 0
-                                             ? nameLen - 1
-                                             : 0); // Remove null terminator.
-      size_t gfxPos = isaStr.find("gfx");
-      if (gfxPos != std::string::npos) {
-        // Find the end of the digits after "gfx".
-        size_t start = gfxPos;
-        // Start after "gfx".
-        size_t end = start + 3;
-
-        // Continue until we find a non-digit character.
-        while (end < isaStr.length() && std::isdigit(isaStr[end]))
-          ++end;
-
-        // Extract the gfx* part.
-        std::string gfxArch = isaStr.substr(start, end - start);
-        search->archName = gfxArch;
-        // Stop ISA iteration.
-        return HSA_STATUS_INFO_BREAK;
-      }
-
-      // Continue ISA iteration.
-      return HSA_STATUS_SUCCESS;
-    };
-
-    // Iterate through ISAs for this agent. Continue agent iteration if it
-    // fails.
-    if (search->driver->HsaAgentIterateIsas(agent, isaCallback, search) !=
-        HSA_STATUS_SUCCESS)
-      return HSA_STATUS_SUCCESS;
-
-    // If we found an architecture, stop agent iteration.
-    if (search->archName.size())
-      return HSA_STATUS_INFO_BREAK;
-
-    // Continue agent iteration.
-    return HSA_STATUS_SUCCESS;
-  };
-
-  // Iterate through all HSA agents to find our device.
-  if (driver.HsaIterateAgents(agentCallback, &search) != HSA_STATUS_SUCCESS) {
-    driver.HsaShutDown();
-    return Error("Failed to iterate HSA agents");
-  }
-
-  // Clean up HSA runtime.
-  driver.HsaShutDown();
-
-  if (search.archName.empty())
-    return Error("Could not determine architecture name for HIP device");
-
-  return search.archName;
-}
-
 ErrorOr<DeviceContextRef> HIPDevice::createContext() {
   // Make sure that we associate the stream with the correct device.
   HIP_WITH_DEV_ERR(*this);
 
   hipStream_t stream;
-  HIP_CHECK_ERR(this->hipDriver().hipStreamCreate(&stream, 0));
+  if (DeviceContext::configAsString("hip_main_stream_priority", "") == "high") {
+    int leastPriority = 0;
+    int greatestPriority = 0;
+    HIP_CHECK_ERR(this->hipDriver().hipDeviceGetStreamPriorityRange(
+        &leastPriority, &greatestPriority));
+    HIP_CHECK_ERR(this->hipDriver().hipStreamCreateWithPriority(
+        &stream, 0, greatestPriority));
+  } else {
+    HIP_CHECK_ERR(this->hipDriver().hipStreamCreate(&stream, 0));
+  }
 
   return HIPDeviceContextRef::create(*this, stream);
 }
@@ -840,7 +665,13 @@ ErrorOrSuccess HIPDevice::vmmMapAndSetAccess(void *va, size_t byteSize,
                  << " access descriptors. If this is hipErrorInvalidValue the "
                     "process has likely hit HIP's cap on total VMM-mapped "
                     "memory (GEX-4056); reduce memory_manager_size.\n";
-    return formatHipError(__FILE__, __LINE__, __FUNCTION__, result);
+    // A failed call leaves nothing mapped, so the caller can reuse the handle.
+    std::string rollback;
+    if (driver_.hipMemUnmap(va, byteSize) != HIPDriver::SUCCESS)
+      rollback = "hipMemUnmap after the refused access grant also failed, so "
+                 "the range is still mapped";
+    return formatHipError(__FILE__, __LINE__, __FUNCTION__, result,
+                          std::move(rollback));
   }
   return success();
 }
@@ -947,7 +778,7 @@ ErrorOr<HIPDevice &> HIPDevice::get(int id) {
     }
 #endif
 
-    ErrorOr<std::string> errArch = getArchName(hipDevice);
+    ErrorOr<std::string> errArch = getHIPArchName(hipDevice);
     if (errArch)
       RETURN_ERROR(llvm::Twine("HIP architecture query failed: ") +
                    errArch.getError());
@@ -1206,7 +1037,7 @@ internWaitValueNodeParams(hipCtx_t ctx, hipDeviceptr_t address,
     params->op.waitValue.address = address;
     params->op.waitValue.value64 = value;
     params->op.waitValue.flags = static_cast<unsigned int>(
-        hipStreamWaitValueFlags::hipStreamWaitValueEq);
+        hipStreamWaitValueFlags::hipStreamWaitValueGte);
     params->node.ctx = ctx;
     params->node.count = 1;
     params->node.paramArray = &params->op;
@@ -1215,14 +1046,14 @@ internWaitValueNodeParams(hipCtx_t ctx, hipDeviceptr_t address,
   return &params->node;
 }
 
-ErrorOrSuccess
-HIPDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const {
+ErrorOrSuccess HIPDeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                                  uint64_t value) const {
   const auto &hipDevice = HIPDevice::cast(this->device());
 
   HIP_WITH_DEV_ERR(hipDevice);
   const HIPDriver &driver = hipDevice.hipDriver();
-  auto address = reinterpret_cast<hipDeviceptr_t>(flag.devicePtr());
+  auto address = reinterpret_cast<hipDeviceptr_t>(
+      PinnedCompletionFlag::cast(flag).devicePtr());
 
   // Stream capture does not record hipStreamWaitValue64. Measured on ROCm
   // 7.2.4 / gfx950, under all three capture modes: the call returns success,
@@ -1239,7 +1070,7 @@ HIPDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
   if (getCaptureStatus() !=
       hipStreamCaptureStatus::hipStreamCaptureStatusActive) {
     HIP_CHECK_ERR(driver.hipStreamWaitValue64(
-        stream_, address, value, hipStreamWaitValueFlags::hipStreamWaitValueEq,
+        stream_, address, value, hipStreamWaitValueFlags::hipStreamWaitValueGte,
         /*mask*/ static_cast<uint64_t>(-1)));
     return success();
   }
@@ -1325,6 +1156,140 @@ hipStreamCaptureStatus HIPDeviceStream::getCaptureStatus() const {
   return status;
 }
 
+namespace {
+/// The forks in graphs being captured, and which node continued each fork's
+/// own stream.
+///
+/// A HIP graph does not keep the streams it was captured on. ROCm assigns its
+/// nodes to queues by walking the graph depth first and giving a node's k-th
+/// dependent edge the node's queue plus k, so the first dependent captured
+/// after a fork stays on the fork's queue. A side stream that forks off a node
+/// usually captures its first launch before the forking stream does, which
+/// moves the forking stream's work onto another queue, or onto the side
+/// stream's queue when the offsets wrap. Recording each fork's continuation
+/// lets endCapture put it first again.
+struct CaptureForks {
+  std::mutex mutex;
+  std::atomic<size_t> numPending = 0;
+  /// Per stream another stream forked off, the capture and the node it forked
+  /// from, until the stream's next launch.
+  llvm::DenseMap<hipStream_t, std::pair<unsigned long long, hipGraphNode_t>>
+      pending;
+  /// Per capture, each fork node and the node its own stream launched next.
+  llvm::DenseMap<unsigned long long,
+                 SmallVector<std::pair<hipGraphNode_t, hipGraphNode_t>>>
+      continuations;
+};
+
+/// The capture a stream is recording into and the one node its next launch
+/// will depend on, if there is exactly one.
+struct CaptureFrontier {
+  unsigned long long captureId = 0;
+  hipGraphNode_t node = nullptr;
+};
+} // namespace
+
+static CaptureForks &captureForks() {
+  static CaptureForks forks;
+  return forks;
+}
+
+static CaptureFrontier captureFrontier(const HIPDriver &driver,
+                                       hipStream_t stream) {
+  hipStreamCaptureStatus status =
+      hipStreamCaptureStatus::hipStreamCaptureStatusNone;
+  unsigned long long captureId = 0;
+  hipGraph_t graph = nullptr;
+  const hipGraphNode_t *dependencies = nullptr;
+  size_t numDependencies = 0;
+  if (driver.hipStreamGetCaptureInfo_v2(stream, &status, &captureId, &graph,
+                                        &dependencies, &numDependencies) !=
+          HIPDriver::SUCCESS ||
+      status != hipStreamCaptureStatus::hipStreamCaptureStatusActive)
+    return {};
+  return {captureId, numDependencies == 1 ? dependencies[0] : nullptr};
+}
+
+/// Records that another stream forked off `stream`'s capture frontier.
+static void noteCaptureFork(const HIPDriver &driver, hipStream_t stream) {
+  if (!driver.canReorderGraphEdges())
+    return;
+  CaptureFrontier frontier = captureFrontier(driver, stream);
+  if (!frontier.node)
+    return;
+  CaptureForks &forks = captureForks();
+  std::lock_guard<std::mutex> lock(forks.mutex);
+  auto [it, inserted] =
+      forks.pending.try_emplace(stream, frontier.captureId, frontier.node);
+  if (inserted)
+    ++forks.numPending;
+  else
+    it->second = {frontier.captureId, frontier.node};
+}
+
+/// Records the node `stream` just launched as the continuation of the fork it
+/// has pending, if any.
+static void noteCaptureLaunch(const HIPDriver &driver, hipStream_t stream) {
+  CaptureForks &forks = captureForks();
+  if (forks.numPending.load(std::memory_order_relaxed) == 0)
+    return;
+  std::lock_guard<std::mutex> lock(forks.mutex);
+  auto it = forks.pending.find(stream);
+  if (it == forks.pending.end())
+    return;
+  auto [captureId, fork] = it->second;
+  forks.pending.erase(it);
+  --forks.numPending;
+  CaptureFrontier frontier = captureFrontier(driver, stream);
+  if (frontier.node && frontier.captureId == captureId)
+    forks.continuations[captureId].emplace_back(fork, frontier.node);
+}
+
+/// Puts each fork's continuation first among the fork's dependents in
+/// `graph`, whose capture `captureId` just ended, and drops the capture's
+/// pending forks.
+static ErrorOrSuccess orderCaptureForks(const HIPDriver &driver,
+                                        unsigned long long captureId,
+                                        hipGraph_t graph) {
+  SmallVector<std::pair<hipGraphNode_t, hipGraphNode_t>> continuations;
+  {
+    CaptureForks &forks = captureForks();
+    std::lock_guard<std::mutex> lock(forks.mutex);
+    if (auto it = forks.continuations.find(captureId);
+        it != forks.continuations.end()) {
+      continuations = std::move(it->second);
+      forks.continuations.erase(it);
+    }
+    SmallVector<hipStream_t> stale;
+    for (auto &[stream, fork] : forks.pending)
+      if (fork.first == captureId)
+        stale.push_back(stream);
+    for (hipStream_t stream : stale)
+      forks.pending.erase(stream);
+    forks.numPending -= stale.size();
+  }
+
+  for (auto [fork, next] : continuations) {
+    size_t numDependents = 0;
+    HIP_CHECK_ERR(
+        driver.hipGraphNodeGetDependentNodes(fork, nullptr, &numDependents));
+    SmallVector<hipGraphNode_t, 4> dependents(numDependents);
+    HIP_CHECK_ERR(driver.hipGraphNodeGetDependentNodes(fork, dependents.data(),
+                                                       &numDependents));
+    if (numDependents < 2 || dependents.front() == next ||
+        !llvm::is_contained(dependents, next))
+      continue;
+    SmallVector<hipGraphNode_t, 4> forkNodes(numDependents, fork);
+    HIP_CHECK_ERR(driver.hipGraphRemoveDependencies(
+        graph, forkNodes.data(), dependents.data(), numDependents));
+    llvm::erase(dependents, next);
+    dependents.insert(dependents.begin(), next);
+    HIP_CHECK_ERR(driver.hipGraphAddDependencies(
+        graph, forkNodes.data(), dependents.data(), numDependents));
+  }
+  return success();
+}
+
 ErrorOrSuccess HIPDeviceStream::beginCapture() const {
   hipStreamCaptureStatus status = getCaptureStatus();
   if (status == hipStreamCaptureStatus::hipStreamCaptureStatusActive)
@@ -1349,11 +1314,18 @@ ErrorOr<DeviceGraphRef> HIPDeviceStream::endCapture() {
   HIPDevice &hipDevice = HIPDevice::cast(this->device());
   HIP_WITH_DEV_ERR(hipDevice);
 
+  const bool orderForks = hipDevice.hipDriver().canReorderGraphEdges();
+  const unsigned long long captureId =
+      orderForks ? captureFrontier(hipDevice.hipDriver(), stream_).captureId
+                 : 0;
   hipGraph_t graph = nullptr;
   HIP_CHECK_ERR(hipDevice.hipDriver().hipStreamEndCapture(stream_, &graph));
 
   if (!graph)
     RETURN_ERROR("hipStreamEndCapture returned null graph");
+
+  if (orderForks)
+    RETURN_IF_ERROR(orderCaptureForks(hipDevice.hipDriver(), captureId, graph));
 
   if (logGraphCapture_ != "") {
     static std::atomic<int32_t> graphCaptureCount = 0;
@@ -1438,6 +1410,7 @@ ErrorOrSuccess HIPDeviceFunction::hipCallKernelDirect(
   HIP_CHECK_ERR(moduleFunction_->hipDriver().hipModuleLaunchKernel(
       moduleFunction_->hipFunction(), gridX, gridY, gridZ, blockX, blockY,
       blockZ, sharedMemBytes, stream, args, nullptr));
+  noteCaptureLaunch(moduleFunction_->hipDriver(), stream);
   MAYBE_SYNC(HIPDeviceContext::cast(context()));
   return success();
 }
@@ -1698,8 +1671,8 @@ ErrorOr<CompletionFlagRef> HIPDeviceContext::allocateCompletionFlag() {
   }
   // Initialize the flag to zero so the first wait observes a clean state.
   *static_cast<uint64_t *>(hostPtr) = 0;
-  return CompletionFlagRef::take(
-      new CompletionFlag(*this, hostPtr, reinterpret_cast<uint64_t>(devPtr)));
+  return CompletionFlagRef::take(new PinnedCompletionFlag(
+      *this, hostPtr, reinterpret_cast<uint64_t>(devPtr)));
 }
 
 ErrorOrSuccess HIPDeviceContext::freeCompletionFlag(void *hostPtr) {
@@ -2138,11 +2111,46 @@ ErrorOr<DeviceContextRef> HIPDeviceContext::selectStream(unsigned streamId) {
   if (streamPool_->get(streamId) == stream_)
     return DeviceContextRef::copy(this);
 
-  // Return a retain-all view: a new context co-owning the same stream pool and
-  // device (and therefore the same device memory pool), differing only in which
-  // pooled stream is active.
-  return DeviceContextRef::take(
-      new HIPDeviceContext(HIPDevice::cast(device()), streamPool_, streamId));
+  // A retain-all view: a context co-owning the same stream pool and device
+  // (and therefore the same device memory pool), differing only in which
+  // pooled stream is active. One view per stream id, kept for this context's
+  // lifetime (see `streamViews_`).
+  std::lock_guard<std::mutex> lock(streamViewsMu_);
+  if (streamViews_.size() <= streamId)
+    streamViews_.resize(streamId + 1);
+  DeviceContextRef &view = streamViews_[streamId];
+  if (!view)
+    view = DeviceContextRef::take(
+        new HIPDeviceContext(HIPDevice::cast(device()), streamPool_, streamId));
+  return view.copy();
+}
+
+bool HIPDeviceContext::flushIdleStreamViews() {
+  // Held throughout: `selectStream` is the only way to a new reference, so a
+  // view only the cache holds stays unheld until the lock is released.
+  std::lock_guard<std::mutex> lock(streamViewsMu_);
+  if (streamViews_.empty())
+    return false;
+  // Views share this context's device.
+  HIPDeviceScope scope(hipDevice(), driver_);
+  if (scope.status() != HIPDriver::SUCCESS)
+    return false;
+  bool flushed = false;
+  for (DeviceContextRef &view : streamViews_) {
+    if (!view || !view->isUnique())
+      continue;
+    auto &hipView = static_cast<HIPDeviceContext &>(*view);
+    if (hipView.isGraphCapturing())
+      continue;
+    // A raw stream sync, not `synchronize()`: that also runs the view's event
+    // handlers, which could allocate and re-enter this lock.
+    if (driver_.hipStreamSynchronize(hipView.stream_) != HIPDriver::SUCCESS)
+      continue;
+    // Only the ordinary free list: `graphFreeList` backs captured graphs that
+    // may still replay.
+    flushed |= hipView.freeList().deferCachedToParent();
+  }
+  return flushed;
 }
 
 ErrorOr<DeviceStreamRef>
@@ -2218,6 +2226,7 @@ ErrorOrSuccess HIPDeviceContext::enqueueWaitFor(DeviceContext &ctx) {
 
   DEFINE_OR_RETURN_ERROR(DeviceEventRef, event, ctx.enqueueEvent());
   RETURN_IF_ERROR(enqueueWaitFor(*event));
+  noteCaptureFork(driver_, HIPDeviceContext::cast(ctx).hipStream());
   return success();
 }
 

@@ -18,9 +18,9 @@ from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.nn._graph_ops import moe_router_group_limited
 from typing_extensions import Self
 
-from ..kernels import moe_router_group_limited
 from ..linear import Linear
 from .moe import MoEGate
 

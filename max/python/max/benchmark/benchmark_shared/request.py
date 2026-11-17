@@ -385,6 +385,9 @@ class ServerTokenStats:
     completion_tokens: int | None = None
     total_tokens: int | None = None
     cached_tokens: int = 0
+    # Whether the usage carried cached-token counts at all, so a server that
+    # reports none is not read as one that served nothing from its cache.
+    cached_tokens_reported: bool = False
 
 
 @dataclass
@@ -653,10 +656,12 @@ class _ChatDelta(BaseModel):
 
 class _ChatChoice(BaseModel):
     delta: _ChatDelta
+    finish_reason: str | None = None
 
 
 class _CompletionChoice(BaseModel):
     text: str
+    finish_reason: str | None = None
 
 
 class _ErrorDetail(BaseModel):
@@ -723,6 +728,9 @@ class OpenAIStreamRecorder:
         tokenizer: The tokenizer for per-chunk TPOT, or ``None`` to skip it.
         is_cache_warmup: Accepts a completed, usage-bearing generation without
             visible text when its output is discarded for cache seeding.
+        max_tokens: The request's output-token budget, or ``None`` if it set
+            none. A budget of at most two tokens lets a measured response
+            without visible text succeed; see :meth:`finish`.
     """
 
     def __init__(
@@ -732,6 +740,7 @@ class OpenAIStreamRecorder:
         chat: bool,
         tokenizer: PreTrainedTokenizerBase | None = None,
         is_cache_warmup: bool = False,
+        max_tokens: int | None = None,
     ) -> None:
         self.output = RequestFuncOutput()
         self.output.prompt_len = prompt_len
@@ -746,6 +755,9 @@ class OpenAIStreamRecorder:
         self._most_recent_timestamp = self._st
         self._has_content = False
         self._is_cache_warmup = is_cache_warmup
+        self._max_tokens = max_tokens
+        self._finish_reason: str | None = None
+        self._finish_reason_time = 0.0
         self._stream_complete = False
         self._latency = 0.0
         self._done = False
@@ -794,11 +806,16 @@ class OpenAIStreamRecorder:
                     if chunk.usage.prompt_tokens_details
                     else 0
                 ),
+                cached_tokens_reported=chunk.usage.prompt_tokens_details
+                is not None,
             )
 
         # Skip content processing for chunks with no choices.
         if not chunk.choices:
             return None
+        if chunk.choices[0].finish_reason is not None:
+            self._finish_reason = chunk.choices[0].finish_reason
+            self._finish_reason_time = now()
         if isinstance(chunk, _ChatCompletionChunk):
             if chunk.choices[0].delta.tool_calls:
                 self.output.tool_call_returned = True
@@ -841,12 +858,32 @@ class OpenAIStreamRecorder:
             The request's output.
         """
         self._done = True
+        completion_tokens = self.output.server_token_stats.completion_tokens
         cache_warmup_completed = (
             self._is_cache_warmup
             and self._stream_complete
-            and (self.output.server_token_stats.completion_tokens or 0) > 0
+            and (completion_tokens or 0) > 0
         )
-        if not self._has_content and not cache_warmup_completed:
+        # A one- or two-token budget can be spent entirely on tokens the
+        # server's reasoning or tool parser consumes as delimiters (GLM's
+        # ``</think>``), so a correct response may carry no visible text.
+        # Accept that only when the server confirms it generated exactly the
+        # tiny budget; every other measured response without text still fails.
+        tiny_budget_exhausted = (
+            self._stream_complete
+            and self._finish_reason == "length"
+            and self._max_tokens is not None
+            and 0 < self._max_tokens <= 2
+            and completion_tokens == self._max_tokens
+        )
+        if tiny_budget_exhausted and not self._has_content:
+            self._ttft = self._finish_reason_time - self._st
+            self.output.ttft = self._ttft
+        if (
+            not self._has_content
+            and not cache_warmup_completed
+            and not tiny_budget_exhausted
+        ):
             self.output.error = (
                 "No text content captured from the response"
                 " (choices were present but"
@@ -899,12 +936,14 @@ async def _run_openai_stream_request(
     chat: bool,
     tokenizer: PreTrainedTokenizerBase | None = None,
     is_cache_warmup: bool = False,
+    max_tokens: int | None = None,
 ) -> RequestFuncOutput:
     recorder = OpenAIStreamRecorder(
         prompt_len=prompt_len,
         chat=chat,
         tokenizer=tokenizer,
         is_cache_warmup=is_cache_warmup,
+        max_tokens=max_tokens,
     )
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         try:
@@ -968,6 +1007,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             chat=False,
             tokenizer=self.tokenizer,
             is_cache_warmup=request_func_input.is_cache_warmup,
+            max_tokens=request_func_input.max_tokens,
         )
 
 
@@ -1060,6 +1100,7 @@ async def _run_atom_nonstream_chat_request(
         completion_tokens=completion_tokens,
         total_tokens=usage.get("total_tokens"),
         cached_tokens=prompt_details.get("cached_tokens", 0),
+        cached_tokens_reported="cached_tokens" in prompt_details,
     )
     # No per-token latencies: synthesize a flat ITL/TPOT series from the mean
     # tpot_s so itl_ms/step_tpot_ms aren't NaN (headline TPOT still latency-based).
@@ -1156,6 +1197,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 chat=True,
                 tokenizer=self.tokenizer,
                 is_cache_warmup=request_func_input.is_cache_warmup,
+                max_tokens=request_func_input.max_tokens,
             )
         output.tools_offered = "tools" in payload
         output.carries_image = _messages_carry_image(messages_data)

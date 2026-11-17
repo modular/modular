@@ -344,3 +344,42 @@ def test_weight_naming_refuses_malformed_entries(
 ) -> None:
     with pytest.raises(ValueError, match=error):
         WeightNaming.__deserialize__(value)
+
+
+def test_materialized_weights_use_the_same_rules(tmp_path: Path) -> None:
+    weights = _checkpoint(
+        tmp_path / "model.safetensors",
+        {
+            "model.weight": np.ones(2, np.float32),
+            "unused.weight": np.zeros(2, np.float32),
+        },
+    )
+    transform = WeightTransform(
+        [
+            Ignore(r"^unused\.", "not a module parameter"),
+            WeightRenaming(r"^model\.", ""),
+        ]
+    )
+    expected = transform(weights)
+    actual = transform.apply_data(
+        {name: weight.data() for name, weight in weights.items()}
+    )
+    assert actual.keys() == expected.keys() == {"weight"}
+    np.testing.assert_array_equal(
+        _numpy(actual["weight"].data), _numpy(expected["weight"].data)
+    )
+
+
+def test_materialized_weights_refuse_colliding_names(tmp_path: Path) -> None:
+    weights = _checkpoint(
+        tmp_path / "model.safetensors",
+        {
+            "a.weight": np.ones(2, np.float32),
+            "b.weight": np.zeros(2, np.float32),
+        },
+    )
+    transform = WeightTransform([WeightRenaming(r"^[ab]\.", "")])
+    with pytest.raises(ValueError, match="both adapt"):
+        transform.apply_data(
+            {name: weight.data() for name, weight in weights.items()}
+        )

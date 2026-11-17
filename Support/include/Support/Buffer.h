@@ -20,6 +20,7 @@
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
 #include "Support/STLExtras.h"
+#include "Support/SymbolExport.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MemoryBufferRef.h"
@@ -37,6 +38,7 @@ namespace M {
 
 /// Open a file in read-only or read-write mode and return its file descriptor
 /// and the status object for the file so we can get things like its size.
+MODULAR_CXX_EXPORT
 ErrorOr<std::pair<llvm::sys::fs::file_t, llvm::sys::fs::file_status>>
 openFile(const std::filesystem::path &filepath, bool readOnly);
 
@@ -50,7 +52,7 @@ using BufferRef = RCRef<Buffer>;
 /// (defined below).
 // TODO: Should this hold a reference to a AsyncRT::Allocator and use that to
 //       allocate memory?
-class Buffer : public ReferenceCounted<Buffer> {
+class MODULAR_CXX_EXPORT Buffer : public ReferenceCounted<Buffer> {
 public:
   /// Destroy a buffer. Releases any resources associated with that buffer.
   virtual ~Buffer() = default;
@@ -215,7 +217,8 @@ class WriteableBuffer;
 using WriteableBufferRef = RCRef<WriteableBuffer>;
 
 /// Subclass of Buffer that is write-able. It also owns its data in all cases.
-class WriteableBuffer : public Buffer, public llvm::raw_pwrite_stream {
+class MODULAR_CXX_EXPORT WriteableBuffer : public Buffer,
+                                           public llvm::raw_pwrite_stream {
 public:
   /// Create a WriteableBuffer with initial size (this sets both the capacity
   /// and the number of bytes stored in the buffer to `size`). The user can also

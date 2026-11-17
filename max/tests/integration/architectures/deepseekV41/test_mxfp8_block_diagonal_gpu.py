@@ -28,7 +28,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_diagonal_block_scaled_matmul,
     quantize_dynamic_block_scaled,
 )
@@ -81,7 +81,7 @@ def test_block_diagonal_split_k_matches_production(
                 x_q, w, x_scales, w_scales, GROUPS
             ),
         )
-    assert "mo.matmul.mxfp8.cluster_splitk.block_diagonal" in str(graph)
+    assert "matmul.mxfp8.cluster_splitk.block_diagonal" in str(graph)
     model = session.load(graph)
 
     rng = np.random.default_rng(0)

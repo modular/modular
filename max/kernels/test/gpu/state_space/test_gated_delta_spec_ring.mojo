@@ -16,7 +16,10 @@ From the same pool and inputs, the ring arm runs
 `gated_delta_recurrence_verify_ring_gpu` over the window and then
 `gated_delta_state_fold_gpu`, and the replay arm runs
 `gated_delta_recurrence_fwd_gpu` over the accepted tokens only. The pools and
-the accepted readouts must match exactly.
+the accepted readouts must match exactly. A row longer than one token and
+its drafts commits the state it holds at its last real token, so the
+replay arm runs that row's real tokens -- everything before its drafts --
+and the fold folds none of it.
 
 Every layer gets its own inputs, so a fold that read another layer's records
 would fold different numbers. The state pool and the ring take different row
@@ -53,6 +56,7 @@ struct RingCase(Copyable, Movable):
     var num_layers: Int
     var num_value_heads: Int
     var num_key_heads: Int
+    var num_draft_tokens: Int
     var seq_lengths: List[Int]
     var accepted: List[Int]
 
@@ -63,13 +67,20 @@ struct RingCase(Copyable, Movable):
         num_key_heads: Int,
         var seq_lengths: List[Int],
         var accepted: List[Int],
+        num_draft_tokens: Int = 2,
     ):
         self.batch_size = len(seq_lengths)
         self.num_layers = num_layers
         self.num_value_heads = num_value_heads
         self.num_key_heads = num_key_heads
+        self.num_draft_tokens = num_draft_tokens
         self.seq_lengths = seq_lengths^
         self.accepted = accepted^
+
+
+def _row_is_long(row_length: Int, num_draft_tokens: Int) -> Bool:
+    """Whether a row is longer than one token and its drafts."""
+    return row_length > num_draft_tokens + 1
 
 
 def _upload_table(
@@ -108,8 +119,8 @@ def run_ring_case[
     Args:
         spec: The window, the acceptance, and the pool geometry.
         ctx: Device to run on.
-        fold_accepted_override: Acceptance passed to the fold instead of
-            `spec.accepted`.
+        fold_accepted_override: Counts passed to the fold as-is, past the
+            zero a long row otherwise takes.
         expect_match: Whether the two pools must match. False asserts they
             differ.
         ring_silent_rows: Batch items whose ring rows must still hold
@@ -178,10 +189,13 @@ def run_ring_case[
 
     var fold_accepted = List[Int]()
     for b in range(batch_size):
-        fold_accepted.append(
-            fold_accepted_override[b] if len(fold_accepted_override)
-            > 0 else spec.accepted[b]
-        )
+        # The graph folds a row the verify committed itself with zero.
+        var count = 0 if _row_is_long(
+            spec.seq_lengths[b], spec.num_draft_tokens
+        ) else spec.accepted[b]
+        if len(fold_accepted_override) > 0:
+            count = fold_accepted_override[b]
+        fold_accepted.append(count)
 
     # ── Pre-verify pool. Nonzero, so a wrong decay changes the result.
     var row_elems = nv * KEY_HEAD_DIM * VALUE_HEAD_DIM
@@ -375,6 +389,7 @@ def run_ring_case[
             Int32(nv),
             Int32(nk),
             Int32(key_dim),
+            Int32(spec.num_draft_tokens),
             TileTensor(
                 out_ring_dev.create_sub_buffer[WORK_DTYPE](
                     l * window_rows * value_dim, window_rows * value_dim
@@ -491,7 +506,7 @@ def run_ring_case[
                 "record padding was written at element " + String(i),
             )
 
-    # A row too long for the ring must leave its ring rows poisoned.
+    # A row the ring does not record must leave its ring rows poisoned.
     if len(ring_silent_rows) > 0:
         var any_written = False
         for i in range(len(ring_silent_rows)):
@@ -504,16 +519,16 @@ def run_ring_case[
             assert_equal(
                 any_written,
                 False,
-                "a row too long for the ring still appended to it",
+                "a long row still appended to the ring",
             )
         else:
             assert_equal(
                 any_written,
                 True,
                 (
-                    "negative control: the row was short enough for the ring"
-                    " to capture and the poison still survived, so the check"
-                    " proves nothing"
+                    "negative control: the row was short enough for the"
+                    " window to record and the poison still survived, so the"
+                    " check proves nothing"
                 ),
             )
 
@@ -580,8 +595,9 @@ def run_readout_neutrality[
     """Asserts the ring verify matches `gated_delta_recurrence_fwd_gpu`'s
     readout over the whole window.
 
-    A row that fits the ring leaves its pool row unchanged, and a longer row
-    lands the pool row the plain kernel does.
+    A row the window holds leaves its pool row unchanged, and a longer row
+    lands the pool row a plain run over its real tokens -- everything before
+    its drafts -- would.
     """
     var batch_size = spec.batch_size
     var nv = spec.num_value_heads
@@ -590,12 +606,25 @@ def run_readout_neutrality[
     var value_dim = nv * VALUE_HEAD_DIM
     var conv_dim = key_dim * 2 + value_dim
     var window_rows = 0
+    var real_rows = 0
     var offsets = List[Int]()
+    var real_offsets = List[Int]()
     var slots = List[Int]()
     offsets.append(0)
+    real_offsets.append(0)
     for b in range(batch_size):
         window_rows += spec.seq_lengths[b]
         offsets.append(window_rows)
+        # A long row's plain arm covers its real tokens; a row the window
+        # holds is compared unchanged, so its entry here is never read.
+        var real = (
+            spec.seq_lengths[b]
+            - spec.num_draft_tokens if _row_is_long(
+                spec.seq_lengths[b], spec.num_draft_tokens
+            ) else spec.seq_lengths[b]
+        )
+        real_rows += real
+        real_offsets.append(real_rows)
         slots.append(b)
 
     var state_rows = batch_size + 1
@@ -624,10 +653,16 @@ def run_readout_neutrality[
     var beta_dev = ctx.enqueue_create_buffer[WORK_DTYPE](window_rows * nv)
     var pool_ring_dev = ctx.enqueue_create_buffer[STATE_DTYPE](state_elems)
     var pool_plain_dev = ctx.enqueue_create_buffer[STATE_DTYPE](state_elems)
+    var pool_real_dev = ctx.enqueue_create_buffer[STATE_DTYPE](state_elems)
     var out_ring_dev = ctx.enqueue_create_buffer[WORK_DTYPE](
         window_rows * value_dim
     )
     var out_plain_dev = ctx.enqueue_create_buffer[WORK_DTYPE](
+        window_rows * value_dim
+    )
+    # The real arm's readout is never compared; the kernel needs somewhere
+    # to write it.
+    var out_real_dev = ctx.enqueue_create_buffer[WORK_DTYPE](
         window_rows * value_dim
     )
     var record_stride = (
@@ -643,8 +678,10 @@ def run_readout_neutrality[
         ctx.enqueue_copy(beta_dev, beta_h.unsafe_ptr())
         ctx.enqueue_copy(pool_ring_dev, pool_h.unsafe_ptr())
         ctx.enqueue_copy(pool_plain_dev, pool_h.unsafe_ptr())
+        ctx.enqueue_copy(pool_real_dev, pool_h.unsafe_ptr())
     ctx.synchronize()
     var offsets_dev = _upload_table(ctx, offsets)
+    var real_offsets_dev = _upload_table(ctx, real_offsets)
     var slot_dev = _upload_table(ctx, slots)
     var ring_slot_dev = _upload_table(ctx, slots)
 
@@ -652,6 +689,9 @@ def run_readout_neutrality[
     var decay_tt = TileTensor(decay_dev, row_major(window_rows, nv))
     var beta_tt = TileTensor(beta_dev, row_major(window_rows, nv))
     var offsets_tt = TileTensor(offsets_dev, row_major(batch_size + 1))
+    var real_offsets_tt = TileTensor(
+        real_offsets_dev, row_major(batch_size + 1)
+    )
     var slot_tt = TileTensor(slot_dev, row_major(batch_size))
     var ring_slot_tt = TileTensor(ring_slot_dev, row_major(batch_size))
     var pool_ring_tt = TileTensor(
@@ -660,11 +700,17 @@ def run_readout_neutrality[
     var pool_plain_tt = TileTensor(
         pool_plain_dev, row_major(state_rows, nv, KEY_HEAD_DIM, VALUE_HEAD_DIM)
     )
+    var pool_real_tt = TileTensor(
+        pool_real_dev, row_major(state_rows, nv, KEY_HEAD_DIM, VALUE_HEAD_DIM)
+    )
     var out_ring_tt = TileTensor(
         out_ring_dev, row_major(window_rows, value_dim)
     )
     var out_plain_tt = TileTensor(
         out_plain_dev, row_major(window_rows, value_dim)
+    )
+    var out_real_tt = TileTensor(
+        out_real_dev, row_major(window_rows, value_dim)
     )
     var ring_tt = TileTensor(
         ring_dev, row_major(ring_rows, nk, RING_LEN, record_stride)
@@ -714,6 +760,7 @@ def run_readout_neutrality[
             Int32(nv),
             Int32(nk),
             Int32(key_dim),
+            Int32(spec.num_draft_tokens),
             out_ring_tt,
             pool_ring_tt,
             slot_tt,
@@ -742,6 +789,22 @@ def run_readout_neutrality[
             grid_dim=(batch_size * nv,),
             block_dim=(VALUE_HEAD_DIM,),
         )
+        ctx.enqueue_function(
+            plain_kernel,
+            Int32(batch_size),
+            Int32(nv),
+            Int32(nk),
+            Int32(key_dim),
+            out_real_tt,
+            pool_real_tt,
+            slot_tt,
+            qkv_tt,
+            decay_tt,
+            beta_tt,
+            real_offsets_tt,
+            grid_dim=(batch_size * nv,),
+            block_dim=(VALUE_HEAD_DIM,),
+        )
     var out_ring_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](
         window_rows * value_dim
     )
@@ -750,11 +813,13 @@ def run_readout_neutrality[
     )
     var pool_after_h = ctx.enqueue_create_host_buffer[STATE_DTYPE](state_elems)
     var pool_plain_h = ctx.enqueue_create_host_buffer[STATE_DTYPE](state_elems)
+    var pool_real_h = ctx.enqueue_create_host_buffer[STATE_DTYPE](state_elems)
     with ctx.push_context():
         ctx.enqueue_copy(out_ring_h.unsafe_ptr(), out_ring_dev)
         ctx.enqueue_copy(out_plain_h.unsafe_ptr(), out_plain_dev)
         ctx.enqueue_copy(pool_after_h.unsafe_ptr(), pool_ring_dev)
         ctx.enqueue_copy(pool_plain_h.unsafe_ptr(), pool_plain_dev)
+        ctx.enqueue_copy(pool_real_h.unsafe_ptr(), pool_real_dev)
     ctx.synchronize()
 
     for i in range(window_rows * value_dim):
@@ -766,10 +831,12 @@ def run_readout_neutrality[
     var row_elems = nv * KEY_HEAD_DIM * VALUE_HEAD_DIM
     for i in range(state_elems):
         var slot = i // row_elems
-        var commits = slot < batch_size and spec.seq_lengths[slot] > RING_LEN
+        var commits = slot < batch_size and _row_is_long(
+            spec.seq_lengths[slot], spec.num_draft_tokens
+        )
         assert_equal(
             Float64(pool_after_h[i]),
-            Float64(pool_plain_h[i]) if commits else Float64(pool_h[i]),
+            Float64(pool_real_h[i]) if commits else Float64(pool_h[i]),
             "the ring verify landed the wrong pool row at element " + String(i),
         )
 
@@ -851,6 +918,8 @@ def _deep_ring_arm[
         Int32(1),
         Int32(1),
         Int32(1),
+        Int32(1),
+        # One real token and its one draft.
         Int32(1),
         out_tt,
         pool_tt,
@@ -984,46 +1053,6 @@ def run_deep_ring_row(ctx: DeviceContext) raises:
     )
 
 
-def test_ring_verify_readout_is_neutral() raises:
-    # Row 0 is longer than the ring.
-    with DeviceContext() as ctx:
-        run_readout_neutrality[32, 32, 4](
-            RingCase(1, 6, 2, [6, 4, 1], [0, 0, 0]), ctx
-        )
-
-
-def test_full_accept_is_bit_exact() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[32, 32, 4](RingCase(2, 4, 2, [4, 4], [4, 4]), ctx)
-
-
-def test_zero_accept_keeps_the_pool() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[32, 32, 4](RingCase(2, 4, 2, [4, 4], [0, 0]), ctx)
-
-
-def test_mixed_accept_across_the_batch() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[32, 32, 4](
-            RingCase(2, 6, 2, [4, 4, 4, 4], [0, 1, 2, 4]), ctx
-        )
-
-
-def test_ring_longer_than_the_window() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[32, 32, 8](RingCase(2, 4, 2, [4, 4], [3, 1]), ctx)
-
-
-def test_the_shortest_ring() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[32, 32, 2](RingCase(3, 4, 2, [2, 2], [1, 2]), ctx)
-
-
-def test_ragged_windows() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[32, 32, 4](RingCase(2, 6, 3, [1, 4, 2], [1, 3, 0]), ctx)
-
-
 def run_records_only_traps[
     KEY_HEAD_DIM: Int,
     VALUE_HEAD_DIM: Int,
@@ -1031,11 +1060,15 @@ def run_records_only_traps[
 ](seq_length: Int, ctx: DeviceContext) raises:
     """Launches `RECORDS_ONLY=True` over one row and syncs.
 
-    The kernel contract is that every row fits the ring; `input_row_offsets`
-    is device data the host cannot check, so the kernel traps a longer row
-    itself. The trap surfaces as a raised error at the sync.
+    The kernel contract is that every row is one token and its drafts;
+    `input_row_offsets` is device data the host cannot check, so the kernel
+    traps a longer row itself. The trap poisons the context, so the
+    process aborts.
     """
-    assert seq_length > RING_LEN, "the trap case needs a row past the ring"
+    var num_drafts = 2
+    assert _row_is_long(
+        seq_length, num_drafts
+    ), "the trap case needs a row past the verify window"
     var nv = 1
     var nk = 1
     var key_dim = nk * KEY_HEAD_DIM
@@ -1139,6 +1172,7 @@ def run_records_only_traps[
         Int32(nv),
         Int32(nk),
         Int32(key_dim),
+        Int32(num_drafts),
         out_tt,
         pool_tt,
         slot_tt,
@@ -1154,13 +1188,154 @@ def run_records_only_traps[
     ctx.synchronize()
 
 
-def test_records_only_traps_a_row_past_the_ring() raises:
+def test_ring_verify_readout_is_neutral() raises:
+    # Row 0 is longer than the window and carries two drafts.
+    with DeviceContext() as ctx:
+        run_readout_neutrality[32, 32, 4](
+            RingCase(1, 6, 2, [6, 3, 1], [0, 0, 0], 2), ctx
+        )
+
+
+def test_full_accept_is_bit_exact() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 4](RingCase(2, 4, 2, [4, 4], [4, 4], 3), ctx)
+
+
+def test_zero_accept_keeps_the_pool() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 4](RingCase(2, 4, 2, [4, 4], [0, 0], 3), ctx)
+
+
+def test_mixed_accept_across_the_batch() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 4](
+            RingCase(2, 6, 2, [4, 4, 4, 4], [0, 1, 2, 4], 3), ctx
+        )
+
+
+def test_ring_longer_than_the_window() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 8](RingCase(2, 4, 2, [4, 4], [3, 1], 3), ctx)
+
+
+def test_the_shortest_ring() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 2](RingCase(3, 4, 2, [2, 2], [1, 2]), ctx)
+
+
+def test_ragged_windows() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 4](
+            RingCase(2, 6, 3, [1, 4, 2], [1, 3, 0], 3), ctx
+        )
+
+
+def test_production_head_dims() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[128, 128, 4](RingCase(2, 12, 4, [4, 4], [2, 4], 3), ctx)
+
+
+def test_production_head_dims_shortest_ring() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[128, 128, 2](RingCase(2, 12, 4, [2, 2], [1, 2], 1), ctx)
+
+
+def test_production_head_dims_longest_ring() raises:
+    with DeviceContext() as ctx:
+        run_ring_case[128, 128, 8](
+            RingCase(2, 12, 4, [8, 8, 5], [8, 3, 5], 7), ctx
+        )
+
+
+def test_row_longer_than_the_ring_commits_before_its_drafts() raises:
+    """A row longer than one token and its drafts records nothing and lands
+    its real tokens.
+
+    The row is a prompt chunk and two drafts, so the verify commits at its
+    fourth token and the fold, clamped to zero, leaves that state alone.
+    """
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 4](
+            RingCase(2, 4, 2, [6], [4], 2),
+            ctx,
+            ring_silent_rows=[0],
+        )
+
+
+def test_rows_at_and_past_the_k_plus_one_boundary() raises:
+    """Rows at and past the K+1 boundary, one launch per K.
+
+    At K 2 a ring-wide row is long; at K 5 the six-token row is the
+    window itself and the seven- and eight-token rows are long.
+    """
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 4](
+            RingCase(2, 4, 2, [4, 3], [2, 2], 2),
+            ctx,
+            ring_silent_rows=[0],
+        )
+        run_ring_case[32, 32, 8](
+            RingCase(2, 4, 2, [6], [6], 5),
+            ctx,
+        )
+        run_ring_case[32, 32, 8](
+            RingCase(2, 4, 2, [7, 8], [2, 3], 5),
+            ctx,
+            ring_silent_rows=[0, 1],
+        )
+
+
+def test_long_and_short_rows_share_a_launch() raises:
+    """A long row and a recorded row share one launch.
+
+    Row 0 records nothing and lands its three real tokens, and row 1 folds 3
+    of its 4 records.
+    """
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 4](
+            RingCase(2, 4, 2, [6, 4], [3, 3], 3),
+            ctx,
+            ring_silent_rows=[0],
+        )
+
+
+def test_a_long_row_just_past_the_longest_ring() raises:
+    """A row whose accepted count fits the ring still folds nothing.
+
+    At `RING_LEN` 8 with three drafts, the nine-token row commits at its
+    sixth token; its accepted count, six, would fit the ring, so this is
+    the row a missing clamp would fold unwritten records for.
+    """
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 8](
+            RingCase(2, 4, 2, [9], [6], 3),
+            ctx,
+            ring_silent_rows=[0],
+        )
+
+
+def test_folding_a_committed_row_by_its_accepted_count_diverges() raises:
+    """Negative control: the clamp on a long row's fold is load-bearing.
+
+    Folded by its accepted count, which fits the ring, the committed row
+    reads records the verify never wrote and its pool row corrupts.
+    """
+    with DeviceContext() as ctx:
+        run_ring_case[32, 32, 8](
+            RingCase(2, 4, 2, [9], [6], 3),
+            ctx,
+            fold_accepted_override=[6],
+            expect_match=False,
+        )
+
+
+def test_records_only_traps_a_row_past_the_window() raises:
     """`RECORDS_ONLY` makes a longer row a kernel contract violation.
 
     The default instantiation still commits such a row (see
-    `test_row_longer_than_the_ring_commits_itself`); with `RECORDS_ONLY`
-    the writeback is gone, so a silent state drop would be corruption
-    instead. The kernel's safe assert must trap it.
+    `test_row_longer_than_the_ring_commits_before_its_drafts`); with
+    `RECORDS_ONLY` the writeback is gone, so a silent state drop would be
+    corruption instead. The kernel's safe assert must trap it.
     """
 
     # A trapped device-side assert poisons the CUDA context, and its
@@ -1168,65 +1343,23 @@ def test_records_only_traps_a_row_past_the_ring() raises:
     # `assert_aborts` rather than a `try` here.
     def trigger() raises {} -> None:
         with DeviceContext() as ctx:
-            run_records_only_traps[32, 32, 4](6, ctx)
+            # Two drafts: a four-token row is long, a three-token row is
+            # the window itself.
+            run_records_only_traps[32, 32, 4](4, ctx)
 
     # `std.testing.assert_aborts` is exported as `_assert_aborts`; the
     # underscore is a stdlib convention, not a privacy marker here.
     _assert_aborts(
         trigger,
-        contains="exceeding RING_LEN=4",
+        contains="exceeding the window of 3",
     )
-
-
-def test_production_head_dims() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[128, 128, 4](RingCase(2, 12, 4, [4, 4], [2, 4]), ctx)
-
-
-def test_production_head_dims_shortest_ring() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[128, 128, 2](RingCase(2, 12, 4, [2, 2], [1, 2]), ctx)
-
-
-def test_production_head_dims_longest_ring() raises:
-    with DeviceContext() as ctx:
-        run_ring_case[128, 128, 8](
-            RingCase(2, 12, 4, [8, 8, 5], [8, 3, 5]), ctx
-        )
-
-
-def test_row_longer_than_the_ring_commits_itself() raises:
-    """A row longer than `RING_LEN` records nothing and lands its whole window.
-
-    The fold is given the row's full length, which exceeds the ring.
-    """
-    with DeviceContext() as ctx:
-        run_ring_case[32, 32, 4](
-            RingCase(2, 4, 2, [6], [6]),
-            ctx,
-            ring_silent_rows=[0],
-        )
-
-
-def test_long_and_short_rows_share_a_launch() raises:
-    """A row longer than the ring and a recorded row share one launch.
-
-    Row 0 records nothing and lands its window, and row 1 folds 3 of its 4
-    records.
-    """
-    with DeviceContext() as ctx:
-        run_ring_case[32, 32, 4](
-            RingCase(2, 4, 2, [6, 4], [6, 3]),
-            ctx,
-            ring_silent_rows=[0],
-        )
 
 
 def test_long_row_route_discriminates() raises:
     """With `RING_LEN` 8, row 0's six records overwrite its poison."""
     with DeviceContext() as ctx:
         run_ring_case[32, 32, 8](
-            RingCase(2, 4, 2, [6, 4], [0, 3]),
+            RingCase(2, 4, 2, [6, 4], [0, 3], 5),
             ctx,
             ring_silent_rows=[0],
             expect_ring_silent=False,
@@ -1241,11 +1374,289 @@ def test_ring_row_past_a_32_bit_offset() raises:
 def test_accept_count_discriminates() raises:
     with DeviceContext() as ctx:
         run_ring_case[32, 32, 4](
-            RingCase(2, 4, 2, [4, 4], [3, 3]),
+            RingCase(2, 4, 2, [4, 4], [3, 3], 3),
             ctx,
             fold_accepted_override=[2, 3],
             expect_match=False,
         )
+
+
+def _verify_launch[
+    KEY_HEAD_DIM: Int,
+    VALUE_HEAD_DIM: Int,
+    RING_LEN: Int,
+    SKIP_LONG_ROWS: Bool,
+](
+    ctx: DeviceContext,
+    seq_lengths: List[Int],
+    num_draft_tokens: Int,
+    nv: Int,
+    nk: Int,
+    qkv: List[Float32],
+    decay: List[Float32],
+    beta: List[Float32],
+    pool: List[Float32],
+) raises -> Tuple[List[Float32], List[Float32], List[Float32]]:
+    """Runs one verify launch on fresh buffers and returns the readout, the
+    pool and the ring, one ring row per batch row.
+
+    `SKIP_LONG_ROWS` picks the skip variant; otherwise `RECORDS_ONLY`, which
+    needs every row to be one token and its drafts.
+    """
+    var batch = len(seq_lengths)
+    var total = 0
+    var offsets = List[Int]()
+    offsets.append(0)
+    var slots = List[Int]()
+    for i in range(batch):
+        total += seq_lengths[i]
+        offsets.append(total)
+        slots.append(i)
+    var key_dim = nk * KEY_HEAD_DIM
+    var value_dim = nv * VALUE_HEAD_DIM
+    var conv_dim = key_dim * 2 + value_dim
+    var pool_elems = batch * nv * KEY_HEAD_DIM * VALUE_HEAD_DIM
+    var record_stride = gated_delta_ring_record_elements[
+        KEY_HEAD_DIM, VALUE_HEAD_DIM
+    ](nv // nk)
+    var ring_elems = batch * nk * RING_LEN * record_stride
+
+    var qkv_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](total * conv_dim)
+    var decay_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](total * nv)
+    var beta_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](total * nv)
+    var pool_h = ctx.enqueue_create_host_buffer[STATE_DTYPE](pool_elems)
+    var out_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](total * value_dim)
+    var ring_h = ctx.enqueue_create_host_buffer[RING_DTYPE](ring_elems)
+    ctx.synchronize()
+    for i in range(total * conv_dim):
+        qkv_h[i] = qkv[i]
+    for i in range(total * nv):
+        decay_h[i] = decay[i]
+        beta_h[i] = beta[i]
+    for i in range(pool_elems):
+        pool_h[i] = Scalar[STATE_DTYPE](pool[i])
+    for i in range(total * value_dim):
+        out_h[i] = POISON
+    for i in range(ring_elems):
+        ring_h[i] = POISON
+
+    var qkv_dev = ctx.enqueue_create_buffer[WORK_DTYPE](total * conv_dim)
+    var decay_dev = ctx.enqueue_create_buffer[WORK_DTYPE](total * nv)
+    var beta_dev = ctx.enqueue_create_buffer[WORK_DTYPE](total * nv)
+    var pool_dev = ctx.enqueue_create_buffer[STATE_DTYPE](pool_elems)
+    var out_dev = ctx.enqueue_create_buffer[WORK_DTYPE](total * value_dim)
+    var ring_dev = ctx.enqueue_create_buffer[RING_DTYPE](ring_elems)
+    ctx.enqueue_copy(qkv_dev, qkv_h.unsafe_ptr())
+    ctx.enqueue_copy(decay_dev, decay_h.unsafe_ptr())
+    ctx.enqueue_copy(beta_dev, beta_h.unsafe_ptr())
+    ctx.enqueue_copy(pool_dev, pool_h.unsafe_ptr())
+    ctx.enqueue_copy(out_dev, out_h.unsafe_ptr())
+    ctx.enqueue_copy(ring_dev, ring_h.unsafe_ptr())
+    ctx.synchronize()
+    var offsets_dev = _upload_table(ctx, offsets)
+    var slot_dev = _upload_table(ctx, slots)
+    var ring_slot_dev = _upload_table(ctx, slots)
+
+    var qkv_tt = TileTensor(qkv_dev, row_major(total, conv_dim))
+    var decay_tt = TileTensor(decay_dev, row_major(total, nv))
+    var beta_tt = TileTensor(beta_dev, row_major(total, nv))
+    var offsets_tt = TileTensor(offsets_dev, row_major(batch + 1))
+    var slot_tt = TileTensor(slot_dev, row_major(batch))
+    var ring_slot_tt = TileTensor(ring_slot_dev, row_major(batch))
+    var pool_tt = TileTensor(
+        pool_dev, row_major(batch, nv, KEY_HEAD_DIM, VALUE_HEAD_DIM)
+    )
+    var out_tt = TileTensor(out_dev, row_major(total, value_dim))
+    var ring_tt = TileTensor(
+        ring_dev, row_major(batch, nk, RING_LEN, record_stride)
+    )
+    var kernel = ctx.compile_function[
+        gated_delta_recurrence_verify_ring_gpu[
+            WORK_DTYPE,
+            STATE_DTYPE,
+            RING_DTYPE,
+            KEY_HEAD_DIM,
+            VALUE_HEAD_DIM,
+            RING_LEN,
+            out_tt.LayoutType,
+            qkv_tt.LayoutType,
+            decay_tt.LayoutType,
+            beta_tt.LayoutType,
+            pool_tt.LayoutType,
+            slot_tt.LayoutType,
+            offsets_tt.LayoutType,
+            ring_tt.LayoutType,
+            ring_slot_tt.LayoutType,
+            out_tt.Engine,
+            not SKIP_LONG_ROWS,
+            SKIP_LONG_ROWS,
+        ]
+    ]()
+    ctx.enqueue_function(
+        kernel,
+        Int32(batch),
+        Int32(nv),
+        Int32(nk),
+        Int32(key_dim),
+        Int32(num_draft_tokens),
+        out_tt,
+        pool_tt,
+        slot_tt,
+        qkv_tt,
+        decay_tt,
+        beta_tt,
+        offsets_tt,
+        ring_tt,
+        ring_slot_tt,
+        grid_dim=(batch * nv,),
+        block_dim=(VALUE_HEAD_DIM,),
+    )
+    ctx.enqueue_copy(out_h.unsafe_ptr(), out_dev)
+    ctx.enqueue_copy(pool_h.unsafe_ptr(), pool_dev)
+    ctx.enqueue_copy(ring_h.unsafe_ptr(), ring_dev)
+    ctx.synchronize()
+    var out = List[Float32]()
+    for i in range(total * value_dim):
+        out.append(out_h[i])
+    var pool_out = List[Float32]()
+    for i in range(pool_elems):
+        pool_out.append(Float32(pool_h[i]))
+    var ring = List[Float32]()
+    for i in range(ring_elems):
+        ring.append(ring_h[i])
+    return (out^, pool_out^, ring^)
+
+
+def run_skip_long_rows_case[
+    KEY_HEAD_DIM: Int, VALUE_HEAD_DIM: Int, RING_LEN: Int
+](seq_lengths: List[Int], ctx: DeviceContext) raises:
+    """A skip launch of a mixed window against records-only on its short rows.
+
+    The short rows' readout and ring rows must equal a records-only launch
+    over those rows alone, bit for bit. A long row's readout must be zeros,
+    its ring row untouched, and no pool row may change.
+    """
+    var num_draft_tokens = RING_LEN - 2
+    var nv = 2
+    var nk = 1
+    var key_dim = nk * KEY_HEAD_DIM
+    var value_dim = nv * VALUE_HEAD_DIM
+    var conv_dim = key_dim * 2 + value_dim
+    var head_elems = nv * KEY_HEAD_DIM * VALUE_HEAD_DIM
+    var record_elems = (
+        nk
+        * RING_LEN
+        * gated_delta_ring_record_elements[KEY_HEAD_DIM, VALUE_HEAD_DIM](
+            nv // nk
+        )
+    )
+
+    seed(0x51C1)
+    var batch = len(seq_lengths)
+    var starts = List[Int]()
+    var total = 0
+    for i in range(batch):
+        starts.append(total)
+        total += seq_lengths[i]
+    var qkv_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](total * conv_dim)
+    rand[WORK_DTYPE](qkv_h.unsafe_ptr(), total * conv_dim, min=-1.0, max=1.0)
+    var gates_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](2 * total * nv)
+    rand[WORK_DTYPE](gates_h.unsafe_ptr(), 2 * total * nv, min=0.05, max=0.99)
+    var pool_h = ctx.enqueue_create_host_buffer[WORK_DTYPE](batch * head_elems)
+    rand[WORK_DTYPE](pool_h.unsafe_ptr(), batch * head_elems, min=-1.0, max=1.0)
+    ctx.synchronize()
+
+    # The short rows alone, in batch order, from the same values.
+    var short_rows = List[Int]()
+    var short_lengths = List[Int]()
+    for i in range(batch):
+        if not _row_is_long(seq_lengths[i], num_draft_tokens):
+            short_rows.append(i)
+            short_lengths.append(seq_lengths[i])
+    var qkv = List[Float32]()
+    var decay = List[Float32]()
+    var beta = List[Float32]()
+    var pool = List[Float32]()
+    var qkv_s = List[Float32]()
+    var decay_s = List[Float32]()
+    var beta_s = List[Float32]()
+    var pool_s = List[Float32]()
+    for t in range(total):
+        for c in range(conv_dim):
+            qkv.append(qkv_h[t * conv_dim + c])
+        for h in range(nv):
+            decay.append(gates_h[t * nv + h])
+            beta.append(gates_h[(total + t) * nv + h])
+    for i in range(batch * head_elems):
+        pool.append(Float32(Scalar[STATE_DTYPE](pool_h[i])))
+    for r in short_rows:
+        for t in range(starts[r], starts[r] + seq_lengths[r]):
+            for c in range(conv_dim):
+                qkv_s.append(qkv[t * conv_dim + c])
+            for h in range(nv):
+                decay_s.append(decay[t * nv + h])
+                beta_s.append(beta[t * nv + h])
+        for e in range(head_elems):
+            pool_s.append(pool[r * head_elems + e])
+
+    var skip = _verify_launch[KEY_HEAD_DIM, VALUE_HEAD_DIM, RING_LEN, True](
+        ctx, seq_lengths, num_draft_tokens, nv, nk, qkv, decay, beta, pool
+    )
+    var alone = _verify_launch[KEY_HEAD_DIM, VALUE_HEAD_DIM, RING_LEN, False](
+        ctx,
+        short_lengths,
+        num_draft_tokens,
+        nv,
+        nk,
+        qkv_s,
+        decay_s,
+        beta_s,
+        pool_s,
+    )
+
+    for i in range(batch * head_elems):
+        assert_equal(skip[1][i], pool[i], "a skip launch wrote the pool")
+    var short_start = 0
+    var short_idx = 0
+    for r in range(batch):
+        var n = seq_lengths[r]
+        if _row_is_long(n, num_draft_tokens):
+            for e in range(n * value_dim):
+                assert_equal(
+                    skip[0][starts[r] * value_dim + e],
+                    0.0,
+                    "a long row's readout is not zero",
+                )
+            for e in range(record_elems):
+                assert_equal(
+                    skip[2][r * record_elems + e],
+                    POISON,
+                    "a long row's ring row was written",
+                )
+            continue
+        for e in range(n * value_dim):
+            assert_equal(
+                skip[0][starts[r] * value_dim + e],
+                alone[0][short_start * value_dim + e],
+                "a short row's readout differs from records-only",
+            )
+        for e in range(record_elems):
+            assert_equal(
+                skip[2][r * record_elems + e],
+                alone[2][short_idx * record_elems + e],
+                "a short row's ring row differs from records-only",
+            )
+        short_start += n
+        short_idx += 1
+
+
+def test_skip_long_rows_leaves_them_to_the_caller() raises:
+    with DeviceContext() as ctx:
+        # Long rows between, before and after the short ones, with the
+        # window narrower than the ring.
+        run_skip_long_rows_case[128, 128, 4]([4, 10, 3], ctx)
+        run_skip_long_rows_case[128, 128, 4]([9, 3, 2, 17], ctx)
+        run_skip_long_rows_case[128, 128, 8]([7, 7, 30], ctx)
 
 
 def main() raises:

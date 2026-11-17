@@ -80,9 +80,14 @@ def _pytest_record_impl(ctx):
         for key, value in ctx.attr.producer[RunEnvironmentInfo].environment.items()
         if key not in ctx.attr.strip_env
     }
+
+    # Bazel shell-tokenizes a test's `args`, so the record run tokenizes the
+    # same strings to see the argv the test sees: `"'a or b'"` is one `-k`
+    # expression, not one with quotes in it.
     pytest_args = [
-        ctx.expand_location(arg, ctx.attr.expansion_targets)
+        token
         for arg in ctx.attr.pytest_args
+        for token in ctx.tokenize(ctx.expand_location(arg, ctx.attr.expansion_targets))
     ]
 
     outs = []

@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 from typing import Literal
 
-from max.config import ConfigFileModel
+from max.config import ConfigModel
 from max.pipelines.diffusion.config import (
     DEFAULT_DENOISING_CACHE_CONFIG,
     DenoisingCacheConfig,
@@ -45,7 +45,7 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _ENV_FLAG_TRUE
 
 
-class PipelineRuntimeConfig(ConfigFileModel):
+class PipelineRuntimeConfig(ConfigModel):
     """Model-agnostic runtime settings for pipeline execution.
 
     Contains batching, scheduling, and execution configuration that is
@@ -143,6 +143,28 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "expert-parallel collectives instead of serializing with the "
             "dispatch. ``pre`` issues it before the dispatch, ``post`` before "
             "the combine. Unset keeps it inline."
+        ),
+    )
+
+    ep_combine_quant: Literal["none", "fp8"] = Field(
+        default="none",
+        description=(
+            "Send the expert-parallel combine of a prefill-sized step back as "
+            "MXFP8 (E4M3 values with an E8M0 scale per 32 elements), about "
+            "half the bytes of bfloat16, at some accuracy cost. Small decode "
+            "steps stay exact. Only models that run the split combine read it."
+        ),
+    )
+
+    tp_reduce_scatter_quant: Literal["none", "int4", "fp8"] = Field(
+        default="none",
+        description=(
+            "Quantize each device's contribution to the tensor-parallel "
+            "reduce-scatter of a prefill-sized batch, in groups of 32 "
+            "elements: symmetric INT4 with a bf16 scale, or MXFP8. It cuts the "
+            "bytes the collective moves at the cost of accuracy; small decode "
+            "batches stay exact. Only models whose blocks reduce-scatter the "
+            "attention output read it."
         ),
     )
 
@@ -268,6 +290,17 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "experts, on top of the one slot every expert always has. 0 "
             "(default) adds none, so EPLB only moves experts between GPUs; k "
             "adds k * ep_size slots in total."
+        ),
+    )
+
+    eplb_count_expert_load: bool = Field(
+        default=False,
+        description=(
+            "When True, every expert-parallel dispatch adds each local expert "
+            "slot's routed-token count to a per-GPU running tally, one row "
+            "per routing-histogram layer, that the serving engine reads "
+            "back. Unlike ``eplb_profile`` it adds no per-token graph work; "
+            "it needs a model that passes its layer index to the dispatch."
         ),
     )
 
@@ -520,12 +553,23 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     prefer_module_v3: bool = Field(
-        default=False,
+        default=True,
         description=(
             "Whether to prefer the ModuleV3 architecture over the graph API architecture. "
-            "When ``False`` (default), the inference server uses the graph API architecture. "
-            "When ``True``, the server uses the ModuleV3 architecture when available and "
-            "falls back to the graph API architecture."
+            "When ``True`` (default), the server uses the ModuleV3 architecture when "
+            "available and falls back to the graph API architecture. When ``False``, "
+            "the server uses the graph API architecture when available."
+        ),
+    )
+
+    eager: bool = Field(
+        default=False,
+        description=(
+            "Run the decoder op by op instead of as a compiled graph, so a "
+            "debugger stopped inside a module's ``forward()`` sees real "
+            "values. Meant for debugging with ``max generate`` and "
+            "``AutoModel``, and much slower than the compiled graph. Runs "
+            "ModuleV3 architectures. The sampler stays compiled."
         ),
     )
 

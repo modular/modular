@@ -19,10 +19,10 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 # storage struct, binding the interior origin at the instantiation site.
 
 struct MyList[T: AnyType](Movable where False):
-    var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
+    var data: Pointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[
+        self.data = Pointer[
             Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):

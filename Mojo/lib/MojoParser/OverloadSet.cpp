@@ -22,6 +22,7 @@
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
 #include "ParamInf.h"
+#include "ParserEvaluationContext.h"
 #include "StabilityMarkers.h"
 #include "Traits.h"
 
@@ -85,17 +86,23 @@ static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
                                                 const ExprNode *expr) {
   ParamBindings paramBindings(declScope, expr);
   // We need to do extra work to forward a generator's parameters.
-  if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(type));
-      genAttr && sugarIsa<LIT::StructType>(ASTType(genAttr.getBody()))) {
-    auto genType = cast<GeneratorType>(genAttr.getType());
+  if (auto gen = LIT::StructTypeGenerator::dynCast(type)) {
+    GeneratorType genType = gen.getType();
     auto pogs = genType.getParamListAttrs().getPogs();
-    // The generator's inputs are prepended to the callee's full signature,
-    // so its constraints (e.g. `comptime A[c: Bool] where c = S[c]`) index
-    // them without adjustment.
-    paramBindings.addConstraints(genType.getBodyConstraints());
-    for (auto [type, pog] :
-         llvm::zip_equal(genAttr.getInputParamTypes(), pogs)) {
+    for (auto [type, pog] : llvm::zip_equal(gen.getInputParamTypes(), pogs))
       paramBindings.add(expr, UnboundAttr::get(type), pog.getName());
+
+    return paramBindings;
+  }
+
+  if (sugarIsa<LIT::StructType>(type)) {
+    auto structDecl = cast<StructASTDecl>(type.getDecl(declScope.getShared()));
+    ArrayRef<PogMetadataAttr> pogs =
+        structDecl->getOp().getSignature().getParamListAttrs().getPogs();
+    for (auto [value, pog] : llvm::zip_equal(type.getParamBindings(), pogs)) {
+      // The struct type must be fully bound.
+      assert(!isa<UnboundAttr>(value));
+      paramBindings.add(expr, value, pog.getName());
     }
     return paramBindings;
   }
@@ -129,32 +136,6 @@ static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
     // declared the method). Add as _not_ prechecked.
     paramBindings.add(expr, PValue(type), traitSelfName);
   }
-
-  ArrayRef<TypedAttr> paramValues = type.getParamBindings();
-  if (!paramValues.empty()) {
-    ArrayRef<PogMetadataAttr> pogs =
-        type.getWithoutParameters(declScope.getShared())
-            .getSignature()
-            .getParamListAttrs()
-            .getPogs();
-    assert(paramValues.size() <= pogs.size());
-
-    // Since we prepend struct parameters as inferred only, specify the name
-    // here to make sure we can verify the pog list correctly.
-    for (auto [value, pog] : llvm::zip(paramValues, pogs)) {
-      if (auto idxRef = dyn_cast<ParamIndexRefAttr>(value);
-          idxRef && idxRef.getDepth() == 0 &&
-          sugarIsa<GeneratorType>(type.extractMetaType())) {
-        // This is a index ref reference to the generator input, it means it
-        // has an unknown value.
-        paramBindings.add(expr, UnboundAttr::get(idxRef.getType()),
-                          pog.getName());
-      } else {
-        paramBindings.add(expr, value, pog.getName());
-      }
-    }
-  }
-
   return paramBindings;
 }
 
@@ -190,10 +171,14 @@ static SMLoc getAttributeNameLoc(const ExprNode *expr) {
   return {};
 }
 
-/// Resolve the callee into a single PValue callee.
-static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
-                        CallSyntax syntax,
-                        const VerifiedParamBindings &verifiedBindings = {}) {
+PValue OverloadSet::getCallee(ASTDecl *fnDecl) const {
+  return getCallee(fnDecl, VerifiedParamBindings());
+}
+
+PValue
+OverloadSet::getCallee(ASTDecl *fnDecl,
+                       const VerifiedParamBindings &verifiedBindings) const {
+  ParamBindings paramBindings = getParamBindings(fnDecl);
   // Check deprecation and stability warnings for the resolved function.
   // For method calls (instance or static via attribute access), compute the
   // fixit location as the method identifier, not the full expression.
@@ -204,14 +189,34 @@ static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
                          paramBindings.declScope, paramBindings.shared,
                          paramBindings.getExpr()->getRange(), syntax, fixitLoc);
 
+  ASTType ctxType = getContextualType(fnDecl);
   // Take the fast path to avoid verify binding again if a verified binding has
   // been provided.
-  if (verifiedBindings) {
+  if (verifiedBindings || paramBindings.empty()) {
+    // Bindings inferred through a struct type generator are in the
+    // generator's parameter space, so bind the callee to it first.
+    if (ctxType && isa<DefASTDecl>(fnDecl)) {
+      if (auto genCtx = LIT::StructTypeGenerator::dynCast(ctxType))
+        return getCtxBoundConstAttrForFn(
+            *fnDecl, paramBindings.shared, genCtx, verifiedBindings,
+            paramBindings.declScope, paramBindings.getExprLoc());
+    }
     return getBoundConstAttrForFn(*fnDecl, paramBindings.shared,
                                   verifiedBindings, paramBindings.declScope,
                                   paramBindings.getExprLoc());
   }
-  return getBoundConstAttrForFn(*fnDecl, paramBindings);
+
+  FnTypeGeneratorType signature = fnDecl->getDeclFullSignature(ctxType);
+  // Check that the signature can be rebound with our set of bindings.
+  ParamInf inference(paramBindings, signature.getInputParamTypes(),
+                     signature.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, fnDecl,
+                     /*discardError=*/false);
+  VerifiedParamBindings verified = inference.inferForStruct();
+  if (!verified)
+    return {};
+
+  return getCallee(fnDecl, verified);
 }
 
 /// Return if the given fitness is valid or function constraint inconclusive,
@@ -530,8 +535,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
 
     // On success, wrap things up into one callee, we know that the best fitness
     // has a verified bindings coming out of parameter inference.
-    return getCallee(selectedDecl, getParamBindings(selectedDecl), syntax,
-                     bestFitness.getParamBindings());
+    return getCallee(selectedDecl, bestFitness.getParamBindings());
   }
   if (isErroneous())
     return {};
@@ -957,8 +961,7 @@ CalleeResult OverloadSet::filterOverloadSet(
     // Finally, wrap things up into one callee, resolving it to a PValue with
     // the parameters bound and substituted into its signature.
     PValue boundFunction =
-        getCallee(selectedDecl, getParamBindings(selectedDecl), syntax,
-                  bestFitness.getParamBindings());
+        getCallee(selectedDecl, bestFitness.getParamBindings());
 
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
         selectedDecl->getDeclImplicitConversionKind() ==
@@ -1181,8 +1184,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 
     // Use an emitter with invalid context, since errors aren't expected.
     IREmitter emitter(getDeclScope(), EC_OverloadResolution);
-    PValue callee = getCallee(selectedMethod, getParamBindings(selectedMethod),
-                              syntax, candidateBindings.front());
+    PValue callee = getCallee(selectedMethod, candidateBindings.front());
     PValue result = emitter.emitPValue({callee, getExpr()},
                                        EC_OverloadResolution, functionType);
     assert(result && "Conversion should always succeed");
@@ -1244,7 +1246,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() == 1)
-    return getCallee(fnDecls[0], getParamBindings(fnDecls[0]), syntax);
+    return getCallee(fnDecls[0]);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
@@ -1450,9 +1452,7 @@ PValue OverloadSet::getIfPValue() const {
   // TODO: A conversion can be emitted if the base value is a PValue.
   if (baseValue || fnDecls.size() != 1)
     return {};
-
-  return getBoundConstAttrForFn(*fnDecls.front(),
-                                getParamBindings(fnDecls.front()));
+  return getCallee(fnDecls.front());
 }
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
@@ -1496,120 +1496,6 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
       << baseName << "'";
   dest.resetForError(emitter);
   return {};
-}
-
-//===----------------------------------------------------------------------===//
-// Call Emission Implementation
-//===----------------------------------------------------------------------===//
-
-CValue IREmitter::emitIndirectCallInTryBlock(
-    CValue callee, CallOperands &&operands,
-    std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
-  return emitCallInTryBlock(
-      callee, std::move(operands),
-      [&](CallOperands &&operands) {
-        return emitIndirectCall(callee, std::move(operands));
-      },
-      std::move(emitCatchLogic));
-}
-
-/// Emit a call to `callee` in a try block, invoking a callback to generate
-/// logic in the 'catch' block that is wrapped around the call. This ensures
-/// that the ExprDest is updated and live after the try block, which only works
-/// if the "catch" logic doesn't fall through.
-///
-/// This emits an error and returns null on failure.
-CValue IREmitter::emitCallInTryBlock(
-    CValue callee, CallOperands &&operands,
-    function_ref<CValue(CallOperands &&)> emitCall,
-    std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
-  ExprDest finalDest(operands.dest.getContext());
-
-  auto calleeSig = FnOrFnLiteralTypeGeneratorType::get(callee.getRValueType());
-  auto callExpr = operands.callExpr;
-  auto loc = translateLocation(callExpr->getLoc());
-
-  // If the ExprDest is a lazy materialized vardecl, we need to materialize
-  // it outside the try block. Note that we still don't know the result type
-  // that we're binding to - the signature of the callee might have implicit
-  // origins or other things substituted through it that can only be determined
-  // as the call is emitted.
-  VarDeclOp tmpResult;
-  if (calleeSig.isRefResult()) {
-    // A ref result will infer the origin of the ref from the arguments.
-    // We will do an indirect dance here since the type will be inferred
-    // from the result.
-    auto varDecl =
-        emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
-                    loc, VarDeclKind::Bind);
-    finalDest = std::move(operands.dest);
-    operands.dest = ExprDest(varDecl, finalDest.getContext());
-  } else if (operands.dest.hasExistingMemoryDest()) {
-    // Emit the call result directly into the existing destination.
-  } else {
-    tmpResult = emitVarDecl("anonymous*", UnresolvedType::get(getContext()),
-                            loc, VarDeclKind::Synthesized);
-    finalDest = std::move(operands.dest);
-    operands.dest = ExprDest(tmpResult, finalDest.getContext());
-  }
-
-  VarDeclOp errDecl =
-      emitVarDecl("__call_error_tmp__", calleeSig.getUserThrownType(), loc,
-                  VarDeclKind::Synthesized);
-
-  // We're going to move the builder around, but restore it to the same
-  // insertion point when we're done.
-  auto savedBuilder = builder;
-  auto tryOp = TryOp::create(*builder, loc, errDecl,
-                             /*suppressWarnings=*/true);
-  // Stub out the else and finally regions of this try.
-  builder->createBlock(&tryOp.getElseRegion());
-  TryYieldOp::create(*builder, tryOp.getLoc());
-  builder->createBlock(&tryOp.getFinallyRegion());
-  TryYieldOp::create(*builder, tryOp.getLoc());
-  // Emit this call into the try region.
-  builder->createBlock(&tryOp.getTryRegion());
-
-  CValue result = emitCall(std::move(operands));
-  if (!result)
-    finalDest.resetForError(*this);
-  TryYieldOp::create(*builder, tryOp.getLoc());
-
-  // Emit the except block now that we're good to go.
-  builder->createBlock(&tryOp.getExceptRegion());
-  emitCatchLogic(errDecl);
-
-  // If we had a ref result, we would have emitted a call into our
-  // __ref_result_tmp__ temporary above, and then call emission would have
-  // emitted a lit.load.consume to get the value.  The problem is that it
-  // drops it INTO the try block and we need it live afterwards.  Move it
-  // now.
-  if (calleeSig.isRefResult()) {
-    Value resultVal = result.getIfMBValue();
-    assert(resultVal && "ref result must be a MBValue");
-
-    // We might have a rebind to adjust type sugar.
-    if (auto rebindOp = resultVal.getDefiningOp<RebindOp>()) {
-      rebindOp->moveAfter(tryOp);
-      resultVal = rebindOp.getOperand();
-    }
-
-    auto loadConsume = resultVal.getDefiningOp<LIT::LoadConsumeOp>();
-    assert(loadConsume && "expected ref result to be a lit.load.consume");
-    loadConsume->moveAfter(tryOp);
-
-    // Rebind the result of the ref call.  Assigning through the VarDecl
-    // will turn this into an MBValue, stripping (parametric) mutability.
-    // Restore this.
-    result = CValue::getMValueForRef(resultVal);
-  } else if (tmpResult) {
-    // If we made a temporary, we can definitely move from it.
-    result = MRValue(tmpResult);
-  }
-
-  // Emit the result into the "dest" ExprDest outside of the try block.
-  builder = savedBuilder;
-  return emitCResult(result, callExpr, finalDest);
 }
 
 /// Emit a function call to the specified callee with the specified operand

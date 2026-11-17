@@ -17,24 +17,24 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from max.graph import TensorValue, ops
-from max.nn.legacy.kernels import scatter_nd_skip_oob_indices
+from max.nn._graph_ops import scatter_nd_skip_oob_indices
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
 from max.nn.legacy.transformer.transformer import (
     captures_by_device,
     fuse_captured_hidden_states,
 )
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.driver import SequentialBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_target import DistributedVerify, Verified
 
-from ..deepseekV3.spec_adapters import ep_input_types
+from ..deepseekV3.spec_adapters import ep_input_tree
 
 if TYPE_CHECKING:
     from max.pipelines.speculative.spec_adapters import VerifyFn
 
-__all__ = ["ep_input_types"]
+__all__ = ["ep_input_tree"]
 
 PRIMARY_KV = ""
 
@@ -112,5 +112,5 @@ def _verify(
 
 
 ADAPTER = TargetAdapter(
-    primary_kv=PRIMARY_KV, ep_input_types=ep_input_types, verify=verify
+    primary_kv=PRIMARY_KV, ep_input_tree=ep_input_tree, verify=verify
 )

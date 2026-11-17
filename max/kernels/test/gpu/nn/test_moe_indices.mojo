@@ -15,7 +15,8 @@
 from max.gpu.host import DeviceContext, HostBuffer
 from std.collections import Set
 from std.math import align_up, ceildiv
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.layout import Layout as MixedLayout
 from layout._fillers import random
 from nn.moe import moe_create_indices, moe_create_indices_with_slots
 from std.random import random_float64, random_ui64, seed
@@ -222,78 +223,105 @@ def fill_skewed(top_k_buffer_host: HostBuffer[.uint32], num_tokens: Int):
         top_k_buffer_host[i] = 0
 
 
+def check_and_pack_strided_output[
+    dtype: DType
+](buffer: HostBuffer[dtype], length: Int, stride: Int) raises:
+    if stride == 1:
+        return
+    for i in range(length):
+        assert_equal(
+            buffer[i * stride + 1], Scalar[dtype](23), "output padding"
+        )
+    for i in range(length):
+        buffer[i] = buffer[i * stride]
+
+
 def test_moe_create_indices[
     num_experts: Int = 256,
     test_scales_offset: Bool = False,
     skewed: Bool = False,
-](token_expert_order_length: Int, ctx: DeviceContext) raises:
+](
+    token_expert_order_length: Int,
+    ctx: DeviceContext,
+    strided_tensor: Int = -1,
+) raises:
+    var token_stride = 2 if strided_tensor == 0 else 1
+    var start_stride = 2 if strided_tensor == 1 else 1
+    var restore_stride = 2 if strided_tensor == 2 else 1
+    var expert_stride = 2 if strided_tensor == 3 else 1
+    var stats_stride = 2 if strided_tensor == 4 else 1
+    var input_stride = 2 if strided_tensor == 5 else 1
     var token_expert_order_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
-    ](token_expert_order_length)
+    ](token_expert_order_length * token_stride)
     var top_k_buffer_host = ctx.enqueue_create_host_buffer[.uint32](
-        token_expert_order_length
+        token_expert_order_length * input_stride
     )
     var restore_token_order_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
-    ](token_expert_order_length)
+    ](token_expert_order_length * restore_stride)
     var expert_usage_stats_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
-    ](2)
+    ](2 * stats_stride)
     var expert_start_indices_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
-    ](num_experts + 1)
+    ]((num_experts + 1) * start_stride)
     var expert_ids_buffer_host = ctx.enqueue_create_host_buffer[.int32](
-        num_experts
+        num_experts * expert_stride
     )
 
     var token_expert_order_buffer_device = ctx.enqueue_create_buffer[
         DType.uint32
-    ](token_expert_order_length)
+    ](token_expert_order_length * token_stride)
     var expert_start_indices_buffer = ctx.enqueue_create_buffer[.uint32](
-        num_experts + 1
+        (num_experts + 1) * start_stride
     )
     var restore_token_order_buffer = ctx.enqueue_create_buffer[.uint32](
-        token_expert_order_length
+        token_expert_order_length * restore_stride
     )
-    var expert_ids_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
-    var expert_usage_stats_buffer = ctx.enqueue_create_buffer[.uint32](2)
+    var expert_ids_buffer = ctx.enqueue_create_buffer[.int32](
+        num_experts * expert_stride
+    )
+    var expert_usage_stats_buffer = ctx.enqueue_create_buffer[.uint32](
+        2 * stats_stride
+    )
     var top_k_buffer_device = ctx.enqueue_create_buffer[.uint32](
-        token_expert_order_length
+        token_expert_order_length * input_stride
     )
 
     var token_expert_order = TileTensor(
         token_expert_order_buffer_device,
-        row_major(token_expert_order_length),
+        MixedLayout(Coord(token_expert_order_length), Coord(token_stride)),
     )
 
     var expert_start_indices = TileTensor(
         expert_start_indices_buffer,
-        row_major(num_experts + 1),
+        MixedLayout(Coord(num_experts + 1), Coord(start_stride)),
     )
 
     var restore_token_order = TileTensor(
         restore_token_order_buffer,
-        row_major(token_expert_order_length),
+        MixedLayout(Coord(token_expert_order_length), Coord(restore_stride)),
     )
 
     var expert_ids = TileTensor(
         expert_ids_buffer,
-        row_major(num_experts),
+        MixedLayout(Coord(num_experts), Coord(expert_stride)),
     )
 
     var expert_usage_stats = TileTensor(
         expert_usage_stats_buffer,
-        row_major(Idx[2]),
+        MixedLayout(Coord(Idx[2]), Coord(stats_stride)),
     )
 
     var top_k = TileTensor(
         top_k_buffer_device,
-        row_major(token_expert_order_length),
+        MixedLayout(Coord(token_expert_order_length), Coord(input_stride)),
     )
 
     var top_k_host = TileTensor(
         top_k_buffer_host,
-        row_major(token_expert_order_length),
+        MixedLayout(Coord(token_expert_order_length), Coord(input_stride)),
     )
 
     ctx.synchronize()
@@ -301,9 +329,18 @@ def test_moe_create_indices[
     # Fill top_k_host with random expert IDs, or route every token to one
     # expert to exercise a skewed (non-uniform) distribution.
     comptime if skewed:
-        fill_skewed(top_k_buffer_host, token_expert_order_length)
+        fill_skewed(top_k_buffer_host, token_expert_order_length * input_stride)
+        if input_stride > 1:
+            for i in range(token_expert_order_length):
+                top_k_buffer_host[i * input_stride + 1] = 1
     else:
         random(top_k_host, min=0, max=UInt32(num_experts))
+    if strided_tensor >= 0:
+        token_expert_order_buffer_device.enqueue_fill(23)
+        expert_start_indices_buffer.enqueue_fill(23)
+        restore_token_order_buffer.enqueue_fill(23)
+        expert_ids_buffer.enqueue_fill(23)
+        expert_usage_stats_buffer.enqueue_fill(23)
     ctx.enqueue_copy(top_k_buffer_device, top_k_buffer_host)
 
     var scales_offset_buffer_host = ctx.enqueue_create_host_buffer[
@@ -312,7 +349,7 @@ def test_moe_create_indices[
     var scales_offset_buffer = ctx.enqueue_create_buffer[.uint32](num_experts)
 
     comptime if test_scales_offset:
-        moe_create_indices["gpu"](
+        moe_create_indices(
             token_expert_order,
             expert_start_indices,
             restore_token_order,
@@ -323,7 +360,7 @@ def test_moe_create_indices[
             scales_offset_p=scales_offset_buffer.unsafe_ptr().as_unsafe_any_origin(),
         )
     else:
-        moe_create_indices["gpu"](
+        moe_create_indices(
             token_expert_order,
             expert_start_indices,
             restore_token_order,
@@ -346,6 +383,34 @@ def test_moe_create_indices[
     )
     ctx.enqueue_copy(scales_offset_buffer_host, scales_offset_buffer)
     ctx.synchronize()
+
+    check_and_pack_strided_output(
+        token_expert_order_buffer_host, token_expert_order_length, token_stride
+    )
+    check_and_pack_strided_output(
+        expert_start_indices_buffer_host, num_experts + 1, start_stride
+    )
+    check_and_pack_strided_output(
+        restore_token_order_buffer_host,
+        token_expert_order_length,
+        restore_stride,
+    )
+    check_and_pack_strided_output(
+        expert_ids_buffer_host, num_experts, expert_stride
+    )
+    check_and_pack_strided_output(
+        expert_usage_stats_buffer_host, 2, stats_stride
+    )
+    for i in range(token_expert_order_length):
+        top_k_buffer_host[i] = top_k_buffer_host[i * input_stride]
+
+    comptime if skewed:
+        for e in range(num_experts + 1):
+            assert_equal(
+                expert_start_indices_buffer_host[e],
+                UInt32(0 if e == 0 else token_expert_order_length),
+                "skewed CSR boundary",
+            )
 
     comptime if test_scales_offset:
         check_scales_offset(
@@ -385,6 +450,136 @@ def test_moe_create_indices[
         token_expert_order_buffer_host,
         token_expert_order_length,
     )
+
+
+def test_moe_create_indices_sentinel[
+    num_experts: Int = 256
+](total_tokens: Int, ctx: DeviceContext) raises:
+    """Out-of-range expert ids: the pair's restore entry holds the
+    `total_tokens` sentinel, and every other output covers exactly the valid
+    pairs.
+
+    An id outside `[0, num_experts)` lands in no expert's CSR range, so the
+    scatter never writes the pair's `restore_token_order` entry; the kernel
+    pins it to `total_tokens`, a value no valid position can hold, so a
+    reader can skip the pair instead of consuming uninitialized garbage.
+    """
+    var order_host = ctx.enqueue_create_host_buffer[.uint32](total_tokens)
+    var start_host = ctx.enqueue_create_host_buffer[.uint32](num_experts + 1)
+    var restore_host = ctx.enqueue_create_host_buffer[.uint32](total_tokens)
+    var ids_host = ctx.enqueue_create_host_buffer[.int32](num_experts)
+    var stats_host = ctx.enqueue_create_host_buffer[.uint32](2)
+    var topk_host = ctx.enqueue_create_host_buffer[.uint32](total_tokens)
+
+    var order_d = ctx.enqueue_create_buffer[.uint32](total_tokens)
+    var start_d = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var restore_d = ctx.enqueue_create_buffer[.uint32](total_tokens)
+    var ids_d = ctx.enqueue_create_buffer[.int32](num_experts)
+    var stats_d = ctx.enqueue_create_buffer[.uint32](2)
+    var topk_d = ctx.enqueue_create_buffer[.uint32](total_tokens)
+
+    random(
+        TileTensor(topk_host, row_major(total_tokens)),
+        min=0,
+        max=UInt32(num_experts),
+    )
+    # A few out-of-range ids, spread over the flat slot array.
+    topk_host[0] = UInt32(num_experts)
+    topk_host[total_tokens // 2] = UInt32(0xFFFFFFFF)
+    topk_host[total_tokens - 1] = UInt32(num_experts + 7)
+    ctx.enqueue_copy(topk_d, topk_host)
+
+    moe_create_indices[input_type=DType.uint32](
+        TileTensor(order_d, row_major(total_tokens)),
+        TileTensor(start_d, row_major(num_experts + 1)),
+        TileTensor(restore_d, row_major(total_tokens)),
+        TileTensor(ids_d, row_major(num_experts)),
+        TileTensor(stats_d, row_major(2)),
+        TileTensor(topk_d, row_major(total_tokens)),
+        ctx,
+    )
+
+    ctx.enqueue_copy(order_host, order_d)
+    ctx.enqueue_copy(start_host, start_d)
+    ctx.enqueue_copy(restore_host, restore_d)
+    ctx.enqueue_copy(ids_host, ids_d)
+    ctx.enqueue_copy(stats_host, stats_d)
+    ctx.synchronize()
+
+    # Host reference over the valid pairs only.
+    var counts = List[Int](length=num_experts, fill=0)
+    var valid = 0
+    for i in range(total_tokens):
+        var e = Int(topk_host[i])
+        if 0 <= e and e < num_experts:
+            counts[e] += 1
+            valid += 1
+    var max_count = 0
+    var ref_start = List[Int](length=num_experts + 1, fill=0)
+    for g in range(num_experts):
+        max_count = max(max_count, counts[g])
+        ref_start[g + 1] = ref_start[g] + counts[g]
+
+    for g in range(num_experts + 1):
+        assert_equal(
+            Int(start_host[g]), ref_start[g], "sentinel case: CSR mismatch"
+        )
+    assert_equal(
+        Int(stats_host[0]),
+        max_count,
+        "sentinel case: usage max count mismatch",
+    )
+    assert_equal(
+        Int(stats_host[1]),
+        num_experts,
+        "sentinel case: usage expert count mismatch",
+    )
+    check_expert_ids_permutation(ids_host, num_experts)
+
+    # The out-of-range pairs, and only those, hold the sentinel; the valid
+    # pairs' entries invert a grouping of exactly the valid pairs.
+    var seen = List[Bool](length=valid, fill=False)
+    for i in range(total_tokens):
+        var e = Int(topk_host[i])
+        if 0 <= e and e < num_experts:
+            var pos = Int(restore_host[i])
+            assert_true(
+                pos < valid,
+                "a valid pair's restore entry is out of range",
+            )
+            assert_true(
+                not seen[pos],
+                "a valid pair's restore entry collides with another's",
+            )
+            seen[pos] = True
+            assert_equal(
+                Int(order_host[pos]),
+                i,
+                "sentinel case: restore is not order's inverse",
+            )
+        else:
+            assert_equal(
+                Int(restore_host[i]),
+                total_tokens,
+                "an out-of-range id must hold the total_tokens sentinel",
+            )
+    for p in range(valid):
+        var e = Int(topk_host[Int(order_host[p])])
+        assert_true(
+            0 <= e and e < num_experts,
+            "an out-of-range id landed in the CSR",
+        )
+        assert_true(
+            ref_start[e] <= p and p < ref_start[e + 1],
+            "sentinel case: a valid pair sorted outside its expert's range",
+        )
+
+    _ = order_d
+    _ = start_d
+    _ = restore_d
+    _ = ids_d
+    _ = stats_d
+    _ = topk_d
 
 
 def test_moe_create_indices_with_slots[
@@ -452,7 +647,7 @@ def test_moe_create_indices_with_slots[
     ctx.enqueue_copy(w_d, w_h)
     ctx.enqueue_copy(ss_d, ss_h)
 
-    moe_create_indices_with_slots[slot_stride, "gpu"](
+    moe_create_indices_with_slots[slot_stride](
         TileTensor(order_d, row_major(num_slots)),
         TileTensor(start_d, row_major(num_groups + 1)),
         TileTensor(restore_d, row_major(num_slots)),
@@ -577,6 +772,23 @@ def main() raises:
         # Skewed distribution: every token on expert 0, so one group holds
         # them all and the rest are empty.
         test_moe_create_indices[skewed=True](1024, ctx)
+        test_moe_create_indices[skewed=True](16_385, ctx)
+        test_moe_create_indices[skewed=True, test_scales_offset=True](
+            16_385, ctx
+        )
+
+        # Out-of-range expert ids: the restore entry holds the total_tokens
+        # sentinel. Covers the single-CTA kernel (one and two expert chunks)
+        # and the multi-CTA scatter (16384 slots over 256 experts).
+        test_moe_create_indices_sentinel[64](100, ctx)
+        test_moe_create_indices_sentinel[896](2500, ctx)
+        test_moe_create_indices_sentinel[256](16_384, ctx)
+
+        # Isolate each input/output stride so one fallback guard cannot mask another.
+        for tensor in range(6):
+            test_moe_create_indices[skewed=True, test_scales_offset=True](
+                16_385, ctx, strided_tensor=tensor
+            )
         test_moe_create_indices[num_experts=513, skewed=True](100_000, ctx)
 
         # Slot layout. DeepSeek-V4 decode/prefill shapes, expert parallel on

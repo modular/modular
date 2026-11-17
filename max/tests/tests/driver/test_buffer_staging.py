@@ -256,3 +256,12 @@ def test_staging_dlpack_does_not_synchronize(usage: Usage) -> None:
             "to_numpy()/__dlpack__ on untracked staging memory blocked on"
             " gated device work; nothing may be waited on there"
         )
+
+
+def test_tracked_staging_buffer_has_no_driver_buffer_handle() -> None:
+    buffer = Buffer(
+        dtype=DType.uint8, shape=[16], device=Accelerator(), usage=Usage.STAGING
+    )
+
+    with pytest.raises(ValueError, match="host-hazard tracked"):
+        buffer._driver_buffer_handle()

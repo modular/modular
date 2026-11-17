@@ -16,6 +16,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include <string>
 #include <utility>
@@ -33,9 +34,11 @@ enum class ResultOutputStyle {
 };
 
 /// This prints the specified tensor data to stdout.
-ErrorOrSuccess printTensor(raw_ostream &os, const void *srcPtr,
-                           const TensorSpec &spec, ResultOutputStyle style,
-                           unsigned precision = 6);
+MODULAR_CXX_EXPORT ErrorOrSuccess printTensor(raw_ostream &os,
+                                              const void *srcPtr,
+                                              const TensorSpec &spec,
+                                              ResultOutputStyle style,
+                                              unsigned precision = 6);
 
 /// Options, conveyed via a runtime context object, which control the output
 /// format for debug printing of tensor values.
@@ -56,8 +59,9 @@ struct DebugTensorPrintOptions {
   /// Prints the tensor with CPU-hosted buffer contents and spec, following
   /// the options of this object, and using label if given to disambiguate
   /// the result.
-  ErrorOrSuccess printTensor(const void *buffer, const TensorSpec &spec,
-                             StringRef label);
+  MODULAR_CXX_EXPORT ErrorOrSuccess printTensor(const void *buffer,
+                                                const TensorSpec &spec,
+                                                StringRef label);
 };
 
 } // namespace M

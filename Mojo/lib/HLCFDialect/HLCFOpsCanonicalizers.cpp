@@ -126,6 +126,7 @@ static LogicalResult promoteElifArmToIf(IfOp op, PatternRewriter &rewriter,
 //===----------------------------------------------------------------------===//
 
 namespace {
+
 /// If every body arm has just a YieldOp and corresponding results agree,
 /// replace those results (and erase the if when all results fold away).
 ///

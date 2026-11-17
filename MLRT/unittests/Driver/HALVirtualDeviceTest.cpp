@@ -162,6 +162,13 @@ TEST_F(HALVirtualDeviceTest, NoPeerAccess) {
 
   ASSIGN_NO_ERR(bool, canAccess, device0->canAccess(*device1));
   EXPECT_FALSE(canAccess);
+
+  // Named, not refused generically: a record run reads the message to tell
+  // "needs hardware" apart from a failure.
+  EXPECT_ERR_MSG(device0->enablePeerAccess(*device1),
+                 "VirtualDevice does not support peer access");
+  EXPECT_ERR_MSG(Device::enableAllPeerAccess(),
+                 "VirtualDevice does not support peer access");
 }
 
 // The api knob takes a `--target-accelerator` vendor name as a synonym for the
@@ -280,6 +287,28 @@ TEST_F(HALVirtualDeviceTest, StreamsAreVirtual) {
   ASSERT_NE(side.getPointer(), nullptr);
   EXPECT_NO_ERR(side->synchronize());
   EXPECT_EQ(side->ptr(), nullptr);
+}
+
+// Moving a buffer skips the copy when the two contexts compare equal, so a
+// virtual context that equalled the CPU's would hand back the host buffer
+// instead of refusing to allocate on the virtual device.
+TEST_F(HALVirtualDeviceTest, ContextsCompareEqualOnlyOnTheSameDevice) {
+  DeviceRef device0 = virtualDevice(0);
+  DeviceRef device1 = virtualDevice(1);
+  ASSERT_NE(device0.getPointer(), nullptr);
+  ASSERT_NE(device1.getPointer(), nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx0, device0->createContext());
+  ASSIGN_NO_ERR(DeviceContextRef, ctx1, device1->createContext());
+
+  EXPECT_TRUE(*ctx0 == *ctx0);
+  EXPECT_FALSE(*ctx0 == *ctx1);
+
+  ErrorOr<DeviceRef> cpu = Device::create(Device::cpuAPI, 0);
+  if (cpu.isError())
+    GTEST_SKIP() << "no CPU device available: " << cpu.getError();
+  ASSIGN_NO_ERR(DeviceContextRef, cpuCtx, (*cpu)->createContext());
+  EXPECT_FALSE(*ctx0 == *cpuCtx);
+  EXPECT_FALSE(*cpuCtx == *ctx0);
 }
 
 TEST_F(HALVirtualDeviceTest, SelectStreamResolvesStreamZeroOnly) {

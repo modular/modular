@@ -16,6 +16,7 @@
 #include "../Language/MojoLanguage.h"
 #include "../Logging/MojoExpressionLogger.h"
 
+#include "Mojo/MojoREPL/REPL.h"
 #include "Mojo/MojoTooling/CodeComplete.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/Support/Configuration.h"
@@ -615,8 +616,8 @@ MojoREPL::handleREPLCodeComplete(Target &target, StringRef code,
   persistentState->collectPersistentVariables(variables);
 
   // Call into the parser context to perform the code completion.
-  return typeSystem.getParserContext().codeCompleteREPLExpression(
-      code, completionPos, variables);
+  return typeSystem.getREPLContext().codeComplete(code, completionPos,
+                                                  variables);
 }
 
 //===----------------------------------------------------------------------===//

@@ -20,6 +20,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/Preprocessor.h"
+#include "Support/SymbolExport.h"
 #include "Support/max_license/Tracy/Tracy.h"
 
 #include <stddef.h>
@@ -852,6 +853,15 @@ public:
            hipCtxGetCurrent_ != nullptr;
   }
 
+  /// Whether this driver can read and reorder the dependent edges of a node in
+  /// a captured graph.
+  bool canReorderGraphEdges() const {
+    return hipStreamGetCaptureInfo_v2_ != nullptr &&
+           hipGraphNodeGetDependentNodes_ != nullptr &&
+           hipGraphRemoveDependencies_ != nullptr &&
+           hipGraphAddDependencies_ != nullptr;
+  }
+
   // Declared by hand: HIP_FUNC cannot take a zero-argument entry point, since
   // an empty argument list still expands to one parameter.
   Result hipGetLastError() const { return hipGetLastError_(); }
@@ -892,7 +902,7 @@ public:
                                  : 1;
   }
 
-  static ErrorOr<const HIPDriver &> get();
+  MODULAR_CXX_EXPORT static ErrorOr<const HIPDriver &> get();
 
   // HIPDriver object lifetime is tied to a static unique_ptr.
   HIPDriver() = default;

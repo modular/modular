@@ -21,7 +21,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
-from layout.tile_layout import blocked_product
+from layout.layout import blocked_product
 from layout._fillers import arange
 from layout.tensor_engine import DefaultEngine
 from std.testing import assert_equal
@@ -278,7 +278,7 @@ def test_unaligned_load() raises:
     for row in range(2):
         for column in range(1, 4):
             var expected = SIMD[.float32, 4]()
-            comptime for lane in range(4):
+            for lane in range(4):
                 expected[lane] = Float32(row * 16 + column + lane)
             var value = tensor.load[width=4, alignment=4]((row, column))
             assert_equal(value, expected)

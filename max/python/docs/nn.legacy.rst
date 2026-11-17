@@ -20,11 +20,8 @@ Submodules
    max.nn.legacy.attention
    max.nn.legacy.comm
    max.nn.legacy.graph_groups
-   max.nn.legacy.kernels
-   max.nn.legacy.kv_cache
    max.nn.legacy.moe
    max.nn.legacy.sampling
-   max.nn.legacy.state_space
 
 .. toctree::
    :maxdepth: 1
@@ -33,11 +30,8 @@ Submodules
    nn.legacy.attention
    nn.legacy.comm
    nn.legacy.graph_groups
-   nn.legacy.kernels
-   nn.legacy.kv_cache
    nn.legacy.moe
    nn.legacy.sampling
-   nn.legacy.state_space
 
 Base classes
 ------------

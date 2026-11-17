@@ -43,6 +43,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PixelGenerationPipeline,
     PixelGenerationTokenizer,
+    memory_ledger,
 )
 from max.pipelines.lib.generate import BatchPipeline, GenerateIterator
 from max.pipelines.lib.generate_images import (
@@ -50,6 +51,7 @@ from max.pipelines.lib.generate_images import (
     _prepare_requests,
     _run_requests,
 )
+from max.pipelines.lib.registry import clamp_tokenizer_to_pipeline
 from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -220,6 +222,8 @@ def generate_text_for_pipeline(
     tokenizer = retrieved.tokenizer
     pipeline = retrieved.factory()
     assert isinstance(pipeline, Pipeline)
+    # The pipeline may have lowered max_length once it sized its KV cache.
+    clamp_tokenizer_to_pipeline(tokenizer, pipeline)
     # Without warmup there are no captured graphs, and every step would run
     # eagerly despite the flag.
     if pipeline_config.runtime.device_graph_capture and isinstance(
@@ -227,7 +231,12 @@ def generate_text_for_pipeline(
     ):
         logger.info("Warming up device graph capture")
         pipeline.warmup_graph_capture()
-    log_basic_config(pipeline_config, memory_plan=retrieved.memory_plan)
+        memory_ledger.check_capture(pipeline)
+    log_basic_config(
+        pipeline_config,
+        memory_plan=getattr(pipeline, "memory_plan", None)
+        or retrieved.memory_plan,
+    )
     logger.info("max_batch_size: %d", pipeline.max_batch_size)
 
     capture = OneShotCapture(top_n=profile_top_n) if profile else None

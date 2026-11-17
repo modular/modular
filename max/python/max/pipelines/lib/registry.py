@@ -30,7 +30,6 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.pipelines.context import AudioContext, PixelContext, TextContext
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
@@ -53,7 +52,7 @@ if TYPE_CHECKING:
 from max.pipelines.audio.pipeline import AudioGenerationPipeline
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
-from max.pipelines.lib.memory_estimation import MemoryEstimator, MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan, plan_memory
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .arch_lookup import (
@@ -66,7 +65,11 @@ from .arch_lookup import (
 # than directly
 from .arch_lookup import PipelineModelType as PipelineModelType
 from .embeddings_pipeline import EmbeddingsPipeline
+from .graph_specs import GraphRole
 from .interfaces import PipelineModel
+from .pipeline_variants.block_diffusion_text_generation import (
+    BlockDiffusionTextGenerationPipeline,
+)
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -76,7 +79,6 @@ from .pipeline_variants.spec_decode_pipeline_model import (
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .reasoning import get_parser_cls
 from .tokenizer import TextTokenizer
-from .weight_transform import WeightTransform
 
 logger = logging.getLogger("max.pipelines")
 
@@ -104,25 +106,6 @@ class RetrievedPipeline:
     memory_plan: MemoryPlan
     """Memory plan (batch size, sequence length, and cache budgets) the
     pipeline was sized against."""
-
-
-def _weight_adapters(
-    arch: SupportedArchitecture, huggingface_config: PretrainedConfig
-) -> dict[WeightsFormat, WeightsAdapter]:
-    """Returns the adapters a pipeline loads ``arch``'s checkpoint through.
-
-    Raises:
-        ValueError: If ``arch`` sets ``use_weight_rules`` without
-            ``weight_rules``.
-    """
-    if not arch.use_weight_rules:
-        return arch.weight_adapters
-    if arch.weight_rules is None:
-        raise ValueError(
-            f"{arch.name} sets use_weight_rules but has no weight_rules"
-        )
-    transform = WeightTransform(arch.weight_rules(huggingface_config))
-    return {arch.default_weights_format: transform}
 
 
 def get_pipeline_for_task(
@@ -173,6 +156,17 @@ def get_pipeline_for_task(
         return AudioGenerationPipeline
     else:
         raise ValueError(f"Unsupported pipeline task: {task}")
+
+
+def architecture_pipeline(arch: SupportedArchitecture) -> type | None:
+    """Returns the pipeline class an architecture needs in place of its task's.
+
+    A registered role that needs its own generation loop selects it;
+    otherwise the architecture's ``pipeline_cls`` does.
+    """
+    if GraphRole.BLOCK_DIFFUSION in arch.modules:
+        return BlockDiffusionTextGenerationPipeline
+    return arch.pipeline_cls
 
 
 class _ValidatedNewContext:
@@ -665,15 +659,20 @@ class PipelineRegistry:
             )
 
         tokenizer: PipelineTokenizer[Any, Any, Any]
+        # A weights-only release loads its tokenizer files from the sibling repo
+        # its architecture pins; every other checkpoint from its own repo.
+        tokenizer_repo, tokenizer_revision = arch.tokenizer_source(
+            pipeline_config.model
+        )
         if (
             arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
             and arch.tokenizer is TextTokenizer
         ):
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
-                pipeline_config.model.model_path,
+                tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
@@ -683,9 +682,9 @@ class PipelineRegistry:
             )
         else:
             tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model.model_path,
+                model_path=tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=_retrieve_chat_template(
@@ -791,17 +790,15 @@ class PipelineRegistry:
                 planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
         else:
-            memory_plan = MemoryEstimator.plan(
-                pipeline_config, arch, draft_arch=draft_arch
+            memory_plan = plan_memory(
+                pipeline_config,
+                arch,
+                draft_arch=draft_arch,
             )
 
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
-        # An architecture may declare a custom pipeline class that overrides
-        # the task-based default (e.g. block-diffusion text generation).
-        # ``arch`` is already finalized above, so its choice wins.
-        if arch.pipeline_cls is not None:
-            pipeline_class = arch.pipeline_cls
+        pipeline_class = architecture_pipeline(arch) or pipeline_class
 
         # The tokenizer bound is the memory plan's planned_max_length; pixel
         # generation resolves its own per-arch bounds below.
@@ -928,6 +925,12 @@ class PipelineRegistry:
                 "Please ensure the model repository contains a valid config.json file."
             )
 
+        # A weights-only release loads its tokenizer files from the sibling repo
+        # its architecture pins; every other checkpoint from its own repo.
+        tokenizer_repo, tokenizer_revision = arch.tokenizer_source(
+            pipeline_config.model
+        )
+
         # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
         # and suffers from the whitespace decoding bug. So, we enable the fix
         # for only MistralModel in order to avoid any issues with performance
@@ -942,9 +945,9 @@ class PipelineRegistry:
         ):
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
-                pipeline_config.model.model_path,
+                tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
@@ -954,9 +957,9 @@ class PipelineRegistry:
             )
         else:
             tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model.model_path,
+                model_path=tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=_retrieve_chat_template(
@@ -983,7 +986,7 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "weight_adapters": _weight_adapters(arch, huggingface_config),
+            "weight_adapters": arch.checkpoint_adapters(huggingface_config),
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
         }
@@ -1116,11 +1119,32 @@ class PipelineRegistry:
         retrieved = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )
-        return retrieved.tokenizer, retrieved.factory()
+        pipeline = retrieved.factory()
+        clamp_tokenizer_to_pipeline(retrieved.tokenizer, pipeline)
+        return retrieved.tokenizer, pipeline
 
     def reset(self) -> None:
         """Clears all registered architectures (mainly for tests)."""
         self._arch_lookup.reset()
+
+
+def clamp_tokenizer_to_pipeline(tokenizer: Any, pipeline: Any) -> None:
+    """Lowers ``tokenizer.max_length`` to the length ``pipeline`` serves.
+
+    A pipeline sizes its KV cache once loaded and may lower the planned max
+    length; a caller that builds the pipeline in its own process
+    (``retrieve``, offline generation) calls this so the tokenizer refuses
+    prompts past it.
+    """
+    plan = getattr(pipeline, "memory_plan", None)
+    tokenizer_length = getattr(tokenizer, "max_length", None)
+    if (
+        plan is not None
+        and plan.planned_max_length is not None
+        and isinstance(tokenizer_length, int)
+        and plan.planned_max_length < tokenizer_length
+    ):
+        tokenizer.max_length = plan.planned_max_length
 
 
 PIPELINE_REGISTRY = PipelineRegistry([], arch_lookup=ARCH_LOOKUP)

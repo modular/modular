@@ -40,28 +40,28 @@ def variadic_params[*a: Int]():
 
 # CHECK-LABEL: lit.fn @"test_unbound_pack
 def test_unbound_pack():
-    # CHECK: lit.alias.decl *"all_unbound`": meta<!lit.struct<#StructWithDefault <:!Int ?, :!Int ?, :!Int ?, :!Int ?>, <"a": !Int, "b": !Int, "c": !Int = {{.*}}1{{.*}}, "d": !Int = {{.*}}2{{.*}}>>>
+    # CHECK: lit.alias.decl *"all_unbound`": !lit.generator<<"a": !Int, "b": !Int, "c": !Int = {{.*}}1{{.*}}, "d": !Int = {{.*}}2{{.*}}>meta<!lit.struct<#StructWithDefault <:!Int *(0,0), :!Int *(0,1), :!Int *(0,2), :!Int *(0,3)>>>>
     comptime all_unbound = StructWithDefault[...]
 
-    # CHECK: lit.alias.decl *"first_bound`{{.*}}": meta<!lit.struct<#StructWithDefault <:!Int {:scalar<index> 5}, :!Int ?, :!Int ?, :!Int ?>, <"b": !Int, "c": !Int = {{.*}}1{{.*}}, "d": !Int = {{.*}}2{{.*}}>>>
+    # CHECK: lit.alias.decl *"first_bound`{{.*}}": !lit.generator<<"b": !Int, "c": !Int = {{.*}}1{{.*}}, "d": !Int = {{.*}}2{{.*}}>meta<!lit.struct<#StructWithDefault <:!Int {:scalar<index> 5}, :!Int *(0,0), :!Int *(0,1), :!Int *(0,2)>>>>
     comptime first_bound = StructWithDefault[5, ...]
 
-    # CHECK: lit.alias.decl *"last_bound_with_kw`{{.*}}": meta<!lit.struct<#StructWithDefaultKwOnly <:!Int {:scalar<index> 8}, :!Int ?, :!Int ?, :!Int ?>, <"b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>>>
+    # CHECK: lit.alias.decl *"last_bound_with_kw`{{.*}}": !lit.generator<<"b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>meta<!lit.struct<#StructWithDefaultKwOnly <:!Int {:scalar<index> 8}, :!Int *(0,0), :!Int *(0,1), :!Int *(0,2)>>>>
     comptime last_bound_with_kw = StructWithDefaultKwOnly[8, d=...]
 
-    # CHECK: lit.alias.decl *"prev_bound_with_kw`{{.*}}: meta<!lit.struct<#StructWithDefaultKwOnly <:!Int {:scalar<index> 8}, :!Int ?, :!Int ?, :!Int ?>, <"b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>>>
+    # CHECK: lit.alias.decl *"prev_bound_with_kw`{{.*}}: !lit.generator<<"b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>meta<!lit.struct<#StructWithDefaultKwOnly <:!Int {:scalar<index> 8}, :!Int *(0,0), :!Int *(0,1), :!Int *(0,2)>>>>
     comptime prev_bound_with_kw = StructWithDefaultKwOnly[8, ..., d=_]
 
-    # CHECK: lit.alias.decl *"kw_unpacked`{{.*}}: meta<!lit.struct<#StructWithDefaultKwOnly <:!Int ?, :!Int ?, :!Int ?, :!Int ?>, <"a": !Int, "b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>>>
+    # CHECK: lit.alias.decl *"kw_unpacked`{{.*}}: !lit.generator<<"a": !Int, "b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>meta<!lit.struct<#StructWithDefaultKwOnly <:!Int *(0,0), :!Int *(0,1), :!Int *(0,2), :!Int *(0,3)>>>>
     comptime kw_unpacked = StructWithDefaultKwOnly[...]
 
-    # CHECK: lit.alias.decl *"unpack_both{{.*}}: meta<!lit.struct<#DefaultPosOnly <:!Int ?, :!Int ?, :!Int ?>, <"a": !Int = {{.*}}1{{.*}}, |, "b": !Int = {{.*}}2{{.*}}, *, "c": !Int = {{.*}}3{{.*}}>>>
+    # CHECK: lit.alias.decl *"unpack_both{{.*}}: !lit.generator<<"a": !Int = {{.*}}1{{.*}}, |, "b": !Int = {{.*}}2{{.*}}, *, "c": !Int = {{.*}}3{{.*}}>meta<!lit.struct<#DefaultPosOnly <:!Int *(0,0), :!Int *(0,1), :!Int *(0,2)>>>>
     comptime unpack_both = DefaultPosOnly[...]
 
-    # CHECK: lit.alias.decl *"unpack_ellipsis{{.*}}: meta<!lit.struct<#DefaultPosOnly <:!Int ?, :!Int ?, :!Int ?>, <"a": !Int = {{.*}}1{{.*}}, |, "b": !Int = {{.*}}2{{.*}}, *, "c": !Int = {{.*}}3{{.*}}>>>
+    # CHECK: lit.alias.decl *"unpack_ellipsis{{.*}}: !lit.generator<<"a": !Int = {{.*}}1{{.*}}, |, "b": !Int = {{.*}}2{{.*}}, *, "c": !Int = {{.*}}3{{.*}}>meta<!lit.struct<#DefaultPosOnly <:!Int *(0,0), :!Int *(0,1), :!Int *(0,2)>>>>
     comptime unpack_ellipsis = DefaultPosOnly[...]
 
-    # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": meta<!lit.struct<#StructWithVariadic <:param_list<!Int> ?, :!Int ?, :!lit.struct<#ParameterList
+    # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": !lit.generator<{{.*}}>meta<!lit.struct<#StructWithVariadic <:param_list<!Int> *(0,0), :!Int *(0,1), :!lit.struct<#ParameterList
     comptime unbound_variadic = StructWithVariadic[...]
 
     # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a.values`": param_list<!Int>, {{.*}}pos_vararg>!kgen.func.literal<{{.*}}() -> !kgen.none>

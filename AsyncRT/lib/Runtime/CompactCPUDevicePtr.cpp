@@ -60,8 +60,3 @@ void Detail::CPUDeviceTable::clearCPUDevice(uint8_t index) {
   allCPUDevices[index] = nullptr;
   freeIndices.push_back(index);
 }
-
-size_t Detail::CPUDeviceTable::numActiveCPUDevices() const {
-  std::lock_guard<std::mutex> lock(mu);
-  return kInvalidIndex - freeIndices.size();
-}

@@ -146,7 +146,7 @@ struct OutlineRoutinesPass
     SymbolTable &symtab =
         getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
     SmallVector<MOGG::RoutineOp> kernels;
-    getOperation().walk([&](MOGG::RoutineOp k) {
+    getOperation().walk<WalkOrder::PreOrder>([&](MOGG::RoutineOp k) {
       kernels.push_back(k);
       // No need to recurse inside a `mogg.routine`.
       return WalkResult::skip();

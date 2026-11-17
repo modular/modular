@@ -47,7 +47,7 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
@@ -108,12 +108,28 @@ def kimi_k3_output_head(
         n = return_n_logits[0]
         # One sequence's own last `n` rows: `row_offsets[1:]` (exclusive end)
         # minus `n, n-1, ..., 1`, mirroring V2's `range(n, 0, -1)` offset.
+        # `n` is a runtime scalar here, so both ranges name their output
+        # length the way `transformer.logits_postprocess`'s same-shaped
+        # branch does, whose int64 offsets they also match -- a
+        # plain-serving echo/logprob change the PR description calls out.
         offsets_end = F.unsqueeze(input_row_offsets[1:], -1)
-        step_back = F.arange(n, 0, -1, dtype=offsets_end.dtype)
-        indices = F.reshape(offsets_end - step_back, [-1])
+        step_back = F.arange(
+            n,
+            0,
+            -1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=hidden_states.mapping,
+        )
+        indices = (offsets_end - step_back).reshape([-1]).cast(DType.int64)
         logits = project(F.gather(hidden_states, indices, axis=0))
         offsets = F.arange(
-            0, indices.shape[0] + n, n, dtype=input_row_offsets.dtype
+            0,
+            indices.shape[0] + n,
+            n,
+            out_dim="logit_offsets",
+            dtype=DType.int64,
+            device=hidden_states.mapping,
         )
         return last_logits, logits, offsets
     if return_logits == ReturnLogits.ALL:

@@ -32,7 +32,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from internal_utils import assert_almost_equal
 
 from layout import TileTensor, Coord, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 
 def run_matvec[
@@ -40,7 +40,7 @@ def run_matvec[
     b_type: DType,
     c_type: DType,
     accum_type: DType = .float32,
-](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+](M: Int, N: Int, K: Int, *, ctx: DeviceContext[]) raises:
     print("== run_matvec kernel")
     print(t"dtypes: A= {a_type}  B= {b_type}  C= {c_type}")
 
@@ -81,7 +81,7 @@ def run_matvec[
     comptime WARPS_PER_BLOCK = 1024 // warp_size
 
     @inline(.always)
-    def run_func_gemv(ctx: DeviceContext) raises {imm}:
+    def run_func_gemv(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
         ctx.enqueue_function[kernel](
@@ -96,7 +96,7 @@ def run_matvec[
         )
 
     @inline(.always)
-    def run_func_gevm(ctx: DeviceContext) raises {imm}:
+    def run_func_gevm(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = gevm_kernel[
             c_type,
             a_type,
@@ -184,7 +184,7 @@ def run_matvec[
 
 
 def run_matvec_with_epilogue_fn(
-    M: Int, N: Int, K: Int, *, ctx: DeviceContext
+    M: Int, N: Int, K: Int, *, ctx: DeviceContext[]
 ) raises:
     comptime seed_val = 42
 
@@ -227,7 +227,7 @@ def run_matvec_with_epilogue_fn(
     comptime WARPS_PER_BLOCK = 1024 // warp_size
 
     @inline(.always)
-    def run_func_gemv(ctx: DeviceContext) raises {mut c_device, imm}:
+    def run_func_gemv(ctx: DeviceContext[]) raises {mut c_device, imm}:
         comptime kernel = gemv_kernel_compute_fn[
             .float32, .float32, .float32, type_of(compute_fn)
         ]
@@ -244,7 +244,7 @@ def run_matvec_with_epilogue_fn(
         )
 
     @inline(.always)
-    def run_func_gevm(ctx: DeviceContext) raises {mut c_device, imm}:
+    def run_func_gevm(ctx: DeviceContext[]) raises {mut c_device, imm}:
         comptime kernel = gevm_kernel_compute_fn[
             .float32,
             .float32,
@@ -300,7 +300,7 @@ def run_matvec_with_epilogue_fn(
     var b_nd = TileTensor(b_device, row_major(K, N)).as_imm()
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive_compute_fn[
             .float32,
             .float32,
@@ -359,7 +359,7 @@ def run_split_k_gemm[
     tile_m: Int = 1,
     num_threads: Int = 128,
     weight_non_temporal: Bool = True,
-](*, ctx: DeviceContext) raises:
+](*, ctx: DeviceContext[]) raises:
     comptime c_type = DType.float32
     comptime simd_width = simd_width_of[c_type, target=ctx.target]()
     comptime check_bounds_n = N % tile_n != 0

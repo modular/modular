@@ -15,10 +15,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MLRT/Driver/CAPI/DriverCAPI.h"
 #include "Utils.h"
 #include "max/c/common.h"
 #include "max/c/device.h"
 #include "max/c/tensor.h"
+#include "max/max_license/API/c/TensorDriverBuffer.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -253,6 +255,41 @@ TEST_F(GPUTest, RoundTripTensorData) {
         << "Data mismatch at index " << i;
 
   M_freeTensor(roundTripped);
+  M_freeTensor(gpuTensor);
+  M_freeTensor(hostTensor);
+  M_freeAsyncTensorMap(tensorMap);
+  M_freeTensorSpec(spec);
+}
+
+// The handle names the device memory MAX allocated for the tensor. The CPU
+// test in TensorTest.cpp covers copies and lifetime.
+TEST_F(GPUTest, TensorDriverBufferNamesTheTensorsMemory) {
+  int64_t shape[] = {1024};
+  M_TensorSpec *spec = M_newTensorSpec(shape, 1, M_FLOAT32, "values", host);
+  std::vector<float> values(1024, 1.0f);
+  M_AsyncTensorMap *tensorMap = M_newAsyncTensorMap(context);
+  M_borrowTensorInto(tensorMap, values.data(), spec, status);
+  ASSERT_FALSE(M_isError(status)) << M_getError(status);
+  M_AsyncTensor *hostTensor =
+      M_getTensorByNameFrom(tensorMap, "values", status);
+  ASSERT_FALSE(M_isError(status)) << M_getError(status);
+  M_AsyncTensor *gpuTensor =
+      M_copyTensorToDevice(hostTensor, gpuDevice, status);
+  ASSERT_FALSE(M_isError(status)) << M_getError(status);
+
+  M_DriverBuffer *buffer = M_getTensorDriverBuffer(gpuTensor);
+  ASSERT_NE(buffer, nullptr);
+  void *address = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(buffer, &address), M_DRIVER_OK);
+  EXPECT_EQ(address, M_getTensorData(gpuTensor));
+  uint64_t byteSize = 0;
+  ASSERT_EQ(M_DriverBufferByteSize(buffer, &byteSize), M_DRIVER_OK);
+  EXPECT_EQ(byteSize, values.size() * sizeof(float));
+  bool isHost = true;
+  ASSERT_EQ(M_DriverBufferIsHost(buffer, &isHost), M_DRIVER_OK);
+  EXPECT_FALSE(isHost);
+
+  ASSERT_EQ(M_DriverBufferDestroy(buffer), M_DRIVER_OK);
   M_freeTensor(gpuTensor);
   M_freeTensor(hostTensor);
   M_freeAsyncTensorMap(tensorMap);

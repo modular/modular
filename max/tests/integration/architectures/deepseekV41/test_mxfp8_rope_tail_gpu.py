@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests ``mo.matmul.mxfp8.rope_tail`` against the matmul then RoPE."""
+"""Tests ``matmul.mxfp8.rope_tail`` against the matmul then RoPE."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     quantize_dynamic_block_scaled,
 )
-from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
+from max.nn._graph_ops.quant import _matmul_float8_mxfp8
 from max.pipelines.architectures.deepseekV4.layers.rope import apply_rope_tail
 
 HEAD_DIM = 512
@@ -79,7 +79,7 @@ def _build_fused(n: int, device: DeviceRef) -> Graph:
             out_type=DType.float8_e4m3fn,
         )
         fused = ops.custom(
-            "mo.matmul.mxfp8.rope_tail",
+            "matmul.mxfp8.rope_tail",
             device=device,
             values=[
                 x_fp8,

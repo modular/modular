@@ -31,14 +31,14 @@ from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn._graph_ops import (
     fused_chunked_qkv_rope_store_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.legacy.kv_cache import MHAKVCacheParams, SplitKVHeadDims
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 K_DIM = 192
@@ -102,17 +102,7 @@ def test_split_cache_store_and_rope() -> None:
     prompt_lens = [5, 130]
     cache_lens = [0, 3]
     total = sum(prompt_lens)
-    runtime = paged_kv_cache_inputs(
-        params, prompt_lens, cache_lengths=cache_lens
-    )
-    leaves, treedef = tree.flatten(runtime)
     gpu = DeviceRef.GPU()
-    cache_types = [
-        BufferType(b.dtype, b.shape, DeviceRef.from_device(b.device))
-        if b is runtime.kv_blocks
-        else TensorType(b.dtype, b.shape, DeviceRef.from_device(b.device))
-        for b in leaves
-    ]
 
     with Graph(
         "split_store_rope",
@@ -122,14 +112,11 @@ def test_split_cache_store_and_rope() -> None:
             TensorType(DType.bfloat16, [total, NUM_Q_HEADS, K_DIM], gpu),
             TensorType(DType.uint32, [len(prompt_lens) + 1], gpu),
             TensorType(DType.float32, [MAX_POS, ROPE_DIM], gpu),
-            *cache_types,
+            *params.flattened_kv_inputs(),
         ],
     ) as graph:
         k, v, q, offsets, freqs, *cache = graph.inputs
-        kv = dataclasses.replace(
-            tree.unflatten(treedef, cache),
-            split_head_dims=SplitKVHeadDims(),
-        )
+        (kv,) = params.unflatten_kv_inputs(iter(cache))
         layer_idx = ops.constant(LAYER, DType.uint32, device=DeviceRef.CPU())
         store_k_cache_ragged(
             kv, k.tensor, offsets.tensor, layer_idx, v_head_dim=V_DIM
@@ -151,6 +138,10 @@ def test_split_cache_store_and_rope() -> None:
 
     model = InferenceSession(devices=[device]).load(graph)
 
+    runtime = paged_kv_cache_inputs(
+        params, prompt_lens, cache_lengths=cache_lens
+    )
+    leaves = tree.leaves(runtime)
     rng = np.random.default_rng(0)
     k_np = _bf16(rng.standard_normal([total, NUM_KV_HEADS, K_DIM]))
     v_np = _bf16(rng.standard_normal([total, NUM_KV_HEADS, V_DIM]))

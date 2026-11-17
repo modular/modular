@@ -100,7 +100,7 @@ struct _FourthGPUPlugin(StdPlugin):
     """A GPU plugin for a vendor the stdlib doesn't name."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["fourth"]()
-    comptime HookFor[target: CompilationTarget] = _GPUHooks[target]
+    comptime HookFor = _GPUHooks[_]
 
 
 # A triple the stdlib doesn't recognize as a GPU, carrying a GPU plugin.
@@ -117,7 +117,7 @@ struct _NonGPUAcceleratorPlugin(StdPlugin):
     """A plugin for an accelerator that is not a SIMT GPU."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["npu"]()
-    comptime HookFor[target: CompilationTarget] = _NPUHooks[target]
+    comptime HookFor = _NPUHooks[_]
 
 
 comptime _npu_target = CompilationTarget[

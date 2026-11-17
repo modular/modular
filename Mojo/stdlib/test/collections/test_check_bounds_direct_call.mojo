@@ -23,7 +23,7 @@ from std.collections import check_bounds
 
 
 def index_directly(idx: Int, size: Int):
-    check_bounds(idx, size)
+    check_bounds(idx, length=size)
 
 
 # CHECK-LABEL: test_direct

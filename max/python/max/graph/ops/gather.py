@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for gather."""
 
-from max._core.dialects import builtin, kgen, rmo
+from max._core.dialects import builtin, kgen, mo
 
 from ..dim import StaticDim
 from ..graph import Graph
@@ -74,7 +74,7 @@ def gather(
     output_shape = [*shape[:axis], *indices.shape, *shape[axis + 1 :]]
     assert_same_device(input=input, indices=indices)
     return Graph.current._add_op_generated(
-        rmo.MoGatherOp,
+        mo.GatherOp,
         result=TensorType(input.dtype, output_shape, input.device),
         input=input,
         indices=indices,
@@ -187,7 +187,7 @@ def gather_nd(
     ]
 
     return Graph.current._add_op_generated(
-        rmo.MoGatherNdOp,
+        mo.GatherNdOp,
         result=TensorType(input.dtype, output_shape, input.device),
         input=input,
         indices=indices,

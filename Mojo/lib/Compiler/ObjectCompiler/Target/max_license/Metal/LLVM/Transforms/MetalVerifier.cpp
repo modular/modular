@@ -54,6 +54,12 @@ static LogicalResult verifyFunction(const Function &func) {
 
   for (const BasicBlock &bb : func) {
     for (const Instruction &inst : bb) {
+      const auto *call = dyn_cast<CallBase>(&inst);
+      if (call && call->isInlineAsm()) {
+        llvm::errs() << "instruction '" << inst
+                     << "' uses unsupported inline assembly" << "\n";
+        return failure();
+      }
       if (llvm::Type *badTy = getUnsupportedType(inst.getType())) {
         llvm::errs() << "instruction '" << inst
                      << "\' returns unsupported type '" << *badTy << "'\n";

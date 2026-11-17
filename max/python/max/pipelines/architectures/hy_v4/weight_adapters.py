@@ -17,10 +17,10 @@ Beyond renames, the adapter changes storage in four places:
 * Every ``*weight_scale`` / ``*_scale`` (U8 E8M0, one per 32 elements along
   K, ``[.., N, K/32]``) keeps its bits and layout as ``float8_e8m0fnu``, the
   contract of ``MXFP8Tensor``; the block-scaled matmuls interleave them for
-  the kernel. FP8 data passes through, routed
-  experts included: ``gate_up_proj [E, 2I, H]`` (gate rows then up rows) and
-  ``down_proj [E, H, I]`` are already the ``[E, N, K]`` layout the grouped
-  matmul takes.
+  the kernel. FP8 data passes through, the routed experts' without a host
+  copy: ``down_proj [E, H, I]`` is already the ``[E, N, K]`` layout the
+  grouped matmul takes, and the graph interleaves the routed
+  ``gate_up_proj``'s gate and up rows on the device.
 * ``kv_b_proj`` is dequantized to BF16 on the host (MLA absorb has no MXFP8
   path). An e4m3 value times a power of two fits BF16 exactly.
 * The indexer's ``wq_b``/``wk`` rows (and their scales) and ``k_norm`` are

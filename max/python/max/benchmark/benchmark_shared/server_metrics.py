@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -62,6 +63,9 @@ try:
     _MAX_METRICS_PORT = Settings().metrics_port
 except Exception:
     _MAX_METRICS_PORT = 8001  # Fallback if SDK not available
+
+# The Mach engine's ``--metrics-address`` default port.
+_MACH_METRICS_PORT = 9090
 
 
 @dataclass
@@ -131,36 +135,66 @@ class ParsedMetrics:
         """Get a histogram by name and optional labels.
 
         Args:
-            metric_name: Base metric name (such as "maxserve_batch_execution_time_milliseconds")
+            metric_name: Base metric name (such as "max_batch_execution_time_milliseconds")
             labels: Optional dictionary of labels (such as {"batch_type": "CE"})
 
         Returns:
-            HistogramData if found, None otherwise
+            HistogramData if found, None otherwise. A series whose labels
+            match exactly is preferred. Otherwise a series that carries the
+            requested labels plus others, such as the ``otel_scope_name``
+            Mach adds, is used. If more than one such series matches, the
+            lookup logs a warning and returns None, and it does not try the
+            remaining metric name spellings.
 
         Examples:
             >>> # Get histogram without labels
-            >>> hist = metrics.get_histogram("maxserve_batch_size")
+            >>> hist = metrics.get_histogram("max_batch_size")
             >>>
             >>> # Get prefill batch execution time
             >>> prefill = metrics.get_histogram(
-            ...     "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+            ...     "max_batch_execution_time_milliseconds", {"batch_type": "CE"}
             ... )
             >>> if prefill:
             ...     print(f"Prefill avg: {prefill.mean:.2f} ms")
             >>>
             >>> # Get decode batch execution time
             >>> decode = metrics.get_histogram(
-            ...     "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+            ...     "max_batch_execution_time_milliseconds", {"batch_type": "TG"}
             ... )
         """
         for candidate in metric_name_candidates(metric_name):
             key = _format_metric_key(candidate, labels or {})
             if key in self.histograms:
                 return self.histograms[key]
+            # Mach's OpenTelemetry exporter adds labels such as
+            # ``otel_scope_name`` to every series, so a series carrying
+            # the requested labels plus others is still the one asked for.
+            if labels:
+                wanted = {f'{k}="{v}"' for k, v in labels.items()}
+                matches = [
+                    series
+                    for series in sorted(self.histograms)
+                    if series.startswith(f"{candidate}{{")
+                    and wanted <= set(_LABEL_PAIR.findall(series))
+                ]
+                if len(matches) > 1:
+                    # Picking one would report a single replica's figure as
+                    # the deployment's.
+                    logger.warning(
+                        "%s with labels %s matches %d series (%s); not"
+                        " reporting any of them",
+                        candidate,
+                        labels,
+                        len(matches),
+                        ", ".join(matches),
+                    )
+                    return None
+                if matches:
+                    return self.histograms[matches[0]]
         return None
 
     def histogram_family(self, metric_name: str) -> dict[str, HistogramData]:
-        """Returns one naming generation without counting aliases twice."""
+        """Returns one spelling's histograms, without counting aliases twice."""
         for candidate in metric_name_candidates(metric_name):
             family = {
                 key: hist
@@ -207,17 +241,21 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
     if ":" in host:
         host = f"[{host}]"
 
-    # MAX engines expose Prometheus metrics on a dedicated port: MAX Serve
-    # via its own metrics server and the Mach engine via its
-    # ``--metrics-address`` flag (the benchmark CI passes the same port the
-    # SDK config uses; see benchmarkServingRun.yaml). Other backends are
-    # scraped on the same port as the base URL.
-    if backend in ("modular", "modular-chat", "mach"):
+    # MAX engines expose Prometheus metrics on a dedicated port rather than
+    # the base URL's, which for mach is the orchestrator's: MAX Serve on its
+    # SDK config port, the Mach engine on its ``--metrics-address`` default.
+    # Other backends are scraped on the same port as the base URL.
+    if backend in ("modular", "modular-chat"):
         metrics_port = _MAX_METRICS_PORT
+    elif backend == "mach":
+        metrics_port = _MACH_METRICS_PORT
     else:
         metrics_port = parsed_url.port or 8000
 
     return f"http://{host}:{metrics_port}/metrics"
+
+
+_LABEL_PAIR = re.compile(r'\w+="(?:[^"\\]|\\.)*"')
 
 
 def _format_metric_key(metric_name: str, labels: dict[str, str]) -> str:
@@ -349,31 +387,6 @@ def fetch_and_parse_metrics(backend: Backend, base_url: str) -> ParsedMetrics:
     return parsed
 
 
-# TODO(MAX-1007): Remove these two generation-check helpers and their calls
-# with the legacy live-reader aliases after rollout and the rollback window close.
-def _canonical_engine_metric_key(name: str) -> str:
-    for prefix in ("maxserve_", "mach_"):
-        if name.startswith(prefix):
-            return "max_" + name.removeprefix(prefix)
-    return name
-
-
-def _verify_delta_generation(
-    baseline: Mapping[str, object], final: Mapping[str, object]
-) -> None:
-    baseline_keys = {_canonical_engine_metric_key(name) for name in baseline}
-    if any(
-        name not in baseline
-        and _canonical_engine_metric_key(name) in baseline_keys
-        for name in final
-    ):
-        raise MissingEngineMetricsError(
-            "Engine metric naming generation changed between baseline and final "
-            "scrapes; cumulative values cannot be treated as benchmark deltas. "
-            "Pin both scrapes to one engine build and rerun the benchmark."
-        )
-
-
 def compute_metrics_delta(
     baseline: ParsedMetrics, final: ParsedMetrics
 ) -> ParsedMetrics:
@@ -389,9 +402,6 @@ def compute_metrics_delta(
     Returns:
         ParsedMetrics object containing the deltas
     """
-    _verify_delta_generation(baseline.counters, final.counters)
-    _verify_delta_generation(baseline.histograms, final.histograms)
-
     # Compute delta for counters (monotonically increasing)
     delta_counters = {}
     for name, final_value in final.counters.items():
@@ -500,14 +510,76 @@ def collect_benchmark_metrics(
 
 
 # Only Mach's pipeline driver sets this gauge.
-_MACH_PIPELINE_ENGINE_GAUGE = "mach_pipeline_held_seats"
+_MACH_PIPELINE_ENGINE_GAUGE = "max_pipeline_held_seats"
+
+
+# Mach publishes its histograms in steps, about two seconds apart on the build
+# this was measured on, so a scrape right after a run can miss the last step
+# and one right before a run can still carry the previous run's tail.
+MACH_METRICS_QUIET_S = 3.0
+METRICS_SETTLE_POLL_S = 0.5
+METRICS_SETTLE_TIMEOUT_S = 15.0
+
+
+def _observation_count(metrics: Mapping[str, ParsedMetrics]) -> float:
+    return sum(
+        hist.count for pm in metrics.values() for hist in pm.histograms.values()
+    )
+
+
+def wait_for_metrics_to_settle(
+    scrape: Callable[[], Mapping[str, ParsedMetrics]],
+    *,
+    quiet_s: float,
+    poll_s: float = METRICS_SETTLE_POLL_S,
+    timeout_s: float = METRICS_SETTLE_TIMEOUT_S,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Waits until scraped histograms stop gaining observations.
+
+    Args:
+        scrape: Returns the current metrics by endpoint, empty when the
+            scrape failed.
+        quiet_s: How long the observation count must stay unchanged.
+        poll_s: Time between scrapes.
+        timeout_s: When to give up, so traffic from elsewhere cannot hold the
+            caller up forever.
+        sleep: Sleeps for the given seconds.
+        now: Returns a monotonic time in seconds.
+
+    Returns:
+        True once the count was quiet for ``quiet_s``; False when the scrape
+        failed or the timeout passed first.
+    """
+    deadline = now() + timeout_s
+    last_count: float | None = None
+    last_change = now()
+    while True:
+        metrics = scrape()
+        if not metrics:
+            return False
+        count = _observation_count(metrics)
+        t = now()
+        if count != last_count:
+            last_count, last_change = count, t
+        elif t - last_change >= quiet_s:
+            return True
+        if t >= deadline:
+            logger.warning(
+                "Server metrics were still changing after %.0f s; using them"
+                " as they are",
+                timeout_s,
+            )
+            return False
+        sleep(poll_s)
 
 
 def _is_mach_pipeline_engine(parsed: ParsedMetrics) -> bool:
     """Returns whether the scrape came from a Mach pipeline-parallel engine."""
     return any(
-        key == name or key.startswith(f"{name}{{")
-        for name in metric_name_candidates(_MACH_PIPELINE_ENGINE_GAUGE)
+        key == _MACH_PIPELINE_ENGINE_GAUGE
+        or key.startswith(f"{_MACH_PIPELINE_ENGINE_GAUGE}{{")
         for key in parsed.gauges
     )
 
@@ -519,8 +591,8 @@ def verify_always_emitted_metrics(
 
     Only the always-emitted batch metrics count (see
     ``backend_metric_names``): for mach, every constructed batch records
-    ``mach_batch_size`` and every executed batch records
-    ``mach_batch_execution_time_milliseconds``. Optional families (the
+    ``max_batch_size`` and every executed batch records
+    ``max_batch_execution_time_milliseconds``. Optional families (the
     spec-decode histograms when speculative decoding is off) and metrics
     declared unavailable never fail a run. A Mach pipeline-parallel engine
     (a PP prefill in disaggregated serving) runs its own loop that records
@@ -589,12 +661,11 @@ def parse_spec_decode_metrics(
 
     - vLLM-style counters under ``vllm:spec_decode_*`` (not emitted by mach;
       declared unavailable there).
-    - Histogram ``maxserve_spec_decode_acceptance_rate_per_position`` on MAX
-      Serve, ``mach_spec_decode_acceptance_rate_per_position`` on mach
-      (per-position acceptance-rate observations, 0--100).
-    - Histogram ``maxserve_spec_decode_avg_acceptance_length`` on MAX Serve,
-      ``mach_spec_decode_avg_acceptance_length`` on mach (batch mean accepted
-      drafts per verification, without the bonus token).
+    - Histogram ``max_spec_decode_acceptance_rate_per_position`` on both
+      engines (per-position acceptance-rate observations, 0--100).
+    - Histogram ``max_spec_decode_avg_acceptance_length`` on both engines
+      (batch mean accepted drafts per verification, without the bonus
+      token).
 
     Args:
         raw_text: Raw Prometheus text-format payload.

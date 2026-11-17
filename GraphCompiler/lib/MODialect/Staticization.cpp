@@ -418,7 +418,7 @@ ErrorOr<TypedAttr> ReduceMulOp::tryStaticize(ArrayRef<TypedAttr> inputs,
   StaticizeAdaptor<ReduceMulOp> adaptor(inputs);
 
   // We only staticize over 1D tensors for now, so axis must be 0.
-  if (getAxisAttr().getInt() != 0)
+  if (getReductionAxis() != 0)
     return TypedAttr{};
 
   auto inputElems = dyn_cast<ShapeAttr>(adaptor.getInput());

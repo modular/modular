@@ -65,7 +65,6 @@ def generate_max_outputs(
     device: Device,
 ) -> torch.Tensor:
     is_gpu = isinstance(device, Accelerator)
-    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
     state_dict = {"gate.gate_score.weight": dummy_moe_weight.cpu()}
 
@@ -127,6 +126,7 @@ def generate_max_outputs(
         ),
     )
     compiled = session.load(graph, weights_registry=moe.state_dict())
+    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
     return compiled.execute(input_tensor)
 
 
@@ -139,16 +139,6 @@ def test_mix_of_experts(
 ) -> None:
     torch_dtype = torch.bfloat16
     max_dtype = DType.bfloat16
-    torch_output = generate_torch_outputs(
-        config,
-        input_tensor,
-        dummy_moe_weight,
-        expert_weights,
-        shared_expert_weights,
-        torch_dtype,
-        "cuda",
-    )
-
     max_output = generate_max_outputs(
         config,
         input_tensor.squeeze(),  # remove batch dimension
@@ -157,6 +147,16 @@ def test_mix_of_experts(
         shared_expert_weights,
         max_dtype,
         Accelerator(),
+    )
+
+    torch_output = generate_torch_outputs(
+        config,
+        input_tensor,
+        dummy_moe_weight,
+        expert_weights,
+        shared_expert_weights,
+        torch_dtype,
+        "cuda",
     )
 
     torch.testing.assert_close(

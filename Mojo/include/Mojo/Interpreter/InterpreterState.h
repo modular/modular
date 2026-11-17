@@ -223,6 +223,16 @@ public:
   /// memory.
   ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
 
+  /// Read [addr, addr + size) as bytes, pointers and symbols, as its marks
+  /// say, for a type that cannot name what it holds (an untagged union).
+  ErrorOr<SmallVector<TypedAttr>> readMemoryFragments(int64_t addr, size_t size,
+                                                      Type pointerType);
+
+  /// Write fragments from readMemoryFragments over a whole field, replacing
+  /// its old marks.
+  ErrorOrSuccess writeMemoryFragments(int64_t addr, size_t size,
+                                      ArrayRef<TypedAttr> fragments);
+
   /// Allocate a slot in the symbol table and store the specified symbol.
   uint64_t addSymbolToSymbolTable(TypedAttr symbol);
 
@@ -336,9 +346,10 @@ private:
                         size_t size, size_t align, unsigned addressSpace,
                         MemoryHandleAttr hdl, size_t refCount = 1);
 
-    /// Mark or unmark the given region of the blob as a pointer value.
+    /// Track values that need remapping when memory is exported.
     ErrorOrSuccess setMarkedRegion(int64_t offset, int64_t regionSize,
-                                   int64_t pointerSize, RegionMark regionMark);
+                                   TargetInfoAttr target, RegionMark regionMark,
+                                   unsigned addressSpace = 0);
 
     /// Return true if the memory is owned by the interpreter.
     bool isOwned() const { return isa<void *>(memory); }

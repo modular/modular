@@ -29,8 +29,8 @@ from max.nn.common_layers.quant_linear import (
     tensor_parallel_mlp,
 )
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.legacy.quant_config import QuantFormat
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantFormat
 from max.tensor import Tensor
 
 from ...deepseekV3_modulev3.layers.moe_gate import DeepseekV3TopKRouter
@@ -40,7 +40,7 @@ from ...deepseekV3_modulev3.layers.transformer_block import (
     post_mlp,
     residual_partial_sum,
 )
-from ..model_config import DeepseekV3_2Config
+from ..model_config import DeepseekV3_2Config, HiSparseInputs
 from .mlp import DeepseekV3_2MLP
 from .moe import (
     DeepseekV3_2ExpertParallelMoE,
@@ -48,11 +48,17 @@ from .moe import (
     DeepseekV3_2TensorParallelMoE,
 )
 from .moe_gate import DeepseekV3_2TopKRouter
+from .prefill_context_parallel import PrefillContextParallelStep
 from .rms_norm import MultiplyBeforeCastRMSNorm
 from .sparse_mla import (
     QuantizedSparseLatentAttentionWithRope,
+    Selection,
     tensor_parallel_sparse_latent_attention_with_rope,
 )
+
+BlockOutput = tuple[Tensor, Selection] | tuple[Tensor, Selection, Tensor]
+"""A block's output, its top-k selection, and with ``next_input_gamma`` the
+next block's input norm."""
 
 
 def _get_mlp(
@@ -140,7 +146,7 @@ def _get_mlp(
     return mlp
 
 
-class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
+class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
     """Sparse MLA, MoE/MLP, and RMSNorm for DeepSeek V3.2.
 
     Differs from the V3 block in that attention is sparse: a lightning indexer
@@ -162,18 +168,21 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
         super().__init__()
         self.config = config
         num_devices = len(config.devices)
+        # Devices one attention replica spans: all of them without data
+        # parallelism, one per replica at DP == devices, and the ``tp`` axis
+        # of a ``(dp, tp)`` mesh in between.
+        attention_tp = num_devices // max(1, config.data_parallel_degree)
 
         if num_devices <= 1:
             self.mode = ParallelismMode.TP_TP
-        elif config.ep_config is not None:
-            if config.data_parallel_degree == 1:
-                self.mode = ParallelismMode.TP_EP
-            else:
-                self.mode = ParallelismMode.DP_EP
-        elif config.data_parallel_degree == num_devices:
-            # Pure data parallelism needs no residual collectives -- exactly
-            # the DP_EP arms of the hooks below.
+        elif attention_tp == 1:
+            # One device per replica needs no residual collectives -- exactly
+            # the DP_EP arms of the hooks below -- with or without EP.
             self.mode = ParallelismMode.DP_EP
+        elif config.ep_config is not None:
+            # TP attention within each replica; its collectives run over the
+            # ``tp`` axis only, and the experts span every device.
+            self.mode = ParallelismMode.TP_EP
         else:
             self.mode = ParallelismMode.TP_TP
 
@@ -209,10 +218,13 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
             skip_topk=skip_topk,
             indexer_rope_interleave=config.indexer_rope_interleave,
             indexer_quant_config=config.quant_config,
+            dcp_size=config.decode_context_parallel_degree,
+            dcp_interleave=config.decode_context_parallel_interleave,
+            dcp_q_replicate=config.dcp_q_replicate,
         )
         if self.mode is not ParallelismMode.DP_EP:
             tensor_parallel_sparse_latent_attention_with_rope(
-                self.self_attn, num_devices
+                self.self_attn, attention_tp
             )
 
         self.mlp = _get_mlp(config, self.mode, layer_idx, ep_batch_manager)
@@ -233,11 +245,13 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
         )
         # As in the graph-API model, TP attention with peer-to-peer EP fuses
         # the post-attention reduce-scatter, residual add and norm into one
-        # collective launch.
+        # collective launch. The fused collective spans a whole one-axis
+        # mesh, so data-parallel replicas of several devices run it unfused.
         self.fuse_post_attention_norm = (
             self.mode is ParallelismMode.TP_EP
             and config.ep_config is not None
             and not config.ep_config.use_allreduce
+            and attention_tp == num_devices
         )
         # Whether the caller may pass ``next_input_gamma``, to fuse the post-MLP
         # all-gather with the next block's input norm.
@@ -255,14 +269,20 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         comm_buffers: EPCommBuffers | None = None,
-        prev_topk_indices: Tensor | None = None,
+        prev_topk_indices: Selection | None = None,
         reuse_prev_topk: bool = False,
         indexer_layer_idx: Tensor | None = None,
         norm_x: Tensor | None = None,
         next_input_gamma: Tensor | None = None,
         selection_lag: int = 0,
-    ) -> tuple[Tensor, ...]:
+        pcp: PrefillContextParallelStep | None = None,
+        hisparse: HiSparseInputs | None = None,
+        hisparse_group_size: Tensor | None = None,
+    ) -> BlockOutput:
         """Returns the block output and its top-k selection.
+
+        With ``pcp`` the attention runs prefill context parallelism; the
+        rest of the block is unchanged.
 
         With ``next_input_gamma`` (only when :attr:`carry_next_input_norm`),
         also returns the next block's input norm of the output, fused into
@@ -284,6 +304,9 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
             reuse_prev_topk,
             indexer_layer_idx,
             selection_lag,
+            pcp=pcp,
+            hisparse=hisparse,
+            hisparse_group_size=hisparse_group_size,
         )
 
         if self.fuse_post_attention_norm:

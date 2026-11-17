@@ -153,7 +153,7 @@ def test[
             conv_attr,
         ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
-    # Check results, return on the first failed comparison.
+    # Check results, raise on the first failed comparison.
     for n in range(N):
         for ho in range(HO):
             for wo in range(WO):
@@ -171,7 +171,7 @@ def test[
                         print("Test failed at index: ", Index(n, ho, wo, f))
                         print("Golden value: ", output_ref[n, ho, wo, f])
                         print("Actual value: ", output[n, ho, wo, f])
-                        return
+                        raise Error("test_direct_conv: output mismatch")
 
     # CHECK: Succeed
     print("Succeed")
@@ -285,6 +285,22 @@ def main() raises:
         3,  # S
         256,  # F
         Index(3, 3),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0),  # pad_h
+        Index(0, 0),  # pad_w
+        1,  # num_groups
+    )
+
+    # Few output rows and filters but many input channels: partition in C.
+    test[.float32, False](
+        1,  # N
+        9,  # H
+        9,  # W
+        2048,  # C
+        3,  # R
+        3,  # S
+        16,  # F
+        Index(1, 1),  # stride
         Index(1, 1),  # dilation
         Index(0, 0),  # pad_h
         Index(0, 0),  # pad_w

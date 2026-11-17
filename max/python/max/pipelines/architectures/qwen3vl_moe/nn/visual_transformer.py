@@ -36,6 +36,7 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
+from max.nn._graph_ops import spatial_merge
 from max.nn.legacy.comm import Allreduce, Signals
 from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.graph_groups import (
@@ -45,7 +46,6 @@ from max.nn.legacy.graph_groups import (
     VisionSegments,
     group_fields,
 )
-from max.nn.legacy.kernels import spatial_merge
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import LayerNorm
@@ -154,9 +154,9 @@ class VisionPatchEmbed(Module, Shardable):
                 "VisionPatchEmbed layer cannot be sharded because no sharding strategy was provided."
             )
         proj_shards = self.proj.shard(devices)
-        shards = []
+        shards: list[VisionPatchEmbed] = []
         for shard_idx, device in enumerate(devices):
-            sharded = VisionPatchEmbed(
+            sharded = type(self)(
                 dtype=self.proj.weight.dtype,
                 devices=[device],
                 patch_size=self.patch_size,

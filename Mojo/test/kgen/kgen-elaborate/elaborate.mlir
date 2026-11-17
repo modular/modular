@@ -706,6 +706,75 @@ kgen.generator @constexprIfEarlyExitWithParam2() -> index {
 
 // -----
 
+// COM: Ops nested in regions after an early-returning comptime.if are dead and
+// COM: must not be elaborated. Instantiating @failsUnlessZero with a nonzero
+// COM: value fails, so any such call that survives breaks the test.
+kgen.generator @failsUnlessZero<n: index>() {
+  kgen.param.assert <eq(n, 0)>, "dead code was elaborated"
+  hlcf.return
+}
+
+// CHECK-LABEL: @earlyExitSkipsNestedIf
+kgen.generator @earlyExitSkipsNestedIf(%arg0: !kgen.scalar<bool>) {
+  hlcf.comptime.if true {
+    // CHECK-NEXT: hlcf.return
+    hlcf.return
+  } else {
+    hlcf.comptime.yield
+  }
+  hlcf.if %arg0 {
+    kgen.call @failsUnlessZero<1>() : () -> ()
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  hlcf.return
+}
+
+// CHECK-LABEL: @earlyExitSkipsNestedLoop
+kgen.generator @earlyExitSkipsNestedLoop() {
+  hlcf.comptime.if true {
+    // CHECK-NEXT: hlcf.return
+    hlcf.return
+  } else {
+    hlcf.comptime.yield
+  }
+  hlcf.loop {
+    kgen.call @failsUnlessZero<2>() : () -> ()
+    hlcf.break
+  }
+  hlcf.return
+}
+
+// COM: An early return inside a runtime region kills only the rest of that
+// COM: region; the ops after the region are still live.
+// CHECK-LABEL: @earlyExitInRuntimeIfKeepsOuterOps
+kgen.generator @earlyExitInRuntimeIfKeepsOuterOps(%arg0: !kgen.scalar<bool>) {
+  // CHECK-NEXT: hlcf.if
+  hlcf.if %arg0 {
+    hlcf.comptime.if true {
+      // CHECK-NEXT: hlcf.return
+      hlcf.return
+    } else {
+      hlcf.comptime.yield
+    }
+    hlcf.if %arg0 {
+      kgen.call @failsUnlessZero<3>() : () -> ()
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  // CHECK: kgen.call @"failsUnlessZero,n=0"
+  kgen.call @failsUnlessZero<0>() : () -> ()
+  hlcf.return
+}
+
+// -----
+
 kgen.generator @returnTrue() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: scalar<bool> = <<true>>
   hlcf.return %0 : !kgen.scalar<bool>
@@ -1328,16 +1397,14 @@ kgen.generator export @get_function_reflection() {
 // COM: `inputParams` only retains the surviving param, but the snapshot still
 // COM: carries the full source-declared name list.
 
-kgen.generator @snapshot_only<survivor: index>() -> index attributes {
-  sourceParamList = #kgen.pog_list<[
+kgen.generator @snapshot_only<survivor: index>() -> index {
+  %0 = kgen.param.constant = <survivor>
+  hlcf.return %0 : index
+} <sourceParamList = #kgen.pog_list<[
     <"dropped_first", pos_or_kw, not_vararg>,
     <"survivor", pos_or_kw, not_vararg>,
     <"dropped_last", pos_or_kw, not_vararg>
-  ]>
-} {
-  %0 = kgen.param.constant = <survivor>
-  hlcf.return %0 : index
-}
+  ]>>
 
 // CHECK-LABEL: kgen.func export @get_function_reflection_snapshot
 kgen.generator export @get_function_reflection_snapshot() {
@@ -1859,7 +1926,7 @@ kgen.generator @gen_structs(%arg0: !kgen.struct<(index)>) {
 // CHECK-MAIN: kgen.func @"get_array_type,T=index"
 // CHECK-MAIN-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
 kgen.generator @get_array_type<T: type>() -> !kgen.type {
-  %0 = kgen.param.constant: type = <array<get_sizeof(T, current_target()), index>>
+  %0 = kgen.param.constant: type = <array<to_builtin(:scalar<index> get_sizeof(T, current_target())), index>>
   hlcf.return %0 : !kgen.type
 }
 
@@ -2226,17 +2293,17 @@ kgen.generator @test_data_to_str_concat_scalar_index() {
 
 // CHECK-LABEL: kgen.func export @my_static_export()
 // CHECK-NOT: linkageName
-kgen.generator export @static_export_test() attributes {linkageName = #kgen.linkage_name<"my_static_export" : !kgen.string, false>} {
+kgen.generator export @static_export_test() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"my_static_export" : !kgen.string, false>>
 
 // -----
 
 // COM: get_linkage_name on a generator with a static linkageName.
 
-kgen.generator @static_ln_gen() attributes {linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>} {
+kgen.generator @static_ln_gen() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>>
 
 // CHECK-LABEL: kgen.func export @test_get_static_linkage_name
 kgen.generator export @test_get_static_linkage_name() {
@@ -2250,9 +2317,9 @@ kgen.generator export @test_get_static_linkage_name() {
 // COM: A call reference is updated when the callee generator has a linkage name.
 
 // CHECK-LABEL: kgen.func @callee_linkage()
-kgen.generator @"callee::mangled"() attributes {linkageName = #kgen.linkage_name<"callee_linkage" : !kgen.string, false>} {
+kgen.generator @"callee::mangled"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"callee_linkage" : !kgen.string, false>>
 
 // CHECK-LABEL: kgen.func @caller_of_linkage
 kgen.generator @caller_of_linkage() {
@@ -2268,9 +2335,9 @@ kgen.generator @caller_of_linkage() {
 
 // CHECK-LABEL: kgen.func @"has-dashes"()
 // CHECK-NOT: linkageName
-kgen.generator @"non_c_export::ok"() attributes {linkageName = #kgen.linkage_name<"has-dashes" : !kgen.string, false>} {
+kgen.generator @"non_c_export::ok"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"has-dashes" : !kgen.string, false>>
 
 // -----
 
@@ -2279,9 +2346,9 @@ kgen.generator @"non_c_export::ok"() attributes {linkageName = #kgen.linkage_nam
 
 // CHECK-LABEL: kgen.func export @_leading_underscore_123() cabi
 // CHECK-NOT: linkageName
-kgen.generator export @"c_export::underscores"() cabi attributes {linkageName = #kgen.linkage_name<"_leading_underscore_123" : !kgen.string, false>} {
+kgen.generator export @"c_export::underscores"() cabi {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"_leading_underscore_123" : !kgen.string, false>>
 
 // -----
 
@@ -2371,4 +2438,15 @@ kgen.generator @comptime_if_elif_else_arm() -> index {
     hlcf.comptime.yield %c : index
   }
   hlcf.return %0 : index
+}
+
+// -----
+
+!BaseTrait = !lit.trait<@BaseTrait>
+
+// CHECK-LABEL: kgen.func @downcast_in_trait_list_layout
+// CHECK-NOT: kgen.rebind
+kgen.generator @downcast_in_trait_list_layout(%arg0: !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.type<array<1, i1>> : !BaseTrait] isParamPack layout>) {
+  %0 = kgen.rebind %arg0 : !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.type<array<1, i1>> : !BaseTrait] isParamPack layout> to !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.downcast<#kgen.type<array<1, i1>> : !kgen.type> : !BaseTrait] isParamPack layout>
+  hlcf.return
 }

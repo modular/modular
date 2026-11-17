@@ -23,7 +23,7 @@ from std.utils.coord import Coord
 
 
 def test_elementwise_1d() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     comptime num_elements = 64
     var data = List(length=num_elements, fill=Float32(0))
 

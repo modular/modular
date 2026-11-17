@@ -39,11 +39,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-    MultiKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.hf_config_shims import LagunaHFConfig
 from max.pipelines.architectures.laguna.model_config import LagunaConfig
@@ -293,15 +289,20 @@ def test_m1_keeps_a_single_kv_cache(
     assert params.window_size is None
 
 
-def test_fp8_kv_cache_is_rejected_for_sliding_models() -> None:
-    """The fused RoPE store refuses a scaled quantized cache.
+def test_s21_fp8_kv_cache_is_unscaled() -> None:
+    """Both leaves of the hybrid tree store FP8 with no quantization config.
 
-    M.1 can still opt into the experimental FP8 cache; a model with sliding
-    layers would fail deep inside ``rope_split_store_ragged`` instead, so it is
-    refused here where the message can say why.
+    The fused RoPE store refuses only a scaled quantized cache, so the tree
+    must not pick up the flat cache's scale config.
     """
-    with pytest.raises(ValueError, match="cannot use an FP8 KV cache"):
-        _kv_params(LagunaHFConfig, "s21_config.json", DType.float8_e4m3fn)
+    params = _kv_params(LagunaHFConfig, "s21_config.json", DType.float8_e4m3fn)
+
+    assert isinstance(params, MultiKVCacheParams)
+    for leaf in params.children.values():
+        assert isinstance(leaf, MHAKVCacheParams)
+        assert leaf.dtype == DType.float8_e4m3fn
+        assert leaf.kvcache_quant_config is None
+        assert not leaf.quantized_kv_cache
 
 
 def test_unknown_layer_types_are_rejected() -> None:

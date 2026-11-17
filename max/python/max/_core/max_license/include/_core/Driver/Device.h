@@ -15,6 +15,7 @@
 #define SDK_DRIVERAPI_PYTHON_DEVICE_H
 
 #include "AsyncRT/Runtime/CPUDevice.h"
+#include "MLRT/Driver/CAPI/ArchitectureVersion.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/DeviceSpecs.h"
 #include "Support/ErrorOr.h"
@@ -117,6 +118,13 @@ struct Device : public std::enable_shared_from_this<Device> {
   // Returns utilization statistics for device.
   std::string getStats() const;
 
+  /// MLRT memory-manager allocation statistics as JSON (live and peak bytes,
+  /// the largest request, the large request sizes, driver fallbacks).
+  std::string getMemoryManagerStats() const;
+  /// Restarts the memory manager's peaks from its live bytes and clears the
+  /// largest request, the request sizes and the fallback counts.
+  void resetMemoryManagerPeaks() const;
+
   // Returns the largest single contiguous allocation the device supports.
   size_t getMaxSingleAllocSize() const;
 
@@ -128,6 +136,9 @@ struct Device : public std::enable_shared_from_this<Device> {
 
   // Returns the architecture name for the device.
   std::string getArchName() const;
+
+  // Returns the architecture version for the device.
+  M::Driver::ArchitectureVersion getArchVersion() const;
 
   // Returns the model name of the device (e.g. "NVIDIA B200", "AMD MI300X").
   std::string getModelName() const;
@@ -248,8 +259,8 @@ struct DeviceStream : public std::enable_shared_from_this<DeviceStream> {
   void enqueueAsyncHostFunc(nb::callable &&fn, const CompletionFlag &flag,
                             uint64_t value, const CPU &cpu) const;
 
-  /// Wraps MLRT's `DeviceStream::enqueueWaitOnHostValue`. Stalls the stream
-  /// until the 64-bit value at `flag.devicePtr()` equals `value`.
+  /// Wraps MLRT's `DeviceStream::enqueueWaitOnFlag`. Stalls the stream
+  /// until `flag` holds at least `value`.
   /// Typically paired with `enqueueAsyncHostFunc` to gate the GPU stream
   /// on a CPU task dispatched by the kickoff callback.
   void waitForHostValue(const CompletionFlag &flag, uint64_t value) const;

@@ -21,7 +21,7 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import Dim
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.tensor import Tensor
 
 

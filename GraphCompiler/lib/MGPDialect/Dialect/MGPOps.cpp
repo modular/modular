@@ -30,7 +30,6 @@
 #include "Support/ErrorOr.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
-#include "Support/ML/CompiledFrameworkLabel.h"
 #include "Support/ML/SizeUtils.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Builders.h"
@@ -270,7 +269,7 @@ LogicalResult ResourceConstantOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue function(primitiveMojoName(primDecl));
   auto &[ptr, bytecount] =
       state.mojoConstantResources[getResourceSlot().getZExtValue()];
-  MOGG::MojoValue result = state.builder.var(function({}, {ptr, bytecount}));
+  MOGG::MojoValue result = state.file->var(function({ptr, bytecount}));
   state.setMojoValueFor(getOutBuffer(), result);
 
   return success();
@@ -322,7 +321,7 @@ LogicalResult BufferConstantOp::emitMojo(MOGG::EmitMojoState &state) {
   uint64_t resourceIndex = std::distance(constantResources.begin(), it);
   auto &[ptr, bytecount] = state.mojoConstantResources[resourceIndex];
 
-  MOGG::MojoValue result = state.builder.var(function({}, {ptr, bytecount}));
+  MOGG::MojoValue result = state.file->var(function({ptr, bytecount}));
   state.setMojoValueFor(getOutBuffer(), result);
 
   return success();
@@ -342,17 +341,21 @@ LogicalResult TensorSpecCreateOp::emitMojo(MOGG::EmitMojoState &state) {
   size_t rank = tensorSpec.getRank();
   MojoValue rawDimsRankParam = rank;
 
-  // Emit dims as an IntTuple, mapping dynamic dims to -1 (UNKNOWN_VALUE).
+  // Emit dims as a Coord of fully static components: a dynamic dim is
+  // `Idx[-1]`, the raw-dims encoding `!mgp.tensor_spec` itself uses. The dims
+  // ride as a runtime argument, not a comptime parameter, so the host KGEN
+  // interpreter never has to materialize them.
   SmallVector<int64_t> dimValues;
   dimValues.reserve(rank);
   llvm::transform(tensorSpec.getDims(), std::back_inserter(dimValues),
                   [](const std::optional<int64_t> &d) -> int64_t {
                     return d.value_or(-1);
                   });
-  MojoValue rawDimsParam = EmitMojoState::getAsIntTupleMojoValue(dimValues);
+  MojoValue rawDimsArg = EmitMojoState::getAsCoordMojoValue(dimValues);
 
-  MojoValue result = state.builder.var(function(
-      {rawDimsParam, rawDimsRankParam}, state.getMojoValuesFor(getOperands())));
+  SmallVector<MojoValue> operands = state.getMojoValuesFor(getOperands());
+  operands.insert(operands.begin(), rawDimsArg);
+  MojoValue result = state.file->var(function[{rawDimsRankParam}](operands));
   state.setMojoValueFor(getResult(), result);
 
   return success();
@@ -449,7 +452,7 @@ LogicalResult BufferGetSizeOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue getSizeFunc(primitiveMojoName(primDecl));
 
   MojoValue bufferVar = state.getMojoValueFor(getBuffer());
-  state.setMojoValueFor(getResult(), getSizeFunc({}, {bufferVar}));
+  state.setMojoValueFor(getResult(), getSizeFunc({bufferVar}));
 
   return success();
 }
@@ -462,12 +465,13 @@ LogicalResult TensorSpecGetDimOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MOGG::MojoValue getDimFunc(primitiveMojoName(primDecl));
 
-  MOGG::MojoValue axisParam = MOGG::MojoValue(getAxis());
+  MOGG::MojoValue axisParam = getAxis();
   MOGG::MojoValue rankParam = getSpec().getType().getRank();
   MOGG::MojoValue specVar = state.getMojoValueFor(getSpec());
 
-  state.setMojoValueFor(getResult(), state.builder.var(getDimFunc(
-                                         {rankParam, axisParam}, {specVar})));
+  state.setMojoValueFor(
+      getResult(),
+      state.file->var(getDimFunc[{rankParam, axisParam}]({specVar})));
 
   return success();
 }
@@ -506,9 +510,9 @@ LogicalResult BufferGetCachedOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MOGG::MojoValue mgpBufferGetCacheFunc(primitiveMojoName(primDecl));
-  auto res = state.builder.var(
-      mgpBufferGetCacheFunc({}, {state.getMojoValueFor(getTheContext()),
-                                 state.getMojoValueFor(getBBufferSlot())}));
+  auto res = state.file->var(
+      mgpBufferGetCacheFunc({state.getMojoValueFor(getTheContext()),
+                             state.getMojoValueFor(getBBufferSlot())}));
   // The primitive returns a single storage-carrying `OwnedByteBuffer`.
   state.setMojoValueFor(getResult(0), res);
 
@@ -536,10 +540,10 @@ LogicalResult BufferGetCachedOp::canonicalize(BufferGetCachedOp op,
 LogicalResult IntCacheOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MOGG::MojoValue function(primitiveMojoName(primDecl));
-  MOGG::MojoValue bIntSlotParam = MOGG::MojoValue(getBIntSlot());
-  state.builder.call(function, {bIntSlotParam},
-                     {state.getMojoValueFor(getTheContext()),
-                      state.getMojoValueFor(getValue())});
+  MOGG::MojoValue bIntSlotParam = getBIntSlot();
+  state.file->call(function, {bIntSlotParam},
+                   {state.getMojoValueFor(getTheContext()),
+                    state.getMojoValueFor(getValue())});
   return success();
 }
 
@@ -550,9 +554,8 @@ LogicalResult IntCacheOp::emitMojo(MOGG::EmitMojoState &state) {
 LogicalResult IntGetCachedOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MOGG::MojoValue function(primitiveMojoName(primDecl));
-  auto res =
-      state.builder.var(function({}, {state.getMojoValueFor(getTheContext()),
-                                      state.getMojoValueFor(getBIntSlot())}));
+  auto res = state.file->var(function({state.getMojoValueFor(getTheContext()),
+                                       state.getMojoValueFor(getBIntSlot())}));
   state.setMojoValueFor(getResult(), res);
   return success();
 }
@@ -569,13 +572,9 @@ LogicalResult AssertOp::emitMojo(MOGG::EmitMojoState &state) {
 
   MOGG::MojoValue conditionVar = state.getMojoValueFor(getCond());
   MOGG::MojoValue messageLiteral = MOGG::MojoValue(getMessage()).quote();
-  MOGG::MojoValue messageString = state.builder.var(
-      MOGG::MojoValue(MOGG::kStructString)({}, {messageLiteral}));
-  MOGG::MojoStringRef message(messageString);
-  MOGG::MojoValue messagePtr = message.unsafePtr();
-  MOGG::MojoValue messageSize = message.byteLength();
+  MOGG::MojoValue message = MOGG::kStructString({messageLiteral});
 
-  state.builder.call(function, {}, {conditionVar, messagePtr, messageSize});
+  state.file->call(function, {}, {conditionVar, message});
 
   return success();
 }
@@ -615,8 +614,7 @@ LogicalResult TensorExtractBufferOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MojoValue function(primitiveMojoName(primDecl));
 
-  MojoValue res =
-      state.builder.var(function({}, state.getMojoValueFor(getTensor())));
+  MojoValue res = state.file->var(function(state.getMojoValueFor(getTensor())));
   state.setMojoValueFor(getOutBuffer(), res);
 
   return success();
@@ -674,9 +672,9 @@ LogicalResult TensorExtractTensorSpecOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue tensorDtypeParam =
       state.mlirDTypeToMojoType(tensorSpec.getOptDType().value());
 
-  MojoValue result = state.builder.var(
-      function({tensorRankParam, bufferRankParam, tensorDtypeParam},
-               state.getMojoValueFor(getTensor())));
+  MojoValue result = state.file->var(
+      function[{tensorRankParam, bufferRankParam, tensorDtypeParam}](
+          state.getMojoValueFor(getTensor())));
   state.setMojoValueFor(getResult(), result);
   return success();
 }
@@ -758,16 +756,14 @@ LogicalResult TensorCreateOp::emitMojo(MOGG::EmitMojoState &state) {
   // `kind` names how the tensor participates as a device graph input; the
   // Mojo default (`data`) is left implicit.
   if (tensorType.getMut())
-    params.push_back(MojoValue(MOGG::kParameterKind)
-                         .equal(MojoValue(MOGG::kStructDeviceGraphInputKind)
-                                    .get(MOGG::kInputKindMutable)));
+    params.push_back(MOGG::kParameterKind.equal(
+        MOGG::kStructDeviceGraphInputKind.get(MOGG::kInputKindMutable)));
   else if (M::isHostPlaced(tensorType.getDevice()))
-    params.push_back(MojoValue(MOGG::kParameterKind)
-                         .equal(MojoValue(MOGG::kStructDeviceGraphInputKind)
-                                    .get(MOGG::kInputKindHost)));
+    params.push_back(MOGG::kParameterKind.equal(
+        MOGG::kStructDeviceGraphInputKind.get(MOGG::kInputKindHost)));
 
-  MojoValue result = state.builder.var(
-      function(params, state.getMojoValuesFor(getOperands().drop_front())));
+  MojoValue result = state.file->var(
+      function[params](state.getMojoValuesFor(getOperands().drop_front())));
   state.setMojoValueFor(getOutTensor(), result);
 
   return success();
@@ -796,8 +792,8 @@ LogicalResult TensorSliceOp::emitMojo(MOGG::EmitMojoState &state) {
       state.mlirDTypeToMojoType(tensorSpec.getOptDType().value());
 
   // input, outputSpec, and start are all runtime operands.
-  MojoValue result = state.builder.var(
-      function({rankParam, dtypeParam}, state.getMojoValuesFor(getOperands())));
+  MojoValue result = state.file->var(
+      function[{rankParam, dtypeParam}](state.getMojoValuesFor(getOperands())));
   state.setMojoValueFor(getOutput(), result);
 
   return success();
@@ -916,7 +912,7 @@ LogicalResult DebugPrintOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue labelParam = MOGG::MojoValue(getLabel()).quote();
   MOGG::MojoValue ctxVar = state.getMojoValueFor(getTheContext());
 
-  state.builder.call(function, {debugStringParam, labelParam}, ctxVar);
+  state.file->call(function, {debugStringParam, labelParam}, ctxVar);
 
   return success();
 }
@@ -933,7 +929,7 @@ LogicalResult DebugPrintIntOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue ctxVar = state.getMojoValueFor(getTheContext());
   MOGG::MojoValue valueVar = state.getMojoValueFor(getValue());
 
-  state.builder.call(function, {labelParam}, {ctxVar, valueVar});
+  state.file->call(function, {labelParam}, {ctxVar, valueVar});
 
   return success();
 }
@@ -1017,21 +1013,6 @@ static void printSymbolVisibility(OpAsmPrinter &p, Operation *op,
     p << visibility.getValue() << ' ';
 }
 
-/// Parse the frameworkName attribute as a keyword.
-static ParseResult parseClassName(OpAsmParser &p, StringAttr &frameworkName) {
-  StringRef keyword;
-  if (p.parseKeyword(&keyword))
-    return failure();
-  frameworkName = StringAttr::get(p.getContext(), keyword);
-  return success();
-}
-
-/// Prints the frameworkName attribute as a keyword.
-static void printClassName(OpAsmPrinter &p, const ModelOp &op,
-                           StringAttr frameworkName) {
-  p << frameworkName.getValue();
-}
-
 /// Parse the init region.
 static ParseResult parseInitRegion(OpAsmParser &p, Region &initRegion) {
   llvm::SMLoc argLoc;
@@ -1111,10 +1092,10 @@ static void printExecuteRegion(OpAsmPrinter &p, const ModelOp &op,
 }
 
 void ModelOp::build(OpBuilder &builder, OperationState &state, StringAttr name,
-                    StringRef frameworkName, ArrayRef<DeviceRef> devices,
-                    ArrayRef<Type> inputTypes, ArrayRef<Type> outputTypes,
-                    ArrayRef<Location> inputArgLocs, bool isSubgraph,
-                    bool isDeviceGraph, ArrayRef<NamedAttribute> extraAttrs) {
+                    ArrayRef<DeviceRef> devices, ArrayRef<Type> inputTypes,
+                    ArrayRef<Type> outputTypes, ArrayRef<Location> inputArgLocs,
+                    bool isSubgraph, bool isDeviceGraph,
+                    ArrayRef<NamedAttribute> extraAttrs) {
   MLIRContext *ctx = state.getContext();
 
   SmallVector<Type> finalInputTypes(inputTypes.begin(), inputTypes.end());
@@ -1132,7 +1113,6 @@ void ModelOp::build(OpBuilder &builder, OperationState &state, StringAttr name,
     return dyn_cast<Attribute>(DeviceRefAttr::get(ctx, ref.label, ref.id));
   });
   build(builder, state, ArrayAttr::get(ctx, deviceAttrs),
-        StringAttr::get(ctx, frameworkName),
         TypeAttr::get(builder.getFunctionType(finalInputTypes, outputTypes)),
         name, /*sym_visibility=*/nullptr,
         isSubgraph ? builder.getUnitAttr() : nullptr,

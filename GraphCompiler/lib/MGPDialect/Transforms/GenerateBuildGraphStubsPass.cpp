@@ -42,13 +42,16 @@ ProducerDispatch matchProducerDispatch(Operation *op) {
   }
 
   if (auto foreachRegion = dyn_cast<CallForeachOp>(op))
-    return {op, foreachRegion.getContext()};
+    return {op, foreachRegion.getDeviceContext()};
 
   if (auto foreachTile = dyn_cast<CallForeachTileOp>(op))
     return {op, foreachTile.getContext()};
 
   if (auto viewCopy = dyn_cast<CallViewCopyOp>(op))
     return {op, viewCopy.getContext()};
+
+  if (auto rowwise = dyn_cast<CallRowwiseOp>(op))
+    return {op, rowwise.getDeviceContext()};
 
   return {};
 }
@@ -68,24 +71,36 @@ ProducerDispatch findProducerDispatch(FuncOp stub, WithTraceOp &withTrace) {
   return result;
 }
 
-/// Re-stamps the variadic ABI of each `mogg.tuple.create` feeding the
-/// recording dispatch from the `build_graph` parameter it satisfies.
-/// `ConformCallOperands` packed the run against `execute`, whose signature
-/// cannot declare a slot-backed (`StableVariadicTensors`) pack; `build_graph`
-/// can, and this stub is what calls it. Packed operands sit 1:1 with the
-/// signature's arguments, as `CallBuildGraphOp::emitMojo` already relies on.
-void stampBuildGraphVariadicAbi(KernelDeclOp decl, ValueRange inputs,
-                                ValueRange outputs) {
+/// Re-stamps the operands feeding the recording dispatch from the
+/// `build_graph` parameter each one satisfies. `ConformCallOperands` packed the
+/// run against `execute`, which cannot declare a slot-backed argument;
+/// `build_graph` can, and this stub is what calls it. Each parameter re-stamps
+/// the contract of the `mogg.trait.create`s it receives (alone or packed in a
+/// `TensorTuple`), which differs from `execute`'s only in its `stable` bit.
+/// Packed operands sit 1:1 with the signature's arguments, as
+/// `CallBuildGraphOp::emitMojo` already relies on.
+void stampBuildGraphOperands(KernelDeclOp decl, ValueRange inputs,
+                             ValueRange outputs) {
   KernelDeclAdaptor adaptor(decl);
   if (!adaptor.buildGraphFunction)
     return;
-  auto stamp = [](ValueRange operands,
-                  ArrayRef<KernelDeclOperandAdaptor> parameters) {
+  MLIRContext *ctx = decl.getContext();
+  auto stampContract = [&](Value operand, const TensorArgContract &contract) {
+    if (auto traitCreate = operand.getDefiningOp<TraitCreateOp>())
+      traitCreate.setContractAttr(tensorArgContractToAttr(ctx, contract));
+  };
+  auto stamp = [&](ValueRange operands,
+                   ArrayRef<KernelDeclOperandAdaptor> parameters) {
     for (auto [operand, parameter] : llvm::zip(operands, parameters)) {
-      auto tuple = operand.getDefiningOp<TupleCreateOp>();
-      if (tuple && parameter.isVariadicTensorType() &&
-          parameter.isStableTensorType())
-        tuple.setVariadicAbi(VariadicABI::Stable);
+      std::optional<TensorArgContract> contract = parameter.getTraitContract();
+      if (!contract)
+        continue;
+      if (auto tuple = operand.getDefiningOp<TupleCreateOp>()) {
+        for (Value element : tuple.getElements())
+          stampContract(element, *contract);
+      } else {
+        stampContract(operand, *contract);
+      }
     }
   };
   stamp(inputs, adaptor.buildGraphFunction->inputArguments);
@@ -165,7 +180,7 @@ FailureOr<RecordingStub> createRecordingStub(SymbolTable &symtab,
     hasEpilogueFusion = opaque.getHasEpilogueFusion();
   }
   if (useBuildGraph)
-    stampBuildGraphVariadicAbi(decl, kernelInputs, outputs);
+    stampBuildGraphOperands(decl, kernelInputs, outputs);
 
   BlockArgument launchArg = context;
   launchArg.setType(DeviceGraphBuilderType::get(ctx));

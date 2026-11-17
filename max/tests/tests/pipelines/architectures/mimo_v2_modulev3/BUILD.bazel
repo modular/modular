@@ -1,0 +1,38 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_role_registration",
+    srcs = ["test_role_registration.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_registered_builder",
+    srcs = ["test_registered_builder.py"],
+    ignore_unresolved_imports = [
+        "max.nn.outputs.ReturnLogits",
+        "max.nn.outputs.ReturnHiddenStates",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        "//max/tests/integration/architectures/mimo_v2_modulev3:tiny_fixture",
+        requirement("transformers"),
+    ],
+)

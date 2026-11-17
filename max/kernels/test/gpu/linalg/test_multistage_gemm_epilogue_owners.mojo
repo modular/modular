@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import assert_equal
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulConfig
@@ -73,9 +73,6 @@ def test_epilogue_owners[
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(config.shared_mem_usage())
-        ),
     )
     with a_device.map_to_host() as a, b_device.map_to_host() as b, c_device.map_to_host() as c:
         for row in range(M):

@@ -24,6 +24,7 @@
 #ifndef SUPPORT_COMPILER_DIRECTCONVERSION_H
 #define SUPPORT_COMPILER_DIRECTCONVERSION_H
 
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Rewrite/FrozenRewritePatternSet.h"
@@ -34,7 +35,7 @@ namespace M {
 /// The rewriter handed to direct conversion patterns. IR is mutated eagerly;
 /// replaceOp inserts a bridge cast when a replacement value's type differs
 /// from the replaced one.
-class DirectRewriter : public mlir::PatternRewriter {
+class MODULAR_CXX_EXPORT DirectRewriter : public mlir::PatternRewriter {
 public:
   DirectRewriter(mlir::MLIRContext *ctx,
                  const mlir::TypeConverter *typeConverter)
@@ -136,7 +137,7 @@ public:
 /// output. An op whose patterns all fail stays unconverted; afterwards the
 /// first remaining op that `mustConvert` selects fails the conversion with an
 /// error on that op. `skipOp` ops are neither converted nor required.
-mlir::LogicalResult applyDirectConversion(
+MODULAR_CXX_EXPORT mlir::LogicalResult applyDirectConversion(
     mlir::Operation *root, const mlir::TypeConverter *typeConverter,
     const mlir::FrozenRewritePatternSet &patterns,
     llvm::function_ref<bool(mlir::Operation *)> skipOp = nullptr,

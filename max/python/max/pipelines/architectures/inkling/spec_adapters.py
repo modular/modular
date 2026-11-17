@@ -12,19 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 """Inkling's call, and the chained MTP depths its checkpoint ships.
 
-Inkling's own batch processor prepares each batch: it stages the tokens'
-positions and encodes the batch's new images, as when Inkling serves alone.
-Both ride past the canonical tail. The depths embed and project through the
-target's embedding and head, and each depth runs one full decoder block.
+Inkling's own batch processor encodes each batch's new images, as when
+Inkling serves alone. The embeddings ride past the canonical tail; positions
+come from the merged batch's row offsets and cache lengths. The depths embed
+and project through the target's embedding and head, and each depth runs one
+full decoder block.
 """
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from max import tree
 from max.driver import Buffer
-from max.dtype import DType
 from max.graph import (
     BufferType,
     DeviceRef,
@@ -35,13 +37,13 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.kernels import merge_ragged_tensors
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.transformer.distributed_transformer import (
     distributed_logits_postprocess,
 )
 from max.nn.legacy.transformer.transformer import logits_postprocess
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib.interfaces.batch_processor import vision_merge_inputs
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.driver import (
     CarryDimNames,
@@ -56,6 +58,9 @@ from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_target import Verified
 
+from .inkling import token_positions
+from .model_config import InklingConfig
+
 if TYPE_CHECKING:
     from max.pipelines.speculative.config import SpeculativeConfig
     from max.pipelines.speculative.driver import SequentialProposer
@@ -66,7 +71,6 @@ PRIMARY_KV = "full_attention"
 _STATE_KV = "conv_state"
 
 
-POSITIONS = "positions"
 IMAGE_EMBEDDINGS = "image_embeddings"
 IMAGE_INDICES = "image_indices"
 """Keys the inputs Inkling's batch processor prepares ride under in a driver
@@ -76,30 +80,32 @@ _DRAFT = "draft_"
 """Prefixes the draft's leaves beside its primary one in ``passthrough_kv``."""
 
 
-def trailing_input_types(target_config: Any) -> list[TensorType | BufferType]:
-    """Returns the positions and image inputs Inkling's own graph declares.
+def trailing_input_types(
+    target_config: InklingConfig,
+) -> list[TensorType | BufferType]:
+    """Returns the leaves of the named image-merge inputs."""
+    return tree.leaves(trailing_input_tree(target_config))
 
-    That is the positions, the image rows the tower encoded and the token
-    rows they replace.
-    """
-    device = target_config.devices[0]
-    return [
-        TensorType(DType.uint32, shape=["total_seq_len"], device=device),
-        TensorType(
+
+def trailing_input_tree(
+    target_config: InklingConfig,
+) -> OrderedDict[str, object]:
+    """Names image embeddings with the same kind as the base decoder."""
+    return OrderedDict(
+        vision=vision_merge_inputs(
+            target_config.devices[:1],
             target_config.dtype,
-            shape=["total_image_tokens", target_config.text_config.hidden_size],
-            device=device,
-        ),
-        TensorType(DType.int32, shape=["total_image_tokens"], device=device),
-    ]
+            target_config.text_config.hidden_size,
+            rows_dim="total_image_tokens",
+        )
+    )
 
 
 def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
     """Names the inputs :func:`trailing_input_types` declares."""
     del target_config
-    positions, embeddings, indices = (value.tensor for value in trailing[:3])
+    embeddings, indices = (value.tensor for value in trailing[:2])
     return {
-        POSITIONS: positions,
         IMAGE_EMBEDDINGS: embeddings,
         IMAGE_INDICES: indices,
     }
@@ -108,7 +114,6 @@ def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
 def batch_trailing_buffers(target_inputs: Any) -> list[Buffer]:
     """Returns the :func:`trailing_input_types` inputs Inkling prepared."""
     return [
-        target_inputs.positions,
         target_inputs.image_embeddings,
         target_inputs.image_indices,
     ]
@@ -150,41 +155,6 @@ def sequential_proposer(
     return _MTPProposer(draft, verify)
 
 
-def _merge_positions(
-    positions: TensorValue,
-    input_row_offsets: TensorValue,
-    draft_tokens: TensorValue,
-) -> TensorValue:
-    """Extends each sequence's position ramp across the appended draft tokens."""
-    device = positions.device
-    k = _shape_to_scalar(draft_tokens.shape[1], device, dtype=DType.uint32)
-    last_pos = ops.gather(positions, input_row_offsets[1:] - 1, axis=0)
-    batch_plus_1 = ops.shape_to_tensor([input_row_offsets.shape[0]])[0]
-    indices = ops.range(
-        start=0,
-        stop=batch_plus_1,
-        out_dim=input_row_offsets.shape[0],
-        device=device,
-        dtype=DType.uint32,
-    )
-    draft_offsets = indices * k
-    k_range = ops.range(
-        start=0,
-        stop=ops.shape_to_tensor([draft_tokens.shape[1]])[0],
-        out_dim=draft_tokens.shape[1],
-        device=device,
-        dtype=DType.uint32,
-    )
-    draft_pos = ops.reshape(
-        ops.unsqueeze(last_pos, 1) + 1 + ops.unsqueeze(k_range, 0),
-        [-1],
-    )
-    merged, _ = merge_ragged_tensors(
-        positions, input_row_offsets, draft_pos, draft_offsets
-    )
-    return ops.rebind(merged, ["merged_seq_len"])
-
-
 def _last_accepted_idx(
     merged_offsets: TensorValue,
     num_accepted: TensorValue,
@@ -216,10 +186,10 @@ class _Verify:
         can be the one that asks for it first.
         """
         if self._merged_positions is None:
-            self._merged_positions = _merge_positions(
-                batch.extra[POSITIONS],
-                batch.input_row_offsets,
-                batch.draft_tokens,
+            self._merged_positions = token_positions(
+                batch.merged_offsets,
+                batch.kv_collections[0].cache_lengths,
+                batch.merged_tokens.shape[0],
             )
         return self._merged_positions
 
@@ -398,6 +368,7 @@ ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
     trailing_input_types=trailing_input_types,
+    trailing_input_tree=trailing_input_tree,
     batch_trailing_buffers=batch_trailing_buffers,
     extra=extra,
     sequential_proposer=sequential_proposer,

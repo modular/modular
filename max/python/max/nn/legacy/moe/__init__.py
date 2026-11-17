@@ -12,7 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Mixture of Experts (MoE) module."""
 
-from ..activation import GatedActivation
+from max.nn._graph_ops.moe_quant import (
+    BlockScaledStrategy,
+    Fp8Strategy,
+    Mxfp6Strategy,
+    Nvfp4Scales,
+    NvMxf4f8Strategy,
+    QuantStrategy,
+    interleaved_block_scales_shape,
+)
+from max.nn.activation import GatedActivation
+
 from .eplb import (
     EplbExpertContainer,
     apply_eplb_placement,
@@ -26,15 +36,6 @@ from .moe import (
     make_interleaved_gated_activation_fn,
 )
 from .moe_fp8 import MoEQuantized
-from .quant_strategy import (
-    BlockScaledStrategy,
-    Fp8Strategy,
-    Mxfp6Strategy,
-    Nvfp4Scales,
-    NvMxf4f8Strategy,
-    QuantStrategy,
-    interleaved_block_scales_shape,
-)
 from .sigmoid_router import SigmoidTopKRouter
 from .stacked_moe import (
     GateUpFormat,

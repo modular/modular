@@ -83,7 +83,7 @@ struct GEMMKind(
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].length, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -296,6 +296,8 @@ def _compute_swizzle_modes(
                     c_swizzle = TensorMapSwizzle.SWIZZLE_64B
                 case 32:
                     c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+                case _:
+                    pass
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
@@ -794,6 +796,13 @@ struct MatmulConfig[
         self.num_pipeline_stages = align_down(
             self.num_pipeline_stages, self.k_group_size
         )
+        # A grouping wider than the depth allows rounds it to zero, which
+        # leaves the pipeline with no stage to arm: the kernel would launch,
+        # wait on a barrier nobody fills, and hang. A zero multiple passes
+        # every check above, so bound it here.
+        assert (
+            self.num_pipeline_stages > 0
+        ), "k_group_size exceeds the pipeline depth it divides"
 
         # Optional caller overrides for decode-mode matmul+RS. The fused
         # kernel widens the C SMEM row (Int(output_tile_shape[1])) so per-row
@@ -1500,6 +1509,13 @@ struct BlockScaledMatmulConfig[
         self.num_pipeline_stages = align_down(
             self.num_pipeline_stages, self.k_group_size
         )
+        # A grouping wider than the depth allows rounds it to zero, which
+        # leaves the pipeline with no stage to arm: the kernel would launch,
+        # wait on a barrier nobody fills, and hang. A zero multiple passes
+        # every check above, so bound it here.
+        assert (
+            self.num_pipeline_stages > 0
+        ), "k_group_size exceeds the pipeline depth it divides"
 
     def with_weight_prefetch(self, depth: Int = 4, l2_depth: Int = 0) -> Self:
         """Returns this config loading up to `depth` weight k-groups before

@@ -42,12 +42,12 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd_large import (
 
 
 def directive(asm: String, name: String) -> Int:
-    var i = asm.find(name)
-    if i < 0:
+    __guard case .Some(i) = asm.find(name) else:
         return 0
-    var end = asm.find("\n", i)
+    var end = asm.find("\n", i).or_else(asm.byte_length())
     var line = asm[byte=i:end]
-    var colon = line.find(":")
+    __guard case .Some(colon) = line.find(":") else:
+        return -1
     try:
         return Int(line[byte = colon + 1 :].strip())
     except:
@@ -101,7 +101,7 @@ def check[N: Int, K: Int]() raises -> Bool:
 
 
 def dispatch_m2048(
-    ctx: DeviceContext, c: Int, a: Int, a_scales: Int, b: Int, b_scales: Int
+    ctx: DeviceContext[], c: Int, a: Int, a_scales: Int, b: Int, b_scales: Int
 ) raises:
     """A default-configuration call at M = N = K = 2048; compiled only."""
     comptime F8 = Scalar[DType.float8_e4m3fn]

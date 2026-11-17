@@ -27,7 +27,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import (
     block_id_in_cluster,
@@ -55,7 +55,6 @@ from layout import (
     Coord,
     Idx,
     ImmTileTensor,
-    Layout,
     TensorLayout,
     TileTensor,
     TMemEngine,
@@ -69,13 +68,9 @@ from layout import (
     tmem_copy_async,
     tmem_16x256b,
 )
-from layout.tile_layout import Layout as TileLayout, upcast, zipped_divide
-from layout.tile_tensor import LTToTTLayout
+from layout.layout import Layout, upcast, zipped_divide
 from layout.swizzle import make_swizzle
-from layout.tensor_core_async import (
-    tile_layout_k_major_typed,
-    tile_layout_mn_major_typed,
-)
+from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -90,7 +85,7 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_grouped_matmul_amd import (
     blockwise_scaled_fp8_grouped_matmul_amd,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -107,21 +102,21 @@ from .utils import ElementwiseEpilogueFn, no_epilogue_fn
 
 comptime logger = Logger()
 
-comptime ACCUM_LAYOUT = TileLayout(
+comptime ACCUM_LAYOUT = Layout(
     shape=coord[TMEM_NUM_LANES, TMEM_NUM_COLS],
     stride=coord[1, TMEM_NUM_LANES],
 )
 """The whole TMEM allocation as a lane-by-column grid."""
 # 32-bit indices: TMEM addresses are 32-bit, so the layout math that
 # produces view offsets should not widen them.
-comptime AccumTile[accum_type: DType] = TileTensor[
-    accum_type,
+comptime AccumTile = TileTensor[
+    _,
     type_of(ACCUM_LAYOUT),
     MutAnyOrigin,
     Engine=TMemEngine,
     linear_idx_type=DType.uint32,
 ]
-comptime AccumStorage[accum_type: DType] = TMemStorage[accum_type, MutAnyOrigin]
+comptime AccumStorage = TMemStorage[_, MutAnyOrigin]
 comptime FRAGMENT_LANES = 16
 """Lanes of the block a `tmem_16x256b` view covers."""
 
@@ -837,6 +832,15 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
     ]
 
     ctx.enqueue_function[kernel](
+        GridBlockLaunchConfig(
+            grid_dim=(
+                ceildiv(N, BN),
+                ceildiv(max_num_tokens_per_expert, BM),
+                num_active_experts,
+            ),
+            block_dim=(block_dim),
+            shared_mem_bytes=smem_use,
+        ),
         a_tma_op,
         b_tma_op,
         a_offsets.as_unsafe_any_origin(),
@@ -846,16 +850,6 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
         b_scales.as_unsafe_any_origin(),
         Int32(ceildiv(K, BK)),
         host_args=(epilogue_fn,),
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(max_num_tokens_per_expert, BM),
-            num_active_experts,
-        ),
-        block_dim=(block_dim),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -969,9 +963,6 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     comptime assert (
         BK % VEC == 0 and TOTAL_CHUNKS % WARP_SIZE == 0
     ), "partial-tile copy expects BK*BM aligned to 16-byte chunks per warp"
-    comptime assert (
-        BM % WARP_SIZE == 0
-    ), "partial-tile scales copy assumes BM is a multiple of WARP_SIZE"
     comptime CHUNKS_PER_LANE = TOTAL_CHUNKS // WARP_SIZE
     var lane = lane_id()
     var zero_vec = SIMD[a_type, VEC](0)
@@ -992,13 +983,14 @@ def _copy_partial_a_tile_blockwise_from_gmem[
         )
 
     # a_scales: BM scalars total; each lane writes one row per outer iteration.
-    comptime for i in range(BM // WARP_SIZE):
+    comptime for i in range(ceildiv(BM, WARP_SIZE)):
         var row = i * WARP_SIZE + lane
-        var g_row = m_tile_global_start + row
-        var sv = Scalar[a_scales_type](0)
-        if g_row < expert_end_row:
-            sv = a_scales_gmem[iter_idx, g_row]
-        a_scales_smem_tile[0, row] = sv
+        if row < BM:
+            var g_row = m_tile_global_start + row
+            var sv = Scalar[a_scales_type](0)
+            if g_row < expert_end_row:
+                sv = a_scales_gmem[iter_idx, g_row]
+            a_scales_smem_tile[0, row] = sv
 
 
 @inline(.always)
@@ -1016,9 +1008,12 @@ def load_AB[
     expert_ids_layout: TensorLayout,
     /,
     *,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
-    a_scales_smem_layout: Layout,
+    a_smem_layout_t: TensorLayout,
+    a_smem_layout: a_smem_layout_t,
+    b_smem_layout_t: TensorLayout,
+    b_smem_layout: b_smem_layout_t,
+    a_scales_smem_layout_t: TensorLayout,
+    a_scales_smem_layout: a_scales_smem_layout_t,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
@@ -1068,9 +1063,13 @@ def load_AB[
             stages (inferred).
         expert_ids_layout: Layout of the expert-IDs mapping tensor
             (inferred).
-        a_smem_layout: SMEM layout for the A tile buffer.
-        b_smem_layout: SMEM layout for the B tile buffer.
-        a_scales_smem_layout: SMEM layout for the A scales strip.
+        a_smem_layout_t: Type of the SMEM layout of the A tile buffer.
+        a_smem_layout: SMEM layout of the A tile buffer.
+        b_smem_layout_t: Type of the SMEM layout of the B tile buffer.
+        b_smem_layout: SMEM layout of the B tile buffer.
+        a_scales_smem_layout_t: Type of the SMEM layout of the A scales
+            strip.
+        a_scales_smem_layout: SMEM layout of the A scales strip.
         block_tile_shape: Block tile shape as (BM, BN, BK).
         mma_shape: MMA instruction shape as (MMA_M, MMA_N, MMA_K).
         cta_group: CTA group size, 1 or 2 (defaults to 1).
@@ -1103,11 +1102,15 @@ def load_AB[
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
 
-    comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
-    comptime a_scales_expected_bytes = a_scales_smem_layout.size() * size_of[
-        a_scales_type
+    comptime a_expected_bytes = a_smem_layout_t.static_product * size_of[
+        a_type
     ]()
+    comptime b_expected_bytes = b_smem_layout_t.static_product * size_of[
+        b_type
+    ]()
+    comptime a_scales_expected_bytes = _idx_product[
+        a_scales_desc_shape
+    ]() * size_of[a_scales_type]()
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = cta_group * (
         a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
@@ -1137,21 +1140,21 @@ def load_AB[
     comptime assert b_gmem_slice_coord_vec.length == 1
     var b_gmem_slice_coord = Int(b_gmem_slice_coord_vec[0])
 
-    comptime a_smem_tile_size = a_smem_layout.size()
-    comptime b_smem_tile_size = b_smem_layout.size()
-    comptime a_scales_smem_tile_size = a_scales_smem_layout.size()
+    comptime a_smem_tile_size = a_smem_layout_t.static_product
+    comptime b_smem_tile_size = b_smem_layout_t.static_product
+    comptime a_scales_smem_tile_size = a_scales_smem_layout_t.static_product
 
     var a_smem_tile = TileTensor(
         a_smem_base.unsafe_offset(Int(stage) * a_smem_tile_size),
-        LTToTTLayout[a_smem_layout](),
+        a_smem_layout,
     )
     var b_smem_tile = TileTensor(
         b_smem_base.unsafe_offset(Int(stage) * b_smem_tile_size),
-        LTToTTLayout[b_smem_layout](),
+        b_smem_layout,
     )
     var a_scales_smem_tile = TileTensor(
         a_scales_smem_base.unsafe_offset(Int(stage) * a_scales_smem_tile_size),
-        LTToTTLayout[a_scales_smem_layout](),
+        a_scales_smem_layout,
     )
 
     var a_smem_slice = type_of(a_smem_tile)(
@@ -1206,9 +1209,12 @@ def load_AB_partial[
     a_scales_gmem_layout: TensorLayout,
     /,
     *,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
-    a_scales_smem_layout: Layout,
+    a_smem_layout_t: TensorLayout,
+    a_smem_layout: a_smem_layout_t,
+    b_smem_layout_t: TensorLayout,
+    b_smem_layout: b_smem_layout_t,
+    a_scales_smem_layout_t: TensorLayout,
+    a_scales_smem_layout: a_scales_smem_layout_t,
     block_tile_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -1252,9 +1258,13 @@ def load_AB_partial[
             (inferred).
         a_scales_gmem_layout: Layout of the A per-block scales tensor in
             global memory (inferred).
-        a_smem_layout: SMEM layout for the A tile buffer.
-        b_smem_layout: SMEM layout for the B tile buffer.
-        a_scales_smem_layout: SMEM layout for the A scales strip.
+        a_smem_layout_t: Type of the SMEM layout of the A tile buffer.
+        a_smem_layout: SMEM layout of the A tile buffer.
+        b_smem_layout_t: Type of the SMEM layout of the B tile buffer.
+        b_smem_layout: SMEM layout of the B tile buffer.
+        a_scales_smem_layout_t: Type of the SMEM layout of the A scales
+            strip.
+        a_scales_smem_layout: SMEM layout of the A scales strip.
         block_tile_shape: Block tile shape as (BM, BN, BK).
         cta_group: CTA group size, 1 or 2 (defaults to 1).
         a_swizzle: Swizzle mode for the A SMEM buffer, used to compute
@@ -1301,7 +1311,9 @@ def load_AB_partial[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
+    comptime b_expected_bytes = b_smem_layout_t.static_product * size_of[
+        b_type
+    ]()
     comptime b_tma_load_size = _idx_product[b_desc_shape]()
     comptime b_tma_rows = b_desc_shape.element_types[0].static_value
 
@@ -1319,23 +1331,23 @@ def load_AB_partial[
     comptime assert b_gmem_slice_coord_vec.length == 1
     var b_gmem_slice_coord = Int(b_gmem_slice_coord_vec[0])
 
-    comptime a_smem_tile_size = a_smem_layout.size()
-    comptime b_smem_tile_size = b_smem_layout.size()
-    comptime a_scales_smem_tile_size = a_scales_smem_layout.size()
+    comptime a_smem_tile_size = a_smem_layout_t.static_product
+    comptime b_smem_tile_size = b_smem_layout_t.static_product
+    comptime a_scales_smem_tile_size = a_scales_smem_layout_t.static_product
 
     var a_smem_tile = TileTensor(
         a_smem_base.unsafe_offset(Int(stage) * a_smem_tile_size),
-        LTToTTLayout[a_smem_layout](),
+        a_smem_layout,
     )
     var a_scales_smem_tile = TileTensor(
         a_scales_smem_base.unsafe_offset(Int(stage) * a_scales_smem_tile_size),
-        LTToTTLayout[a_scales_smem_layout](),
+        a_scales_smem_layout,
     )
     var b_smem_slice = TileTensor(
         b_smem_base.unsafe_offset(Int(stage) * b_smem_tile_size).unsafe_offset(
             peer_cta_coord[1] * b_tma_load_size
         ),
-        LTToTTLayout[b_smem_layout](),
+        b_smem_layout,
     )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
 
@@ -1372,7 +1384,8 @@ def multi_stage_reg_epilogue[
     accum_type: DType,
     /,
     *,
-    c_smem_layout: TensorLayout,
+    c_smem_layout_t: TensorLayout,
+    c_smem_layout: c_smem_layout_t,
     c_type: DType,
     c_static_N: Int,
     block_tile_shape: Coord[Int, Int, Int],
@@ -1404,7 +1417,8 @@ def multi_stage_reg_epilogue[
         c_tile_shape: Shape of each C TMA tile copy (inferred).
         c_desc_shape: Descriptor shape of the C TMA tensor (inferred).
         accum_type: Accumulator dtype of the register tiles (inferred).
-        c_smem_layout: SMEM layout for the C staging buffer.
+        c_smem_layout_t: Type of the SMEM layout of the C staging buffer.
+        c_smem_layout: SMEM layout of the C staging buffer.
         c_type: Element dtype of the output `C` tensor.
         c_static_N: Compile-time N dimension of the output matrix, used
             as the row stride for global stores.
@@ -1467,13 +1481,11 @@ def multi_stage_reg_epilogue[
         ](coord[stage, 0])
 
         # Assume double-buffer for shared memory packing
-        comptime c_smem_tile_size = c_smem_layout.static_product
+        comptime c_smem_tile_size = c_smem_layout_t.static_product
         # 128B alignment comes from external_memory and aligned buffer offsets.
         var c_smem_tile = TileTensor(
             c_smem_base.unsafe_offset((stage % 2) * c_smem_tile_size),
-            TileLayout[
-                c_smem_layout._shape_types, c_smem_layout._stride_types
-            ](),
+            c_smem_layout,
         )
         comptime c_smem_tile_m = 32 if cta_group == 2 else BM // num_output_warps
         var c_smem_warp_tt = c_smem_tile.tile[c_smem_tile_m, stageN](warp_id, 0)
@@ -1524,10 +1536,10 @@ def multi_stage_reg_epilogue[
 
         var lane = lane_id()
 
-        comptime CG2_TMA_BM = c_smem_layout.static_shape[
+        comptime CG2_TMA_BM = c_smem_layout_t.static_shape[
             0
         ] if MMA_M == 256 else BM
-        comptime CG1_TMA_BM = c_smem_layout.static_shape[0]
+        comptime CG1_TMA_BM = c_smem_layout_t.static_shape[0]
         comptime TMA_BM = CG2_TMA_BM if cta_group == 2 else CG1_TMA_BM
 
         var cg2_elect_one_warp = (
@@ -1558,7 +1570,7 @@ def multi_stage_reg_epilogue[
             or UInt32(coord_m) + UInt32(TMA_BM) > group_end_idx
         ):
             comptime output_threads = num_output_warps * WARP_SIZE
-            comptime c_smem_M = c_smem_layout.static_shape[0]
+            comptime c_smem_M = c_smem_layout_t.static_shape[0]
             comptime simd_size = simd_width_of[c_type]()
             comptime alignment = align_of[SIMD[c_type, simd_size]]()
             comptime thread_n = stageN // simd_size
@@ -1576,11 +1588,11 @@ def multi_stage_reg_epilogue[
                     row_major[TMA_BM * stageN]()
                 )
                 # Dim-0 tiles retain the row-major parent's (stageN, 1) strides.
-                comptime split_layout = TileLayout(
+                comptime split_layout = Layout(
                     Coord(Idx[TMA_BM], Idx[stageN]),
                     Coord(
-                        Idx[c_smem_layout.static_stride[0]],
-                        Idx[c_smem_layout.static_stride[1]],
+                        Idx[c_smem_layout_t.static_stride[0]],
+                        Idx[c_smem_layout_t.static_stride[1]],
                     ),
                 )
                 comptime zipped = zipped_divide[thread_shape](
@@ -1637,6 +1649,131 @@ def multi_stage_reg_epilogue[
 
 
 @inline(.always)
+def _promote_and_store_swapped[
+    pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
+    c_type: DType,
+    c_layout: TensorLayout,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    b_scales_layout: TensorLayout,
+    expert_ids_layout: TensorLayout,
+    /,
+    *,
+    block_tile_shape: Coord[Int, Int, Int],
+    CLUSTER_SIZE: Int32,
+    stage_stride_cols: Int,
+    a_scales_stage_stride: Int,
+](
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales_n: Int,
+    a_scales_smem_base: MutPointer[
+        Scalar[a_scales_type], _, address_space=.SHARED
+    ],
+    mut mma_output_pipeline: ProducerConsumerPipeline[
+        num_accum_pipeline_stages
+    ],
+    tmem_addr: UInt32,
+    mut load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
+    work_tile_coord: Tuple[Int, Int],
+    num_k_iters: Int,
+    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
+    scheduler: TileScheduler,
+):
+    """Accumulates one swapped-AB tile over K and stores its rows of C.
+
+    With AB swapped the accumulator holds the tile's `BN` weight rows on TMEM
+    lanes and its `BM` token rows on columns, so each epilogue thread owns
+    one column of C. Per K block it scales its `BM` partial sums by each
+    token's A scale times the block's one B scale, in the order the unswapped
+    promotion uses, and finally stores the rows below the expert's end.
+
+    Parameters:
+        pipeline_stages: Number of load-MMA pipeline stages (inferred).
+        num_accum_pipeline_stages: Number of MMA-output pipeline stages
+            (inferred).
+        c_type: Element dtype of C (inferred).
+        c_layout: Layout of C (inferred).
+        a_scales_type: Element dtype of the A scales (inferred).
+        b_scales_type: Element dtype of the B scales (inferred).
+        b_scales_layout: Layout of the B scales (inferred).
+        expert_ids_layout: Layout of the expert IDs (inferred).
+        block_tile_shape: Tile shape as (token rows `BM`, weight rows `BN`,
+            `BK`).
+        CLUSTER_SIZE: Number of CTAs in the cluster.
+        stage_stride_cols: TMEM column stride between accumulator stages.
+        a_scales_stage_stride: Elements between the A scales strips of
+            consecutive load stages in SMEM.
+
+    Args:
+        c: Output tensor `[total_tokens, N]`.
+        b_scales: B scales `[num_experts * N // BN, K // BK]`.
+        b_scales_n: Rows of `b_scales` per expert.
+        a_scales_smem_base: Base of the A scales strips in SMEM.
+        mma_output_pipeline: Pipeline carrying accumulators from the MMA warp.
+        tmem_addr: Base TMEM address of the accumulator allocation.
+        load_mma_pipeline: Pipeline whose stages hold the A scales strips.
+        work_tile_coord: Tile origin as (token row, weight row).
+        num_k_iters: K blocks of the tile.
+        expert_ids: Mapping from group index to expert.
+        scheduler: Tile scheduler positioned at the tile's group.
+    """
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime accum_type = DType.float32
+    comptime assert BN == 4 * WARP_SIZE, "one weight row per epilogue thread"
+
+    var warp_id = get_warp_id()
+    var expert_id = expert_ids[Int(scheduler.current_group_idx)]
+    var b_scale_row = Int(expert_id) * b_scales_n + work_tile_coord[1] // BN
+    # A warp reads only its own 32-lane quarter of TMEM.
+    var warp_tmem = tmem_addr + (UInt32(warp_id * WARP_SIZE) << 16)
+
+    var acc = SIMD[accum_type, BM](0)
+    for k_iter in range(num_k_iters):
+        var b_scale = b_scales[b_scale_row, k_iter].cast[accum_type]()
+        var load_stage = load_mma_pipeline.consumer_stage()
+        var out_stage = mma_output_pipeline.consumer_stage()
+        mma_output_pipeline.wait_producer()
+        var a_scales = (
+            a_scales_smem_base.unsafe_offset(
+                Int(load_stage) * a_scales_stage_stride
+            )
+            .unsafe_load[width=BM, alignment=16]()
+            .cast[accum_type]()
+        )
+        syncwarp()
+        if lane_id() < Int(CLUSTER_SIZE):
+            _ = load_mma_pipeline.consumer_mbar(load_stage)[0].arrive()
+        syncwarp()
+        var frag = tcgen05_ld[
+            datapaths=32,
+            bits=32,
+            repeat=BM,
+            dtype=accum_type,
+            pack=False,
+        ](warp_tmem + out_stage * UInt32(stage_stride_cols))
+        tcgen05_load_wait()
+        _ = mbarrier_arrive(mma_output_pipeline.consumer_mbar(out_stage))
+        comptime for t in range(BM):
+            acc[t] = acc[t] + frag[t] * (a_scales[t] * b_scale)
+        load_mma_pipeline.consumer_step()
+        mma_output_pipeline.consumer_step()
+
+    var group_end = Int(
+        rebind[UInt32](
+            scheduler.group_offsets[Int(scheduler.current_group_idx + 1)]
+        )
+    )
+    var col = work_tile_coord[1] + warp_id * WARP_SIZE + lane_id()
+    comptime for t in range(BM):
+        var row = work_tile_coord[0] + t
+        if row < group_end:
+            c[row, col] = acc[t].cast[c_type]()
+
+
+@inline(.always)
 def promote_accumulators[
     pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
@@ -1647,7 +1784,7 @@ def promote_accumulators[
     expert_ids_layout: TensorLayout,
     /,
     *,
-    a_scales_smem_layout: Layout,
+    a_scales_smem_layout: TensorLayout,
     block_tile_shape: Coord[Int, Int, Int],
     mma_shape: Coord[Int, Int, Int],
     cta_group: Int,
@@ -1882,14 +2019,14 @@ def promote_accumulators[
     )
     mma_output_pipeline.wait_producer()
 
-    comptime a_scales_smem_tile_size = a_scales_smem_layout.size()
+    comptime a_scales_smem_tile_size = a_scales_smem_layout.static_product
     var a_scales_smem = TileTensor(
         a_scales_smem_base.unsafe_offset(
             Int(tma_load_stage_index) * a_scales_smem_tile_size
         ),
         row_major[
-            a_scales_smem_layout.shape[0].value(),
-            a_scales_smem_layout.shape[1].value(),
+            a_scales_smem_layout.static_shape[0],
+            a_scales_smem_layout.static_shape[1],
         ](),
     )
     comptime assert type_of(a_scales_smem).flat_rank == 2
@@ -2031,6 +2168,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     expert_n: Int,
     expert_ids_layout: TensorLayout,
     b_scales_n: Int,
+    swap_ab: Bool = False,
 ](
     num_active_experts: Int32,
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -2114,18 +2252,18 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime a_tma_rows = a_desc_shape.element_types[0].static_value
     comptime b_tma_rows = b_desc_shape.element_types[0].static_value
     # keep the physical SMEM buffer BM x MMA_N
-    # Use typed layouts as source of truth; bridge to legacy Layout for
-    # MMA descriptor pipeline.
     comptime a_smem_layout = tile_layout_k_major_typed[
         a_type, BM, BK, swizzle_mode=config.a_swizzle
-    ].to_layout()
+    ]
+    # B is K-major only, as asserted at the top of the kernel.
     comptime b_smem_layout = tile_layout_k_major_typed[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ].to_layout() if transpose_b else tile_layout_mn_major_typed[
-        b_type, BN, BK, swizzle_mode=config.b_swizzle
-    ].to_layout()
+    ]
 
-    comptime a_scales_smem_layout = Layout.row_major(1, BM)
+    # TMA writes each stage's scales strip to a 128-byte-aligned address.
+    comptime a_scales_smem_layout = row_major[
+        1, max(BM, 128 // size_of[a_scales_type]())
+    ]()
 
     var base_ptr_smem = external_memory[
         Scalar[a_type],
@@ -2279,6 +2417,20 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         b_swizzle=config.b_swizzle,
         transpose_b=transpose_b,
     ]()
+    # Swapped AB puts the tile's weight rows on the MMA's M side and its
+    # token rows on N.
+    var swap_mma_op = MmaOpSM100_SS[
+        c_type,
+        b_type,
+        a_type,
+        (BN, BM, BK),
+        (BN, BM, MMA_K),
+        accum_type=accum_type,
+        cta_group=1,
+        a_swizzle=config.b_swizzle,
+        b_swizzle=config.a_swizzle,
+        transpose_b=transpose_b,
+    ]()
 
     # var scheduler = TileScheduler[
     #     num_stages = config.num_clc_pipeline_stages,
@@ -2363,8 +2515,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             for i in range(_num_iters):
                 if not use_full_tma:
                     load_AB_partial[
+                        a_smem_layout_t=type_of(a_smem_layout),
                         a_smem_layout=a_smem_layout,
+                        b_smem_layout_t=type_of(b_smem_layout),
                         b_smem_layout=b_smem_layout,
+                        a_scales_smem_layout_t=type_of(a_scales_smem_layout),
                         a_scales_smem_layout=a_scales_smem_layout,
                         block_tile_shape=config.block_tile_shape,
                         cta_group=config.cta_group,
@@ -2390,8 +2545,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     load_mma_pipeline.producer_step()
                     continue
                 load_AB[
+                    a_smem_layout_t=type_of(a_smem_layout),
                     a_smem_layout=a_smem_layout,
+                    b_smem_layout_t=type_of(b_smem_layout),
                     b_smem_layout=b_smem_layout,
+                    a_scales_smem_layout_t=type_of(a_scales_smem_layout),
                     a_scales_smem_layout=a_scales_smem_layout,
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -2451,21 +2609,35 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         mma_output_mma_stage * UInt32(stage_stride_cols)
                     )
 
-                    consumer_main_loop[
-                        block_tile_shape=config.block_tile_shape,
-                        mma_shape=config.mma_shape,
-                        cta_group=config.cta_group,
-                        cluster_shape=config.cluster_shape,
-                    ](
-                        tmem_offset,
-                        a_smem_tt,
-                        b_smem_tt,
-                        load_mma_pipeline,
-                        mma_op,
-                        elect_one_warp,
-                        0,
-                        0,
-                    )
+                    comptime if swap_ab:
+                        var mma_stage = load_mma_pipeline.consumer_stage()
+                        load_mma_pipeline.wait_producer()
+                        if elect_one_sync():
+                            swap_mma_op.mma(
+                                b_smem_tt[mma_stage],
+                                a_smem_tt[mma_stage],
+                                tmem_offset,
+                                init_c=True,
+                            )
+                            swap_mma_op.commit(
+                                load_mma_pipeline.consumer_mbar(mma_stage)
+                            )
+                    else:
+                        consumer_main_loop[
+                            block_tile_shape=config.block_tile_shape,
+                            mma_shape=config.mma_shape,
+                            cta_group=config.cta_group,
+                            cluster_shape=config.cluster_shape,
+                        ](
+                            tmem_offset,
+                            a_smem_tt,
+                            b_smem_tt,
+                            load_mma_pipeline,
+                            mma_op,
+                            elect_one_warp,
+                            0,
+                            0,
+                        )
                     load_mma_pipeline.consumer_step()
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
@@ -2503,15 +2675,35 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 work_info = scheduler.fetch_next_work()
                 continue
 
+            comptime if swap_ab:
+                _promote_and_store_swapped[
+                    block_tile_shape=config.block_tile_shape,
+                    CLUSTER_SIZE=Int32(CLUSTER_SIZE),
+                    stage_stride_cols=stage_stride_cols,
+                    a_scales_stage_stride=a_scales_smem_layout.static_product,
+                ](
+                    c,
+                    b_scales,
+                    b_scales_n,
+                    a_scales_smem_base,
+                    mma_output_pipeline,
+                    tmem_addr,
+                    load_mma_pipeline,
+                    work_tile_coord=(Int(work_info.m), Int(work_info.n)),
+                    num_k_iters=_num_iters,
+                    expert_ids=expert_ids,
+                    scheduler=scheduler,
+                )
+                work_info = scheduler.fetch_next_work()
+                continue
+
             # TODO: zero output
 
-            comptime c_smem_layout = type_of(
-                row_major[
-                    config.output_tile_shape[0], config.output_tile_shape[1]
-                ]()
-            )
+            comptime c_smem_layout = row_major[
+                config.output_tile_shape[0], config.output_tile_shape[1]
+            ]()
             comptime reg_info = _get_accumulator_size[
-                c_smem_layout=c_smem_layout,
+                c_smem_layout=type_of(c_smem_layout),
                 block_tile_shape=config.block_tile_shape,
                 mma_shape=config.mma_shape,
                 cta_group=config.cta_group,
@@ -2536,7 +2728,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
             for k_iter in range(_num_iters):
                 promote_accumulators[
-                    a_scales_smem_layout=a_scales_smem_layout,
+                    a_scales_smem_layout=type_of(a_scales_smem_layout),
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
                     cta_group=config.cta_group,
@@ -2569,6 +2761,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             # wait for CUDA core promotion to finish and store result
             # scheduler fetch next work
             multi_stage_reg_epilogue[
+                c_smem_layout_t=type_of(c_smem_layout),
                 c_smem_layout=c_smem_layout,
                 c_static_N=expert_n,
                 block_tile_shape=config.block_tile_shape,
@@ -2612,6 +2805,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     //,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    swap_ab: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2653,6 +2847,12 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         config: Matmul configuration specifying block tile shape, MMA
             shape, and TMA swizzle modes. Must have `cta_group == 1` and
             `cluster_shape == (1, 1, 1)`.
+        swap_ab: Whether the MMA runs transposed: the tile's 128 weight
+            rows on its M side and its token rows on N, so a tile of a few
+            routed rows does not fill a 64-row MMA and its promotion.
+            `config.mma_shape` then gives (token rows, weight rows, MMA_K)
+            of a tile; the token rows must be a power of two from 16, and
+            N a multiple of the 128 weight rows.
 
     Args:
         c: Output tensor of shape `[total_tokens, N]` holding the
@@ -2711,6 +2911,16 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime num_experts = b.static_shape[0]
     comptime N = c.static_shape[1]
     comptime K = a.static_shape[1]
+
+    # The swapped epilogue bounds its stores by token row only, so every
+    # tile's weight rows must lie inside N.
+    comptime assert not swap_ab or (
+        BN == 128
+        and N % BN == 0
+        and BM >= 16
+        and BM.is_power_of_two()
+        and BM <= 512 // config.num_accum_pipeline_stages
+    ), "swap_ab needs 128 weight rows dividing N and a power-of-two token tile"
 
     # `_copy_partial_a_tile_blockwise_from_gmem` walks K in BK strides without
     # masking the K-tail, so any caller must size K to a BK multiple.
@@ -2786,7 +2996,9 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
     comptime b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
-    comptime a_scales_smem_bytes_per_stage = BM * size_of[a_scales_type]()
+    comptime a_scales_smem_bytes_per_stage = max(
+        BM * size_of[a_scales_type](), 128
+    )
     comptime AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
 
     comptime c_smem_bytes = config.output_tile_shape[
@@ -2885,6 +3097,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         expert_n=expert_n,
         expert_ids_layout=type_of(expert_ids.layout),
         b_scales_n=b_scales_n,
+        swap_ab=swap_ab,
     ]
 
     # TODO
@@ -2901,7 +3114,13 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         Int32(max_num_tokens_per_expert), Int32(N), Int32(K)
     )
 
-    ctx.enqueue_function[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel](
+        GridBlockLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
+            block_dim=(32 * 7),
+            shared_mem_bytes=smem_size,
+        ),
         Int32(num_active_experts),
         a_tma_op,
         b_tma_op,
@@ -2915,13 +3134,6 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         problem_shape,
         a.as_unsafe_any_origin(),
         a_scales.as_unsafe_any_origin(),
-        grid_dim=grid_dim,
-        # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-        block_dim=(32 * 7),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
-        ),
     )
 
 
@@ -2947,7 +3159,6 @@ def grouped_matmul_dynamic_scaled_fp8[
     k_scale_granularity: Int,
     transpose_b: Bool = False,
     static_grid_z: Bool = False,
-    target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2964,8 +3175,12 @@ def grouped_matmul_dynamic_scaled_fp8[
     num_active_experts: Int,
     ctx: DeviceContext,
     decode_grid_m_cap: Int = 0,
+    estimated_total_m: Int = 0,
 ) raises:
     """TileTensor primary implementation of `grouped_matmul_dynamic_scaled_fp8`.
+
+    `estimated_total_m` is the caller's estimate of the routed rows in the
+    call (0 when unknown); on SM100 it picks the tile size.
     """
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
@@ -3054,36 +3269,63 @@ def grouped_matmul_dynamic_scaled_fp8[
 
             # MMA_N=128 halves the number of dispatched (expert, n) tiles vs
             # 64, which dominates runtime for small-M-per-expert decode.
-            comptime umma_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](
-                64, 128, 32
-            )
+            @inline(.always)
+            def launch[
+                mma_m: Int, swap_ab: Bool = False, accum_stages: Int = 2
+            ]() raises {imm}:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    cluster_shape=(1, 1, 1),
+                    mma_shape=(mma_m, 128, 32),
+                    cta_group=1,
+                    AB_swapped=False,
+                    k_group_size=1,
+                    num_accum_pipeline_stages=accum_stages,
+                )
+                # Pass TileTensors directly — conversion happens inside.
+                grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+                    config=config, swap_ab=swap_ab
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
 
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                cluster_shape=(1, 1, 1),
-                mma_shape=(
-                    umma_shape[0],
-                    umma_shape[1],
-                    umma_shape[2],
-                ),
-                cta_group=1,
-                AB_swapped=False,
-                k_group_size=1,
+            # Once the rows average more than 128 a group (prefill), one
+            # 128-row tile reads a group's weights half as often as two 64-row
+            # tiles. `max_num_tokens_per_expert` cannot make this choice: the
+            # expert-parallel path passes its static dispatch capacity there.
+            comptime prefill_m = 128
+            # While the groups average a few rows (decode), a swapped tile of
+            # 32 token rows carries them without padding a 64-row MMA, and
+            # its promotion scales one weight row a thread. Scoped to the
+            # expert GEMMs of hidden 4096 and expert width 2048.
+            # TODO(KERN-3992): widen to other expert shapes once they are
+            # measured in their models.
+            comptime decode_m = 32
+            comptime decode_rows_per_group = 8
+            comptime swapped_decode_shape = c.static_shape[1] == 4096 and (
+                a.static_shape[1] == 4096 or a.static_shape[1] == 2048
             )
-            # Pass TileTensors directly — conversion happens inside.
-            grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
-                config=config,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                a_offsets,
-                expert_ids,
-                max_num_tokens_per_expert,
-                num_active_experts,
-                ctx,
-            )
+            if estimated_total_m > prefill_m * num_active_experts:
+                launch[prefill_m]()
+            elif (
+                swapped_decode_shape
+                and estimated_total_m > 0
+                and estimated_total_m
+                <= decode_rows_per_group * num_active_experts
+            ):
+                launch[decode_m, swap_ab=True, accum_stages=8]()
+            else:
+                launch[64]()
             return
 
         else:

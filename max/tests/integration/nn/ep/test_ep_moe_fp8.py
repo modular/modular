@@ -29,10 +29,11 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.legacy.moe import MoEGate, MoEQuantized
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -189,9 +190,6 @@ def test_ep_moe_fp8(
     # Load weights
     moe.load_state_dict(wrapped_moe_weights_fp8)
 
-    # Initialize EP communication infrastructure
-    ep_comm_init.ep_init(session)
-
     per_device_input_types: list[TensorType] = [
         TensorType(
             DType.bfloat16,
@@ -211,11 +209,6 @@ def test_ep_moe_fp8(
         for i in range(n_devices)
     ]
 
-    per_device_inputs = [
-        Buffer.from_dlpack(input).to(devices[i])
-        for i, input in enumerate(per_device_inputs_torch)
-    ]
-
     with Graph(
         "EPMoE_FP8",
         input_types=[
@@ -231,10 +224,7 @@ def test_ep_moe_fp8(
 
         graph.output(outputs)
 
-    # Compile and execute
     compiled = session.load(graph, weights_registry=moe.state_dict())
-    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
-    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
 
     # We use MoEGate to get the topk indices and scores, as the output of MoE
     # is sensitive to the expert selection.
@@ -270,6 +260,17 @@ def test_ep_moe_fp8(
     gate_compiled = session.load(
         gate_graph, weights_registry=moe_gate.state_dict()
     )
+
+    # Initialize EP communication infrastructure
+    ep_comm_init.ep_init(session)
+
+    per_device_inputs = [
+        Buffer.from_dlpack(input).to(devices[i])
+        for i, input in enumerate(per_device_inputs_torch)
+    ]
+    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
+    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
+
     gate_result = gate_compiled.execute(*per_device_inputs)
     topk_idxs_weights = [torch.from_dlpack(x).to("cpu") for x in gate_result]
 

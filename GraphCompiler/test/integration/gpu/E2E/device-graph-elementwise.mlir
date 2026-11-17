@@ -1,4 +1,4 @@
-// RUN: mo-opt --gc-pipeline="compiled-framework-label=mof constant-fold=false default-device-label=gpu" %s -o %t
+// RUN: mo-opt --gc-pipeline="constant-fold=false default-device-label=gpu" %s -o %t
 // RUN: mt --execute --default-device-label=gpu --model-inputs=ones --result-output-style=full %t | FileCheck %s
 
 // CHECK-LABEL: --- Running 'main':

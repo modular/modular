@@ -25,9 +25,9 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops import flash_attention_ragged_gpu
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.legacy.attention import num_heads_for_device
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged_gpu
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
 

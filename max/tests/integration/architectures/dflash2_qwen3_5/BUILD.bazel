@@ -40,9 +40,10 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
-        "//max/python/max/pipelines/architectures/llama3",
     ],
 )
 
@@ -54,10 +55,11 @@ modular_py_library(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
-        "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
@@ -88,6 +90,7 @@ modular_py_test(
     deps = [
         ":dflash2_pairing_harness",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
         "//max/python/max/pipelines/lib",
@@ -102,7 +105,7 @@ modular_py_test(
         ":dflash2_pairing_harness",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3_5",
@@ -121,14 +124,15 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         ":dflash2_pairing_harness",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
-        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -149,7 +153,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/speculative",
         requirement("numpy"),
@@ -176,6 +180,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/speculative",
         requirement("numpy"),

@@ -99,6 +99,37 @@ define void @partial_load_no_promote(ptr %dev_ptr) #0 {
 }
 
 ; ---------------------------------------------------------------------------
+; Partial opaque reloads through GEPs obey the same rule as test 3.
+; A constant offset does not reveal the opaque blob's pointer fields.
+; ---------------------------------------------------------------------------
+
+; METAL-LABEL: define void @partial_gep_load_no_promote(
+; METAL:         load { ptr }, ptr
+; METAL:         store i32 42, ptr %
+define void @partial_gep_load_no_promote({ i64, [8 x i8] } %blob) #0 {
+  %slot = alloca { i64, [8 x i8] }, align 8
+  store { i64, [8 x i8] } %blob, ptr %slot
+  %at = getelementptr { { ptr, i64 } }, ptr %slot, i32 0, i32 0
+  %partial = load { ptr }, ptr %at
+  %p = extractvalue { ptr } %partial, 0
+  store i32 42, ptr %p, align 4
+  ret void
+}
+
+; METAL-LABEL: define void @nonzero_gep_load_no_promote(
+; METAL:         load { ptr }, ptr
+; METAL:         store i32 42, ptr %
+define void @nonzero_gep_load_no_promote({ i64, [8 x i8] } %blob) #0 {
+  %slot = alloca { i64, [8 x i8] }, align 8
+  store { i64, [8 x i8] } %blob, ptr %slot
+  %at = getelementptr i8, ptr %slot, i64 8
+  %partial = load { ptr }, ptr %at
+  %p = extractvalue { ptr } %partial, 0
+  store i32 42, ptr %p, align 4
+  ret void
+}
+
+; ---------------------------------------------------------------------------
 ; Test 4: inter-procedural alloca-by-pointer type-pun.
 ; A kernel inserts device pointers into a transparent struct, spills it to an
 ; alloca, and passes the alloca BY POINTER to an outlined callee. The callee

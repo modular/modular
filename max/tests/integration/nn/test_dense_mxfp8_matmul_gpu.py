@@ -21,8 +21,8 @@ MMA (``UMMAKind.KIND_MXF8F6F4``) does support 32-element MXFP8 scaling.
 This test exercises that tensor-core path through the same graph ops a wired-up
 ``QuantFormat.MXFP8`` linear would use:
 
-    quantize_dynamic_block_scaled  (mo.quantize.dynamic.block.scaled)
-    dynamic_block_scaled_matmul    (mo.matmul.dynamic.block.scaled)
+    quantize_dynamic_block_scaled  (quantization.quantize.dynamic.block.scaled)
+    dynamic_block_scaled_matmul    (matmul.dynamic.block.scaled)
 
 It quantizes random bf16 activations and weights to MXFP8 in-graph, runs the
 block-scaled matmul, and checks the result against an fp32 reference of the
@@ -41,7 +41,7 @@ from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     dynamic_block_scaled_matmul,
     quantize_dynamic_block_scaled,
 )

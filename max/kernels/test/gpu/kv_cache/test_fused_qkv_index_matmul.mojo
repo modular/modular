@@ -309,7 +309,7 @@ def execute_dual_cache_fused_bf16[
     index_blocks_ref.to_device()
     ctx.synchronize()
 
-    generic_fused_qkv_index_matmul_kv_cache_paged_ragged[target="gpu",](
+    generic_fused_qkv_index_matmul_kv_cache_paged_ragged(
         hs_dev,
         input_row_offsets_tensor,
         w_dev,
@@ -325,7 +325,7 @@ def execute_dual_cache_fused_bf16[
     # Sub-weight rows [0, qkv_n): [Wq|Wk|Wv].
     var w_qkv = w_dev.slice[0:qkv_n, 0:hidden]()
 
-    generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu",](
+    generic_fused_qkv_matmul_kv_cache_paged_ragged(
         hs_dev,
         input_row_offsets_tensor,
         w_qkv,
@@ -342,7 +342,7 @@ def execute_dual_cache_fused_bf16[
     # kernel's IndexQ/IndexK bands.
     var w_idx = w_dev.slice[qkv_n:n_total, 0:hidden]()
 
-    generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu",](
+    generic_fused_qkv_matmul_kv_cache_paged_ragged(
         hs_dev,
         input_row_offsets_tensor,
         w_idx,
