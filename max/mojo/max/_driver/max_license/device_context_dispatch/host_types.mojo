@@ -277,11 +277,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         # Now it's safe to use results on the host
         ```
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.synchronize()
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._stream[].synchronize()
 
@@ -298,11 +296,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the wait operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_wait_for(event._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # An event that was never recorded has nothing to wait on.
         if case .Some(recorded) = event._impl._event[]:
@@ -341,11 +337,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         new_stream.enqueue_wait_for(event)
         ```
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.record_event(event._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # Create and record the backing event for this `DeviceEvent`. If it was
         # previously recorded and no other `DeviceEvent`s have been constructed
@@ -379,11 +373,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the underlying device does not support host callbacks, or if
             the driver rejects the enqueue.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_host_func(func, user_data)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._stream[].enqueue_host_func(func, user_data)
 
@@ -402,11 +394,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the device has no completion flags, the flag belongs to
             another backend, or enqueueing the wait fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.wait_for_flag(flag._impl, value)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         flag._impl._inner[].wait(self._impl, value)
 
@@ -455,8 +445,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_function(
                 f._impl,
                 *args,
@@ -468,7 +457,6 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 constant_memory=constant_memory^,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var hal_f: _HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
@@ -807,11 +795,9 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If event creation or recording fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(ctx._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var hal_event = ctx._impl._stream[].record_event[
             EVENT_FLAG_CPU_VISIBLE
@@ -859,11 +845,9 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If synchronization fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.synchronize()
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # An event that was never recorded has nothing to wait on.
         if case .Some(recorded) = self._impl._event[]:
@@ -1022,11 +1006,9 @@ struct CompletionFlag(ImplicitlyCopyable):
             unsafe_from_address: Raw address of an `M::Driver::CompletionFlag`
                 (as packed into a graph payload buffer by the producer side).
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(unsafe_from_address=unsafe_from_address)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The runtime library built this box, and a graph kernel reads its
         # layout here, so both must come from the same source build.
@@ -1072,11 +1054,9 @@ struct CompletionFlag(ImplicitlyCopyable):
         Args:
             value: The value to store.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.signal(value)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The legacy signature can't fail, so a plugin error aborts rather than
         # leaving a wait that never passes. `load` and `reset` do the same.
@@ -1093,10 +1073,8 @@ struct CompletionFlag(ImplicitlyCopyable):
         Returns:
             The value the flag holds.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.load()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         try:
             return self._impl._inner[].load()
@@ -1109,11 +1087,9 @@ struct CompletionFlag(ImplicitlyCopyable):
         Don't reset while a wait on the flag is pending; doing so is undefined
         behavior. Aborts if the plugin fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.reset()
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         try:
             self._impl._inner[].reset()
@@ -1196,10 +1172,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the device name cannot be queried.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.get_name()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self._impl._ctx[]._device[].name()
 
@@ -1215,10 +1189,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the attribute cannot be queried.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.get_attribute(attr)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return Int(self._impl._ctx[]._device[].get_attribute(attr._value))
 
@@ -1235,10 +1207,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.multiprocessor_count()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
@@ -1255,10 +1225,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.max_threads_per_block()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK)
 
@@ -1275,10 +1243,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.max_shared_memory_per_block()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
 
@@ -1294,10 +1260,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.max_grid_dim_x()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_X)
 
@@ -1313,10 +1277,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.max_grid_dim_y()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Y)
 
@@ -1332,10 +1294,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.max_grid_dim_z()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Z)
 
@@ -1353,10 +1313,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.max_grid_dim()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return Dim(
             self.max_grid_dim_x(), self.max_grid_dim_y(), self.max_grid_dim_z()
@@ -1372,10 +1330,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the device cannot be queried.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.is_host_unified()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self._impl._ctx[]._device[].is_host_unified()
 
@@ -1388,10 +1344,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the plugin does not report an architecture.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.get_arch()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self._impl._ctx[]._device[].arch()
 
@@ -1414,10 +1368,8 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the plugin query fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.can_access_peer(peer._impl)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         ref ctx = self._impl._ctx[]
         ref peer_ctx = peer._impl._ctx[]
@@ -1623,14 +1575,12 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If the allocation fails or multicast is unsupported.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var legacy = List[LegacyDeviceContext[]]()
             for ctx in contexts:
                 legacy.append(ctx._impl)
             self._impl = Self._Legacy(legacy^, size=size)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         raise Error("Multicast not supported by the HAL DeviceContext")
 
@@ -1659,12 +1609,10 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If `ctx` is not one of the sharing contexts.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceBuffer[Self.dtype](
                 _impl=self._impl.unicast_buffer_for(ctx._impl)
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         raise Error("Multicast not supported by the HAL DeviceContext")
 
@@ -1682,11 +1630,9 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If `ctx` is not one of the sharing contexts.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceBuffer[Self.dtype](
                 _impl=self._impl.multicast_buffer_for(ctx._impl)
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         raise Error("Multicast not supported by the HAL DeviceContext")

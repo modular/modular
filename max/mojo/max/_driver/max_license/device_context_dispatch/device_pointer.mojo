@@ -124,11 +124,9 @@ struct DevicePointer[
         Raises:
             If `buffer` has size 0.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(buffer._legacy_buffer())
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var size = len(buffer)
         if size == 0:
@@ -151,11 +149,9 @@ struct DevicePointer[
             If `buffer` has size 0, or if `offset` is outside the half-open
             range `[0, len(buffer))`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(buffer._legacy_buffer(), offset)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var size = len(buffer)
         if size == 0:
@@ -189,12 +185,10 @@ struct DevicePointer[
         Returns:
             A reference to the referenced `DeviceBuffer`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return rebind[Pointer[DeviceBuffer[Self.dtype], Self.origin]](
                 Pointer(to=self._impl.buffer())
             )[]
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self._impl._buffer[]
 
@@ -204,10 +198,8 @@ struct DevicePointer[
         Returns:
             The element offset.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.offset()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self._impl._offset
 
@@ -224,10 +216,8 @@ struct DevicePointer[
         Returns:
             The raw device pointer.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.unsafe_ptr()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # TODO: GEX-3693: Assert/raise when target doesn't support raw device
         # pointer access
@@ -243,10 +233,8 @@ struct DevicePointer[
     def _buffer_handle(
         ref self,
     ) -> Optional[OpaquePointer[MutUntrackedOrigin]]:
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl._buffer_handle()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return None
 
@@ -326,10 +314,8 @@ struct DevicePointer[
             If the resulting offset is outside the bounds of the owning
             `DeviceBuffer`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return Self(_impl=self._impl + n)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var offset = self._impl._offset + n
         if offset < 0 or offset >= self._impl._size:
@@ -355,10 +341,8 @@ struct DevicePointer[
             If the resulting offset is outside the bounds of the owning
             `DeviceBuffer`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return Self(_impl=self._impl - n)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var offset = self._impl._offset - n
         if offset < 0 or offset >= self._impl._size:
@@ -380,13 +364,11 @@ struct DevicePointer[
             If the resulting offset is outside the bounds of the owning
             `DeviceBuffer`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var impl = self._impl
             impl.__iadd__(n)
             self._impl = impl
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var offset = self._impl._offset + n
         if offset < 0 or offset >= self._impl._size:
@@ -406,13 +388,11 @@ struct DevicePointer[
             If the resulting offset is outside the bounds of the owning
             `DeviceBuffer`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var impl = self._impl
             impl.__isub__(n)
             self._impl = impl
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var offset = self._impl._offset - n
         if offset < 0 or offset >= self._impl._size:
@@ -436,12 +416,10 @@ struct DevicePointer[
         Returns:
             Whether the pointers are equal.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var lhs = self._impl
             var rhs = other._impl
             return lhs == rhs
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # Buffer identity = base device address (HAL buffers have no C++
         # handle).
@@ -461,12 +439,10 @@ struct DevicePointer[
         Returns:
             Whether the pointers are equal.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var lhs = self._impl
             var rhs = other._impl
             return lhs == rhs
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # Buffer identity = base device address (HAL buffers have no C++
         # handle).
@@ -513,12 +489,10 @@ struct DevicePointer[
         Raises:
             If the pointers are into different buffers.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var lhs = self._impl
             var rhs = other._impl
             return lhs < rhs
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if (
             self._impl._buffer[]._impl._device_ptr
@@ -543,12 +517,10 @@ struct DevicePointer[
         Raises:
             If the pointers are into different buffers.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var lhs = self._impl
             var rhs = other._impl
             return lhs <= rhs
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if (
             self._impl._buffer[]._impl._device_ptr
@@ -573,12 +545,10 @@ struct DevicePointer[
         Raises:
             If the pointers are into different buffers.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var lhs = self._impl
             var rhs = other._impl
             return lhs > rhs
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if (
             self._impl._buffer[]._impl._device_ptr
@@ -603,12 +573,10 @@ struct DevicePointer[
         Raises:
             If the pointers are into different buffers.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             var lhs = self._impl
             var rhs = other._impl
             return lhs >= rhs
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if (
             self._impl._buffer[]._impl._device_ptr
@@ -630,11 +598,9 @@ struct DevicePointer[
         Args:
             writer: The writer to write to.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.write_to(writer)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         writer.write(
             t"DevicePointer[{Self.dtype}]("

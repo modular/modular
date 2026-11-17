@@ -787,10 +787,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     t" from: {call_location()}"
                 )
             )
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceContext.CPU(_impl=self._impl.assert_cpu_target())
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return rebind_var[DeviceContext.CPU](self^)
 
@@ -1042,10 +1040,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             print("Failed to get memory information")
         ```
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.get_memory_info()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var info = self._impl._context[].get_memory_info()
         if info[0] == MEMORY_UNKNOWN:
@@ -1076,10 +1072,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If querying the compute capability fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.compute_capability()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var major = self.device().get_attribute(
             DeviceAttribute.COMPUTE_CAPABILITY_MAJOR
@@ -1112,11 +1106,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If there's an error setting the current device.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.set_as_current()
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._context[].set_current()
 
@@ -1184,10 +1176,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             print("GPU API version:", api_version)
         ```
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.get_api_version()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # TODO: HAL stub - returns 0. Plumb plugin-side `cuDriverGetVersion`
         # / `hipDriverGetVersion` when callers actually need to gate on
@@ -1225,10 +1215,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         print("Device is compatible with MAX:", ctx.is_compatible())
         ```
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.is_compatible()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # TODO: HAL stub - always returns True. Hook this up to a plugin-side
         # compute-capability + driver-version check when real semantics
@@ -1257,10 +1245,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails. The HAL backend never raises.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.is_graph_capturing()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # TODO(DRIV-687): answer from the queue once the HAL has stream capture.
         return False
@@ -1278,10 +1264,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             The number of devices, or 0 if no driver plugin is available or the
             loaded plugin does not support the requested API.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return LegacyDeviceContext[Self.target].number_of_devices(api=api^)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The built-in host (CPU) backend always provides a single device and
         # needs no plugin spec.
@@ -1378,10 +1362,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         default_stream.synchronize()
         ```
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceEvent(_impl=self._impl.create_event())
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The HAL uses logical events where creation and recording happen in
         # one step. To work around this, create a `DeviceEvent` without a
@@ -1403,10 +1385,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the allocation fails, or if the device's plugin has no
             completion flags.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return CompletionFlag(_impl=self._impl.allocate_completion_flag())
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return CompletionFlag(
             _impl=CompletionFlag._HAL(
@@ -1501,10 +1481,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.stream_priority_range()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # TODO: HAL stub - returns the trivial range.
         return _OverlayStreamPriorityRange(0, 0)
@@ -1572,14 +1550,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Returns:
             A `Device` that borrows this context.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return Device[Self.target, ImmOrigin(origin_of(self))](
                 _impl=rebind_var[
                     Device[Self.target, ImmOrigin(origin_of(self))]._Impl
                 ](self._impl.device())
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return Device[Self.target, ImmOrigin(origin_of(self))](
             _impl=Device[Self.target, ImmOrigin(origin_of(self))]._HAL(
@@ -1613,12 +1589,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceBuffer[dtype](
                 _impl=self._impl.enqueue_create_buffer[dtype](size)
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # NOTE: The HAL supports doing this asynchronously, but to match
         # existing DeviceContext semantics we create a buffer immediately.
@@ -1641,12 +1615,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the allocation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceBuffer[dtype](
                 _impl=self._impl.create_buffer_sync[dtype](size)
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return DeviceBuffer[dtype](self, size)
 
@@ -1697,12 +1669,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return HostBuffer[dtype](
                 _impl=self._impl.enqueue_create_host_buffer[dtype](size)
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return HostBuffer[dtype](self, size)
 
@@ -1769,11 +1739,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_ptr, src_ptr, size)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.enqueue_copy(
             DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
@@ -1801,11 +1769,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_ptr)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._stream[].copy_to_device(
             dst_buf._impl._inner[]._buffer.view(),
@@ -1833,11 +1799,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_ptr)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._stream[].copy_to_device(
             dst_buf._impl._inner[]._buffer.view(),
@@ -1864,11 +1828,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_ptr, src_buf._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._stream[].copy_from_device(
             dst_ptr.unsafe_bitcast[UInt8](),
@@ -1893,11 +1855,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails, or if `dst_buf` is not on this context's
             device.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # As in legacy: the copy waits for `src_buf`'s writes, and `src_buf`'s
         # stream can't overwrite or free it until the copy has read it.
@@ -1927,11 +1887,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         _check_copy_src_size(
             dst_buf._impl._inner[]._buffer, src_buf._impl._inner[]._buffer
@@ -1958,11 +1916,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         ref dst_mem = dst_buf._impl._inner[]._buffer
         ref src_mem = src_buf._impl._inner[]._buffer
@@ -1991,11 +1947,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         _check_copy_src_size(
             dst_buf._impl._inner[]._buffer, src_buf._impl._inner[]._buffer
@@ -2025,11 +1979,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_ptr, src_buf._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._stream[].copy_from_device(
             dst_ptr.unsafe_bitcast[UInt8](),
@@ -2059,11 +2011,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         debug_assert(
             len(src) >= len(dst_buf),
@@ -2092,11 +2042,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         debug_assert(
             len(src) >= len(dst_buf),
@@ -2128,11 +2076,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst, src_buf._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         debug_assert(
             len(dst) >= len(src_buf),
@@ -2162,11 +2108,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst, src_buf._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         debug_assert(
             len(dst) >= len(src_buf),
@@ -2194,13 +2138,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_no_cross_stream_sync(
                 dst_buf._impl, src_buf._impl
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         _check_device_to_device_copy(self._impl, dst_buf._impl, src_buf._impl)
         _enqueue_copy_device_to_device(self._impl, dst_buf._impl, src_buf._impl)
@@ -2221,11 +2163,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_memset(dst._impl, val)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._stream[].fill(
             dst._impl._inner[]._buffer.view(),
@@ -2249,11 +2189,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_memset(dst._impl, val)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._stream[].fill(
             dst._impl._inner[]._buffer.view(),
@@ -2284,11 +2222,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If self is not a CPU DeviceContext.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_cpu_range(func, count)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if self.api() != "cpu":
             raise Error(
@@ -2502,8 +2438,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the load fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             result = type_of(result)(
                 _impl=self._impl.load_function[func](
                     function_name=function_name^,
@@ -2512,7 +2447,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 )
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         result = type_of(result)(self, function_name=function_name^, asm=asm^)
 
@@ -2550,8 +2484,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_function(
                 f._impl,
                 *args,
@@ -2564,7 +2497,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var hal_f: _HALDeviceExternalFunction = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
@@ -2649,8 +2581,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_function(
                 f._impl,
                 *args,
@@ -2663,7 +2594,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var hal_f: _HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
@@ -2772,8 +2702,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the compilation or the launch fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             # Leaving `host_args` out when there are none lets a plugin's own
             # `enqueue_function[func]` overload, which takes no host arguments,
             # win over the base one that raises for targets that launch through
@@ -2818,7 +2747,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     location=location,
                 )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         comptime if Self._HALHooks.Enqueuer.overrides:
             var launch = HalLaunchOptions(
@@ -3122,8 +3050,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the compilation or the launch fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             # The legacy backend doesn't support the full
             # `DeviceContext.ExecutionConfigType`, so the legacy
             # context's grid and block requirement is asserted here.
@@ -3138,7 +3065,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_function[func](
@@ -3315,14 +3241,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
 
             def run_legacy(inner: Self._Legacy) raises {imm}:
                 func(Self(_impl=inner.copy()))
 
             return self._impl.execution_time(run_legacy, num_iters)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.synchronize()
         var start = monotonic()
@@ -3351,10 +3275,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.execution_time(func, num_iters)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.synchronize()
         var start = monotonic()
@@ -3383,14 +3305,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
 
             def run_legacy(inner: Self._Legacy, i: Int) raises {imm}:
                 func(Self(_impl=inner.copy()), i)
 
             return self._impl.execution_time_iter(run_legacy, num_iters)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.synchronize()
         var start = monotonic()
@@ -3430,11 +3350,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If enabling peer access fails: the build or `peer`'s driver lacks
             peer access, or the plugin refuses the pair.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enable_peer_access(peer._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if not (self._impl._driver is peer._impl._driver):
             raise Error("Peer access not implemented")
@@ -3465,11 +3383,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             On the first pair the plugin refuses.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             LegacyDeviceContext[Self.target].enable_all_peer_access()
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         comptime device_spec = _HALDeviceContext[Self.target].device_spec
         comptime Ext = _HALDevice[device_spec].Extensions
@@ -3517,10 +3433,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return LegacyDeviceContext[Self.target].all_peer_access_enabled()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return _PEER_STATE.get_or_create_ptr()[].all_enabled.load() != 0
 
@@ -3534,10 +3448,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails. The HAL backend never raises.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.supports_multicast()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return False
 

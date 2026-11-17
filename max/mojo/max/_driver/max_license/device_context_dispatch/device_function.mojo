@@ -284,15 +284,13 @@ struct DeviceFunction[
             If the compilation or function loading fails, or if the HAL backend
             is given an unsupported function attribute.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 func_attribute=func_attribute,
                 name=name,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if case .Some(func_attribute) = func_attribute:
             # The CUDA plugin lifts the dynamic shared memory cap to the
@@ -845,12 +843,10 @@ struct DeviceFunction[
         Raises:
             If the occupancy calculation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.occupancy_max_active_blocks_per_multiprocessor(
                 block_size, dynamic_shared_mem_size
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return Int(
             self._impl._inner[]
@@ -933,8 +929,7 @@ struct DeviceExternalFunction[
         Raises:
             If the load fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 function_name=function_name^,
@@ -942,7 +937,6 @@ struct DeviceExternalFunction[
                 func_attribute=func_attribute,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var func_handle = ctx._impl._context[].get_or_load_function_dynamic(
             asm, function_name

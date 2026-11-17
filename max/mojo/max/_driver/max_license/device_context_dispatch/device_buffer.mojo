@@ -138,14 +138,12 @@ struct DeviceBuffer[dtype: DType](
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 size=size,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var byte_size = UInt64(size * size_of[Self.dtype]())
         # Cache the GPU address up front so `unsafe_ptr` is non-raising.
@@ -187,8 +185,7 @@ struct DeviceBuffer[dtype: DType](
             size: Number of elements addressable through the pointer.
             owning: Whether releasing this buffer should free the pointer.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 rebind[Self._DevicePtr](ptr),
@@ -196,7 +193,6 @@ struct DeviceBuffer[dtype: DType](
                 owning=owning,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var byte_size = UInt64(size * size_of[Self.dtype]())
         var addr = UInt64(Int(ptr))
@@ -240,10 +236,8 @@ struct DeviceBuffer[dtype: DType](
     @staticmethod
     @doc_hidden
     def empty(context: DeviceContext) -> Self:
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return Self(_impl=Self._Legacy.empty(context._impl))
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return Self(context, Self._DevicePtr.unsafe_dangling(), 0, owning=False)
 
@@ -260,11 +254,9 @@ struct DeviceBuffer[dtype: DType](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         """Device dtype mapping from DeviceBuffer to the device's `Pointer`."""
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl._to_device_type(encoder, target)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # An empty buffer has no device pointer, so nothing is encoded.
         try:
@@ -333,10 +325,8 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The number of elements in the buffer.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return len(self._impl)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return (
             Int(self._impl._inner[]._buffer.byte_size) // size_of[Self.dtype]()
@@ -369,12 +359,10 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the range is invalid.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceBuffer[view_type](
                 _impl=self._impl.create_sub_buffer[view_type](offset, size)
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         comptime elem_size = size_of[view_type]()
         var byte_offset = UInt64(offset * elem_size)
@@ -411,12 +399,10 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer owned by this buffer.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return rebind[Pointer[Scalar[Self.dtype], origin]](
                 self._impl.unsafe_ptr()
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The HAL reports an untracked origin; rebuild it against the caller's
         # borrow so the result behaves like the legacy pointer.
@@ -457,10 +443,8 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the query fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceContext[](_impl=self._impl.context())
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return rebind_var[DeviceContext[]](self._impl._ctx)
 
@@ -475,10 +459,8 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer that was owned by this buffer.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl.take_ptr()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # Ownership of the underlying allocation transfers to the caller: the
         # wrapper handle (freed when the last reference drops) no longer frees
@@ -507,11 +489,9 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_to(dst._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(dst, self)
 
@@ -528,11 +508,9 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_to(dst._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(dst, self)
 
@@ -563,11 +541,9 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_from(src._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(self, src)
 
@@ -584,11 +560,9 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_from(src._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(self, src)
 
@@ -607,11 +581,9 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_from(src_ptr)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(self, src_ptr)
 
@@ -626,11 +598,9 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_from(src)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(self, src)
 
@@ -645,11 +615,9 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_to(dst)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(dst, self)
 
@@ -666,11 +634,9 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_fill(val)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_memset(self, val)
 
@@ -714,12 +680,10 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If this buffer has size 0.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return rebind_var[DevicePointer[Self.dtype, origin_of(self)]](
                 self._impl.device_ptr()
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         return DevicePointer[Self.dtype, origin_of(self)](self)
@@ -733,10 +697,8 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The native handle of the buffer.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl^.take_handle()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var ptr = self._impl._device_ptr
         var byte_size = Int(self._impl._inner[]._buffer.byte_size)
@@ -764,8 +726,7 @@ struct DeviceBuffer[dtype: DType](
 
         Used by `max.gpu.host._legacy._tensormap.create_tensormap`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl._tensor_map_encode_tiled(
                 tensor_map,
                 data_type,
@@ -780,7 +741,6 @@ struct DeviceBuffer[dtype: DType](
                 oob_fill,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # Same-width reinterpret of the callers' signed arrays to the C ABI's
         # unsigned element types.
@@ -820,8 +780,7 @@ struct DeviceBuffer[dtype: DType](
 
         Used by `max.gpu.host._legacy._tensormap.create_tensormap_im2col`.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl._tensor_map_encode_im2col(
                 tensor_map,
                 data_type,
@@ -839,7 +798,6 @@ struct DeviceBuffer[dtype: DType](
                 oob_fill,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self._impl._ctx._impl._context[].tensor_map_encode_im2col(
             tensor_map,

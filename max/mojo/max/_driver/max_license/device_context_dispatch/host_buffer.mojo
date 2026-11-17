@@ -104,14 +104,12 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 size=size,
             )
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var byte_size = UInt64(size * size_of[Self.dtype]())
         var buffer = ctx._impl._context[].alloc_host_pinned(byte_size)
@@ -221,10 +219,8 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Returns:
             The scalar value at the specified index.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return self._impl[idx]
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self.unsafe_ptr()[unsafe_offset=idx]
 
@@ -239,11 +235,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             idx: The index of the element to set.
             val: The value to store at the specified index.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl[idx] = val
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.unsafe_ptr()[unsafe_offset=idx] = val
 
@@ -256,10 +250,8 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Returns:
             The number of elements in the buffer.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return len(self._impl)
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return (
             Int(self._impl._inner[]._buffer.byte_size) // size_of[Self.dtype]()
@@ -278,10 +270,8 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Returns:
             The raw host pointer owned by this buffer.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return rebind[Self._HostPtr](self._impl.unsafe_ptr())
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return self._impl._inner[]._host_ptr.unsafe_bitcast[
             Scalar[Self.dtype]
@@ -327,10 +317,8 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the query fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return DeviceContext[](_impl=self._impl.context())
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return rebind_var[DeviceContext[]](self._impl._ctx)
 
@@ -352,12 +340,10 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the range is invalid.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             return HostBuffer[view_type](
                 _impl=self._impl.create_sub_buffer[view_type](offset, size)
             )
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[view_type]()
@@ -403,11 +389,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_to(dst._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The HAL host buffer copies through spans; it has no direct
         # host-to-host overload.
@@ -426,11 +410,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_to(dst._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(dst, self)
 
@@ -460,11 +442,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_from(src._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The HAL host buffer copies through spans; it has no direct
         # host-to-host overload.
@@ -483,11 +463,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_from(src._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(self, src)
 
@@ -519,11 +497,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_from(src)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(self, src)
 
@@ -538,11 +514,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the operation fails.
         """
-        comptime __guard case False = use_legacy_backend() else:
-            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+        comptime __guard not use_legacy_backend() else:
             self._impl.enqueue_copy_to(dst)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.context().enqueue_copy(dst, self)
 
