@@ -46,6 +46,7 @@ __all__ = [
     "amd_kda_chunk_workspace_bytes",
     "amd_kda_long_row_scratch_bytes",
     "kda_chunk",
+    "kda_chunk_conv",
     "kda_chunk_predicate",
     "kda_chunk_rows",
     "kda_chunk_rows_servable",
@@ -1293,24 +1294,23 @@ def kda_verify_ring(
 
 
 _KGROUP_CONV_OP = "kda_verify_ring_kgroup_conv"
+_CHUNK_CONV_OP = "kda_chunk_conv"
 _FUSED_HEAD_DIM = 128
 """Key and value head width the fused verify ops are compiled for."""
 _FUSED_CONV_TAPS = 4
 """Taps of the short conv the fused verify ops run."""
+_CHUNK_CONV_VEC = 2
+"""Adjacent channels a lane of the ``kda_chunk_conv`` kernel owns. q, k and
+v each span a multiple of it, so no lane's channels straddle two of them."""
 
 
-def _check_fused_conv_shapes(
-    op_name: str,
-    conv_dim: Dim,
-    conv_weight: TensorValue,
-    conv_pool: BufferValue,
-    key_head_dim: Dim,
-    value_head_dim: Dim,
+def _check_conv_shapes(
+    conv_dim: Dim, conv_weight: TensorValue, conv_pool: BufferValue
 ) -> None:
-    """Raises ``ValueError`` unless the conv and the heads fit the fused ops.
+    """Raises ``ValueError`` unless the conv is the fused ops' 4-tap conv.
 
-    The fused verify ops are compiled for a 4-tap conv over ``conv_dim``
-    channels and 128-wide heads. Only static head widths are checked.
+    The taps must be ``[conv_dim, 4]`` and the window pool
+    ``[rows, conv_dim, 3]``.
     """
     if (
         conv_weight.shape[0] != conv_dim
@@ -1328,6 +1328,15 @@ def _check_fused_conv_shapes(
             f"expected conv_pool to be [conv_rows, {conv_dim},"
             f" {_FUSED_CONV_TAPS - 1}], was {conv_pool.shape}"
         )
+
+
+def _check_fused_head_dims(
+    op_name: str, key_head_dim: Dim, value_head_dim: Dim
+) -> None:
+    """Raises ``ValueError`` unless static head widths are both 128.
+
+    The fused verify ops are compiled for 128-wide key and value heads.
+    """
     if isinstance(key_head_dim, StaticDim) and isinstance(
         value_head_dim, StaticDim
     ):
@@ -1339,6 +1348,140 @@ def _check_fused_conv_shapes(
             )
 
 
+def _check_conv_operands(
+    op_name: str,
+    qkv: TensorValue,
+    conv_weight: TensorValue,
+    conv_pool: BufferValue,
+    conv_rows: TensorValue,
+) -> None:
+    """Raises ``ValueError`` unless the shared conv operands fit the ops.
+
+    The K-group verify and the chunk conv take the same raw input, taps,
+    window pool and pool rows. Both widen a bf16 raw input to float32 as
+    they load it, which is exact, so a bf16 ``qkv`` gives the float32
+    conv's sums.
+    """
+    if qkv.dtype not in (DType.bfloat16, DType.float32):
+        raise ValueError(
+            f"{op_name} takes a bf16 or float32 qkv, got {qkv.dtype}"
+        )
+    _check_dtype(DType.float32, conv_weight=conv_weight)
+    _check_dtype(DType.uint32, conv_rows=conv_rows)
+    _check_rank(2, qkv=qkv, conv_weight=conv_weight)
+    _check_rank(3, conv_pool=conv_pool)
+    _check_rank(1, conv_rows=conv_rows)
+
+
+def _window_rows(rows: Dim, verify_width: TensorValue) -> Dim:
+    """Returns the rows of a verify's conv input copy, ``K + 1`` a sequence."""
+    return Dim(rows) * (Dim(verify_width.shape[0]) + 1)
+
+
+def kda_chunk_conv(
+    qkv: TensorValue,
+    conv_weight: TensorValue,
+    conv_pool: BufferValue,
+    conv_rows: TensorValue,
+    input_row_offsets: TensorValue,
+    verify_width: TensorValue,
+    *,
+    num_key_heads: int,
+    num_value_heads: int,
+    head_dim: int,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+    """Runs a draft-free verify's short conv into :func:`kda_chunk`'s q, k, v.
+
+    Computes
+    :func:`~max.nn._graph_ops.state_space.gated_delta_conv1d_verify_fwd`
+    with ``silu`` at a verify width of zero, which commits every conv
+    window, then the bf16 cast of its output and the split of that cast into
+    q, k and v, and returns what those return, bit for bit, from one launch.
+    The conv takes ``qkv`` widened to float32, which is exact, so a bf16
+    ``qkv`` is read as it is. A verify with drafts must leave the conv windows
+    to the rollback, and this op commits them, so it raises at run time for
+    one: call it behind a draft-free predicate.
+
+    The contract is GLM-5.3-Flash's prefill on NVIDIA, which ships the op
+    beside :func:`kda_verify_ring_kgroup_conv`: a 4-tap conv, with ``qkv``
+    holding q and k of the key heads and then v of the value heads.
+
+    Args:
+        qkv: ``[total_tokens, conv_dim]`` bf16 or float32 raw conv input.
+        conv_weight: ``[conv_dim, 4]`` float32 depthwise conv taps.
+        conv_pool: ``[conv_rows, conv_dim, 3]`` conv window pool, committed
+            in place.
+        conv_rows: ``[batch_size]`` uint32 conv pool row per sequence.
+        input_row_offsets: ``[batch_size + 1]`` uint32 ragged offsets.
+        verify_width: The operand
+            :func:`~max.nn._graph_ops.state_space.verify_width_operand` returns.
+        num_key_heads: Heads of q and of k.
+        num_value_heads: Heads of v.
+        head_dim: Channels a head.
+
+    Returns:
+        q and k, ``[total_tokens, num_key_heads, head_dim]``, and v,
+        ``[total_tokens, num_value_heads, head_dim]``, all bf16, then the
+        conv input copy, ``[batch_size * (K + 1), conv_dim]`` float32, which
+        a verify of no drafts leaves unwritten.
+
+    Raises:
+        ValueError: If the dtypes, ranks or extents fall outside the contract.
+    """
+    _check_conv_operands(_CHUNK_CONV_OP, qkv, conv_weight, conv_pool, conv_rows)
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
+    _check_dtype(DType.int64, verify_width=verify_width)
+    _check_rank(
+        1, input_row_offsets=input_row_offsets, verify_width=verify_width
+    )
+    total_tokens, conv_dim = qkv.shape
+    qk_channels = num_key_heads * head_dim
+    v_channels = num_value_heads * head_dim
+    if qk_channels % _CHUNK_CONV_VEC or v_channels % _CHUNK_CONV_VEC:
+        raise ValueError(
+            f"{_CHUNK_CONV_OP} splits q, k and v at multiples of"
+            f" {_CHUNK_CONV_VEC} channels, got {qk_channels} and {v_channels}"
+        )
+    _check_same_dim(
+        "the channel axis",
+        qkv=conv_dim,
+        heads=Dim(2 * qk_channels + v_channels),
+    )
+    _check_conv_shapes(conv_dim, conv_weight, conv_pool)
+    device = qkv.device
+    qk_type = TensorType(
+        DType.bfloat16, [total_tokens, num_key_heads, head_dim], device
+    )
+    results = ops.inplace_custom(
+        _CHUNK_CONV_OP,
+        device,
+        [
+            qkv,
+            conv_weight,
+            conv_pool,
+            conv_rows,
+            input_row_offsets,
+            verify_width,
+        ],
+        [
+            qk_type,
+            qk_type,
+            TensorType(
+                DType.bfloat16,
+                [total_tokens, num_value_heads, head_dim],
+                device,
+            ),
+            TensorType(
+                DType.float32,
+                [_window_rows(conv_rows.shape[0], verify_width), conv_dim],
+                device,
+            ),
+        ],
+    )
+    q, k, v, window = (result.tensor for result in results)
+    return q, k, v, window
+
+
 def kda_verify_ring_kgroup_conv_servable(
     head_dim: int, gate_mode: KdaGateMode, pool_dtype: DType
 ) -> bool:
@@ -1346,8 +1489,10 @@ def kda_verify_ring_kgroup_conv_servable(
 
     The op runs the K-group verify kernel, so it serves that kernel's
     contract only: NVIDIA, ``K = V = 128``, the ``"safe"`` gate and a
-    float32 pool, in a build that ships the closed-source kernels. Call this
-    while a graph is being built: it reads that graph's kernel library.
+    float32 pool, in a build that ships the closed-source kernels, which
+    also ship :func:`kda_chunk_conv` for the draft-free branch beside it.
+    Call this while a graph is being built: it reads that graph's kernel
+    library.
 
     Args:
         head_dim: Key and value head width.
@@ -1363,6 +1508,7 @@ def kda_verify_ring_kgroup_conv_servable(
         and gate_mode == "safe"
         and pool_dtype == DType.float32
         and _KGROUP_CONV_OP in Graph.current._kernel_library
+        and _CHUNK_CONV_OP in Graph.current._kernel_library
     )
 
 
@@ -1396,12 +1542,14 @@ def kda_verify_ring_kgroup_conv(
     it runs the two ops' own kernels.
 
     The contract is :func:`kda_verify_ring_kgroup_conv_servable`'s: float32
-    operands and pools, ``K = V = 128``, the ``"safe"`` gate with logit
-    beta, a ``K_FIRST`` pool and a 4-tap conv, with ``qkv`` holding q and k
-    of the key heads and then v of the value heads.
+    operands and pools but for ``qkv``, ``K = V = 128``, the ``"safe"`` gate
+    with logit beta, a ``K_FIRST`` pool and a 4-tap conv, with ``qkv``
+    holding q and k of the key heads and then v of the value heads. The conv
+    takes ``qkv`` widened to float32, which is exact, so the op widens a
+    bf16 ``qkv`` itself.
 
     Args:
-        qkv: ``[total_tokens, conv_dim]`` float32 raw conv input.
+        qkv: ``[total_tokens, conv_dim]`` bf16 or float32 raw conv input.
         conv_weight: ``[conv_dim, 4]`` float32 depthwise conv taps.
         conv_pool: ``[conv_rows, conv_dim, 3]`` conv window pool, committed
             in place only at a verify width of zero.
@@ -1428,10 +1576,11 @@ def kda_verify_ring_kgroup_conv(
     Raises:
         ValueError: If the dtypes, ranks or extents fall outside the contract.
     """
+    _check_conv_operands(
+        _KGROUP_CONV_OP, qkv, conv_weight, conv_pool, conv_rows
+    )
     _check_dtype(
         DType.float32,
-        qkv=qkv,
-        conv_weight=conv_weight,
         raw_gate=raw_gate,
         beta_logits=beta_logits,
         a_log=a_log,
@@ -1439,22 +1588,14 @@ def kda_verify_ring_kgroup_conv(
         state_pool=state_pool,
         ring=ring,
     )
-    _check_dtype(DType.uint32, conv_rows=conv_rows)
     _check_dtype(
         DType.int32, cu_seqlens=cu_seqlens, state_indices=state_indices
     )
-    _check_rank(
-        2,
-        qkv=qkv,
-        conv_weight=conv_weight,
-        beta_logits=beta_logits,
-        dt_bias=dt_bias,
-    )
-    _check_rank(3, conv_pool=conv_pool, raw_gate=raw_gate)
+    _check_rank(2, beta_logits=beta_logits, dt_bias=dt_bias)
+    _check_rank(3, raw_gate=raw_gate)
     _check_rank(4, state_pool=state_pool, ring=ring)
     _check_rank(
         1,
-        conv_rows=conv_rows,
         a_log=a_log,
         cu_seqlens=cu_seqlens,
         state_indices=state_indices,
@@ -1483,14 +1624,8 @@ def kda_verify_ring_kgroup_conv(
         raw_gate=key_head_dim,
         state_pool=state_pool.shape[2],
     )
-    _check_fused_conv_shapes(
-        _KGROUP_CONV_OP,
-        conv_dim,
-        conv_weight,
-        conv_pool,
-        key_head_dim,
-        state_pool.shape[3],
-    )
+    _check_conv_shapes(conv_dim, conv_weight, conv_pool)
+    _check_fused_head_dims(_KGROUP_CONV_OP, key_head_dim, state_pool.shape[3])
     device = raw_gate.device
     results = ops.inplace_custom(
         _KGROUP_CONV_OP,
@@ -1519,10 +1654,7 @@ def kda_verify_ring_kgroup_conv(
             ),
             TensorType(
                 DType.float32,
-                [
-                    Dim(conv_rows.shape[0]) * (Dim(verify_width.shape[0]) + 1),
-                    conv_dim,
-                ],
+                [_window_rows(conv_rows.shape[0], verify_width), conv_dim],
                 device,
             ),
         ],
@@ -1732,9 +1864,8 @@ def _check_verify_ring_conv(
                 "expected raw_qkv to hold q | k | v thirds of "
                 f"{inner} channels ({3 * inner} total), was {conv_dim}"
             )
-    _check_fused_conv_shapes(
-        op_name, conv_dim, conv_weight, conv_pool, key_head_dim, value_head_dim
-    )
+    _check_conv_shapes(conv_dim, conv_weight, conv_pool)
+    _check_fused_head_dims(op_name, key_head_dim, value_head_dim)
     if (
         isinstance(cu_seqlens.shape[0], StaticDim)
         and isinstance(batch_size, StaticDim)
@@ -1810,7 +1941,7 @@ def _launch_verify_ring_conv(
     ``kda_verify_ring_conv_packed_gate_up`` the gate's up-projection weight.
     """
     device = raw_gate.device
-    window_rows = Dim(state_indices.shape[0]) * (Dim(verify_width.shape[0]) + 1)
+    window_rows = _window_rows(state_indices.shape[0], verify_width)
     values: list[TensorValue | BufferValue] = [
         qkv,
         conv_weight,

@@ -85,8 +85,10 @@ def _core_mlir(
     gate_mode: KdaGateMode = "safe",
     pool_dtype: DType = DType.float32,
     verify: bool = False,
+    qkv_dtype: DType = DType.float32,
 ) -> str:
     act = TensorType(DType.float32, ["total_tokens", QKV_DIM], device=GPU)
+    qkv_part = TensorType(qkv_dtype, ["total_tokens", QKV_DIM], device=GPU)
     conv = TensorType(DType.float32, [QKV_DIM, KERNEL], device=GPU)
     rows = TensorType(DType.int32, [1, "batch"], device=GPU)
     ring = BufferType(
@@ -98,9 +100,9 @@ def _core_mlir(
         Graph(
             "glm_kda_routing",
             input_types=[
-                act,
-                act,
-                act,
+                qkv_part,
+                qkv_part,
+                qkv_part,
                 conv,
                 conv,
                 conv,
@@ -164,16 +166,31 @@ def _core_mlir(
     return str(graph)
 
 
+def _op_lines(mlir: str, symbol: str) -> list[str]:
+    return [line for line in mlir.splitlines() if f'"{symbol}"' in line]
+
+
 def _chunk_lines(mlir: str) -> list[str]:
-    return [line for line in mlir.splitlines() if '"kda_chunk"' in line]
+    return _op_lines(mlir, "kda_chunk")
 
 
 _VALUE_DTYPE = re.compile(r"!mo\.(?:tensor|buffer)<\[[^\]]*\], (\w+)")
 
 
+def _signature(line: str) -> tuple[str, str]:
+    """An op line's operand types and result types."""
+    operands, results = line.split(") : (", 1)[1].split(" -> ", 1)
+    return operands, results
+
+
+def _operand_dtypes(line: str) -> list[str]:
+    """Dtypes of an op's operands, in order."""
+    return _VALUE_DTYPE.findall(_signature(line)[0])
+
+
 def _chunk_io_dtypes(line: str) -> list[str]:
     """Dtypes of a ``kda_chunk`` op's q, k, v and output, in that order."""
-    operands, results = line.split(") : (", 1)[1].split(" -> ", 1)
+    operands, results = _signature(line)
     return (
         _VALUE_DTYPE.findall(operands)[:3] + _VALUE_DTYPE.findall(results)[:1]
     )
@@ -321,16 +338,33 @@ def test_nvidia_verify_runs_the_conv_in_the_ring(
     monkeypatch: pytest.MonkeyPatch, architecture: str
 ) -> None:
     """With drafts, the conv runs in the ring op, so the ring branch has
-    neither a conv op nor the conv output's bf16 cast; the conv op is the
-    draft-free prefill's, inside the chunk branch where ``kda_chunk`` is
-    built."""
+    neither a conv op nor the conv output's bf16 cast; the draft-free
+    prefill's conv is ``kda_chunk_conv``, which writes the bf16 q, k and v
+    itself, inside the chunk branch where ``kda_chunk`` is built."""
     _patch_accelerator(monkeypatch, "cuda", architecture)
     mlir = _core_mlir(verify=True)
     chunked = architecture == "sm_100a"
     assert _ops(mlir, "kda_verify_ring_kgroup_conv") == 1
     assert _ops(mlir, "kda_verify_ring") == 0
-    assert _ops(mlir, "gated_delta_conv1d_verify_fwd") == int(chunked)
+    assert _ops(mlir, "kda_chunk_conv") == int(chunked)
+    assert _ops(mlir, "gated_delta_conv1d_verify_fwd") == 0
     assert ("mo.if" in mlir) == chunked
+
+
+@pytest.mark.parametrize(
+    ("qkv_dtype", "mlir_dtype"),
+    [(DType.bfloat16, "bf16"), (DType.float32, "f32")],
+)
+def test_nvidia_verify_reads_qkv_in_the_model_dtype(
+    monkeypatch: pytest.MonkeyPatch, qkv_dtype: DType, mlir_dtype: str
+) -> None:
+    """Both K-group conv ops widen ``qkv`` as they load it, so the layer
+    hands them the projection's own dtype and makes no float32 copy."""
+    _patch_accelerator(monkeypatch, "cuda", "sm_100a")
+    mlir = _core_mlir(verify=True, qkv_dtype=qkv_dtype)
+    for symbol in ("kda_verify_ring_kgroup_conv", "kda_chunk_conv"):
+        (line,) = _op_lines(mlir, symbol)
+        assert _operand_dtypes(line)[0] == mlir_dtype, line
 
 
 def test_nvidia_verify_without_the_conv_op_keeps_the_conv_launch(
@@ -346,6 +380,7 @@ def test_nvidia_verify_without_the_conv_op_keeps_the_conv_launch(
     )
     mlir = _core_mlir(verify=True)
     assert _ops(mlir, "kda_verify_ring_kgroup_conv") == 0
+    assert _ops(mlir, "kda_chunk_conv") == 0
     assert _ops(mlir, "kda_verify_ring") == 1
     assert _ops(mlir, "gated_delta_conv1d_verify_fwd") == 1
     assert "kgroup = true" in mlir

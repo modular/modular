@@ -45,6 +45,7 @@ from max.nn.kernels import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     kda_chunk,
+    kda_chunk_conv,
     kda_decode,
     kda_verify_ring,
     kda_verify_ring_kgroup_conv,
@@ -210,28 +211,6 @@ def _split_heads(
     return q, k, v
 
 
-def _verify_conv(
-    qkv: Tensor,
-    conv_weight: Tensor,
-    conv_pool: Tensor,
-    conv_slots: Tensor,
-    conv_offsets: Tensor,
-    verify_width: Tensor,
-) -> tuple[Tensor, Tensor]:
-    """Runs a verify's conv; returns its SiLU output and the input copy."""
-    conv_out, qkv_window = gated_delta_conv1d_verify_fwd(
-        qkv_input_ragged=qkv,
-        conv_weight=conv_weight,
-        conv_state=conv_pool,
-        slot_idx=conv_slots,
-        input_row_offsets=conv_offsets,
-        verify_width=verify_width,
-        rollback=False,
-        silu=True,
-    )
-    return conv_out, qkv_window
-
-
 def _capture_replay(
     capture: CaptureSink[KdaReplayInputs] | None,
     qkv: Tensor,
@@ -328,9 +307,10 @@ def _kgroup_conv_verify(
     """Runs a verify's conv and recurrence on the K-group conv op.
 
     The op runs the conv in the ring kernel, so a verify with drafts takes
-    one launch for both and computes no bf16 conv output for the chunk
-    branch. A draft-free prefill still takes the chunk kernel, with its conv
-    and cast inside that branch.
+    one launch for both. A draft-free prefill takes the chunk kernel, whose
+    bf16 q, k and v come out of one ``kda_chunk_conv`` launch. Both ops take
+    ``qkv`` in the model dtype and widen it themselves, which is exact, so
+    the layer casts none of it.
     """
     operands = _kda_operands(
         raw_gate,
@@ -369,10 +349,17 @@ def _kgroup_conv_verify(
         return [F.rebind(out, out_shape, "kda verify output rebind"), window]
 
     def chunk() -> list[Tensor]:
-        conv_out, window = _verify_conv(
-            qkv, conv_weight, conv_pool, conv_slots, conv_offsets, verify_width
+        q, k, v, window = kda_chunk_conv(
+            qkv,
+            conv_weight,
+            conv_pool,
+            conv_slots,
+            conv_offsets,
+            verify_width,
+            num_key_heads=head_shape[1],
+            num_value_heads=head_shape[1],
+            head_dim=head_shape[2],
         )
-        q, k, v = _split_heads(conv_out.cast(DType.bfloat16), head_shape)
         core = _chunk_core(
             q, k, v, operands, recurrent_pool, gate_mode, out_shape
         )
@@ -452,7 +439,7 @@ def kda_core(
     head_shape = [-1, qkv_dim // head_dim, head_dim]
 
     # q, k, v in that order: the conv's channel layout.
-    qkv = F.concat([q, k, v], axis=-1).cast(DType.float32)
+    qkv = F.concat([q, k, v], axis=-1)
     # The module holds each conv weight as the checkpoint's depthwise
     # `[channels, 1, kernel]`.
     conv_weight = (
@@ -489,6 +476,7 @@ def kda_core(
         return _gated_norm(
             core, norm_weight, norm_eps, output_gate, head_shape, dtype
         )
+    qkv = qkv.cast(DType.float32)
     qkv_window: Tensor | None = None
     if verify_width is None:
         conv_out = gated_delta_conv1d_fwd(
@@ -500,13 +488,15 @@ def kda_core(
             silu=True,
         )
     else:
-        conv_out, qkv_window = _verify_conv(
-            qkv,
-            conv_weight,
-            conv_pool,
-            conv_slots,
-            input_row_offsets.cast(DType.uint32),
-            verify_width,
+        conv_out, qkv_window = gated_delta_conv1d_verify_fwd(
+            qkv_input_ragged=qkv,
+            conv_weight=conv_weight,
+            conv_state=conv_pool,
+            slot_idx=conv_slots,
+            input_row_offsets=input_row_offsets.cast(DType.uint32),
+            verify_width=verify_width,
+            rollback=False,
+            silu=True,
         )
     q, k, v = _split_heads(conv_out, head_shape)
 

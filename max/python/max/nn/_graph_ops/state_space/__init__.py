@@ -31,6 +31,7 @@ from .gated_delta import (
 from .gated_group_rmsnorm import gated_group_rmsnorm
 from .kimi_delta import (
     kda_chunk,
+    kda_chunk_conv,
     kda_chunk_is_registered,
     kda_chunk_rows,
     kda_chunk_rows_servable,
@@ -68,6 +69,7 @@ __all__ = [
     "gated_delta_state_fold",
     "gated_group_rmsnorm",
     "kda_chunk",
+    "kda_chunk_conv",
     "kda_chunk_is_registered",
     "kda_chunk_rows",
     "kda_chunk_rows_servable",

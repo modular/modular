@@ -257,6 +257,14 @@ def _ring() -> str:
     return "kda_verify_ring"
 
 
+def _prefill_conv() -> str:
+    """The draft-free prefill's conv op: on NVIDIA it also writes the bf16 q,
+    k and v ``kda_chunk`` takes."""
+    if accelerator_api() == "cuda":
+        return "kda_chunk_conv"
+    return "gated_delta_conv1d_verify_fwd"
+
+
 def test_the_verify_records_every_kda_layer_into_the_ring(fused: str) -> None:
     assert _symbol_count(fused, _ring()) == NUM_KDA
     assert _symbol_count(fused, "kda_decode") == 0
@@ -284,7 +292,7 @@ def test_the_conv_window_is_left_for_the_rollback(fused: str) -> None:
     # Only the verify's forward launch, one per KDA layer: the rollback places
     # the windows inside the fold's launch instead. On NVIDIA the ring op runs
     # a verify's conv, and the conv op is the draft-free prefill's.
-    assert _symbol_count(fused, "gated_delta_conv1d_verify_fwd") == NUM_KDA
+    assert _symbol_count(fused, _prefill_conv()) == NUM_KDA
     assert _symbol_count(fused, "gated_delta_conv1d_fwd") == 0
 
 
@@ -293,9 +301,11 @@ def test_the_rollback_folds_the_conv_windows_in_the_folds_launch(
 ) -> None:
     """Checks the rollback holds one fold op and no per-layer conv replay."""
     assert _symbol_count(fused, "kda_state_fold") == 1
-    # One forward conv-verify per layer is all the conv-verify ops the graph
-    # holds; a per-layer replay in the roll-forward would double it.
-    assert _symbol_count(fused, "gated_delta_conv1d_verify_fwd") == NUM_KDA
+    # The forward's conv ops are all the graph holds; a per-layer replay in
+    # the roll-forward would add a conv-verify op for every layer. On NVIDIA
+    # the forward holds none.
+    forward = 0 if accelerator_api() == "cuda" else NUM_KDA
+    assert _symbol_count(fused, "gated_delta_conv1d_verify_fwd") == forward
 
 
 def test_every_indexer_seeds_its_tail_twice(fused: str) -> None:
