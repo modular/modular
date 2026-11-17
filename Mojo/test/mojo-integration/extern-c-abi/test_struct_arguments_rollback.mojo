@@ -74,7 +74,53 @@ def test_variadic_struct_after_five():
 # CHECK: variadic_struct_after_five: 0
 
 
+# Struct passed after seven integer-class args: on arm64 seven GPRs leave
+# only X7, and on x86-64 none remain, so the struct must roll back to the
+# stack on both. Under the old per-argument lowering the struct was split
+# between a register and the stack, corrupting it.
+def test_struct_after_seven():
+    var v = Int3(Int32(11), Int32(22), Int32(33))
+    var status = external_call["check_struct_after_seven", Int32](
+        Int32(1),
+        Int32(2),
+        Int32(3),
+        Int32(4),
+        Int32(5),
+        Int32(6),
+        Int32(7),
+        v,
+    )
+    print("struct_after_seven:", status)
+
+
+# CHECK: struct_after_seven: 0
+
+
+# Trailing argument after the rolled-back struct: AAPCS64 exhausts the
+# register search, so the trailing int goes to the stack too. A lowering
+# that left the last register for it (a byval pointer) corrupts it.
+def test_struct_then_int_after_seven():
+    var v = Int3(Int32(11), Int32(22), Int32(33))
+    var status = external_call["check_struct_then_int_after_seven", Int32](
+        Int32(1),
+        Int32(2),
+        Int32(3),
+        Int32(4),
+        Int32(5),
+        Int32(6),
+        Int32(7),
+        v,
+        Int32(44),
+    )
+    print("struct_then_int_after_seven:", status)
+
+
+# CHECK: struct_then_int_after_seven: 0
+
+
 def main():
     test_struct_early()
     test_struct_after_five()
     test_variadic_struct_after_five()
+    test_struct_after_seven()
+    test_struct_then_int_after_seven()

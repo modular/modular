@@ -13,6 +13,7 @@
 
 #include "CABIAAPCS.h"
 #include "LLVMLoweringUtils.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/STLExtras.h"
 
@@ -207,6 +208,129 @@ CoercionInfo AAPCSABIInfo::classifyTwoRegisterStruct(int64_t size,
   info.coercedSecondType = CabiUtils::getIntegerTypeForSize(secondSize, ctx);
 
   return info;
+}
+
+//===----------------------------------------------------------------------===//
+// Whole-signature classification (rollback-to-stack)
+//===----------------------------------------------------------------------===//
+
+unsigned AAPCSABIInfo::argGPRUsage(const CoercionInfo &info,
+                                   mlir::Type llvmType) const {
+  switch (info.argClass) {
+  case ABIArgClass::Integer: {
+    int64_t size = dataLayout.getTypeStoreSize(info.coercedType);
+    return std::max<unsigned>((size + 7) / 8, 1);
+  }
+  case ABIArgClass::IntegerPair:
+    return 2;
+  case ABIArgClass::Memory:
+    // A byval argument is passed in the stack argument area; the raw
+    // pointer of a >16-byte struct is an ordinary pointer argument in a GPR.
+    return info.useByval ? 0 : 1;
+  case ABIArgClass::SSE:
+    return 0; // Homogeneous aggregate: V registers or the stack
+  case ABIArgClass::NoClass:
+    break; // Identity arg: derive usage from the LLVM type below.
+  default:
+    break; // SSEPair/Mixed are not produced on ARM64.
+  }
+
+  if (isa<mlir::LLVM::LLVMPointerType>(llvmType))
+    return 1;
+  if (auto intTy = dyn_cast<mlir::IntegerType>(llvmType)) {
+    unsigned regs = (intTy.getWidth() + 63) / 64;
+    return std::max(regs, 1u);
+  }
+  if (isa<mlir::FloatType>(llvmType))
+    return 0; // V register
+  if (isa<mlir::VectorType>(llvmType))
+    return 0; // V registers
+  if (isa<mlir::LLVM::LLVMStructType>(llvmType))
+    return 0; // Identity struct (HFA): V registers or the stack
+  assert(false && "unhandled identity argument type in register accounting");
+  return 0;
+}
+
+SignatureClassification
+AAPCSABIInfo::classifySignature(mlir::TypeRange argTypes, mlir::Type retType,
+                                mlir::Location loc, size_t numFixedArgs) const {
+  SignatureClassification result;
+  if (retType)
+    result.ret = classifyReturnType(retType, loc);
+
+  // AAPCS64 stage C searches X0-X7 for composite arguments. An sret return
+  // uses X8, which is outside the argument register set, so it does not
+  // reduce the budget (unlike System V, where sret takes RDI).
+  unsigned freeGPRs = 8;
+
+  // The alignment that selects the form of a composite. Apple's arm64 ABI uses
+  // the alignment of the type. AAPCS64 uses the natural alignment, which does
+  // not include the alignment that `@align` gives the struct itself.
+  auto compositeAlign = [&](mlir::Type type) {
+    return isDarwin ? getTypeABIAlign(type) : getNaturalTypeABIAlign(type);
+  };
+
+  // Coerce a two-register composite to a single by-value integer, so that the
+  // backend assigns all of it to registers or all of it to the stack. A
+  // 16-byte-aligned composite is an i128, and other composites are a
+  // [2 x i64]. This is the form that clang emits.
+  auto singleIntegerArgument = [&](mlir::Type type) {
+    CoercionInfo info;
+    info.argClass = ABIArgClass::Integer;
+    if (compositeAlign(type) >= 16) {
+      info.coercedType = mlir::IntegerType::get(ctx, 128);
+    } else {
+      info.coercedType =
+          mlir::LLVM::LLVMArrayType::get(mlir::IntegerType::get(ctx, 64), 2);
+    }
+    return info;
+  };
+
+  result.args.reserve(argTypes.size());
+  for (auto [idx, type] : llvm::enumerate(argTypes)) {
+    bool isVariadicArg = idx >= numFixedArgs;
+    CoercionInfo info = classifyArgumentType(type, loc, isVariadicArg);
+    mlir::Type llvmType = convertType(type);
+
+    // A 16-byte-aligned composite is an i128 at each position. On Linux, it
+    // then starts at an even register.
+    if (info.isTwoRegister() && compositeAlign(type) >= 16)
+      info = singleIntegerArgument(type);
+
+    // Apple's arm64 ABI passes all variadic arguments on the stack, so they
+    // use no argument registers. A composite has the same form at each
+    // position.
+    if (isDarwin && isVariadicArg) {
+      if (info.isTwoRegister())
+        info = singleIntegerArgument(type);
+      result.args.push_back(info);
+      continue;
+    }
+
+    // Linux AAPCS64 rounds NGRN up to an even register for i128. Darwin
+    // permits an odd starting register, so it does not consume this slot.
+    mlir::Type passedType = info.coercedType ? info.coercedType : llvmType;
+    if (!isDarwin && passedType.isInteger(128) && freeGPRs % 2)
+      --freeGPRs;
+
+    // Unlike x86-64, variadic arguments on Linux AAPCS64 are allocated like
+    // fixed arguments (the callee prologue spills X0-X7 into the GP save
+    // area), so they take part in the register accounting.
+    unsigned need = argGPRUsage(info, llvmType);
+    if (need <= freeGPRs) {
+      freeGPRs -= need;
+    } else {
+      // An argument that does not fit in the remaining registers is passed
+      // entirely in memory; every later argument goes to the stack too, even
+      // though a register remains. The backend does this for a single
+      // by-value integer, but not for a two-register composite.
+      if (info.isTwoRegister())
+        info = singleIntegerArgument(type);
+      freeGPRs = 0;
+    }
+    result.args.push_back(info);
+  }
+  return result;
 }
 
 //===----------------------------------------------------------------------===//

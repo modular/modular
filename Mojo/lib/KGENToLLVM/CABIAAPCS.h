@@ -26,7 +26,8 @@ namespace M::KGEN {
 ///
 /// Key rules:
 /// - Structs ≤8 bytes (all-integer): coerce to i8/i16/i32/i64
-/// - Structs 9-16 bytes: split into two registers (X0-X1)
+/// - Structs 9-16 bytes: split into two registers (X0-X7) when two
+///   remain; otherwise passed entirely in memory (rollback-to-stack)
 /// - Structs >16 bytes: pass by pointer (indirect)
 /// - HFA (Homogeneous Float Aggregate): up to 4 float/vector fields in V0-V3
 /// - **Darwin vs Linux difference for variadic HFA:**
@@ -49,7 +50,19 @@ protected:
   CoercionInfo classifyReturnType(mlir::Type type,
                                   mlir::Location loc) const override;
 
+  /// Classify a whole signature, applying the AAPCS64 rule that a composite
+  /// which does not fit in the remaining argument registers is passed
+  /// entirely in memory rather than split across a register and the stack.
+  SignatureClassification classifySignature(mlir::TypeRange argTypes,
+                                            mlir::Type retType,
+                                            mlir::Location loc,
+                                            size_t numFixedArgs) const override;
+
 private:
+  /// Number of GPRs (X0-X7) a classified argument consumes. Identity args
+  /// derive their usage from the LLVM type.
+  unsigned argGPRUsage(const CoercionInfo &info, mlir::Type llvmType) const;
+
   //===--------------------------------------------------------------------===//
   // Phase 2: Two-register classification (9-16 byte structs)
   //===--------------------------------------------------------------------===//

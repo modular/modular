@@ -119,10 +119,11 @@ struct CABICallHelper {
 
   /// Create an alloca in the entry block of the enclosing function.
   /// This ensures stack allocations don't grow unboundedly when the
-  /// external_call is inside a loop.
+  /// external_call is inside a loop. An alignment of zero gives the alignment
+  /// of `elemType`.
   mlir::Value createEntryBlockAlloca(M::DirectRewriter &rewriter,
-                                     mlir::Location loc,
-                                     mlir::Type elemType) const;
+                                     mlir::Location loc, mlir::Type elemType,
+                                     int64_t alignment) const;
 
   /// The LLVM function that contains the call.
   mlir::LLVM::LLVMFuncOp getParentFunc() const;

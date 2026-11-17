@@ -54,6 +54,27 @@ mlir::Type CABIInfo::convertType(mlir::Type type) const {
   return llvmType;
 }
 
+int64_t CABIInfo::getTypeABIAlign(mlir::Type type) const {
+  int64_t align = dataLayout.getTypeABIAlign(convertType(type));
+  if (std::optional<int64_t> kgenAlign =
+          DataLayoutInterface::getTypeABIAlign(typeConverter.getTarget(), type))
+    align = std::max(align, *kgenAlign);
+  return align;
+}
+
+int64_t CABIInfo::getNaturalTypeABIAlign(mlir::Type type) const {
+  auto structType = dyn_cast<StructType>(type);
+  if (!structType)
+    return getTypeABIAlign(type);
+  std::optional<SmallVector<mlir::Type>> members = structType.getElementTypes();
+  if (!members)
+    return getTypeABIAlign(type);
+  int64_t align = 1;
+  for (mlir::Type member : *members)
+    align = std::max(align, getTypeABIAlign(member));
+  return align;
+}
+
 SignatureClassification
 CABIInfo::computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
                                mlir::Location loc, CABIRole role,
@@ -95,6 +116,20 @@ CABIInfo::computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
     for (CoercionInfo &info : result.args)
       info.ext = IntExtKind::None;
   }
+
+  // The LLVM type of an `@align` struct has tail padding to the size of the
+  // struct, but its alignment is that of its members. Give the struct
+  // alignment to the memory that a pointer to the value points to.
+  auto setIndirectAlign = [&](CoercionInfo &info, mlir::Type type) {
+    int64_t align = getTypeABIAlign(type);
+    if (align > dataLayout.getTypeABIAlign(convertType(type)))
+      info.indirectAlign = align;
+  };
+  for (auto [info, type] : llvm::zip(result.args, argTypes))
+    if (info.useIndirect)
+      setIndirectAlign(info, type);
+  if (result.ret.useSRet)
+    setIndirectAlign(result.ret, retType);
   return result;
 }
 
@@ -198,9 +233,17 @@ llvm::SmallVector<mlir::NamedAttrList> SignatureClassification::getParamAttrs(
       if (!coercion.useIndirect && isa<mlir::LLVM::LLVMStructType>(type))
         attrs[paramIdx].erase(mlir::LLVM::LLVMDialect::getNoUndefAttrName());
     }
-    if (coercion.useIndirect && coercion.useByval)
+    if (coercion.useIndirect && coercion.useByval) {
       attrs[paramIdx].set(mlir::LLVM::LLVMDialect::getByValAttrName(),
                           mlir::TypeAttr::get(type));
+      // The stack slot of a byval argument has the alignment of this
+      // attribute, or else of the LLVM type.
+      if (coercion.indirectAlign)
+        attrs[paramIdx].set(mlir::LLVM::LLVMDialect::getAlignAttrName(),
+                            mlir::IntegerAttr::get(
+                                mlir::IntegerType::get(type.getContext(), 64),
+                                coercion.indirectAlign));
+    }
     if (llvm::StringRef ext = getExtAttrName(coercion.ext); !ext.empty())
       attrs[paramIdx].set(ext, mlir::UnitAttr::get(type.getContext()));
     paramIdx += coercion.getNumLLVMParams();

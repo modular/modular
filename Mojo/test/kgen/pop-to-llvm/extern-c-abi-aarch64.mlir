@@ -81,6 +81,10 @@
 //   G2  variadic_float_linux      Linux:  variadic f32 arg  → no bitcast (SIMD reg)
 //   G3  variadic_hfa_darwin       Darwin: variadic HFA arg  → integer coercion (GP)
 //   G4  variadic_float_darwin     Darwin: variadic f32 arg  → bitcast to i32 (GP)
+//   G5  variadic_pair_early_darwin  Darwin: i32, ... {i32,i32,i32} -> [2 x i64]
+//   G6  variadic_pair_late_darwin   Darwin: 7 x i64, ... {i32,i32,i32} -> [2 x i64]
+//   G7  variadic_align16_darwin     Darwin: i32, ... {i128}  -> i128
+//   G8  variadic_pair_linux         Linux:  i32, ... {i32,i32,i32} -> (i64, i32)
 //
 // Group I - Narrow integer extension (MOCO-5051): Darwin vs Linux split
 //   I1  arg_narrow_ints_darwin    Darwin: ui8, si16, bool args -> zeroext, signext, zeroext
@@ -497,6 +501,67 @@ llvm.func @variadic_float_darwin(%fixed: i32, %f: f32) {
 // CHECK: llvm.func @c_g4(i32, ...)
 }
 
+// -----
+
+// G5: Darwin ARM64 - variadic 9-16 byte composite with free registers.
+// Apple's arm64 ABI passes variadic arguments on the stack, so the composite
+// takes clang's single-integer form even though X1-X7 are free.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_pair_early_darwin
+llvm.func @variadic_pair_early_darwin(%fixed: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_g5(%{{.*}}, %{{.*}}) : (i32, !llvm.array<2 x i64>) -> ()
+  pop.external_call @c_g5(%fixed, %s)
+    : (i32, !llvm.struct<(i32, i32, i32)>) -> () <numFixedArgs = 1 : index>
+  llvm.return
+}
+// CHECK: llvm.func @c_g5(i32, ...)
+}
+
+// -----
+
+// G6: Darwin ARM64 - the same composite after seven fixed args has the same
+// form as in G5.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_pair_late_darwin
+llvm.func @variadic_pair_late_darwin(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_g6(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>) -> ()
+  pop.external_call @c_g6(%a, %b, %c, %d, %e, %f, %g, %s)
+    : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> () <numFixedArgs = 7 : index>
+  llvm.return
+}
+// CHECK: llvm.func @c_g6(i64, i64, i64, i64, i64, i64, i64, ...)
+}
+
+// -----
+
+// G7: Darwin ARM64 - a 16-byte-aligned variadic composite becomes i128, so it
+// keeps its 16-byte stack-slot alignment.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_align16_darwin
+llvm.func @variadic_align16_darwin(%fixed: i32, %s: !llvm.struct<(i128)>) {
+  // CHECK: llvm.call @c_g7(%{{.*}}, %{{.*}}) : (i32, i128) -> ()
+  pop.external_call @c_g7(%fixed, %s)
+    : (i32, !llvm.struct<(i128)>) -> () <numFixedArgs = 1 : index>
+  llvm.return
+}
+// CHECK: llvm.func @c_g7(i32, ...)
+}
+
+// -----
+
+// G8: Linux ARM64 - control for G5. Linux AAPCS64 passes variadic arguments
+// in X0-X7 like fixed arguments, so the composite stays a two-register pair.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_pair_linux
+llvm.func @variadic_pair_linux(%fixed: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_g8(%{{.*}}, %{{.*}}, %{{.*}}) : (i32, i64, i32) -> ()
+  pop.external_call @c_g8(%fixed, %s)
+    : (i32, !llvm.struct<(i32, i32, i32)>) -> () <numFixedArgs = 1 : index>
+  llvm.return
+}
+// CHECK: llvm.func @c_g8(i32, ...)
+}
+
 //===----------------------------------------------------------------------===//
 // Group I: Narrow integer extension (Darwin vs Linux)
 //
@@ -557,4 +622,171 @@ llvm.func @arg_single_field_structs_darwin(%a: !llvm.struct<(i8)>, %b: !llvm.str
   llvm.return
 }
 // CHECK: llvm.func @c_i3(i8, i16, i8) -> i8
+}
+
+// -----
+
+// Group R — Rollback-to-stack: AAPCS64 passes a composite that does not fit
+// in the remaining argument registers entirely in memory, never split across
+// a register and the stack. X0-X7 are eight GPRs; an sret return uses X8 and
+// does not reduce the budget (contrast the x86-64 file, where sret takes RDI).
+//
+//   R1  arg_rollback_after_seven    7×i64 + {i32,i32,i32}  → [2 x i64] (X7 alone)
+//   R2  arg_no_rollback_after_six   6×i64 + {i32,i32,i32}  → IntegerPair
+//   R3  arg_sret_rollback           sret + 7×i64 + struct  → [2 x i64]
+//   R4  arg_sret_no_rollback       sret + 6×i64 + struct  → IntegerPair
+
+// R1: seven i64 args consume X0-X6; the 12-byte struct needs two registers
+// and only X7 remains, so it rolls back to memory: coerced to [2 x i64] by value.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_rollback_after_seven
+llvm.func @arg_rollback_after_seven(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_ar1(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>) -> ()
+  pop.external_call @c_ar1(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar1(i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>)
+}
+
+// -----
+
+// R2: control - six i64 args leave two registers, so the same struct fits and
+// stays a two-register IntegerPair (i64, i32).
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_no_rollback_after_six
+llvm.func @arg_no_rollback_after_six(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_ar2(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, i32) -> ()
+  pop.external_call @c_ar2(%a, %b, %c, %d, %e, %f, %s) : (i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar2(i64, i64, i64, i64, i64, i64, i64, i32)
+}
+
+// -----
+
+// R3: an sret return does not free X0-X7, so seven i64 args still leave only
+// X7 and the struct rolls back to memory.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_sret_rollback
+llvm.func @arg_sret_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+  %r = pop.external_call @c_ar3(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> !llvm.struct<(i64, i64, i64)>
+  llvm.return
+}
+// CHECK: llvm.func @c_ar3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>)
+}
+
+// -----
+
+// R4: control - sret plus six i64 args leave two registers, so the struct
+// still fits as IntegerPair. On x86-64 the same shape rolls back because
+// sret takes one of the six integer registers.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_sret_no_rollback
+llvm.func @arg_sret_no_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+  %r = pop.external_call @c_ar4(%a, %b, %c, %d, %e, %f, %s) : (i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> !llvm.struct<(i64, i64, i64)>
+  llvm.return
+}
+// CHECK: llvm.func @c_ar4(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i64, i64, i64, i64, i64, i64, i64, i32)
+}
+
+// -----
+
+// R5: the rolled-back struct exhausts the register search, so a later
+// argument goes to the stack too (clang does the same). The trailing i64
+// stays a direct parameter after the [2 x i64] aggregate.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_after_rollback
+llvm.func @arg_after_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>, %t: i64) {
+  // CHECK: llvm.call @c_ar5(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>, i64) -> ()
+  pop.external_call @c_ar5(%a, %b, %c, %d, %e, %f, %g, %s, %t) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>, i64) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar5(i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>, i64)
+}
+
+// -----
+
+// R6: a 16-byte-aligned composite rolls back to i128, not [2 x i64], keeping
+// its 16-byte stack-slot alignment (clang's rule for aligned aggregates).
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_align16_rollback
+llvm.func @arg_align16_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i128)>) {
+  // CHECK: llvm.call @c_ar6(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, i128) -> ()
+  pop.external_call @c_ar6(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i128)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar6(i64, i64, i64, i64, i64, i64, i64, i128)
+}
+
+// -----
+
+// R7: a 16-byte-aligned composite that fits in registers is an i128 too, so
+// the backend starts it at an even register (X2), as clang does.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_align16_in_registers
+llvm.func @arg_align16_in_registers(%a: i64, %s: !llvm.struct<(i128)>) {
+  // CHECK: llvm.call @c_ar7(%{{.*}}, %{{.*}}) : (i64, i128) -> ()
+  pop.external_call @c_ar7(%a, %s) : (i64, !llvm.struct<(i128)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar7(i64, i128)
+}
+
+// -----
+
+// R8: the i128 of R7 skips X1, so three more i64 leave only X7 and the
+// 12-byte struct rolls back to memory.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_align16_skip_then_rollback
+llvm.func @arg_align16_skip_then_rollback(%a: i64, %w: !llvm.struct<(i128)>, %b: i64, %c: i64, %d: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_ar8(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i128, i64, i64, i64, !llvm.array<2 x i64>) -> ()
+  pop.external_call @c_ar8(%a, %w, %b, %c, %d, %s) : (i64, !llvm.struct<(i128)>, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar8(i64, i128, i64, i64, i64, !llvm.array<2 x i64>)
+}
+
+// -----
+
+// R9: Darwin control for R8. Apple's arm64 ABI does not skip X1, so the
+// 12-byte struct still fits in X6 and X7.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_align16_no_skip_darwin
+llvm.func @arg_align16_no_skip_darwin(%a: i64, %w: !llvm.struct<(i128)>, %b: i64, %c: i64, %d: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+  // CHECK: llvm.call @c_ar9(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i128, i64, i64, i64, i64, i32) -> ()
+  pop.external_call @c_ar9(%a, %w, %b, %c, %d, %s) : (i64, !llvm.struct<(i128)>, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar9(i64, i128, i64, i64, i64, i64, i32)
+}
+
+// -----
+
+// R10: the LLVM type of an `@align(16)` {i64, i64} is {i64, i64}, which has
+// 8-byte alignment. Apple's arm64 ABI uses the alignment of the type, so the
+// struct rolls back to i128 and keeps its 16-byte stack slot.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_decorated_align16_rollback_darwin
+llvm.func @arg_decorated_align16_rollback_darwin(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %v: !llvm.struct<(i64, i64)>) {
+  %s = builtin.unrealized_conversion_cast %v : !llvm.struct<(i64, i64)> to !kgen.struct<(i64, i64) align(16)>
+  // CHECK: llvm.call @c_ar10(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, i128) -> ()
+  pop.external_call @c_ar10(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !kgen.struct<(i64, i64) align(16)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar10(i64, i64, i64, i64, i64, i64, i64, i128)
+}
+
+// -----
+
+// R11: Linux control for R10. AAPCS64 uses the natural alignment, which does
+// not include `@align`, so the struct rolls back to [2 x i64].
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_decorated_align16_rollback_linux
+llvm.func @arg_decorated_align16_rollback_linux(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %v: !llvm.struct<(i64, i64)>) {
+  %s = builtin.unrealized_conversion_cast %v : !llvm.struct<(i64, i64)> to !kgen.struct<(i64, i64) align(16)>
+  // CHECK: llvm.call @c_ar11(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>) -> ()
+  pop.external_call @c_ar11(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !kgen.struct<(i64, i64) align(16)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_ar11(i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>)
 }

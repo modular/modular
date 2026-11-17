@@ -91,6 +91,11 @@ struct CoercionInfo {
   bool useIndirect = false;
   // In conjunction with useIndirect, set 'byval' on that pointer
   bool useByval = false;
+  /// Alignment in bytes of the memory that an indirect argument or an sret
+  /// result points to, when it is larger than the alignment of the LLVM type.
+  /// An `@align` struct has this alignment. Zero means the alignment of the
+  /// LLVM type.
+  int64_t indirectAlign = 0;
 
   /// For return values >16 bytes (sret convention)
   bool useSRet = false; // If true, use hidden pointer parameter
@@ -218,6 +223,16 @@ protected:
 
   /// Get the LLVM type of an unconverted type.
   mlir::Type convertType(mlir::Type type) const;
+
+  /// Get the ABI alignment in bytes of an unconverted type. This includes the
+  /// alignment that `@align` gives a struct. The LLVM type of that struct has
+  /// the alignment of its members only.
+  int64_t getTypeABIAlign(mlir::Type type) const;
+
+  /// Get the natural alignment in bytes of an unconverted type: the alignment
+  /// of a struct's members, without the alignment that `@align` gives the
+  /// struct itself. A member keeps its `@align` alignment.
+  int64_t getNaturalTypeABIAlign(mlir::Type type) const;
 
   /// Classify a whole signature, independent of the role. Internal building
   /// block for computeSignatureInfo.

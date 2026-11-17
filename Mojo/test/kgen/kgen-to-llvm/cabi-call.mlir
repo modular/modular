@@ -451,3 +451,35 @@ kgen.func @caller_indirect_two_results(
 }
 
 } // module
+
+//===----------------------------------------------------------------------===//
+// T9: rollback-to-stack on the callee side (MOCO-5153).
+//
+// Seven i64 args consume X0-X6, so a 12-byte struct argument cannot fit in
+// the one register that remains and AAPCS64 passes it entirely in memory.
+// The rewritten definition takes a byval pointer and reconstructs the struct
+// with a load; the call passes the byval pointer.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+
+// CHECK-LABEL: llvm.func internal @callee_rollback
+// CHECK-SAME:    (%{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: i64 {llvm.noundef}, %{{.*}}: !llvm.array<2 x i64>) -> i32
+// The coerced argument is reconstructed by loading the struct back from
+// the [2 x i64] value the C caller placed in the stack argument area.
+// CHECK:         llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
+kgen.func @callee_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>) cabi -> i32 {
+  %r = llvm.extractvalue %s[0] : !llvm.struct<(i32, i32, i32)>
+  hlcf.return %r : i32
+}
+
+// CHECK-LABEL: llvm.func internal @caller_rollback
+// CHECK:         llvm.call @callee_rollback(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>) -> i32
+kgen.func @caller_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>) -> i32 {
+  %r = kgen.call @callee_rollback(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> i32
+  hlcf.return %r : i32
+}
+
+} // module
