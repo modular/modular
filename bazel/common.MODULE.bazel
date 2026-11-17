@@ -813,6 +813,8 @@ mojo.gpu_toolchains(
         "AMD Radeon Pro W7900": "W7900",
         "Phoenix3": "780M",
         "Strix Halo": "strixhalo",
+        # Matched against amd-smi's gfx target when the board reports no product name.
+        "gfx1151": "strixhalo",
         "VanGogh": "steamdeck",
         "Metal 1": "",  # M1. Officially is not supported
         "Metal 2": "metal2",  # M2 + macOS 15
