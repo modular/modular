@@ -20,6 +20,9 @@
 #    3. `c_char` is unsigned on Linux ARM64, signed elsewhere
 #                                                     -> test_char_signedness
 #    4. `c_size_t` is `UInt`, `c_ssize_t` is `Int`     -> test_size_types
+#    4a. Fixed aliases: `c_uchar` `UInt8`, `c_ushort` `UInt16`, `c_uint`
+#        `UInt32`, `c_long_long` `Int64`, `c_ulong_long` `UInt64`, `c_pid_t`
+#        `Int32`                                       -> test_fixed_aliases
 #    5. `Bool` is one byte; `c_float`/`c_double` are 32/64 bits
 #                                                     -> test_bool_and_floats
 #    6. `OpaquePointer` is `Pointer[NoneType]`         -> test_opaque_pointer
@@ -47,8 +50,9 @@
 #   17. String literals already end in a zero byte    -> test_literal_span
 #   18. A second `as_c_string_span()` call reuses the buffer, and the newest
 #       span is the one to use                        -> test_span_twice
-#   19. `String(unsafe_from_utf8_ptr=)` copies up to the zero byte
-#                                                     -> test_copy_to_zero
+#   19. `CStringSpan(unsafe_from_ptr=)` stops at the zero byte, and
+#       `String(from_utf8=)` copies its bytes; `String(unsafe_from_utf8_ptr=)`
+#       makes the same copy unchecked                 -> test_copy_to_zero
 #   20. `strlen()` measures a C string; `byte_length()` measures Mojo's
 #                                                     -> test_strlen
 #   21. `from_utf8` raises on invalid bytes, `from_utf8_lossy` substitutes
@@ -97,8 +101,14 @@ from std.ffi import (
     c_float,
     c_int,
     c_long,
+    c_long_long,
+    c_pid_t,
     c_size_t,
     c_ssize_t,
+    c_uchar,
+    c_uint,
+    c_ulong_long,
+    c_ushort,
     c_ulong,
     external_call,
 )
@@ -134,6 +144,15 @@ def test_char_signedness() raises:
 def test_size_types() raises:
     assert_true(c_size_t.dtype == DType.uint)
     assert_true(c_ssize_t.dtype == DType.int)
+
+
+def test_fixed_aliases() raises:
+    assert_true(c_uchar.dtype == DType.uint8)
+    assert_true(c_ushort.dtype == DType.uint16)
+    assert_true(c_uint.dtype == DType.uint32)
+    assert_true(c_long_long.dtype == DType.int64)
+    assert_true(c_ulong_long.dtype == DType.uint64)
+    assert_true(c_pid_t.dtype == DType.int32)
 
 
 def test_bool_and_floats() raises:
@@ -218,9 +237,8 @@ def test_nested_fields() raises:
     _ = external_call["strcpy", Pointer[c_char, MutUntrackedOrigin]](
         device.name.unsafe_ptr(), "sensor0".as_c_string_span()
     )
-    assert_equal(
-        String(unsafe_from_utf8_ptr=device.name.unsafe_ptr()), "sensor0"
-    )
+    var name = CStringSpan(unsafe_from_ptr=device.name.unsafe_ptr())
+    assert_equal(String(from_utf8=name.as_bytes()), "sensor0")
 
 
 # struct in_addr { in_addr_t s_addr; }, deliberately not RegisterPassable.
@@ -236,7 +254,8 @@ def test_pass_any_struct() raises:
     var text = external_call["inet_ntoa", Pointer[c_char, ImmUntrackedOrigin]](
         addr
     )
-    assert_equal(String(unsafe_from_utf8_ptr=text), "127.0.0.1")
+    var span = CStringSpan(unsafe_from_ptr=text)
+    assert_equal(String(from_utf8=span.as_bytes()), "127.0.0.1")
 
 
 struct SimdField:  # struct { uint8_t tag; float v[4]; }, mismatched
@@ -316,6 +335,9 @@ def test_copy_to_zero() raises:
     bytes[0] = c_char(ord("o"))
     bytes[1] = c_char(ord("k"))
     bytes[3] = c_char(ord("x"))  # after the zero, so never copied
+    var span = CStringSpan(unsafe_from_ptr=bytes.unsafe_ptr())
+    assert_equal(len(span.as_bytes()), 2)
+    assert_equal(String(from_utf8=span.as_bytes()), "ok")
     assert_equal(String(unsafe_from_utf8_ptr=bytes.unsafe_ptr()), "ok")
 
 
@@ -325,8 +347,8 @@ def test_strlen() raises:
         buffer[i] = c_char(ord("a") + i)
     # The buffer holds 32 bytes, but the C string in it is 5 bytes long.
     assert_equal(external_call["strlen", c_size_t](buffer.unsafe_ptr()), 5)
-    var copy = String(unsafe_from_utf8_ptr=buffer.unsafe_ptr())
-    assert_equal(copy.byte_length(), 5)
+    var span = CStringSpan(unsafe_from_ptr=buffer.unsafe_ptr())
+    assert_equal(String(from_utf8=span.as_bytes()).byte_length(), 5)
 
 
 def test_utf8_choices() raises:
@@ -405,6 +427,7 @@ def main() raises:
     test_int_sizes()
     test_char_signedness()
     test_size_types()
+    test_fixed_aliases()
     test_bool_and_floats()
     test_opaque_pointer()
     test_platform_map()

@@ -97,11 +97,8 @@ function pointers, and structs with C-compatible layouts. It doesn't define
 ownership, lifetimes, or error handling, so both sides must agree on who
 frees memory, how long pointers stay valid, and how failures are reported.
 
-{/* FIXME:
-For the full list of `std.ffi` type aliases, see
-[Interop data types reference](/docs/manual/interop/datatypes).
-*/}
-For the full list of `std.ffi` type aliases, see [ffi](/docs/std/ffi/).
+For the full list of `std.ffi` type aliases, see [C-compatible data
+types](/docs/manual/interop/data-types).
 
 ## Example: Call Mojo from C
 
@@ -121,11 +118,9 @@ from another language:
 
 ```mojo title="mylib.mojo"
 from std.ffi import c_long  # 64-bit on macOS and Linux
-from std.runtime import initialize_runtime
 
 @export("add")
 def add(x: c_long, y: c_long) abi("C") -> c_long:
-    initialize_runtime()  # call first in every exported function
     return x + y
 ```
 

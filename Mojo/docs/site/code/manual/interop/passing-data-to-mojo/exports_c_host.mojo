@@ -36,9 +36,8 @@
 # Not tested:
 #   - The C++ (`unique_ptr`, `std::vector`) and Rust callers: they make the
 #     same C ABI calls that c_host.c makes.
-#   - `initialize_runtime()` being required, an export that raises, foreign
-#     `free()` on Mojo memory, and mismatched struct or callback
-#     declarations: crashes, compile errors, or undefined behavior.
+#   - An export that raises, foreign `free()` on Mojo memory, and mismatched
+#     struct or callback declarations: compile errors or undefined behavior.
 #
 # COM: Uses `.dylib` on every platform, as interoperability/ does. dlopen
 # COM:   takes a literal path, so the extension is cosmetic.
@@ -59,12 +58,18 @@
 # CHECK-NEXT: 100%
 # CHECK-NEXT: area = 2.0523, calls = 4
 
-from std.ffi import c_char, c_double, c_int, c_size_t, external_call
+from std.ffi import (
+    CStringSpan,
+    c_char,
+    c_double,
+    c_int,
+    c_size_t,
+    external_call,
+)
 
 
 # start-handles
 from std.memory.alloc import alloc, dealloc, Allocation, Layout
-from std.runtime import initialize_runtime
 
 
 @fieldwise_init
@@ -78,7 +83,6 @@ comptime Handle = MutOpaquePointer[MutUntrackedOrigin]
 
 @export("stats_new")
 def stats_new() abi("C") -> Handle:
-    initialize_runtime()
     var stats = alloc(Layout[Stats].single()).unsafe_leak()
     stats.write(Stats(count=0, mean=0.0))
     return stats.unsafe_bitcast[NoneType]()
@@ -86,7 +90,6 @@ def stats_new() abi("C") -> Handle:
 
 @export("stats_free")
 def stats_free(handle: Handle) abi("C"):
-    initialize_runtime()
     dealloc(
         Allocation(
             unsafe_owned_ptr=handle.unsafe_bitcast[Stats](),
@@ -100,7 +103,6 @@ def stats_free(handle: Handle) abi("C"):
 
 @export("stats_add")
 def stats_add(handle: Handle, value: c_double) abi("C") -> c_double:
-    initialize_runtime()
     var stats = handle.unsafe_bitcast[Stats]()
     stats[].count += 1
     stats[].mean += (value - stats[].mean) / Float64(stats[].count)
@@ -109,7 +111,6 @@ def stats_add(handle: Handle, value: c_double) abi("C") -> c_double:
 
 # start-structs
 from std.math import sqrt
-from std.runtime import initialize_runtime
 
 
 @fieldwise_init
@@ -120,7 +121,6 @@ struct Point:
 
 @export("distance")
 def distance(a: Point, b: Point) abi("C") -> Float64:
-    initialize_runtime()
     return sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
 
 
@@ -131,7 +131,6 @@ def distance(a: Point, b: Point) abi("C") -> Float64:
 # swapped, so this export pins the field and argument order.
 @export("point_order")
 def point_order(a: Point, b: Point) abi("C") -> Float64:
-    initialize_runtime()
     return a.x * 1000 + a.y * 100 + b.x * 10 + b.y
 
 
@@ -146,14 +145,12 @@ struct Label(Movable):
 
 @export("label_id_plus_length")
 def label_id_plus_length(label: Label) abi("C") -> c_int:
-    initialize_runtime()
     var length = Int(external_call["strlen", c_size_t](label.name.unsafe_ptr()))
     return label.id * 100 + c_int(length)
 
 
 @export("make_label")
 def make_label(id: c_int) abi("C") -> Label:
-    initialize_runtime()
     var name = Array[c_char, 16](fill=0)
     for index, byte in enumerate("sensor".as_bytes()):
         name[index] = c_char(byte)
@@ -164,14 +161,12 @@ def make_label(id: c_int) abi("C") -> Label:
 # start-arrays
 from std.ffi import c_size_t
 from std.math import sqrt
-from std.runtime import initialize_runtime
 
 
 @export("rms")
 def rms(
     samples: Pointer[Float32, ImmUntrackedOrigin], count: c_size_t
 ) abi("C") -> Float64:
-    initialize_runtime()
     var total: Float64 = 0
     for sample in Span(unsafe_ptr=samples, length=Int(count)):
         total += Float64(sample) ** 2
@@ -188,8 +183,9 @@ def rms(
 def greet(
     name: Pointer[c_char, ImmUntrackedOrigin]
 ) abi("C") -> Pointer[c_char, MutUntrackedOrigin]:
-    initialize_runtime()
-    var text = "Hello, " + String(unsafe_from_utf8_ptr=name) + "!"
+    # An export can't raise, so the lossy conversion stands in for a check.
+    var span = CStringSpan(unsafe_from_ptr=name)
+    var text = "Hello, " + String(from_utf8_lossy=span.as_bytes()) + "!"
     var length = text.byte_length()
     var copy = alloc(Layout[c_char](length=length + 1)).unsafe_leak()
     var bytes = text.as_bytes()
@@ -201,7 +197,6 @@ def greet(
 
 @export("free_string")
 def free_string(string: Pointer[c_char, MutUntrackedOrigin]) abi("C"):
-    initialize_runtime()
     var length = Int(external_call["strlen", c_size_t](string))
     dealloc(
         Allocation(
@@ -213,7 +208,6 @@ def free_string(string: Pointer[c_char, MutUntrackedOrigin]) abi("C"):
 # start-callbacks
 from std.ffi import c_double, c_int
 from std.math import pi, sin
-from std.runtime import initialize_runtime
 
 comptime Context = MutOpaquePointer[MutUntrackedOrigin]
 comptime Progress = def(c_double, Context) thin abi("C")
@@ -223,7 +217,6 @@ comptime Progress = def(c_double, Context) thin abi("C")
 def integrate_sin(
     steps: c_int, progress: Progress, context: Context
 ) abi("C") -> c_double:
-    initialize_runtime()
     var width = pi / Float64(steps)
     var area: Float64 = 0
     for i in range(Int(steps)):

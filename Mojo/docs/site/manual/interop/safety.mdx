@@ -6,10 +6,11 @@ description: >
   avoid unsafe calls across language boundaries.
 ---
 
-Mojo checks types and lifetimes, but it can't inspect what happens inside
-functions written in other languages. At the foreign function interface
-(FFI), Mojo trusts the interface you declare. A wrong declaration can
-compile successfully and still produce incorrect results or crash.
+Mojo checks types, mutability, and lifetimes, but it can't inspect what
+happens inside functions written in other languages. At the foreign
+function interface (FFI), Mojo trusts the interface you declare. A wrong
+declaration can compile successfully and still produce incorrect results or
+crash.
 
 That makes you the type checker. Treat the library's headers and API docs
 as the contract. Three rules matter most:
@@ -86,18 +87,7 @@ are useful, but they don't verify a function against its C declaration.
   `OwnedDLHandle` doesn't repeat the check.
 - **Return types must be `RegisterPassable`**: `return_type` is bound to
   `RegisterPassable`, so the compiler rejects a return type that doesn't
-  conform. A conforming struct of integer fields can be large: a C
-  function that returns a struct of four `Int64` fields by value works,
-  because Mojo handles the C ABI's hidden return pointer for you. The
-  compiler doesn't reject the floating-point struct shapes that cross
-  incorrectly by value:
-  - A struct with a floating-point array field arrives with undefined
-    content in either direction.
-
-  Pass these shapes as
-  [the struct rule](/docs/manual/interop/data-types#structs) describes.
-
-  {/* Struct by-value limits track open C ABI issues. UPDATE THIS SECTION */}
+  conform.
 - **`raises` on `abi("C")` functions** (`@export`): An `abi("C")`
   function can't be marked `raises`, and the compiler rejects it. Foreign
   callers have no way to receive a Mojo error, so return failures as
@@ -171,7 +161,7 @@ on another platform.
 
 - **Return type width:** Declaring a narrower return than C returns keeps
   only the low bits. Declare `strchr`'s `char*` return as `c_int` and the
-  pointer comes back truncated. That's truncation rather than noise, so a
+  `Pointer` comes back truncated. That's truncation rather than noise, so a
   wrong value can still look plausible.
 - **Argument types:** Mojo uses the widths and signedness you declare;
   it doesn't compare them with the C function's actual signature.
@@ -201,7 +191,7 @@ on another platform.
 ### Pointers and memory
 
 - **Pointers returned into a library** (`OwnedDLHandle`): When a C
-  function returns a pointer into its own library, the return type
+  function returns a `Pointer` into its own library, the return type
   must borrow from the handle. For a C string, declare it as
   `CStringSpan[lib_origin]` where
   `comptime lib_origin = ImmOrigin(origin_of(lib))`. Declaring
@@ -232,12 +222,53 @@ on another platform.
   such as `not-a-c-name`. Foreign callers can't construct those types
   or name those symbols. Use only C-compatible types and valid C
   identifiers.
-- **Runtime initialization** (`@export`): Call `initialize_runtime()` at
-  the start of each exported function. Code that uses the Mojo runtime
-  crashes under a foreign host without it. If you export a separate
-  initialization function instead, every host, whether it's written in C,
-  C++, Rust, or Swift, has to call it first, and a host that forgets
-  crashes the same way.
+- **Runtime initialization** (`@export`): Call `initialize_runtime()` at the
+  start of an exported function that uses the Mojo runtime's worker threads,
+  such as code that runs work in parallel or calls `parallelism_level()`. A
+  foreign host never runs Mojo's startup code, so those threads don't exist
+  until you initialize the runtime, and code that needs them crashes. Exported
+  functions that don't use worker threads don't need it.
+
+  If you export a separate initialization function, every host, whether it's
+  written in C, C++, Rust, etc, has to call it first, and a host that forgets
+  crashes the same way. `initialize_runtime()` is idempotent, so calling it
+  multiple times is safe:
+
+  ```mojo
+  from std.runtime import initialize_runtime
+
+  initialize_runtime()  # call first in affected exported functions
+  ```
+
+  {/* markdownlint-disable MD013 */}
+
+  For more details,
+  [see](https://github.com/modular/modular/blob/main/Mojo/stdlib/std/runtime/__init__.mojo).
+
+  {/* markdownlint-enable MD013 */}
+
+## Python
+
+### Python-specific interoperability
+
+- **Python version support.** Mojo supports CPython 3.10 and later,
+  but not free-threaded Python builds.
+- **Mojo errors become generic Python exceptions.** A Mojo `Error`
+  raised from a function registered with `def_function()` reaches
+  Python as `Exception`. Use `raise_python_exception()` with an
+  `ExceptionType` to raise a specific type, such as `ValueError`
+  or `TypeError`.
+
+### Python-specific memory and pointers
+
+- **NumPy views:** `from_numpy_array()` gives Mojo a view of the
+  array's buffer, not a copy. Resizing or reallocating the array
+  while you use the view leaves the view pointing at freed memory.
+- **Downcast pointers:** `downcast_value_ptr[T]()` returns a pointer
+  with a wildcard origin, so Mojo doesn't track aliasing through
+  it. Don't mutate an object through two downcast pointers at the
+  same time. `unchecked_downcast_value_ptr[T]()` also skips the
+  type check.
 
 ### Python-specific conversions
 
@@ -251,71 +282,3 @@ on another platform.
   `int()`, so `3.9` becomes `3` and `"12"` becomes `12`.
   `Bool(py=)` uses truthiness. Check the Python type first when
   the input could be the wrong kind.
-
-### Python-specific memory and pointers
-
-- **NumPy views:** `from_numpy_array()` gives Mojo a view of the
-  array's buffer, not a copy. Resizing or reallocating the array
-  while you use the view leaves the view pointing at freed memory.
-- **Downcast pointers:** `downcast_value_ptr[T]()` returns a pointer
-  with a wildcard origin, so Mojo doesn't track aliasing through
-  it. Don't mutate an object through two downcast pointers at the
-  same time. `unchecked_downcast_value_ptr[T]()` also skips the
-  type check.
-
-## API and platform limitations
-
-The preceding failures concern unsafe calls that the compiler can't
-validate. The following are different: restrictions on supported calls,
-library resolution, and the runtime environment. Plan for them when
-building or distributing an application.
-
-### Calling foreign libraries
-
-- **`external_call()` doesn't load libraries.** It calls functions by
-  their C symbol names, which the linker must resolve. Link libraries
-  other than libc with `-Xlinker -l<name>` on `mojo build` or `mojo run`.
-  Use `OwnedDLHandle` to load libraries at runtime.
-- **Functions need C symbol names.** C++ functions need `extern "C"`,
-  Rust functions need `#[no_mangle] extern "C"`, and Swift functions
-  need `@_cdecl("name")`.
-- **`OwnedDLHandle` resolves symbols at runtime.** The library must be
-  installed on the machine running your program. Missing libraries
-  and symbols cause runtime errors. `check_symbol()` checks whether
-  a symbol exists, not whether its signature is correct.
-- **`mojo run` and `mojo build` resolve symbols differently.**
-  `mojo run` searches the loaded process image, while `mojo build`
-  links through a C compiler driver. libc is available to both, but
-  other system libraries may require explicit linking with
-  `-Xlinker -l<name>`.
-
-### Exporting Mojo to foreign code
-
-- **Exported libraries need the Mojo runtime.** Ship the Mojo runtime
-  libraries your library depends on with your shared library or Python
-  extension. List them with `ldd` (Linux) or `otool -L` (macOS) on the
-  built library, and on each Mojo library it lists. `mojo build`
-  records absolute paths into the Mojo install, so on the build machine
-  the library still finds the install's copies, and a missing library
-  shows up only on another machine. Configure relative paths such as
-  `@rpath` or `$ORIGIN` before distribution. On macOS, set the
-  library's install name with
-  `install_name_tool -id @rpath/libmylib.dylib`.
-  Otherwise, the host may fail to load the library.
-- **Crashes don't produce Mojo stack traces.** The foreign host owns
-  the process, so Mojo doesn't install its usual crash signal handler.
-  Use the host's crash reporting tools.
-- **The host controls process state.** `sys.argv()` doesn't receive
-  the host's command-line arguments. Once initialized, the Mojo
-  runtime remains active until the process exits. It can't be shut
-  down through an API.
-
-### Python-specific interoperability
-
-- **Python version support.** Mojo supports CPython 3.10 and later,
-  but not free-threaded Python builds.
-- **Mojo errors become generic Python exceptions.** A Mojo `Error`
-  raised from a function registered with `def_function()` reaches
-  Python as `Exception`. Use `raise_python_exception()` with an
-  `ExceptionType` to raise a specific type, such as `ValueError`
-  or `TypeError`.

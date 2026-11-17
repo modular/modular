@@ -18,11 +18,10 @@ description: >
     bsearch, errno
   Probes: ~/here/studio-claude/share-data/ (FINDINGS.md, inject/)
   Tests: Mojo/docs/site/code/manual/interop/passing-data-to-c/tests.mojo */}
-{/* Compiler verified: 2026-11-12, repo build at c3da0ac4bbf (bazel
-    //Mojo:mojo) and Mojo 1.3.0.dev2026111105 (d00b2893), macOS ARM64.
-    Linux not yet checked: see the test suite. */}
-{/* Last updated: 2026-11-12 (technical fixes: undefined behavior,
-    free() conflict, checked UTF-8) */}
+{/* Compiler verified: 2026-11-17, repo build at b8bcc16b3cc (bazel tests
+    on macOS ARM64, Linux x86-64, and Linux ARM64). */}
+{/* Last updated: 2026-11-17 (Check your declarations absorbs the
+    signature rule from libraries.mdx) */}
 
 These examples call functions from the C standard library, so they run without
 any extra build steps. A function in your own library follows the same rules.
@@ -150,20 +149,22 @@ untracked:
 from std.ffi import external_call, c_size_t
 
 def main():
+    comptime SIZE = 64
     # void *malloc(size_t size);
     var block = external_call[
         "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
-    ](c_size_t(64))
-    if case .Some(bytes) = block:
-        bytes[unsafe_offset=0] = 42
-        print(bytes[unsafe_offset=0])  # 42
+    ](c_size_t(SIZE))
+    if case .Some(ptr) = block:
+        var bytes = Span(unsafe_ptr=ptr, length=SIZE)
+        bytes[0] = 42
+        print(bytes[0])  # 42
         # void free(void *ptr);
-        external_call["free", NoneType](bytes)
+        external_call["free", NoneType](ptr)
 ```
 
 Mojo doesn't free this memory. Free it once with `free()`, unless you hand
-it to a C library that frees it. `unsafe_offset=` indexes the memory
-without a bounds check, so stay inside the size you asked for.
+it to a C library that frees it. Wrap the pointer in a `Span` with the size
+you asked for, and read and write through the span.
 
 The standard library declares `free()` differently. A program that calls
 `free()` through `external_call` fails to build if it also uses `input()`
@@ -178,30 +179,32 @@ from std.ffi import external_call, c_size_t
 
 struct CBuffer:
     var ptr: Pointer[UInt8, MutUntrackedOrigin]
+    var size: Int
 
-    def __init__(out self, size: c_size_t) raises:
+    def __init__(out self, size: Int) raises:
         var block = external_call[
             "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
-        ](size)
+        ](c_size_t(size))
         if not block:
             raise Error("malloc failed")
         self.ptr = block.value()
+        self.size = size
 
-    def __enter__(self) -> Pointer[UInt8, MutUntrackedOrigin]:
-        return self.ptr
+    def __enter__(self) -> Span[UInt8, MutUntrackedOrigin]:
+        return Span(unsafe_ptr=self.ptr, length=self.size)
 
     def __exit__(self):
         external_call["free", NoneType](self.ptr)
 
 def main() raises:
-    with CBuffer(c_size_t(1024)) as buf:
-        buf[unsafe_offset=0] = 42
-        print(buf[unsafe_offset=0])  # 42
+    with CBuffer(1024) as buf:
+        buf[0] = 42
+        print(buf[0])  # 42
 ```
 
 The same pattern can close a `FILE*` handle with `fclose()`. Don't use `buf`
-after the block ends: the pointer still exists, but the memory behind it
-is gone.
+after the block ends: the span still exists, but the memory behind it is
+gone.
 
 ## Buffers
 
@@ -268,16 +271,17 @@ Other C functions write a string into a buffer you own. `gethostname()`
 copies the machine's name into a Mojo `Array`:
 
 ```mojo
-from std.ffi import external_call, c_char, c_int, c_size_t
+from std.ffi import external_call, c_char, c_int, c_size_t, CStringSpan
 
-def main():
+def main() raises:
     var name = Array[c_char, 256](fill=0)
     # int gethostname(char *name, size_t len);
     var status = external_call["gethostname", c_int](
         name.unsafe_ptr(), c_size_t(len(name) - 1)
     )
     if status == 0:
-        print(String(unsafe_from_utf8_ptr=name.unsafe_ptr()))
+        var text = CStringSpan(unsafe_from_ptr=name.unsafe_ptr())
+        print(String(from_utf8=text.as_bytes()))
 ```
 
 A name that doesn't fit is cut off or makes the call fail, depending on
@@ -397,8 +401,10 @@ reports the failure that actually happened.
 
 ## Check your declarations
 
-Make sure each foreign function declaration matches its C header, each
-pointer is valid, and each cast describes the actual data. A mismatch
-produces wrong results or undefined behavior, not a Mojo error. [Interop
-safety](/docs/manual/interop/safety) lists the mismatches that compile and
-run anyway.
+Neither `external_call()` nor `get_function()` checks a declaration
+against the C function it names. Make sure each declaration matches its C
+header: the argument count, each argument type, and the return type. Also
+make sure each pointer is valid and each cast describes the actual data. A
+mismatch produces wrong results or undefined behavior, such as a crash, not
+a Mojo error. [Interop safety](/docs/manual/interop/safety) lists the
+mismatches that compile and run anyway.

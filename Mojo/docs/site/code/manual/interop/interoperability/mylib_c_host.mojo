@@ -23,12 +23,10 @@
 
 # start-mylib
 from std.ffi import c_long  # 64-bit on macOS and Linux
-from std.runtime import initialize_runtime
 
 
 @export("add")
 def add(x: c_long, y: c_long) abi("C") -> c_long:
-    initialize_runtime()  # call first in every exported function
     return x + y
 
 

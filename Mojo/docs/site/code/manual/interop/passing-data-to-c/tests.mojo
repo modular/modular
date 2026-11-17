@@ -21,8 +21,8 @@
 #    3. `clock_gettime()` fills a `timespec` you own   -> test_clock_gettime
 #    4. `fopen()`/`fgets()`/`fclose()` read a line through a handle
 #                                                     -> test_file_handle
-#    5. `malloc()` memory is usable through `unsafe_offset=` and freed with
-#       `free()`                                       -> test_malloc
+#    5. `malloc()` memory is usable through a `Span` of the requested size
+#       and freed with `free()`                        -> test_malloc
 #    6. `__exit__()` frees the memory when the `with` block ends, even when
 #       the block raises                              -> test_cbuffer
 #    7. `getentropy()` fills a Mojo buffer, counting bytes
@@ -146,38 +146,42 @@ def test_file_handle() raises:
 
 
 def test_malloc() raises:
+    comptime SIZE = 64
     # void *malloc(size_t size);
     var block = external_call[
         "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
-    ](c_size_t(64))
+    ](c_size_t(SIZE))
     assert_true(Bool(block))
-    var bytes = block.value()
-    bytes[unsafe_offset=0] = 42
-    bytes[unsafe_offset=63] = 7
-    assert_equal(bytes[unsafe_offset=0], 42)
-    assert_equal(bytes[unsafe_offset=63], 7)
+    var ptr = block.value()
+    var bytes = Span(unsafe_ptr=ptr, length=SIZE)
+    bytes[0] = 42
+    bytes[len(bytes) - 1] = 7
+    assert_equal(bytes[0], 42)
+    assert_equal(bytes[len(bytes) - 1], 7)
     # void free(void *ptr);
-    external_call["free", NoneType](bytes)
+    external_call["free", NoneType](ptr)
 
 
 # The page's CBuffer, plus a counter so the test can see `__exit__()` run.
 struct CBuffer:
     var ptr: Pointer[UInt8, MutUntrackedOrigin]
+    var size: Int
     var frees: Pointer[Int, MutUntrackedOrigin]
 
     def __init__(
-        out self, size: c_size_t, frees: Pointer[Int, MutUntrackedOrigin]
+        out self, size: Int, frees: Pointer[Int, MutUntrackedOrigin]
     ) raises:
         var block = external_call[
             "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
-        ](size)
+        ](c_size_t(size))
         if not block:
             raise Error("malloc failed")
         self.ptr = block.value()
+        self.size = size
         self.frees = frees
 
-    def __enter__(self) -> Pointer[UInt8, MutUntrackedOrigin]:
-        return self.ptr
+    def __enter__(self) -> Span[UInt8, MutUntrackedOrigin]:
+        return Span(unsafe_ptr=self.ptr, length=self.size)
 
     def __exit__(self):
         external_call["free", NoneType](self.ptr)
@@ -187,13 +191,14 @@ struct CBuffer:
 def test_cbuffer() raises:
     var frees = 0
     var counter = Pointer(to=frees).unsafe_origin_cast[MutUntrackedOrigin]()
-    with CBuffer(c_size_t(1024), counter) as buf:
-        buf[unsafe_offset=0] = 42
-        assert_equal(buf[unsafe_offset=0], 42)
+    with CBuffer(1024, counter) as buf:
+        assert_equal(len(buf), 1024)
+        buf[0] = 42
+        assert_equal(buf[0], 42)
     assert_equal(frees, 1)
     try:
-        with CBuffer(c_size_t(1024), counter) as buf:
-            buf[unsafe_offset=0] = 42
+        with CBuffer(1024, counter) as buf:
+            buf[0] = 42
             raise Error("stop")
     except:
         pass
@@ -245,9 +250,8 @@ def test_gethostname() raises:
         name.unsafe_ptr(), c_size_t(len(name) - 1)
     )
     assert_equal(status, 0)
-    assert_true(
-        String(unsafe_from_utf8_ptr=name.unsafe_ptr()).byte_length() > 0
-    )
+    var text = CStringSpan(unsafe_from_ptr=name.unsafe_ptr())
+    assert_true(String(from_utf8=text.as_bytes()).byte_length() > 0)
     assert_equal(name[len(name) - 1], 0)
 
 
@@ -259,7 +263,8 @@ def test_getcwd() raises:
     ](buf.unsafe_ptr(), c_size_t(len(buf)))
     assert_true(Bool(path))
     assert_true(path.value() == buf.unsafe_ptr())
-    assert_true(String(unsafe_from_utf8_ptr=path.value()).startswith("/"))
+    var text = CStringSpan(unsafe_from_ptr=path.value())
+    assert_true(String(from_utf8=text.as_bytes()).startswith("/"))
 
 
 # --- Callbacks ---

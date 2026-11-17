@@ -24,7 +24,6 @@
 #   - Python loading the library through `ctypes`
 #   - Calling the library from C++ or Rust
 from std.ffi import c_int, c_long, c_size_t, external_call
-from std.runtime import initialize_runtime, parallelism_level
 from std.sys import size_of
 from std.testing import assert_equal, assert_true
 
@@ -105,20 +104,11 @@ def test_function_pointer() raises:
 # mylib_c_host.mojo.
 @export("add")
 def add(x: c_long, y: c_long) abi("C") -> c_long:
-    initialize_runtime()  # call first in every exported function
     return x + y
 
 
 def test_exported_add() raises:
     assert_equal(add(5, 103), c_long(108))
-
-
-def test_initialize_runtime_repeats() raises:
-    # Extra calls are safe, which is what makes "call first in every exported
-    # function" a workable rule.
-    initialize_runtime()
-    initialize_runtime()
-    assert_true(parallelism_level() > 0)
 
 
 def main() raises:
@@ -128,4 +118,3 @@ def main() raises:
     test_struct_by_pointer()
     test_function_pointer()
     test_exported_add()
-    test_initialize_runtime_repeats()

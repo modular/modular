@@ -19,11 +19,10 @@ description: >
   C headers: macOS SDK and glibc time.h (CLOCK_MONOTONIC), stdlib.h (div_t)
   Probes: ~/here/studio-claude/share-data/ (FINDINGS.md, inject/)
   Tests: Mojo/docs/site/code/manual/interop/data-types/tests.mojo */}
-{/* Compiler verified: 2026-11-12, repo build at c3da0ac4bbf (bazel
-    //Mojo:mojo) and Mojo 1.3.0.dev2026111105 (d00b2893), macOS ARM64.
-    Linux not yet checked: see the test suite. */}
-{/* Last updated: 2026-11-12 (struct by-value rule, callback rules, nullable
-    callbacks) */}
+{/* Compiler verified: 2026-11-17, repo build at b8bcc16b3cc (bazel tests
+    on macOS ARM64, Linux x86-64, and Linux ARM64). */}
+{/* Last updated: 2026-11-17 (C type table from stdlib definitions,
+    Examples links, span rule, checked C string conversion) */}
 
 When Mojo shares data with another language through the C ABI, it can
 pass only the small set of types that C itself understands:
@@ -117,24 +116,24 @@ care of themselves.
 
 | C type                  | `std.ffi` alias | Equivalent Mojo type | Notes                                                            |
 |-------------------------|-----------------|----------------------|------------------------------------------------------------------|
-| `char`                  | `c_char`        | `Int8` or `UInt8`    | Unsigned on Linux ARM64, signed elsewhere; often used as `char*` |
-| `signed char`           | None            | `Int8`               |                                                                  |
+| `char`                  | `c_char`        | Platform dependent   | Unsigned on Linux ARM64, signed elsewhere; often used as `char*` |
+| `signed char`           | None            | Platform dependent   |                                                                  |
 | `unsigned char`         | `c_uchar`       | `UInt8`              |                                                                  |
 | `short`                 | `c_short`       | `Int16`              |                                                                  |
 | `unsigned short`        | `c_ushort`      | `UInt16`             |                                                                  |
 | `int`                   | `c_int`         | `Int32`              | Not Mojo `Int`, which is 64 bits                                 |
 | `unsigned int`          | `c_uint`        | `UInt32`             |                                                                  |
-| `long`                  | `c_long`        | `Int64`              | 64 bits on macOS and Linux                                       |
-| `unsigned long`         | `c_ulong`       | `UInt64`             | Matches `c_long` width                                           |
+| `long`                  | `c_long`        | Platform dependent   | 64 bits on macOS and Linux                                       |
+| `unsigned long`         | `c_ulong`       | Platform dependent   | Matches `c_long` width                                           |
 | `long long`             | `c_long_long`   | `Int64`              |                                                                  |
 | `unsigned long long`    | `c_ulong_long`  | `UInt64`             |                                                                  |
 | `int8_t` … `int64_t`    | None            | `Int8` … `Int64`     |                                                                  |
 | `uint8_t` … `uint64_t`  | None            | `UInt8` … `UInt64`   |                                                                  |
 | `size_t`                | `c_size_t`      | `UInt`               | Sizes and counts                                                 |
 | `ssize_t`               | `c_ssize_t`     | `Int`                | Signed sizes                                                     |
-| `intptr_t`, `ptrdiff_t` | None            | `Int`                | Pointer-sized                                                    |
-| `uintptr_t`             | None            | `UInt`               | Pointer-sized                                                    |
-| `bool`                  | None            | `Bool`               | One byte                                                         |
+| `pid_t`                 | `c_pid_t`       | `Int32`              | Process IDs; an alias for `c_int`                                |
+| `intptr_t`, `ptrdiff_t` | None            | Platform dependent   | Pointer-sized                                                    |
+| `bool`                  | None            | Platform dependent   | One byte                                                         |
 | `float`                 | `c_float`       | `Float32`            |                                                                  |
 | `double`                | `c_double`      | `Float64`            |                                                                  |
 | `long double`           | None            | None                 | 8 bytes on macOS ARM64, 16 bytes on Linux                        |
@@ -143,7 +142,7 @@ care of themselves.
 {/* markdownlint-enable MD013 */}
 
 For `void*`, use `OpaquePointer`, an alias for `Pointer[NoneType]`. It's
-defined in `std.memory` and available without an import.
+defined in `std.memory`.
 
 {/*
 Mojo has no equivalent of C enums or `#define` constants. UPDATE THIS SECTION
@@ -260,12 +259,6 @@ field such as `char name[16]` as `Array[c_char, 16]`. `Array` isn't
 C function that returns a struct with an array field. An exported function
 can return one when the array holds integers or characters.
 
-Pass a struct by value when its fields are scalars (integers,
-floating-point numbers, pointers), arrays of integers or characters, or
-nested structs built from those. Pass a struct with a floating-point array
-field through a pointer. [Interop safety](/docs/manual/interop/safety)
-describes what goes wrong otherwise.
-
 {/* Struct by-value limits track open C ABI issues. UPDATE THIS SECTION */}
 
 Check each field's alignment, not only its size. `SIMD[DType.float32, 4]`
@@ -327,8 +320,12 @@ time. Changing the string can move its buffer, and a second call to
 `as_c_string_span()` ends the first span, so take a fresh span right before
 each call.
 
-`String(unsafe_from_utf8_ptr=)` copies the bytes up to the terminating zero
-and trusts them to be valid UTF-8. To keep a view instead of a copy,
+To copy a C string into a Mojo `String`, wrap the pointer with
+`CStringSpan(unsafe_from_ptr=)`, which stops at the terminating zero, and
+convert the span's bytes with `String(from_utf8=span.as_bytes())`, which
+checks that they're valid UTF-8. `String(unsafe_from_utf8_ptr=)` makes the
+same copy in one step, but trusts the bytes without checking them. To keep
+a view instead of a copy,
 declare the C return type as `CStringSpan` with the origin of the data's
 owner, such as `ImmStaticOrigin` for static data or
 `ImmOrigin(origin_of(lib))` for data inside a loaded library. When the

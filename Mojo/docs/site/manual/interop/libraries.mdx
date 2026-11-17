@@ -58,7 +58,7 @@ You have two choices:
   look it up by name with `OwnedDLHandle.get_function[]()`.
 
 A *linked library* is available when the program starts. A *dynamically
-loaded library* joins the process when the program opens it. Libraries
+loaded library* (DLL) joins the process when the program opens it. Libraries
 loaded at run time don't need to be linked when building.
 
 {/* markdownlint-disable MD013 MD033 */}
@@ -163,7 +163,7 @@ to the directory containing the executable. `mojo run` also accepts
 The library must be available when the program starts. A missing library
 prevents the build or launch. A missing symbol used by `external_call[]()`
 usually stops the build or `mojo run`. See
-[Handle missing functions](#handle-missing-functions-and-unsafe-signatures)
+[Handle missing functions](#handle-missing-functions)
 for the exceptions.
 
 ## Load a library as the program runs
@@ -284,20 +284,21 @@ A *variadic* function accepts a variable number of arguments, such as
 to the number of arguments declared before the variadic arguments:
 
 ```mojo
-from std.ffi import external_call, c_char, c_int, c_size_t
+from std.ffi import external_call, c_char, c_int, c_size_t, CStringSpan
 
-def main():
+def main() raises:
     # int snprintf(char *buf, size_t size, const char *fmt, ...);
     # Three fixed arguments, so num_fixed_args=3.
-    var buf = Array[c_char, 64](uninitialized=True)
+    var buf = Array[c_char, 64](fill=0)
     var written = external_call["snprintf", c_int, num_fixed_args=3](
         buf.unsafe_ptr(),
-        c_size_t(64),
+        c_size_t(len(buf)),
         "score: %d/%d".as_c_string_span(), # third fixed argument
         c_int(7),                          # first variadic argument
         c_int(10),                         # second variadic argument
     )
-    print(written, String(unsafe_from_utf8_ptr=buf.unsafe_ptr()))
+    var text = CStringSpan(unsafe_from_ptr=buf.unsafe_ptr())
+    print(written, String(from_utf8=text.as_bytes()))
     # 11 score: 7/10
 ```
 
@@ -329,7 +330,7 @@ resolves the function name:
 
 {/* markdownlint-enable MD013 */}
 
-### Handle missing functions and unsafe signatures
+## Handle missing functions
 
 A missing symbol in `get_function[]()` raises an error. Use
 `check_symbol()` when its presence is optional. A missing symbol used by
@@ -344,8 +345,5 @@ A missing symbol in `get_function[]()` raises an error. Use
 Neither approach protects against using the name of a different valid
 function.
 
-Neither API validates a foreign function's signature. Incorrect argument
-counts, types, or return types can cause undefined behavior, including
-incorrect results or crashes. See
-[Interop safety](/docs/manual/interop/safety)
-for the checks and responsibilities at the C ABI boundary.
+Finding a function doesn't check its signature. See [Check your
+declarations](/docs/manual/interop/passing-data-to-c#check-your-declarations).

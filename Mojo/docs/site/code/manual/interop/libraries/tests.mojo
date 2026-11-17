@@ -27,6 +27,7 @@
 #   - Wrong argument types and counts returning nonsense: that's undefined
 #     behavior, so no result is stable enough to assert.
 from std.ffi import (
+    CStringSpan,
     OwnedDLHandle,
     c_char,
     c_double,
@@ -124,16 +125,17 @@ def test_function_name_chosen_at_run_time() raises:
 
 def test_variadic_snprintf() raises:
     # int snprintf(char *buf, size_t size, const char *fmt, ...);
-    var buf = Array[c_char, 64](uninitialized=True)
+    var buf = Array[c_char, 64](fill=0)
     var written = external_call["snprintf", c_int, num_fixed_args=3](
         buf.unsafe_ptr(),
-        c_size_t(64),
+        c_size_t(len(buf)),
         "score: %d/%d".as_c_string_span(),
         c_int(7),
         c_int(10),
     )
     assert_equal(written, c_int(11))
-    assert_equal(String(unsafe_from_utf8_ptr=buf.unsafe_ptr()), "score: 7/10")
+    var text = CStringSpan(unsafe_from_ptr=buf.unsafe_ptr())
+    assert_equal(String(from_utf8=text.as_bytes()), "score: 7/10")
 
 
 def main() raises:
