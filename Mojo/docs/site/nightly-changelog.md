@@ -212,6 +212,9 @@ This version is still a work in progress.
   Contributed by [@BlueDestination](https://github.com/BlueDestination) in
   [#7342](https://github.com/modular/modular/pull/7342).
 
+- Added `Path.devnull()`, which returns the path to the platform's null device
+  (`/dev/null` on Linux and macOS), so code doesn't need to hardcode it.
+
 - Added a builtin `filter()`, which takes an iterable and a predicate closure
   and yields the elements the predicate accepts:
   `filter(items, lambda (x: Int) -> Bool: x > 0)`.

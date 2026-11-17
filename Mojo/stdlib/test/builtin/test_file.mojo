@@ -305,9 +305,7 @@ def test_file_write_over_int_max() raises:
     """Test writing more than `c_int.MAX` bytes."""
     var mapping = ZeroedMmap(OVER_INT_MAX)
     var bytes = mapping.as_bytes()
-    # TODO(https://github.com/modular/modular/issues/7618): "/dev/null" is not
-    # portable; use the platform's null device path once it exists.
-    with open("/dev/null", "w") as f:
+    with open(Path.devnull(), "w") as f:
         var written = f.write_once(bytes)
         assert_true(written > 0)
         assert_true(written <= Int(c_int.MAX))
