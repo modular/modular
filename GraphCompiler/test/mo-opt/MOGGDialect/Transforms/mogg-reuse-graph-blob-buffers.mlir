@@ -6,8 +6,8 @@
 // RUN:   --mogg-form-graph-blobs="max-calls=100" \
 // RUN:   --mogg-reuse-graph-blob-buffers | FileCheck %s
 
-// Members 0 to 3 run a -> b -> c -> d -> e, and the graph returns e. b is
-// free after member 1, so d takes its buffer; c is free after member 2, so e
+// Calls 0 to 3 run a -> b -> c -> d -> e, and the graph returns e. b is
+// free after call 1, so d takes its buffer; c is free after call 2, so e
 // takes its buffer. The routine returns e from c's buffer.
 // CHECK-LABEL: mo.graph @sequence
 // CHECK:       %[[R:.*]]:2 = mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
@@ -35,7 +35,7 @@ mo.graph @sequence(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   mo.output %e : !mo.tensor<[2, 2], f32>
 }
 
-// Members 1 and 2 both read b, so b is busy until member 2, and c and d are
+// Calls 1 and 2 both read b, so b is busy until call 2, and c and d are
 // both read outside the routine. No buffer is free when an output needs one.
 // CHECK-LABEL: mo.graph @fan_out
 // CHECK:       %[[R:.*]]:3 = mogg.routine
@@ -57,7 +57,7 @@ mo.graph @shared_intermediate(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2]
   mo.output %b, %c : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// b is free after member 1, when member 2 writes d, but d has another shape,
+// b is free after call 1, when call 2 writes d, but d has another shape,
 // so every output keeps its buffer, though both hold 16 bytes.
 // CHECK-LABEL: mo.graph @same_size_different_shape
 // CHECK:       %[[R:.*]]:4 = mogg.routine
@@ -71,7 +71,7 @@ mo.graph @same_size_different_shape(%a: !mo.tensor<[2, 2], f32>, %y: !mo.tensor<
 }
 
 // A routine that updates a buffer in place keeps its chain: b is free after
-// member 1, so d takes its buffer, and the routine still returns the blob's
+// call 1, so d takes its buffer, and the routine still returns the blob's
 // chain.
 // CHECK-LABEL: mo.graph @buffer_chain
 // CHECK:       %[[R:.*]]:3 = mogg.routine (%{{.*}}, %{{.*}} : !mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>) chain(%{{.*}}) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain)
@@ -85,7 +85,7 @@ mo.graph @buffer_chain(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.buffer<[2, 2], f
   mo.output %d : !mo.tensor<[2, 2], f32>
 }
 
-// b is free after member 1, when member 2 writes d, but d is larger, so every
+// b is free after call 1, when call 2 writes d, but d is larger, so every
 // output keeps its buffer.
 // CHECK-LABEL: mo.graph @different_sizes
 // CHECK:       %[[R:.*]]:4 = mogg.routine
@@ -98,8 +98,8 @@ mo.graph @different_sizes(%a: !mo.tensor<[2, 2], f32>, %y: !mo.tensor<[8, 8], f3
   mo.output %c, %e : !mo.tensor<[2, 2], f32>, !mo.tensor<[8, 8], f32>
 }
 
-// Member 3 reads b through a reshape fused into its kernel, so b stays busy
-// until member 3 and d, written by member 2, gets a buffer of its own.
+// Call 3 reads b through a reshape fused into its kernel, so b stays busy
+// until call 3 and d, written by call 2, gets a buffer of its own.
 // CHECK-LABEL: mo.graph @view_read_later
 // CHECK:       %[[R:.*]]:4 = mogg.routine
 // CHECK:       mo.output %[[R]]#2, %[[R]]#3
@@ -112,7 +112,7 @@ mo.graph @view_read_later(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f3
   mo.output %d, %e : !mo.tensor<[2, 2], f32>, !mo.tensor<[4], f32>
 }
 
-// Members whose outputs go through a fused epilogue share buffers like any
+// Calls whose outputs go through a fused epilogue share buffers like any
 // others: the chain needs two.
 // CHECK-LABEL: mo.graph @fused_store_chain
 // CHECK:       %[[R:.*]]:2 = mogg.routine
@@ -129,8 +129,8 @@ mo.graph @fused_store_chain(%a: !mo.tensor<[2, 2], f32, gpu:0>, %bias: !mo.tenso
   mo.output %y4 : !mo.tensor<[2, 2], f32, gpu:0>
 }
 
-// Member 3 reads b through a multiply fused into its input, so b stays busy
-// until member 3. d, written by member 2, gets a buffer of its own, and e
+// Call 3 reads b through a multiply fused into its input, so b stays busy
+// until call 3. d, written by call 2, gets a buffer of its own, and e
 // takes c's.
 // CHECK-LABEL: mo.graph @fused_load_read_later
 // CHECK:       %[[R:.*]]:3 = mogg.routine

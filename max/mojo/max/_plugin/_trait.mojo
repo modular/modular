@@ -512,7 +512,7 @@ trait MaxPluginHooks:
         """Per-target plugin hook for `max._graph_blob.is_thread_active`.
 
         Args:
-            active: The number of blocks a member runs on, from the start of
+            active: The number of blocks a call runs on, from the start of
                 the launch's grid.
 
         Returns:

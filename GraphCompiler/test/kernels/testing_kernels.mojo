@@ -3653,8 +3653,8 @@ struct MapLowerDeclarative:
         pass
 
 
-# A declarative kernel with two inputs, so that a graph blob's member can read
-# both an earlier member's result and a tensor from outside the blob.
+# A declarative kernel with two inputs, so that a call in a graph blob can read
+# both an earlier call's result and a tensor from outside the blob.
 @extensibility.register("map_lower_declarative_binary")
 struct MapLowerDeclarativeBinary:
     @staticmethod

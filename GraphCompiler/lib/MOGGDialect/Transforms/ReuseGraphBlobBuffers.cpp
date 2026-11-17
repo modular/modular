@@ -30,51 +30,51 @@ namespace M::MOGG {
 
 namespace {
 
-// The first and last member of a graph blob that use a value, counting members
-// in the order the blob runs them.
-struct MemberRange {
+// The first and last call of a graph blob that use a value, counting calls in
+// the order the blob runs them.
+struct CallRange {
   unsigned first;
   unsigned last;
 };
 
-std::optional<MemberRange> unionRanges(std::optional<MemberRange> a,
-                                       std::optional<MemberRange> b) {
+std::optional<CallRange> unionRanges(std::optional<CallRange> a,
+                                     std::optional<CallRange> b) {
   if (!a || !b)
     return a ? a : b;
-  return MemberRange{std::min(a->first, b->first), std::max(a->last, b->last)};
+  return CallRange{std::min(a->first, b->first), std::max(a->last, b->last)};
 }
 
-// Finds the members that each value in a graph blob reaches. Every op in a
-// blob's body builds operands for its calls, so a value's members are those of
-// the calls it feeds.
-class BlobMembers {
+// Finds the calls that each value in a graph blob reaches. Every op in a blob's
+// body builds operands for its calls, so a value reaches the calls its users
+// reach.
+class BlobCalls {
 public:
-  explicit BlobMembers(GraphBlobOp blob) {
+  explicit BlobCalls(GraphBlobOp blob) {
     for (auto [index, call] :
          llvm::enumerate(blob.getBody().getOps<CallExecuteDeviceOp>()))
-      members[call] = MemberRange{static_cast<unsigned>(index),
-                                  static_cast<unsigned>(index)};
+      calls[call] =
+          CallRange{static_cast<unsigned>(index), static_cast<unsigned>(index)};
   }
 
-  std::optional<MemberRange> of(Value value) {
-    std::optional<MemberRange> range;
+  std::optional<CallRange> of(Value value) {
+    std::optional<CallRange> range;
     for (Operation *user : value.getUsers())
       range = unionRanges(range, of(user));
     return range;
   }
 
 private:
-  std::optional<MemberRange> of(Operation *op) {
-    if (auto it = members.find(op); it != members.end())
+  std::optional<CallRange> of(Operation *op) {
+    if (auto it = calls.find(op); it != calls.end())
       return it->second;
-    std::optional<MemberRange> range;
+    std::optional<CallRange> range;
     for (Value result : op->getResults())
       range = unionRanges(range, of(result));
-    members[op] = range;
+    calls[op] = range;
     return range;
   }
 
-  DenseMap<Operation *, std::optional<MemberRange>> members;
+  DenseMap<Operation *, std::optional<CallRange>> calls;
 };
 
 // A buffer some of a blob routine's outputs are written to.
@@ -82,7 +82,7 @@ struct Buffer {
   // The output that owns it: the first to use it.
   unsigned owner;
   Type type;
-  // The last member that uses it.
+  // The last call that uses it.
   unsigned lastUse;
   // Whether a later output may take it: false once an output that something
   // outside the routine reads is written to it.
@@ -95,15 +95,15 @@ void reuseBuffers(RoutineOp routine, GraphBlobOp blob) {
                             ? routine.getOutputs().drop_back()
                             : routine.getOutputs();
 
-  BlobMembers members(blob);
-  SmallVector<MemberRange> ranges;
+  BlobCalls calls(blob);
+  SmallVector<CallRange> ranges;
   for (BlockArgument pointer : args.outputs) {
-    std::optional<MemberRange> range = members.of(pointer);
-    assert(range && "a member writes every output of a graph blob");
+    std::optional<CallRange> range = calls.of(pointer);
+    assert(range && "a call writes every output of a graph blob");
     ranges.push_back(*range);
   }
 
-  // Linear scan: visit the outputs in the order their first members run, and
+  // Linear scan: visit the outputs in the order their first calls run, and
   // give each the first free buffer of its type.
   SmallVector<unsigned> order =
       llvm::to_vector(llvm::seq<unsigned>(0, results.size()));
@@ -133,7 +133,7 @@ void reuseBuffers(RoutineOp routine, GraphBlobOp blob) {
   if (buffers.size() == results.size())
     return;
 
-  // Members write each output to its buffer owner's pointer, and the routine
+  // Calls write each output to its buffer owner's pointer, and the routine
   // returns one result per buffer.
   Block &body = routine.getBody().front();
   llvm::BitVector dropped(body.getNumArguments());

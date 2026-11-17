@@ -28,7 +28,7 @@ func.func @nested_graph_blob(%ctx: !mogg.context) {
 
 // -----
 
-// A mogg.graph_blob launches a declarative kernel only as a member.
+// A mogg.graph_blob calls kernels only through mogg.call.execute_device.
 func.func @graph_blob_opaque_call(%ctx: !mogg.context) {
   // expected-error@+1 {{calls kernels only through 'mogg.call.execute_device', but holds 'mogg.call.opaque'}}
   mogg.graph_blob {

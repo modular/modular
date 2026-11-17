@@ -999,7 +999,7 @@ LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
   MojoValue config =
       builder.var(call->executeConfiguration(call->operands), /*cache=*/false);
   SmallVector<unsigned> indices = blob.args.add(builder, *call);
-  blob.members.push_back({std::move(*call), std::move(indices), config});
+  blob.calls.push_back({std::move(*call), std::move(indices), config});
   return success();
 }
 
@@ -1036,7 +1036,7 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
     if (failed(state.lowerOpToMojo(&op)))
       return failure();
   GraphBlobRegion &blob = state.currentRegion<GraphBlobRegion>();
-  ASSERT_STREAM(!blob.members.empty(), "the verifier requires a call");
+  ASSERT_STREAM(!blob.calls.empty(), "the verifier requires a call");
 
   MojoBuilder &builder = *state.file;
   MojoValue graphBlob(kGraphBlobModuleAlias);
@@ -1045,25 +1045,25 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
       builder.var(graphBlob.get("launch_config")({ctx}), /*cache=*/false);
 
   SmallVector<unsigned> active;
-  for (const GraphBlobRegion::Member &member : blob.members) {
+  for (const GraphBlobRegion::BlobCall &blobCall : blob.calls) {
     MojoValue threads = graphBlob.get("active_threads")(
-        {member.config.get("get_grid_dim")(),
-         member.config.get("get_block_dim")(), launch.get("get_grid_dim")(),
+        {blobCall.config.get("get_grid_dim")(),
+         blobCall.config.get("get_block_dim")(), launch.get("get_grid_dim")(),
          launch.get("get_block_dim")()});
     active.push_back(blob.args.addScalar(threads, "Int32"));
   }
 
   MojoValue kernel =
       emitDeviceKernel(builder, blob.args, [&](const FunctionBody &body) {
-        for (auto [i, member] : llvm::enumerate(blob.members)) {
+        for (auto [i, blobCall] : llvm::enumerate(blob.calls)) {
           if (i > 0)
             builder.call(graphBlob.get("barrier"));
           MojoValue isActive = graphBlob.get("is_thread_active")(
               {body.arguments[active[i]].resolvedName});
-          const KernelCallee &executeDevice = member.call.executeDevice;
+          const KernelCallee &executeDevice = blobCall.call.executeDevice;
           builder.if_(isActive, [&] {
             builder.call(executeDevice.function, executeDevice.parameters,
-                         blob.args.rebuild(body, member.indices));
+                         blob.args.rebuild(body, blobCall.indices));
           });
         }
       });

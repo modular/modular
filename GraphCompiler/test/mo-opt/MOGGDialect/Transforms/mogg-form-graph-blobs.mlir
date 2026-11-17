@@ -4,7 +4,7 @@
 
 // A sequence of declarative routines becomes one routine whose body is a
 // `mogg.graph_blob` holding theirs in order. It reads the sequence's input and
-// writes every member's result.
+// writes every routine's result.
 // CHECK-LABEL: mo.graph @sequence
 // CHECK:       %[[R:.*]]:3 = mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
 // CHECK-NEXT:    inputs (%[[A:[^ ,)]+]])
@@ -31,7 +31,7 @@ mo.graph @sequence(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
 
 // The graph's output doesn't end the blob: the caller gets it only when the
 // whole execution ends. So an intermediate the graph returns still fuses with
-// the member that reads it.
+// the routine that reads it.
 // CHECK-LABEL: mo.graph @shared_intermediate
 // CHECK:       %[[R:.*]]:2 = mogg.routine
 // CHECK:         mogg.graph_blob {
@@ -42,7 +42,7 @@ mo.graph @shared_intermediate(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2]
   mo.output %b, %c : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// A result read by two members fans out inside one blob.
+// A result read by two routines fans out inside one blob.
 // CHECK-LABEL: mo.graph @fan_out
 // CHECK:       %[[R:.*]]:3 = mogg.routine
 // CHECK:         mogg.graph_blob {
@@ -66,7 +66,7 @@ mo.graph @siblings(%a:!mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>) -> (
   mo.output %b, %c : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// An elementwise loop between members that doesn't read the blob leaves it
+// An elementwise loop between routines that doesn't read the blob leaves it
 // open.
 // CHECK-LABEL: mo.graph @loop_beside
 // CHECK:       map.iter.elementwise
@@ -80,8 +80,8 @@ mo.graph @loop_beside(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>) 
   mo.output %c, %r : !mo.tensor<[2, 2], f32>, !mo.tensor<[4], f32>
 }
 
-// A kernel with `execute` that reads a member ends the blob there, so that
-// result doesn't wait for the independent member after it.
+// A kernel with `execute` that reads a routine's result ends the blob there, so
+// that result doesn't wait for the independent routine after it.
 // CHECK-LABEL: mo.graph @read_outside
 // CHECK-NOT:   mogg.graph_blob
 // CHECK:       mo.output
@@ -92,8 +92,8 @@ mo.graph @read_outside(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>)
   mo.output %t, %c : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// The same with a host kernel reading a member: that member stays alone, and
-// the independent members after it still fuse.
+// The same with a host kernel reading a routine's result: that routine stays
+// alone, and the independent routines after it still fuse.
 // CHECK-LABEL: mo.graph @host_read
 // CHECK:       %[[B:.*]] = mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
 // CHECK:       mogg.routine (%[[B]] : !mo.tensor<[2, 2], f32>)
@@ -109,8 +109,8 @@ mo.graph @host_read(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>) ->
   mo.output %t, %d : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// A kernel with `execute` between two members ends the blob at the first, so
-// neither side has two members.
+// A kernel with `execute` between two routines ends the blob at the first, so
+// neither side has two routines.
 // CHECK-LABEL: mo.graph @execute_between
 // CHECK-NOT:   mogg.graph_blob
 // CHECK:       mo.output
@@ -121,8 +121,8 @@ mo.graph @execute_between(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32
   mo.output %d : !mo.tensor<[2, 2], f32>
 }
 
-// The same with the kernel before the member it reads: the pass walks the body
-// in dataflow order, so the blob still ends at that member.
+// The same with the kernel before the routine it reads: the pass walks the body
+// in dataflow order, so the blob still ends at that routine.
 // CHECK-LABEL: mo.graph @execute_between_out_of_order
 // CHECK-NOT:   mogg.graph_blob
 // CHECK:       mo.output
@@ -219,8 +219,8 @@ mo.graph @interleaved_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2]
   mo.output %c, %z : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// A kernel with `execute` that reads a member ends only the blob of that
-// member's device; the other device's blob stays open across it.
+// A kernel with `execute` that reads a routine's result ends only the blob
+// of that routine's device; the other device's blob stays open across it.
 // CHECK-LABEL: mo.graph @read_outside_one_device
 // CHECK:       %[[B:.*]] = mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
 // CHECK:       mogg.routine (%[[B]] : !mo.tensor<[2, 2], f32>)
@@ -237,9 +237,10 @@ mo.graph @read_outside_one_device(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2
   mo.output %t, %z : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// A member that reads another device's member ends that device's blob at the
-// member it reads, so a later member on that device can't join it and move the
-// fused routine past its reader. Each blob goes where its last member was.
+// A routine that reads a routine on another device ends that device's blob at
+// the routine it reads, so a later routine on that device can't join it and
+// move the fused routine past its reader. Each blob goes where its last routine
+// was.
 // CHECK-LABEL: mo.graph @read_across_devices
 // CHECK:       %[[B:.*]] = mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
 // CHECK:       mogg.routine (%{{.*}}, %[[B]] : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
@@ -280,8 +281,8 @@ mo.graph @join_across_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2]
   mo.output %c, %z, %join : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain
 }
 
-// A member that waits on a join with another device's chain ends that device's
-// blob at the member the chain comes from. Its own blob absorbs the join and
+// A routine that waits on a join with another device's chain ends that device's
+// blob at the routine the chain comes from. Its own blob absorbs the join and
 // waits on that chain from outside.
 // CHECK-LABEL: mo.graph @join_waited_across_devices
 // CHECK:       %[[CH:.*]] = mo.chain.create()
@@ -301,7 +302,7 @@ mo.graph @join_waited_across_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor
   mo.output %c, %z : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// A member that reads both an earlier member's result and the blob's input
+// A routine that reads both an earlier routine's result and the blob's input
 // shares the fused routine's one input for it.
 // CHECK-LABEL: mo.graph @shared_input
 // CHECK:       mogg.routine (%{{[^ ,]+}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
@@ -337,7 +338,7 @@ mo.graph @parallel(%a: !mo.tensor<[2, 2], f32, gpu:0>, %b: !mo.tensor<[2, 2], f3
   mo.output %r0, %r1 : !mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>
 }
 
-// Control flow ends the open blob, so the members before a `mo.if` and the
+// Control flow ends the open blob, so the routines before a `mo.if` and the
 // independent ones after it form two blobs, not one. A branch's routines form
 // their own: they run only when the condition picks that branch.
 // CHECK-LABEL: mo.graph @control_flow
@@ -364,8 +365,8 @@ mo.graph @control_flow(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>,
   mo.output %c, %r, %e : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// Control flow ends every device's open blob, so two devices' members before a
-// `mo.if` and their independent members after it form four blobs, not two.
+// Control flow ends every device's open blob, so two devices' routines before a
+// `mo.if` and their independent routines after it form four blobs, not two.
 // CHECK-LABEL: mo.graph @control_flow_two_devices
 // CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
 // CHECK:         attributes {device = #M.device_ref<"gpu", 0>
@@ -400,9 +401,9 @@ mo.graph @control_flow_two_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[
   mo.output %c, %q, %r, %e, %t : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// A routine inside a branch that reads a member is outside the blob, like any
-// other reader there, so the blob ends at that member and the independent
-// member after it stays alone.
+// A routine inside a branch that reads another routine's result is outside the
+// blob, like any other reader there, so the blob ends at the routine it reads
+// and the independent routine after it stays alone.
 // CHECK-LABEL: mo.graph @read_in_branch
 // CHECK-NOT:   mogg.graph_blob
 // CHECK:       mo.output
@@ -418,11 +419,11 @@ mo.graph @read_in_branch(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32
   mo.output %c, %r : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// Members that update a buffer in place join a blob under its chain, as a KV
+// Routines that update a buffer in place join a blob under its chain, as a KV
 // cache store and the attention reading the cache do. The blob takes the buffer
-// once, waits on what its members' chains wait on from outside, and returns one
-// chain. The blob runs its members in order, so the join ordering the second
-// store after the first goes away.
+// once, waits on what its routines' chains wait on from outside, and returns
+// one chain. The blob runs its routines in order, so the join ordering the
+// second store after the first goes away.
 // CHECK-LABEL: mo.graph @buffer_chain
 // CHECK:       %[[CH:.*]] = mo.chain.create()
 // CHECK-NEXT:  %[[R:.*]]:4 = mogg.routine (%{{.*}}, %{{.*}} : !mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>) chain(%[[CH]]) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain)
@@ -441,9 +442,9 @@ mo.graph @buffer_chain(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.buffer<[2, 2], f
   mo.output %d : !mo.tensor<[2, 2], f32>
 }
 
-// A kernel with `execute` that updates the buffer between two members reads
+// A kernel with `execute` that updates the buffer between two routines reads
 // the first one's chain, so the blob ends there and neither side has two
-// members.
+// routines.
 // CHECK-LABEL: mo.graph @buffer_write_between
 // CHECK-NOT:   mogg.graph_blob
 // CHECK:       mo.output
@@ -455,9 +456,10 @@ mo.graph @buffer_write_between(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.buffer<[
   mo.output %c, %ch3 : !mo.tensor<[2, 2], f32>, !mo.chain
 }
 
-// When the members wait on several chains from outside the blob, the blob waits
-// on a new join of them, placed before it. Here the join between the members
-// also orders the second store after an independent write to another buffer.
+// When the routines wait on several chains from outside the blob, the blob
+// waits on a new join of them, placed before it. Here the join between the
+// routines also orders the second store after an independent write to another
+// buffer.
 // CHECK-LABEL: mo.graph @buffer_chain_outside_waits
 // CHECK:       %[[CH:.*]] = mo.chain.create()
 // CHECK:       %[[COPY:.*]] = mogg.routine
@@ -474,8 +476,8 @@ mo.graph @buffer_chain_outside_waits(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.bu
   mo.output %c : !mo.tensor<[2, 2], f32>
 }
 
-// A member's chain that the graph returns becomes the blob's chain, and a join
-// between the members that the graph also returns reads the blob's chain. The
+// A routine's chain that the graph returns becomes the blob's chain, and a join
+// between the routines that the graph also returns reads the blob's chain. The
 // join stays where it was, before the blob: a graph region allows that.
 // CHECK-LABEL: mo.graph @buffer_chain_returned
 // CHECK:       %[[CH:.*]] = mo.chain.create()

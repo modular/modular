@@ -204,13 +204,13 @@ def FormGraphBlobs
   let summary = "Fuse groups of declarative routines into graph blobs.";
   let description = [{
     Replaces each group of declarative `mogg.routine`s with one routine that
-    runs the members' bodies in order inside a `mogg.graph_blob`, so the group
-    launches as one device kernel. A group holds sequences, where one member
+    runs the routines' bodies in order inside a `mogg.graph_blob`, so the group
+    launches as one device kernel. A group holds sequences, where one routine
     reads another's results, and siblings that don't depend on each other. The
-    fused routine reads what the members read from outside the group and
-    returns every member's results.
+    fused routine reads what the routines read from outside the group and
+    returns every routine's results.
 
-    Each group runs on one device. It ends at the first member with a result
+    Each group runs on one device. It ends at the first routine with a result
     that something outside the group reads, other than another declarative
     routine on that device or the block's terminator, such as the graph's
     output, so no path leaves the group and comes back in. Device graphs are
@@ -237,13 +237,13 @@ def ReuseGraphBlobBuffers : Pass<"mogg-reuse-graph-blob-buffers"> {
   let summary = "Let a graph blob's outputs share buffers whose uses are over.";
   let description = [{
     Gives each output of a graph blob routine the buffer of an earlier output
-    that no later member uses, then drops the outputs that no longer have
-    buffers of their own, so the routine has only the buffers its members use
-    at once. A barrier separates consecutive
-    members, so a buffer whose last use is member `i` is free from member
-    `i + 1` on. An output that something outside the routine reads keeps its
-    buffer to the end. Assumes each routine whose body is a `mogg.graph_blob`
-    reaches its outputs only through the operands of the blob's calls.
+    that no later call uses, then drops the outputs that no longer have
+    buffers of their own, so the routine has only the buffers its calls use at
+    once. A barrier separates consecutive calls, so a buffer whose last use is
+    call `i` is free from call `i + 1` on. An output that something outside
+    the routine reads keeps its buffer to the end. Assumes each routine whose
+    body is a `mogg.graph_blob` reaches its outputs only through the operands
+    of the blob's calls.
 
     Only outputs of the same type share a buffer, and the routine's inputs
     keep theirs.

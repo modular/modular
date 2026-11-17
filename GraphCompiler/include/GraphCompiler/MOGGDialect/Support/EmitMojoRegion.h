@@ -160,7 +160,7 @@ class GraphBlobRegion
 public:
   GraphBlobRegion() = default;
 
-  struct Member {
+  struct BlobCall {
     // The call, whose `execute_device` the kernel runs.
     DeclarativeCall call;
     // The indices in `args` of the arguments that carry the call's operands, in
@@ -174,7 +174,7 @@ public:
   // The kernel's arguments, which the calls share.
   DeviceKernelArgs args;
   // The calls, in the order the kernel runs them.
-  std::vector<Member> members;
+  std::vector<BlobCall> calls;
 };
 
 } // namespace M::MOGG

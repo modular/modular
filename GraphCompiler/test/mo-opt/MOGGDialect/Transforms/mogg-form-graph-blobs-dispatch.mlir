@@ -1,7 +1,7 @@
 // RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
 // RUN:   --mogg-form-graph-blobs="max-calls=100" | FileCheck %s
 
-// A fused routine is deferred if any member is.
+// A fused routine is deferred if any routine it fuses is.
 // CHECK-LABEL: mo.graph @one_deferred
 // CHECK:       mogg.routine (
 // CHECK:         mogg.graph_blob {
@@ -34,7 +34,7 @@ mo.graph @one_deferred(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32
   mo.output %1 : !mo.tensor<[2, 2], f32>
 }
 
-// A fused routine whose members are all immediate is immediate too.
+// A fused routine is immediate if every routine it fuses is.
 // CHECK-LABEL: mo.graph @all_immediate
 // CHECK:       mogg.routine dispatch(immediate) (
 // CHECK:         mogg.graph_blob {

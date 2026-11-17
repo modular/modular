@@ -1365,9 +1365,9 @@ def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
   DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
 ]> {
-  let summary = "Run a declarative kernel as a member of a graph blob.";
+  let summary = "Run a declarative kernel as a call in a graph blob.";
   let description = [{
-    Runs `$callee`'s `execute_device` as one member of the enclosing
+    Runs `$callee`'s `execute_device` as one call in the enclosing
     `mogg.graph_blob`'s launch. Emit calls the kernel's
     `execute_configuration` on the host, and the blob's kernel calls its
     `execute_device` on the device. Outside a blob, `mogg.call.opaque`

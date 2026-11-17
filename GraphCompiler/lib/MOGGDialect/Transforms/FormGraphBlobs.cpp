@@ -13,8 +13,8 @@
 //
 // Fuses groups of declarative `mogg.routine`s, sequences and siblings alike,
 // into one routine whose body is a `mogg.graph_blob`, so that each group
-// launches as one device kernel. The fused routine has every member's operands
-// and results, and `OutlineRoutines` outlines it like any other.
+// launches as one device kernel. The fused routine has the operands and results
+// of every routine it fuses, and `OutlineRoutines` outlines it like any other.
 //
 //===----------------------------------------------------------------------===//
 
@@ -114,22 +114,22 @@ bool canJoinBlob(RoutineOp routine, SymbolTable &symbols,
   return decl && decl.getExecuteDevice();
 }
 
-// Returns the chain that the routine fusing `members` waits on, or null if they
-// wait on nothing. A member's chain joins values from earlier members and from
-// outside the blob, directly or through the joins the blob absorbs,
-// `chainJoins`. The blob runs its members in order, so it waits only on the
+// Returns the chain that the routine fusing `routines` waits on, or null if
+// they wait on nothing. A routine's chain joins values from earlier routines
+// and from outside the blob, directly or through the joins the blob absorbs,
+// `chainJoins`. The blob runs its calls in order, so it waits only on the
 // values from outside, joined into one chain. A `mo.chain.create` takes any
 // value, so an outside value can be a tensor, which a join makes a chain.
 Value createBlobChain(OpBuilder &builder, Location loc,
-                      ArrayRef<RoutineOp> members,
+                      ArrayRef<RoutineOp> routines,
                       const llvm::SetVector<Operation *> &chainJoins) {
-  llvm::DenseSet<Operation *> memberOps;
-  for (RoutineOp member : members)
-    memberOps.insert(member);
+  llvm::DenseSet<Operation *> routineOps;
+  for (RoutineOp routine : routines)
+    routineOps.insert(routine);
   llvm::SetVector<Value> waits;
   SmallVector<Value> worklist;
-  for (RoutineOp member : llvm::reverse(members)) {
-    if (Value chain = member.getChain())
+  for (RoutineOp routine : llvm::reverse(routines)) {
+    if (Value chain = routine.getChain())
       worklist.push_back(chain);
   }
   llvm::DenseSet<Value> visited;
@@ -138,7 +138,7 @@ Value createBlobChain(OpBuilder &builder, Location loc,
     if (!visited.insert(value).second)
       continue;
     Operation *def = value.getDefiningOp();
-    if (def && memberOps.contains(def))
+    if (def && routineOps.contains(def))
       continue;
     if (def && chainJoins.contains(def)) {
       llvm::append_range(worklist, llvm::reverse(def->getOperands()));
@@ -153,62 +153,62 @@ Value createBlobChain(OpBuilder &builder, Location loc,
   return MO::ChainCreateOp::create(builder, loc, waits.getArrayRef());
 }
 
-// Replaces `members` with one routine whose body is a `mogg.graph_blob` holding
-// their bodies in order. It goes where the last member was, after every input
-// of the blob. An absorbed chain join, from `chainJoins`, that something
-// outside the blob still reads now reads the blob's chain, and may come before
-// the routine: a graph region allows that, and `MOGGToMGP` sorts each block
-// before lowering it. A join nothing else reads goes away.
-void fuse(ArrayRef<RoutineOp> members,
+// Replaces `routines` with one routine whose body is a `mogg.graph_blob`
+// holding their bodies in order. It goes where the last of them was, after
+// every input of the blob. An absorbed chain join, from `chainJoins`, that
+// something outside the blob still reads now reads the blob's chain, and may
+// come before the routine: a graph region allows that, and `MOGGToMGP` sorts
+// each block before lowering it. A join nothing else reads goes away.
+void fuse(ArrayRef<RoutineOp> routines,
           const llvm::SetVector<Operation *> &chainJoins) {
-  RoutineOp last = members.back();
+  RoutineOp last = routines.back();
   MLIRContext *ctx = last.getContext();
   IRRewriter rewriter(ctx);
   rewriter.setInsertionPoint(last);
   SmallVector<Location> locs;
-  for (RoutineOp member : members)
-    locs.push_back(member.getLoc());
+  for (RoutineOp routine : routines)
+    locs.push_back(routine.getLoc());
   Location loc = rewriter.getFusedLoc(locs);
 
-  // The blob reads what its members read from outside it, and writes every
-  // member's results: `MOGGToMGP` gives each its own buffer.
+  // The blob reads what its calls read from outside it, and writes every
+  // call's results: `MOGGToMGP` gives each its own buffer.
   SmallVector<Value> inputs;
   llvm::DenseMap<Value, unsigned> inputIndex;
   SmallVector<Value> results;
   llvm::DenseMap<Value, unsigned> resultIndex;
   llvm::DenseSet<Value> chains;
   bool hasReadEffect = false, hasWriteEffect = false;
-  for (RoutineOp member : members) {
-    for (Value input : member.getInputs()) {
+  for (RoutineOp routine : routines) {
+    for (Value input : routine.getInputs()) {
       if (!resultIndex.contains(input) &&
           inputIndex.try_emplace(input, inputs.size()).second)
         inputs.push_back(input);
     }
-    for (Value result : nonChainOutputs(member)) {
+    for (Value result : nonChainOutputs(routine)) {
       resultIndex[result] = results.size();
       results.push_back(result);
     }
-    if (Value chain = member.getOutputChain())
+    if (Value chain = routine.getOutputChain())
       chains.insert(chain);
-    hasReadEffect |= member.getHasReadEffect();
-    hasWriteEffect |= member.getHasWriteEffect();
+    hasReadEffect |= routine.getHasReadEffect();
+    hasWriteEffect |= routine.getHasWriteEffect();
   }
 
-  Value chain = createBlobChain(rewriter, loc, members, chainJoins);
+  Value chain = createBlobChain(rewriter, loc, routines, chainJoins);
 
   SmallVector<Type> resultTypes(ValueRange(results).getTypes());
   if (!chains.empty())
     resultTypes.push_back(MO::ChainType::get(ctx));
 
-  SmallVector<Operation *> memberOps(members.begin(), members.end());
+  SmallVector<Operation *> routineOps(routines.begin(), routines.end());
   auto fused =
       RoutineOp::create(rewriter, loc, resultTypes, inputs, chain,
-                        createFusionInfo<FusionSequenceAttr>(ctx, memberOps));
+                        createFusionInfo<FusionSequenceAttr>(ctx, routineOps));
   fused.setHasReadEffect(hasReadEffect);
   fused.setHasWriteEffect(hasWriteEffect);
   fused.setDeviceRef(MO::getDeviceOrDefaultAny(last));
-  bool deferred = llvm::any_of(members, [](RoutineOp member) {
-    return member.getDispatch() == DispatchKind::Deferred;
+  bool deferred = llvm::any_of(routines, [](RoutineOp routine) {
+    return routine.getDispatch() == DispatchKind::Deferred;
   });
   fused.setDispatch(deferred ? DispatchKind::Deferred
                              : DispatchKind::Immediate);
@@ -216,10 +216,10 @@ void fuse(ArrayRef<RoutineOp> members,
   Block *body = rewriter.createBlock(&fused.getBody());
   for (size_t i = 0, e = inputs.size() + results.size(); i < e; ++i)
     body->addArgument(PointerType::get(ctx), loc);
-  // A dim is named by its type, so members share one argument per name.
+  // A dim is named by its type, so the routines share one argument per name.
   llvm::DenseMap<Type, BlockArgument> dims;
-  for (RoutineOp member : members) {
-    for (BlockArgument dim : member.getBodyArgs().dims) {
+  for (RoutineOp routine : routines) {
+    for (BlockArgument dim : routine.getBodyArgs().dims) {
       if (!dims.contains(dim.getType()))
         dims[dim.getType()] = body->addArgument(dim.getType(), loc);
     }
@@ -230,17 +230,17 @@ void fuse(ArrayRef<RoutineOp> members,
   };
 
   GraphBlobOp::create(rewriter, loc, [&](OpBuilder &builder, Location) {
-    for (RoutineOp member : members) {
-      RoutineOp::BodyArgs args = member.getBodyArgs();
+    for (RoutineOp routine : routines) {
+      RoutineOp::BodyArgs args = routine.getBodyArgs();
       IRMapping mapping;
       for (auto [input, arg] :
-           llvm::zip_equal(member.getInputs(), args.inputs)) {
+           llvm::zip_equal(routine.getInputs(), args.inputs)) {
         mapping.map(arg, resultIndex.contains(input)
                              ? resultPointer(input)
                              : body->getArgument(inputIndex.at(input)));
       }
       for (auto [result, arg] :
-           llvm::zip_equal(nonChainOutputs(member), args.outputs))
+           llvm::zip_equal(nonChainOutputs(routine), args.outputs))
         mapping.map(arg, resultPointer(result));
       for (BlockArgument dim : args.dims)
         mapping.map(dim, dims.at(dim.getType()));
@@ -249,8 +249,8 @@ void fuse(ArrayRef<RoutineOp> members,
         return llvm::map_to_vector(
             values, [&](Value value) { return mapping.lookup(value); });
       };
-      for (Operation &op : member.getBody().front()) {
-        // In the blob, the member's call runs its kernel's `execute_device`.
+      for (Operation &op : routine.getBody().front()) {
+        // In the blob, the routine's call runs its kernel's `execute_device`.
         if (auto call = dyn_cast<CallOpaqueOp>(op))
           CallExecuteDeviceOp::create(
               builder, call.getLoc(), call.getCalleeAttr(),
@@ -266,10 +266,10 @@ void fuse(ArrayRef<RoutineOp> members,
   rewriter.replaceAllUsesWith(results, nonChainOutputs(fused));
   // Consumers of a chain produced within the blob now wait for the blob's
   // chain.
-  for (Value memberChain : chains)
-    rewriter.replaceAllUsesWith(memberChain, fused.getOutputChain());
-  for (RoutineOp member : llvm::reverse(members))
-    rewriter.eraseOp(member);
+  for (Value innerChain : chains)
+    rewriter.replaceAllUsesWith(innerChain, fused.getOutputChain());
+  for (RoutineOp routine : llvm::reverse(routines))
+    rewriter.eraseOp(routine);
   for (Operation *join : llvm::reverse(chainJoins)) {
     if (join->use_empty())
       rewriter.eraseOp(join);
@@ -315,14 +315,14 @@ llvm::DenseSet<Value> findInvariantValues(Block &body) {
   return invariant;
 }
 
-// Whether anything but a routine that can join `member`'s blob, or the block's
-// terminator, reads one of its results. A chain join stays inside the blob, so
-// what reads the join counts instead.
-bool isReadOutside(RoutineOp member, SymbolTable &symbols,
+// Whether anything but a routine that can join `routine`'s blob, or the
+// block's terminator, reads one of its results. A chain join stays inside the
+// blob, so what reads the join counts instead.
+bool isReadOutside(RoutineOp routine, SymbolTable &symbols,
                    const llvm::DenseSet<Value> &invariant) {
-  Block *block = member->getBlock();
-  auto device = MO::getDeviceOrDefaultAny(member);
-  SmallVector<Value> values(member->result_begin(), member->result_end());
+  Block *block = routine->getBlock();
+  auto device = MO::getDeviceOrDefaultAny(routine);
+  SmallVector<Value> values(routine->result_begin(), routine->result_end());
   while (!values.empty()) {
     for (Operation *user : values.pop_back_val().getUsers()) {
       // A reader nested in a region, such as a `mo.if` branch, is outside:
@@ -335,9 +335,9 @@ bool isReadOutside(RoutineOp member, SymbolTable &symbols,
         values.push_back(user->getResult(0));
         continue;
       }
-      auto routine = dyn_cast<RoutineOp>(user);
-      if (!routine || !canJoinBlob(routine, symbols, invariant) ||
-          MO::getDeviceOrDefaultAny(routine) != device)
+      auto reader = dyn_cast<RoutineOp>(user);
+      if (!reader || !canJoinBlob(reader, symbols, invariant) ||
+          MO::getDeviceOrDefaultAny(reader) != device)
         return true;
     }
   }
@@ -346,16 +346,16 @@ bool isReadOutside(RoutineOp member, SymbolTable &symbols,
 
 // A blob `formInBlock` keeps open, which it fuses when it closes.
 struct OpenBlob {
-  SmallVector<RoutineOp> members;
-  // The values inside the blob: its members' results and absorbed chain joins.
+  SmallVector<RoutineOp> routines;
+  // The values inside the blob: its routines' results and absorbed chain joins.
   llvm::DenseSet<Value> values;
   llvm::SetVector<Operation *> chainJoins;
 
   bool contains(Value value) const { return values.contains(value); }
 
-  void add(RoutineOp member) {
-    members.push_back(member);
-    values.insert(member->result_begin(), member->result_end());
+  void add(RoutineOp routine) {
+    routines.push_back(routine);
+    values.insert(routine->result_begin(), routine->result_end());
   }
 
   void absorb(MO::ChainCreateOp join) {
@@ -365,9 +365,9 @@ struct OpenBlob {
 
   // Ends the blob, fusing it if it holds more than one routine.
   void close() {
-    if (members.size() > 1)
-      fuse(members, chainJoins);
-    members.clear();
+    if (routines.size() > 1)
+      fuse(routines, chainJoins);
+    routines.clear();
     values.clear();
     chainJoins.clear();
   }
@@ -406,8 +406,8 @@ struct OpenBlobs {
 // device.
 //
 // Nothing outside an open blob reads its values: a blob ends at the first
-// member with a result that something outside it needs. That result is ready
-// as soon as the blob ends, rather than waiting for later members it doesn't
+// routine with a result that something outside it needs. That result is ready
+// as soon as the blob ends, rather than waiting for later routines it doesn't
 // depend on, and no path can leave a blob and come back in, which would make
 // the fused routine wait on itself. The block's terminator, such as the graph's
 // output, doesn't count: it takes its operands only when the whole block ends.
@@ -416,9 +416,9 @@ struct OpenBlobs {
 //
 // A multi-device graph interleaves its devices' routines, so a routine on
 // another device doesn't end a blob. The fused routine can still go where its
-// last member was, because whatever reads a blob from outside comes after its
-// last member: a reader that can't join the blob, such as a routine on another
-// device, ends the blob at the member it reads, and a routine on the same
+// last routine was, because whatever reads a blob from outside comes after its
+// last routine: a reader that can't join the blob, such as a routine on another
+// device, ends the blob at the routine it reads, and a routine on the same
 // device that didn't join came after the blob ended.
 void formInBlock(Block &block, SymbolTable &symbols,
                  const llvm::DenseSet<Value> &invariant, unsigned maxCalls) {
@@ -434,7 +434,7 @@ void formInBlock(Block &block, SymbolTable &symbols,
         blob.close();
       continue;
     }
-    // A join of one blob's chains orders a later member after earlier ones,
+    // A join of one blob's chains orders a later routine after earlier ones,
     // which the blob's own order already does, so it stays inside the blob. A
     // join of several devices' blobs stays outside them all: `isReadOutside`
     // kept those blobs open, so only the block's terminator reads the join,
@@ -459,7 +459,7 @@ void formInBlock(Block &block, SymbolTable &symbols,
       }
       continue;
     }
-    // Holds by construction: `isReadOutside` ended the blob at any member with
+    // Holds by construction: `isReadOutside` ended the blob at any routine with
     // a reader that can't join it, including one nested in a region.
     assert(
         (op.hasTrait<OpTrait::IsTerminator>() ||

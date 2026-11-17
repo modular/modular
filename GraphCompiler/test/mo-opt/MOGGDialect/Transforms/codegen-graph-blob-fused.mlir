@@ -9,10 +9,10 @@
 // RUN:   -verify-each=false
 // RUN: FileCheck %s < %t/graph.mojo
 
-// Two declarative calls with fused outputs form one graph blob. Each member's
+// Two declarative calls with fused outputs form one graph blob. Each call's
 // fused output crosses the launch as its `device_type`, with the bias its
 // epilogue captures inside it, and the kernel uses it as is. The first
-// member's result is the second member's input, which the kernel rebuilds from
+// call's result is the second call's input, which the kernel rebuilds from
 // its `TileTensor`.
 
 // CHECK: var [[OUT0:[A-Za-z0-9_]+]] = _MoggOutputStoreFusionTensor[{{.*}}, True, False, False]
