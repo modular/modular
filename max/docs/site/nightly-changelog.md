@@ -497,6 +497,19 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Reusing precompiled MEFs (`InferenceSession(precompiled_mefs=...)`,
+  `--precompiled-mefs`, and `max.tensor.support.set_precompiled_mefs`) now
+  checks that each artifact was built from the graph claiming it: its body,
+  the contents of its kernel libraries, its compile options, and the MAX build
+  that exported it. Before, only the graph's name and its input and output
+  types were compared, so editing a graph or a custom op and reusing an
+  artifact silently ran the old program. A mismatch raises
+  `ArtifactBodyMismatch`, or `ArtifactToolchainMismatch` for artifacts from a
+  different MAX build. A caller that knowingly builds different graphs than it
+  recorded, such as a test harness compiling under virtual devices, passes
+  `MefStore.for_import(..., verify_body=False)`, `InferenceSession(verify_body=
+  False)`, or `--no-precompiled-mefs-verify-body` to skip the check.
+
 - Loading a model on a device that reports no free memory now fails with a
   "Model size exceeds available memory" error. Memory planning used to treat
   0 as unmeasured and size against the device's total memory, so a full host

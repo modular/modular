@@ -42,13 +42,21 @@ Nothing makes a graph's name unique, though, so one name and signature can
 describe two different computations, and exporting a second, different graph
 under a taken pair raises. A caller that can tell such graphs apart -- because
 it knows which unit of work is compiling, say -- passes its own ``key`` and
-names them however it needs to; the collision check still holds it to naming
-them apart. Such a caller usually wants ``verify_body`` as well, which checks
-the artifact it claims against the graph claiming it.
+names them however they need to; the collision check still holds it to naming
+them apart.
 
-The signature check is a guard, not a proof: it catches divergences visible in a
-graph's input and output types, not every way two graphs can differ. Reuse only
-artifacts produced by the same code at the same revision.
+Name and signature only say what a graph is called and what it takes and
+returns. An artifact also holds a particular program: the graph body it was
+compiled from, the kernels its libraries held, the compile options it was built
+under, and the MAX build that produced it. A manifest records all four, and a
+store asked to ``verify_body`` -- which it is by default -- refuses an artifact
+whose record disagrees with the graph claiming it. That is what keeps an
+artifact written before an edit from answering for the graph as it is now, a
+case a name and a signature cannot see.
+
+The checks are a guard, not a proof: they compare what a graph declares and
+what its kernel libraries contain, not whether the two runs' code at those
+paths is the code that ran.
 
 Not every artifact is one graph. A caller that compiles a module of many graphs
 together, because that is far cheaper than compiling them one at a time, names
@@ -72,6 +80,121 @@ if TYPE_CHECKING:
     from max.graph import Graph
 
 _MANIFEST_NAME = "manifest.json"
+
+
+def _toolchain() -> str:
+    """Identifies the MAX build that compiles and runs graphs.
+
+    Recorded at export and compared at import, so an artifact built by one MAX
+    build does not answer for a graph another would compile. A version labels a
+    build; two builds of one version differ in ways only a source revision
+    would show.
+
+    Returns:
+        The MAX version string.
+    """
+    from max._core import __version__
+
+    return __version__
+
+
+def _content_digest(path: Path) -> str:
+    """Digests the bytes of a kernel library, file or source directory.
+
+    Args:
+        path: A ``.mojo`` source tree, a ``.mojoc`` package, or a single file.
+
+    Returns:
+        A hex digest of the tree's relative paths and file contents.
+
+    Raises:
+        RuntimeError: If the path cannot be read, so what it holds is unknown.
+    """
+    hasher = hashlib.sha256()
+    try:
+        if path.is_dir():
+            for child in sorted(path.rglob("*")):
+                if child.is_file():
+                    hasher.update(child.relative_to(path).as_posix().encode())
+                    hasher.update(b"\0")
+                    hasher.update(child.read_bytes())
+        else:
+            with path.open("rb") as file:
+                for chunk in iter(lambda: file.read(1 << 20), b""):
+                    hasher.update(chunk)
+    except OSError as exc:
+        raise RuntimeError(
+            f"cannot read the kernel library at {path} to check an artifact "
+            f"against it: {exc}"
+        ) from exc
+    return hasher.hexdigest()
+
+
+def _kernels(
+    graph: Graph, extensions: str | Path | Iterable[str | Path] | None
+) -> list[str]:
+    """Digests what every kernel library this graph compiles against holds.
+
+    The paths themselves are left out: they point into the tree that built the
+    graph, and the same library sits elsewhere in the tree that imports it.
+    What the artifact holds is the kernels, so that is what is compared.
+
+    A ``.mojo`` source package is digested as the sources the caller named,
+    not as the ``.mojoc`` the graph builds from them: that file records the
+    path it was built at, so its bytes differ between two trees holding the
+    same sources.
+
+    Args:
+        graph: The graph being compiled or claimed.
+        extensions: Custom extension paths handed to the session or the load,
+            if any; ``None`` for none.
+
+    Returns:
+        One hex digest per library, sorted so order cannot matter.
+    """
+    if extensions is None:
+        paths: list[Path] = []
+    elif isinstance(extensions, (str, Path)):
+        paths = [Path(extensions)]
+    else:
+        paths = [Path(extension) for extension in extensions]
+    named = list(graph._source_extension_paths)
+    if not named:
+        # A graph handed a pre-built kernel library names no source paths, so
+        # the library's own are the only thing there is to digest.
+        named = list(graph.kernel_libraries_paths)
+    paths.extend(named)
+    # One library named twice, once by its graph and once by the load that
+    # compiles it, is still one library. Resolving first folds a path the two
+    # spell differently.
+    unique: dict[Path, None] = dict.fromkeys(path.resolve() for path in paths)
+    return sorted(_content_digest(path) for path in unique)
+
+
+def _describe_kernels(digests: Iterable[str]) -> str:
+    """Renders a kernel-library set for an error message.
+
+    Args:
+        digests: The set's content digests.
+
+    Returns:
+        The digests, shortened, or ``"none"`` for no libraries.
+    """
+    rendered = ", ".join(digest[:8] for digest in digests)
+    return rendered or "none"
+
+
+def _options(tile_based_fusion: bool) -> str:
+    """Renders the compile options that change what an artifact holds.
+
+    Args:
+        tile_based_fusion: Whether the graph compiles under the tile-based
+            programming model, which selects different kernels.
+
+    Returns:
+        The options, as a string the manifest can record.
+    """
+    return f"tile_based_fusion={int(tile_based_fusion)}"
 
 
 def _signature(graph: Graph) -> dict[str, list[str]]:
@@ -134,14 +257,24 @@ def _default_key(graph: Graph) -> str:
 _KERNEL_PATHS = re.compile(r"_kernel_library_paths = \[[^\]]*\]")
 
 
+# A graph carries a `counter` that numbers the symbolic dimension names it
+# mints. It advances with the work done to a graph, including work a compile
+# does after an artifact was claimed for it, so it says where construction got
+# to rather than what the graph computes.
+_GRAPH_COUNTER = re.compile(r"\{counter = \d+ : i64\}")
+
+
 def _fingerprint(graph: Graph) -> str:
     """Digests what a graph computes, to tell two same-named graphs apart.
 
     Compared between graphs built by one exporting process, and between the
     directories separate build actions leave behind, so it has to describe what
-    a graph computes and nothing about where it was built. The printed form
-    carries no source locations; the kernel-library paths it does carry point
-    into the tree that built the graph, so they are dropped.
+    a graph computes and nothing about where it was built or how far its
+    construction got. The printed form carries no source locations; the
+    kernel-library paths it does carry point into the tree that built the
+    graph, so they are dropped, and what those paths hold is compared
+    separately, by :func:`_kernels`. Its symbolic-name counter is a watermark,
+    so it is pinned.
 
     Args:
         graph: The graph to digest.
@@ -150,6 +283,7 @@ def _fingerprint(graph: Graph) -> str:
         A hex digest of the graph's body.
     """
     body = _KERNEL_PATHS.sub("_kernel_library_paths = []", repr(graph))
+    body = _GRAPH_COUNTER.sub("{counter = 0 : i64}", body)
     return hashlib.sha256(body.encode()).hexdigest()
 
 
@@ -193,28 +327,63 @@ class MissingArtifactError(RuntimeError):
 
 
 class ArtifactBodyMismatch(RuntimeError):
-    """The recorded artifact holds a different graph than the one importing it.
+    """The recorded artifact holds a different program than the graph claiming it.
 
-    The recorded body is the one check that catches a divergence a name and a
-    signature cannot, so a store asked to verify it reports rather than
+    A name and a signature say what a graph is called and what it takes and
+    returns, not what it computes. The recorded body, kernel libraries, options
+    and toolchain are what say that, so a verifying store reports rather than
     initializing an artifact of some other computation.
     """
 
     def __init__(
-        self, graph_name: str, key: str, recorded: str, actual: str
+        self,
+        graph_name: str,
+        key: str,
+        recorded: str,
+        actual: str,
+        *,
+        what: str = "graph",
     ) -> None:
         self.graph_name = graph_name
         self.key = key
         self.recorded = recorded
         self.actual = actual
+        self.what = what
         super().__init__(
-            f"the artifact recorded as {key!r} describes a different graph "
+            f"the artifact recorded as {key!r} describes a different {what} "
             f"than {graph_name!r}, which is claiming it: recorded "
-            f"{recorded[:12]}, built {actual[:12]}.\nThe two runs diverged in "
+            f"{recorded}, built {actual}.\nThe two runs diverged in "
             "what they built. Usual causes: constants from an unseeded random "
             "source, graph construction that branches on "
-            "is_virtual_device_mode(), and shapes or a batch size derived from "
-            "the device's free memory."
+            "is_virtual_device_mode(), shapes or a batch size derived from the "
+            "device's free memory, an edited custom kernel, and a "
+            "compile option that differs between the runs."
+        )
+
+
+class ArtifactToolchainMismatch(RuntimeError):
+    """The artifacts were built by a MAX build other than this one.
+
+    An artifact is compiled code: the kernels in it, and the runtime that
+    executes it, have to be the pair the build tested. Nothing stamps the file
+    format itself, so the manifest carries the build, and a store asked to
+    verify reports a disagreement rather than loading code of an untested pair.
+    """
+
+    def __init__(
+        self,
+        recorded: str,
+        actual: str,
+        directories: tuple[Path, ...],
+    ) -> None:
+        self.recorded = recorded
+        self.actual = actual
+        self.directories = directories
+        super().__init__(
+            "the artifacts in "
+            + ", ".join(str(path) for path in directories)
+            + f" were exported by MAX {recorded}, and this is MAX {actual}."
+            "\nRe-export them with this build."
         )
 
 
@@ -226,6 +395,29 @@ class _Entry:
     # Absent from a v1 manifest, and so from every entry read back from one:
     # it answered a question only the exporting process could ask.
     fingerprint: str = ""
+    # What the graph's kernel libraries held, and the options it compiled
+    # under. Absent from a manifest written before they were recorded, which a
+    # verifying store reports rather than treating as "nothing".
+    kernels: list[str] | None = None
+    options: str | None = None
+
+    def identity(self) -> tuple[object, ...]:
+        """Returns the recorded facts two graphs must agree on to share one."""
+        return (
+            self.fingerprint,
+            tuple(self.kernels) if self.kernels is not None else None,
+            self.options,
+        )
+
+    def difference(self, other: _Entry) -> str:
+        """Names what this entry and ``other`` disagree on, for a message."""
+        if self.fingerprint != other.fingerprint:
+            return "graph bodies"
+        if tuple(self.kernels or ()) != tuple(other.kernels or ()):
+            return "kernel libraries"
+        if (self.options or "") != (other.options or ""):
+            return "compile options"
+        return "records"
 
 
 @dataclass
@@ -244,6 +436,10 @@ class MefStore:
     # defaults.
     key: Callable[[Graph], str | None]
     verify_body: bool
+    # The MAX build that wrote the manifests this store reads. Empty for a
+    # store that writes, and for one read from a manifest written before the
+    # stamp existed.
+    toolchain: str = ""
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _entries: dict[str, _Entry] = field(default_factory=dict)
     # Where each artifact actually lives, which is not derivable from the key
@@ -288,7 +484,7 @@ class MefStore:
         directories: str | Path | Iterable[str | Path],
         *,
         key: Callable[[Graph], str | None] | None = None,
-        verify_body: bool = False,
+        verify_body: bool = True,
     ) -> MefStore:
         """Returns a store that reads the artifacts in ``directories``.
 
@@ -307,9 +503,13 @@ class MefStore:
                 is then compiled as usual.
             verify_body: Whether to check a claimed artifact against the graph
                 claiming it, raising :class:`ArtifactBodyMismatch` when the two
-                runs diverged. Off by default because a caller may knowingly
-                build different graphs than it recorded -- a pipeline under
-                virtual devices does.
+                runs diverged in what they built, and
+                :class:`ArtifactToolchainMismatch` when a different MAX build
+                wrote the artifacts. On by default: an artifact answering for a
+                graph it was not built from is the failure this store exists to
+                avoid. Pass :obj:`False` only for a caller that knowingly
+                builds different graphs than it recorded -- a harness that
+                splits a compile onto a machine without the device, say.
 
         Returns:
             The store to pass as a session's ``precompiled_mefs``.
@@ -330,6 +530,7 @@ class MefStore:
         entries: dict[str, _Entry] = {}
         artifacts: dict[str, Path] = {}
         named: dict[str, Path] = {}
+        toolchain = ""
         for path in paths:
             manifest = path / _MANIFEST_NAME
             if not manifest.is_file():
@@ -337,24 +538,35 @@ class MefStore:
                     f"{path} has no {_MANIFEST_NAME}, so it was not written by "
                     "a session exporting precompiled MEFs"
                 )
-            for entry in json.loads(manifest.read_text())["graphs"]:
+            recorded_manifest = json.loads(manifest.read_text())
+            # Absent from a manifest written before the stamp existed.
+            recorded_toolchain = recorded_manifest.get("toolchain", "")
+            if (
+                toolchain
+                and recorded_toolchain
+                and recorded_toolchain != toolchain
+            ):
+                raise RuntimeError(
+                    f"{paths[0]} and {path} were exported by different MAX "
+                    f"builds ({toolchain} against {recorded_toolchain}), so no "
+                    "one artifact set describes both. Re-export them together."
+                )
+            toolchain = toolchain or recorded_toolchain
+            for entry in recorded_manifest["graphs"]:
                 recorded = _Entry(**entry)
                 seen = entries.get(recorded.key)
-                if (
-                    seen is not None
-                    and seen.fingerprint != recorded.fingerprint
-                ):
+                if seen is not None and seen.identity() != recorded.identity():
                     raise RuntimeError(
                         f"{artifacts[recorded.key]} and {path / recorded.key}"
-                        " describe different graphs, so neither can be matched"
-                        f" back to {recorded.name!r}. Nothing makes a graph's"
-                        " name unique; give them different names to tell them"
-                        " apart."
+                        " were exported from graphs that disagree on their"
+                        f" {seen.difference(recorded)}, so neither can be"
+                        f" matched back to {recorded.name!r}. Re-export them"
+                        " together, or give their graphs different names."
                     )
                 entries.setdefault(recorded.key, recorded)
                 artifacts.setdefault(recorded.key, path / recorded.key)
             # Absent from a manifest written before named artifacts existed.
-            for name in json.loads(manifest.read_text()).get("artifacts", []):
+            for name in recorded_manifest.get("artifacts", []):
                 # Nothing records what a named artifact holds, so one key in
                 # two directories cannot be told apart from two artifacts.
                 if name in named:
@@ -370,16 +582,26 @@ class MefStore:
             exporting=False,
             key=key or _default_key,
             verify_body=verify_body,
+            toolchain=toolchain,
             _entries=entries,
             _artifacts=artifacts,
             _named=named,
         )
 
-    def claim_export(self, graph: Graph) -> Path:
+    def claim_export(
+        self,
+        graph: Graph,
+        *,
+        extensions: str | Path | Iterable[str | Path] | None = None,
+        tile_based_fusion: bool = False,
+    ) -> Path:
         """Records ``graph`` and returns the path to write its artifact to.
 
         Args:
             graph: The graph about to be compiled.
+            extensions: Custom extension paths the compile is handed, if any.
+            tile_based_fusion: Whether the graph compiles under the tile-based
+                programming model.
 
         Returns:
             Where to export the compiled artifact.
@@ -403,6 +625,8 @@ class MefStore:
             name=graph.name,
             signature=_signature(graph),
             fingerprint=_fingerprint(graph),
+            kernels=_kernels(graph, extensions),
+            options=_options(tile_based_fusion),
         )
         with self._lock:
             # A graph compiled twice claims one artifact, and the second
@@ -414,25 +638,32 @@ class MefStore:
                     f" graph {graph.name!r} cannot be exported under it"
                 )
             previous = self._entries.get(key)
-            if (
-                previous is not None
-                and previous.fingerprint != entry.fingerprint
-            ):
+            if previous is not None and previous.identity() != entry.identity():
                 raise RuntimeError(
                     f"a different graph was already exported as {key!r}"
-                    f" ({previous.name!r} against {graph.name!r}), so an"
-                    " artifact cannot say which of the two it holds. Nothing"
-                    " makes a graph's name unique; give them different names,"
-                    " or name their artifacts with a key that tells them apart."
+                    f" ({previous.name!r} against {graph.name!r}), and the two"
+                    f" disagree on their {previous.difference(entry)}. An"
+                    " artifact cannot say which of the two it holds; re-export"
+                    " this one under a key of its own, or give their graphs"
+                    " different names."
                 )
             self._entries[key] = entry
         return self.directories[0] / key
 
-    def claim_import(self, graph: Graph) -> Path | None:
+    def claim_import(
+        self,
+        graph: Graph,
+        *,
+        extensions: str | Path | Iterable[str | Path] | None = None,
+        tile_based_fusion: bool = False,
+    ) -> Path | None:
         """Returns the artifact for ``graph``, or :obj:`None` to compile it.
 
         Args:
             graph: The graph that would otherwise be compiled.
+            extensions: Custom extension paths this run compiles with, if any.
+            tile_based_fusion: Whether this run asks for the tile-based
+                programming model.
 
         Returns:
             The artifact to initialize in its place, or :obj:`None` if this
@@ -441,10 +672,12 @@ class MefStore:
 
         Raises:
             MissingArtifactError: If no artifact was precompiled for this graph.
+            ArtifactToolchainMismatch: If ``verify_body`` and a different MAX
+                build wrote the artifacts.
             ArtifactBodyMismatch: If ``verify_body`` and the artifact claimed
-                holds a different graph.
+                holds a different program.
             RuntimeError: If ``verify_body`` and the artifact was recorded
-                before graph bodies were, so cannot be checked.
+                before what it holds was, so cannot be checked.
         """
         key = self.key(graph)
         if key is None:
@@ -466,19 +699,67 @@ class MefStore:
                 signature=_signature(graph),
             )
         if self.verify_body:
-            if not entry.fingerprint:
-                raise RuntimeError(
-                    f"the artifact recorded as {key!r} predates recorded graph"
-                    " bodies, so it cannot be checked against the graph"
-                    " claiming it. Re-export these artifacts, or build the"
-                    " store without verify_body."
-                )
-            fingerprint = _fingerprint(graph)
-            if entry.fingerprint != fingerprint:
-                raise ArtifactBodyMismatch(
-                    graph.name, key, entry.fingerprint, fingerprint
-                )
+            self._verify(key, entry, graph, extensions, tile_based_fusion)
         return self._artifacts[entry.key]
+
+    def _verify(
+        self,
+        key: str,
+        entry: _Entry,
+        graph: Graph,
+        extensions: str | Path | Iterable[str | Path] | None,
+        tile_based_fusion: bool,
+    ) -> None:
+        """Raises if ``entry`` does not describe what ``graph`` would compile."""
+        if not entry.fingerprint:
+            raise RuntimeError(
+                f"the artifact recorded as {key!r} predates recorded graph"
+                " bodies, so it cannot be checked against the graph claiming"
+                " it. Re-export these artifacts, or build the store without"
+                " verify_body."
+            )
+        if entry.kernels is None or entry.options is None:
+            raise RuntimeError(
+                f"the artifact recorded as {key!r} predates recorded kernel"
+                " libraries or compile options, so it cannot be checked"
+                " against the graph claiming it. Re-export these artifacts, or"
+                " build the store without verify_body."
+            )
+        if not self.toolchain:
+            raise RuntimeError(
+                f"the artifacts in {self.directories[0]} predate the recorded"
+                " MAX build, so they cannot be checked against this one."
+                " Re-export these artifacts, or build the store without"
+                " verify_body."
+            )
+        if self.toolchain != _toolchain():
+            raise ArtifactToolchainMismatch(
+                self.toolchain, _toolchain(), self.directories
+            )
+
+        fingerprint = _fingerprint(graph)
+        if entry.fingerprint != fingerprint:
+            raise ArtifactBodyMismatch(
+                graph.name, key, entry.fingerprint[:12], fingerprint[:12]
+            )
+        kernels = _kernels(graph, extensions)
+        if entry.kernels != kernels:
+            raise ArtifactBodyMismatch(
+                graph.name,
+                key,
+                _describe_kernels(entry.kernels),
+                _describe_kernels(kernels),
+                what="set of kernel libraries",
+            )
+        options = _options(tile_based_fusion)
+        if entry.options != options:
+            raise ArtifactBodyMismatch(
+                graph.name,
+                key,
+                entry.options,
+                options,
+                what="set of compile options",
+            )
 
     def claim_export_artifact(self, name: str) -> Path:
         """Records an artifact the caller names, and returns where to write it.
@@ -536,12 +817,15 @@ class MefStore:
         (self.directories[0] / _MANIFEST_NAME).write_text(
             json.dumps(
                 {
+                    "toolchain": _toolchain(),
                     "graphs": [
                         {
                             "key": entry.key,
                             "name": entry.name,
                             "signature": entry.signature,
                             "fingerprint": entry.fingerprint,
+                            "kernels": entry.kernels,
+                            "options": entry.options,
                         }
                         for entry in entries
                     ],

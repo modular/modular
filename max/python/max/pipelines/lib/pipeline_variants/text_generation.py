@@ -293,6 +293,7 @@ class TextGenerationPipeline(
             devices=[*self._devices],
             precompiled_mefs=pipeline_config.runtime.precompiled_mefs,
             export_mefs=pipeline_config.runtime.export_mefs,
+            verify_body=pipeline_config.runtime.precompiled_mefs_verify_body,
         )
         self.session = session
         self._label_scorer = BatchLabelScorer(

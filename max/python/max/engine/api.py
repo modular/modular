@@ -680,11 +680,19 @@ class InferenceSession:
             of graphs is often split across producers. Every graph this session
             loads is initialized from its artifact instead of being compiled,
             which lets the compiling and the executing run happen on different
-            machines. Raises if a graph has no artifact.
+            machines. Raises if a graph has no artifact, and raises
+            :class:`ArtifactBodyMismatch` if the artifact was built from a
+            different graph, kernel libraries or compile options, or
+            :class:`ArtifactToolchainMismatch` if a different MAX build exported
+            it.
         export_mefs: A directory to write a compiled-graph artifact into for
             every graph this session loads, alongside a manifest describing
             them. Pass the same directory as another session's
             ``precompiled_mefs`` to reuse them. Mutually exclusive with it.
+        verify_body: Whether to check each ``precompiled_mefs`` artifact
+            against the graph claiming it. On by default; turn it off for a
+            split whose graphs are knowingly built differently on the two
+            sides, such as a compiling run under virtual devices.
     """
 
     _impl: _InferenceSession
@@ -717,6 +725,7 @@ class InferenceSession:
         custom_extensions: CustomExtensionsType | None = None,
         precompiled_mefs: str | Path | Iterable[str | Path] | None = None,
         export_mefs: str | Path | None = None,
+        verify_body: bool = True,
     ) -> None:
         if precompiled_mefs is not None and export_mefs is not None:
             raise ValueError(
@@ -727,7 +736,9 @@ class InferenceSession:
         # tracks its position through the graphs this session loads.
         self._mef_store: MefStore | None = None
         if precompiled_mefs is not None:
-            self._mef_store = MefStore.for_import(precompiled_mefs)
+            self._mef_store = MefStore.for_import(
+                precompiled_mefs, verify_body=verify_body
+            )
         elif export_mefs is not None:
             self._mef_store = MefStore.for_export(export_mefs)
 
@@ -751,6 +762,11 @@ class InferenceSession:
             custom_extensions_final = _process_custom_extensions_objects(
                 custom_extensions
             )
+
+        # Kept as the caller named them, not as the built libraries above: an
+        # artifact records what the extension paths held, and the same paths
+        # name it on both sides of a split.
+        self._custom_extensions = custom_extensions
 
         self._impl = _InferenceSession(
             final_devices,
@@ -964,17 +980,21 @@ class InferenceSession:
 
         Behaves exactly like :meth:`compile` on a session with no store at all,
         and only :class:`~max.graph.Graph` models participate: the store
-        identifies an artifact by a graph's name and signature. A session
-        constructed with neither consults the process-wide store installed with
+        identifies an artifact by a graph's name and signature, then checks that
+        the artifact was built from that graph, its kernel libraries, its
+        compile options and this MAX build. A session constructed with neither
+        consults the process-wide store installed with
         :attr:`default_mef_store`, if one is installed; an explicit
         ``precompiled_mefs``/``export_mefs`` always wins.
 
         Args:
             model: As :meth:`compile`.
-            custom_extensions: As :meth:`compile`. Ignored when reusing an
-                artifact, which is already compiled.
-            tile_based_fusion: As :meth:`compile`. Ignored when reusing an
-                artifact.
+            custom_extensions: As :meth:`compile`. Nothing is built from them
+                when reusing an artifact, which is already compiled, but an
+                artifact recorded with other extensions does not answer for
+                this graph and raises.
+            tile_based_fusion: As :meth:`compile`. An artifact built without it
+                does not answer for a graph asking for it, and raises.
 
         Returns:
             The compiled artifact, ready for :meth:`init` or :meth:`init_all`.
@@ -982,6 +1002,10 @@ class InferenceSession:
         Raises:
             RuntimeError: If reusing and no recorded artifact matches
                 ``model``'s name and signature.
+            ArtifactBodyMismatch: If reusing and the artifact was built from a
+                different graph, kernel libraries or compile options.
+            ArtifactToolchainMismatch: If reusing and a different MAX build
+                exported the artifacts.
         """
         # See `_precompiled_mefs` for why a caller would want this: it lets the
         # compile happen somewhere that holds no accelerator.
@@ -997,8 +1021,17 @@ class InferenceSession:
                 tile_based_fusion=tile_based_fusion,
             )
 
+        # An empty list means "none given", not "none load": the session's own
+        # extensions reach every compile it runs, so a per-load empty list must
+        # not hide them from what the artifact records.
+        extensions = custom_extensions or self._custom_extensions
+
         if not store.exporting:
-            artifact = store.claim_import(model)
+            artifact = store.claim_import(
+                model,
+                extensions=extensions,
+                tile_based_fusion=tile_based_fusion,
+            )
             # A store with nothing to say about this graph declines it, and
             # the compile happens here as it would with no store at all.
             if artifact is not None:
@@ -1014,7 +1047,13 @@ class InferenceSession:
             custom_extensions=custom_extensions,
             tile_based_fusion=tile_based_fusion,
         )
-        compiled.export_mef(store.claim_export(model))
+        compiled.export_mef(
+            store.claim_export(
+                model,
+                extensions=extensions,
+                tile_based_fusion=tile_based_fusion,
+            )
+        )
         store.write_manifest()
         return compiled
 

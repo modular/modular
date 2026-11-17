@@ -138,9 +138,12 @@ def set_precompiled_mefs(
     Every graph compiled after this by a session that was given no artifacts of
     its own -- whether through :meth:`~max.nn.Module.compile`,
     eager execution, or a session the caller built itself -- is matched to an
-    artifact by its name and signature, so a divergence raises rather than
-    quietly recompiling. The consuming run has to build the same graphs, but not
-    in the same order, and may build only some of them.
+    artifact by its name and signature, then checked against what the artifact
+    was built from: the graph body, the contents of its kernel libraries, the
+    compile options, and the MAX build that exported it. A divergence raises
+    rather than initializing an artifact of some other computation. The
+    consuming run has to build the same graphs, but not in the same order, and
+    may build only some of them.
 
     Args:
         directory: A directory written by :func:`set_export_mefs`, or several,

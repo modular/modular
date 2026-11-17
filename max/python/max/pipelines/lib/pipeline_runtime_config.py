@@ -78,7 +78,22 @@ class PipelineRuntimeConfig(ConfigModel):
             "``--export-mefs``. Every graph is initialized from its artifact "
             "instead of being compiled, so the compiling and the executing run "
             "can happen on different machines. The runs must build the same "
-            "graphs; a mismatch is an error rather than a silent recompile."
+            "graphs: a graph with no artifact raises, and so does an artifact "
+            "built from a different graph, kernel libraries or compile "
+            "options, or by a different MAX build."
+        ),
+    )
+
+    precompiled_mefs_verify_body: bool = Field(
+        default=True,
+        description=(
+            "Whether to check each reused artifact against the graph claiming "
+            "it, raising when the two runs built different programs rather "
+            "than initializing an artifact of some other computation. Turn it "
+            "off for a split whose compiling run builds its graphs under "
+            "virtual devices, whose memory plan and weight staging differ from "
+            "the executing run's even when the reused program is the right "
+            "one."
         ),
     )
 

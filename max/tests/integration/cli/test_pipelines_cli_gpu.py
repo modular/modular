@@ -30,9 +30,16 @@ logger = logging.getLogger("max.pipelines")
 
 def _reuse_flags() -> list[str]:
     # Bazel hands the precompiled artifacts over in the environment; the
-    # pipeline is told about them explicitly.
+    # pipeline is told about them explicitly. The artifact was compiled under
+    # virtual devices, so its graph was built with the memory plan and weight
+    # staging a compile-only run has, not this one's; the program is still the
+    # one this run needs, so the body check is off.
     precompiled = os.environ.get("PRECOMPILED_MEFS_DIR")
-    return ["--precompiled-mefs", precompiled] if precompiled else []
+    return (
+        ["--precompiled-mefs", precompiled, "--no-precompiled-mefs-verify-body"]
+        if precompiled
+        else []
+    )
 
 
 @pytest.mark.skipif(is_h100_h200(), reason="AITLIB-342: Failing on H100")

@@ -873,6 +873,10 @@ class Graph:
     device_chains: _DeviceChainMap
 
     _kernel_library: KernelLibrary
+    # The extension paths as the caller named them, before `_import_kernels`
+    # built any source package into a `.mojoc`. A `.mojoc`'s bytes depend on
+    # the tree it was built in; the sources do not.
+    _source_extension_paths: list[Path]
 
     _subgraphs: dict[str, Graph] = {}
 
@@ -966,9 +970,15 @@ class Graph:
 
         # Resolving through `_resolved_custom_extensions` is what lets a graph
         # built without `custom_extensions` still reach a backend's kernel
-        # overlays (see `default_custom_extensions`).
+        # overlays (see `default_custom_extensions`). The resolved paths are
+        # kept before `_import_kernels` builds a source package into a `.mojoc`
+        # whose bytes depend on where it was built, so anything that has to
+        # compare two runs' kernel libraries reads the sources instead.
+        self._source_extension_paths = _resolved_custom_extensions(
+            custom_extensions
+        )
         self._kernel_library = kernel_library or KernelLibrary()
-        self._import_kernels(_resolved_custom_extensions(custom_extensions))
+        self._import_kernels(self._source_extension_paths)
 
         self._subgraphs = {}
 
@@ -1633,6 +1643,7 @@ class Graph:
             if isinstance(paths_attr, mlir.ArrayAttr):
                 kernels_paths = [Path(str(x)) for x in paths_attr]
         self._kernel_library = KernelLibrary(kernels_paths)
+        self._source_extension_paths = kernels_paths
 
     def copy(self) -> Graph:
         """Creates a deep copy of this graph.
@@ -1669,6 +1680,7 @@ class Graph:
         # module body block.
         copied._mlir_op = mlir.Operation._CAPICreate(module.body[0]._CAPIPtr)
         copied._kernel_library = self._kernel_library
+        copied._source_extension_paths = list(self._source_extension_paths)
         copied._data_dependent_dims = 0
         return copied
 
