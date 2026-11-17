@@ -45,15 +45,11 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     _HALDeviceFunction,
     _check_config_dims,
 )
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceContext,
-    _GPU_DRIVER,
-    _driver_satisfies_api,
-)
 from max._driver.max_license.hal import (
     Buffer,
     Context,
     Device as _HALDevice,
+    Driver,
     Event,
     MEMORY_UNKNOWN,
     Stream,
@@ -68,6 +64,17 @@ from max._driver.max_license.hal.extensions.traits import (
 )
 from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
 from max._plugin import MaxPluginForTarget
+from max._driver.max_license.hal._machine import DeviceRef, DeviceSpec
+from max.gpu.host import (
+    ClusterExecutionConfig,
+    ClusterLaunchConfig,
+    GridBlockLaunchConfig,
+)
+from max.gpu.host.nvidia import (
+    ClusterAttributeLaunchConfig,
+    GridBlockAttributeLaunchConfig,
+    LaunchAttributeHolderExecutionConfig,
+)
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
 from max.gpu.host._legacy.dim import Dim
@@ -107,6 +114,142 @@ from max._driver.max_license.device_context_dispatch.host_buffer import (
     HostBuffer,
 )
 from ._device_context_extras import *
+
+
+# ===-------------------------------------------------------------------===#
+# HAL driver and plugin loading
+# ===-------------------------------------------------------------------===#
+# The HAL backend loads its accelerator and CPU plugins from
+# `MODULAR_DRIVER_PLUGINS` once per process. This section holds the loaders and
+# the process-global handles they fill in; `DeviceContext.__init__` reads them.
+
+
+def _driver_satisfies_api(driver_name: String, api: String) -> Bool:
+    """Reports whether the single loaded HAL driver satisfies a requested API.
+
+    The HAL backend loads exactly one accelerator driver. A request is
+    satisfied by a case-insensitive match against the driver's name (for
+    example `"cuda" == "cuda"`), or by the generic accelerator alias `"gpu"`,
+    which any loaded GPU driver answers regardless of its concrete vendor name.
+    """
+    var d = driver_name.lower()
+    var a = api.lower()
+    if a == "gpu":
+        return d != "cpu"
+    return d == a
+
+
+def _plugin_spec_entry(api: String) raises -> String:
+    """Returns the first `MODULAR_DRIVER_PLUGINS` entry that satisfies `api`.
+
+    Args:
+        api: The requested device API, such as "cpu", "gpu" or "cuda".
+
+    Returns:
+        The matching `name@/path/to/plugin.so` entry.
+
+    Raises:
+        If `MODULAR_DRIVER_PLUGINS` is not set or no entry satisfies `api`.
+    """
+    var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
+    if not plugin_spec:
+        raise Error("MODULAR_DRIVER_PLUGINS not set")
+    # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so").
+    for entry in plugin_spec.split(";"):
+        var name = String(entry.split("@")[0])
+        if _driver_satisfies_api(name, api):
+            return String(entry)
+    raise Error(
+        String(t"Requested API {api} not provided by MODULAR_DRIVER_PLUGINS")
+    )
+
+
+def _load_gpu_driver() -> Optional[ArcPointer[Driver]]:
+    """Loads the accelerator plugin named by `MODULAR_DRIVER_PLUGINS`.
+
+    Used as the one-time initializer for `_GPU_DRIVER`; see that global. It
+    backs a `_Global` initializer, so it must not raise: a missing or
+    unloadable plugin is reported as an empty `Optional`.
+    """
+    try:
+        return Optional(Driver.create(_plugin_spec_entry("gpu")))
+    except:
+        return None
+
+
+comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_gpu_driver]
+
+
+@fieldwise_init
+struct _CPUPlugin(Copyable, Movable):
+    """The CPU plugin's driver and its device 0."""
+
+    var driver: ArcPointer[Driver]
+    var device: ArcPointer[_HALDevice[get_device_spec[0]()]]
+
+
+def _open_cpu_plugin() raises -> _CPUPlugin:
+    """Loads the CPU plugin named by `MODULAR_DRIVER_PLUGINS` and opens device 0.
+
+    Returns:
+        The loaded driver and device.
+
+    Raises:
+        If the plugin is not named, does not load, or has no device 0.
+    """
+    var driver = Driver.create(_plugin_spec_entry("cpu"))
+    var device = driver[].get_device[0]()
+    return _CPUPlugin(driver=driver^, device=device^)
+
+
+def _load_cpu_plugin() -> Optional[_CPUPlugin]:
+    """Opens the CPU plugin; the one-time initializer for `_CPU_PLUGIN`.
+
+    It backs a `_Global` initializer, so it must not raise: a missing or
+    unloadable plugin is reported as an empty `Optional`.
+    """
+    try:
+        return Optional(_open_cpu_plugin())
+    except:
+        return None
+
+
+# CPU kernels create a CPU context per call (`sync_parallelize` does when it is
+# given none). Loading the plugin per context would put a `dlopen`, and a
+# symbol lookup per entry point and extension, on every CPU kernel launch.
+comptime _CPU_PLUGIN = _Global["MODULAR_HAL_CPU_PLUGIN", _load_cpu_plugin]
+
+
+def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
+    """Returns the accelerator plugin's API and a device's arch.
+
+    Reads both from the process-global driver without opening a context, which
+    some plugins allow only one of per device.
+
+    Args:
+        device_id: The device to query.
+
+    Returns:
+        The device API, as `DeviceContext.api()` reports it, and the plugin's
+        arch name.
+
+    Raises:
+        If no accelerator plugin is loaded, the plugin was loaded without an
+        API name, or the plugin has no arch for the device.
+    """
+    var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
+    __guard case .Some(driver) = maybe_driver[] else:
+        raise Error("no accelerator driver plugin is loaded")
+    var api = String(driver[].name()).lower()
+    # A plugin listed as a bare path, without a `name@`, is named after
+    # its file, which is no API and so no `--target-accelerator` vendor
+    # either.
+    if "/" in api or api.endswith(".so"):
+        raise Error("the accelerator plugin has no API name: ", api)
+    var device = driver[].get_device_dynamic[Optional[Int64](0)](
+        Int64(device_id)
+    )
+    return (api, device[].arch())
 
 
 struct _PeerState(Movable):
@@ -217,7 +360,7 @@ def _memset_value_as_u64[dtype: DType](val: Scalar[dtype]) -> UInt64:
 def _check_device_to_device_copy[
     target: CompilationTarget, dtype: DType
 ](
-    ctx: HALDeviceContext[target],
+    ctx: _HALDeviceContext[target],
     dst_buf: _HALDeviceBuffer[dtype],
     src_buf: _HALDeviceBuffer[dtype],
 ) raises:
@@ -244,7 +387,7 @@ def _check_device_to_device_copy[
 def _enqueue_copy_device_to_device[
     target: CompilationTarget, dtype: DType
 ](
-    ctx: HALDeviceContext[target],
+    ctx: _HALDeviceContext[target],
     dst_buf: _HALDeviceBuffer[dtype],
     src_buf: _HALDeviceBuffer[dtype],
 ) raises:
@@ -272,6 +415,27 @@ def use_legacy_backend() -> Bool:
         True when the build uses the legacy device context.
     """
     return not HAL_DEVICE_CONTEXT
+
+
+@fieldwise_init
+struct _HALDeviceContext[target: CompilationTarget = default_accelerator()](
+    ImplicitlyCopyable, RegisterPassable
+):
+    """The state of a `DeviceContext` on the HAL backend."""
+
+    comptime Unknown = _HALDeviceContext[CompilationTarget._unknown()]
+    """DeviceContext type whose compilation target is not statically known."""
+
+    comptime device_spec = get_device_spec[0]()
+    """`DeviceSpec` describing the device this context targets."""
+
+    var _driver: ArcPointer[Driver]
+    var _device: ArcPointer[_HALDevice[Self.device_spec]]
+    var _context: ArcPointer[Context[Self.device_spec]]
+    var _stream: ArcPointer[Stream[Self.device_spec]]
+    # Null until the C++ runtime shim provides it; read by the CUDA/HIP
+    # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
+    var _handle: _DeviceContextPtr[mut=True]
 
 
 struct DeviceContext[target: CompilationTarget = default_accelerator()](
@@ -310,7 +474,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     comptime _Legacy = LegacyDeviceContext[Self.target]
-    comptime _HAL = HALDeviceContext[Self.target]
+    comptime _HAL = _HALDeviceContext[Self.target]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
@@ -378,14 +542,42 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ].FunctionWrapper
     """Selects the function `compile_function` compiles for a user kernel."""
 
+    comptime _PluginExecutionConfigType: ExecutionConfig = MaxPluginForTarget[
+        DeviceSpec.target[Self._HAL.device_spec]()
+    ].HalHooks.ExecutionConfigType[
+        DeviceRef(Self._HAL.device_spec, 0, private=())
+    ]
+    comptime _plugin_has_clusters = conforms_to(
+        Self._PluginExecutionConfigType, ClusterExecutionConfig
+    )
+    comptime _plugin_has_attributes = conforms_to(
+        Self._PluginExecutionConfigType, LaunchAttributeHolderExecutionConfig
+    )
+
     comptime ExecutionConfigType: ExecutionConfig = (
-        Self._Legacy.ExecutionConfigType if use_legacy_backend() else Self._HAL.ExecutionConfigType
+        Self._Legacy.ExecutionConfigType if use_legacy_backend() else (
+            (
+                ClusterAttributeLaunchConfig if Self._plugin_has_clusters else GridBlockAttributeLaunchConfig
+            ) if Self._plugin_has_attributes else (
+                ClusterLaunchConfig if Self._plugin_has_clusters else (
+                    Self._PluginExecutionConfigType if (
+                        Self._HALHooks.Launcher.launches_config
+                        and not conforms_to(
+                            Self._PluginExecutionConfigType,
+                            GridBlockExecutionConfig,
+                        )
+                    ) else GridBlockLaunchConfig
+                )
+            )
+        )
     )
     """The launch configuration type with every launch capability this target
     supports.
 
     On NVIDIA targets it carries launch attributes, and from sm_90 on also
-    thread block clusters.
+    thread block clusters. When the plugin's own configuration isn't
+    grid/block shaped and the plugin's launcher takes it, it's that
+    configuration.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -435,7 +627,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             return LegacyDeviceContext[Self.target]._api_matches_target(api)
         else:
-            return HALDeviceContext[Self.target]._api_matches_target(api)
+            return (api.lower() == "cpu") == Self.target.is_cpu()
 
     @inline(.always)
     def __init__(
@@ -478,7 +670,76 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             self._impl = Self._Legacy(device_id=device_id, api=api^)
         else:
-            self._impl = Self._HAL(device_id=device_id, api=api^)
+            if not Self._api_matches_target(api):
+                raise Error(
+                    String(
+                        t"DeviceContext with target"
+                        t" {StaticString(Self.target.__triple())} cannot be"
+                        t" created with api '{api}'"
+                    )
+                )
+
+            var hal_driver: ArcPointer[Driver]
+            var hal_device: ArcPointer[_HALDevice[get_device_spec[0]()]]
+            # `_api_matches_target` above pairs a CPU target with the "cpu" api,
+            # so the branch is known at compile time. Choosing it here keeps
+            # the accelerator path out of CPU-only code. The CPU branch also
+            # skips parsing `MODULAR_DRIVER_PLUGINS`, which the cached load
+            # already did.
+            comptime if Self.target.is_cpu():
+                # `_open_cpu_plugin` only loads a plugin that satisfies "cpu",
+                # so the driver needs no api check here.
+                var maybe_plugin = _CPU_PLUGIN.get_or_create_ptr()
+                __guard case .Some(plugin) = maybe_plugin[] else:
+                    # The cached load drops its error; load again to raise it.
+                    _ = _open_cpu_plugin()
+                    raise Error("failed to load the CPU plugin")
+                hal_driver = plugin.driver
+                hal_device = plugin.device
+            else:
+                # Load the first plugin whose name satisfies the requested api:
+                # its concrete vendor name, or the generic accelerator alias
+                # "gpu".
+                var chosen = _plugin_spec_entry(api)
+                # Shared so peer calls get both contexts from one driver.
+                var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
+                if case .Some(driver) = maybe_driver[]:
+                    hal_driver = driver
+                else:
+                    # `_Global` init drops the load error; reload to raise it.
+                    _ = Driver.create(chosen)
+                    raise Error(
+                        String(t"failed to load accelerator plugin '{chosen}'")
+                    )
+                var driver_name = hal_driver[].name()
+                if not _driver_satisfies_api(String(driver_name), api):
+                    raise Error(
+                        String(
+                            t"Requested API {api} not supported by driver"
+                            t" {driver_name}"
+                        )
+                    )
+                var count = Int(hal_driver[].device_count())
+                if device_id < 0 or device_id >= count:
+                    raise Error(
+                        String(
+                            t"device_id {device_id} out of range [0, {count})"
+                        )
+                    )
+                # The spec stays id 0 for typing; the runtime id picks the
+                # device.
+                hal_device = rebind[
+                    ArcPointer[_HALDevice[get_device_spec[0]()]]
+                ](
+                    hal_driver[].get_device_dynamic[Optional[Int64](0)](
+                        Int64(device_id)
+                    )
+                )
+            var hal_context = hal_device[].get_context()
+            var hal_stream = hal_context[].create_stream()
+            self._impl = Self._HAL(
+                hal_driver^, hal_device^, hal_context^, hal_stream^, None
+            )
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -536,6 +797,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             cpu_ctx = gpu_ctx.assert_cpu_target()
         return cpu_ctx^
 
+    # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
     @inline(.always)
     def assert_default_target(self) -> DeviceContext[]:
         """Temporary function to assert and cast this DeviceContext to the
@@ -554,7 +816,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             return DeviceContext[](_impl=self._impl.assert_default_target())
         else:
-            return DeviceContext[](_impl=self._impl.assert_default_target())
+            comptime assert Self.target._eq_triple_and_arch[
+                default_accelerator()
+            ](), String(
+                t"using DeviceContext with non-default target is not supported"
+                t" from: {call_location()}"
+            )
+            return DeviceContext[](
+                _impl=rebind_var[DeviceContext[]._Impl](self._impl.copy())
+            )
 
     @inline(.always)
     def into_unknown_target(self) -> DeviceContext.Unknown:
@@ -569,7 +839,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             return DeviceContext.Unknown(_impl=self._impl.into_unknown_target())
         else:
-            return DeviceContext.Unknown(_impl=self._impl.into_unknown_target())
+            return DeviceContext.Unknown(
+                _impl=rebind_var[DeviceContext.Unknown._Impl](self._impl.copy())
+            )
 
     # ===-------------------------------------------------------------------===#
     # Escape hatches
@@ -594,7 +866,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             self._impl = Self._Legacy(ctx_ptr)
         else:
-            self._impl = Self._HAL(ctx_ptr)
+            self._impl = (
+                ctx_ptr.unsafe_value()
+                .unsafe_bitcast[NoneType]()
+                .unsafe_bitcast[Self._HAL]()[]
+            )
 
     @doc_hidden
     def __init__(out self, handle: OpaquePointer[MutUntrackedOrigin]):
@@ -608,7 +884,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 rebind[OpaquePointer[UntrackedOrigin[mut=True]]](handle)
             )
         else:
-            self._impl = Self._HAL(handle)
+            self._impl = handle.unsafe_bitcast[Self._HAL]()[]
 
     def unwrap_legacy(self) -> Self._Legacy:
         """Returns the underlying legacy context.
@@ -669,7 +945,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "this context is not on the HAL backend"
-        return self._impl._hal_stream()
+        return self._impl._stream
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -3187,7 +3463,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        comptime device_spec = HALDeviceContext[Self.target].device_spec
+        comptime device_spec = _HALDeviceContext[Self.target].device_spec
         comptime Ext = _HALDevice[device_spec].Extensions
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
@@ -3307,7 +3583,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 struct _HALDeviceContextScope(Movable):
     """The state of a `_DeviceContextScope` on the HAL backend."""
 
-    var _device_context: HALDeviceContext.Unknown
+    var _device_context: DeviceContext.Unknown
     # Driver-context handle to restore on exit; only meaningful when `_active`
     # (any value, including zero, can be a live handle).
     var _prev_driver_ctx: Int
@@ -3332,7 +3608,7 @@ struct _DeviceContextScope[target: CompilationTarget]:
         comptime if use_legacy_backend():
             self._impl = Self._Legacy(ctx._impl)
         else:
-            self._impl = Self._HAL(ctx._impl.into_unknown_target(), 0, False)
+            self._impl = Self._HAL(ctx.into_unknown_target(), 0, False)
 
     def __enter__(mut self) raises -> DeviceContext[Self.target]:
         """Makes the driver context current.
@@ -3347,12 +3623,12 @@ struct _DeviceContextScope[target: CompilationTarget]:
             return DeviceContext[Self.target](_impl=self._impl.__enter__())
         else:
             self._impl._prev_driver_ctx = (
-                self._impl._device_context._context[].get_current_driver_context()
+                self._impl._device_context._impl._context[].get_current_driver_context()
             )
-            self._impl._device_context._context[].set_current()
+            self._impl._device_context._impl._context[].set_current()
             self._impl._active = True
             return rebind_var[DeviceContext[Self.target]](
-                rebind[HALDeviceContext[]](self._impl._device_context)
+                self._impl._device_context.copy()
             )
 
     def __exit__(mut self) raises:
@@ -3365,7 +3641,7 @@ struct _DeviceContextScope[target: CompilationTarget]:
             self._impl.__exit__()
         else:
             if self._impl._active:
-                self._impl._device_context._context[].set_current_driver_context(
+                self._impl._device_context._impl._context[].set_current_driver_context(
                     self._impl._prev_driver_ctx
                 )
                 self._impl._active = False
@@ -3375,7 +3651,7 @@ struct _DeviceContextScope[target: CompilationTarget]:
         comptime if not use_legacy_backend():
             if self._impl._active:
                 try:
-                    self._impl._device_context._context[].set_current_driver_context(
+                    self._impl._device_context._impl._context[].set_current_driver_context(
                         self._impl._prev_driver_ctx
                     )
                 except e:

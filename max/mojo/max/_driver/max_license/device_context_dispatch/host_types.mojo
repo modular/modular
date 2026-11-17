@@ -26,9 +26,6 @@ from std.os import abort
 from std.reflection import SourceLocation, call_location
 from std.sys.info import CompilationTarget
 
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceContext,
-)
 from max._driver.max_license.device_context_dispatch.device_function import (
     _check_config_dims,
 )
@@ -78,6 +75,7 @@ from max._driver.max_license.device_context_dispatch.device_function import (
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
+    _HALDeviceContext,
 )
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
@@ -1129,7 +1127,7 @@ struct _HALDevice[target: CompilationTarget, origin: ImmOrigin](
 ):
     """The state of a `Device` on the HAL backend."""
 
-    var _ctx: Pointer[HALDeviceContext[Self.target], Self.origin]
+    var _ctx: Pointer[_HALDeviceContext[Self.target], Self.origin]
 
     var id: Int64
     """The ID of this device among the devices of its driver."""

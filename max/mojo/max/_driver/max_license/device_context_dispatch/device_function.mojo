@@ -33,10 +33,6 @@ from std.reflection import SourceLocation, reflect
 from std.sys import get_defined_bool, size_of
 from std.sys.info import CompilationTarget
 
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceContext,
-    _DeviceFunctionInner,
-)
 from max._driver.max_license.hal._machine import DeviceSpec
 from max._driver.max_license.hal.execution_config import (
     GPUExecutionConfiguration,
@@ -54,7 +50,12 @@ from max.gpu.host._driver_common import _check_dim_in_range
 from max.gpu.host._driver_handles import _DeviceFunctionPtr
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
-from max._driver.max_license.hal import FunctionHandle, Stream, get_device_spec
+from max._driver.max_license.hal import (
+    Context,
+    FunctionHandle,
+    Stream,
+    get_device_spec,
+)
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
 )
@@ -97,14 +98,14 @@ def _check_exec_config_launch_support[
 ]():
     comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
         comptime assert conforms_to(
-            HALDeviceContext[target].ExecutionConfigType, ClusterExecutionConfig
+            DeviceContext[target].ExecutionConfigType, ClusterExecutionConfig
         ), "cluster launch is not supported on this device"
 
     comptime if conforms_to(
         ExecutionConfigType, LaunchAttributeHolderExecutionConfig
     ):
         comptime assert conforms_to(
-            HALDeviceContext[target].ExecutionConfigType,
+            DeviceContext[target].ExecutionConfigType,
             LaunchAttributeHolderExecutionConfig,
         ), "this target does not support launch attributes"
 
@@ -144,6 +145,19 @@ trait _DispatchEnqueuer:
 
 
 @fieldwise_init
+struct _DeviceFunctionInner(Movable):
+    """Wrapper around a HAL-loaded `FunctionHandle`.
+
+    The function handle (and the `RuntimeBundle` defining it) is owned by the
+    `Context`'s function cache and stays loaded for the context's lifetime;
+    the held `Context` `ArcPointer` keeps it valid.
+    """
+
+    var _func_handle: FunctionHandle
+    var _context: ArcPointer[Context[get_device_spec[0]()]]
+
+
+@fieldwise_init
 struct _HALDeviceFunction[
     ret_type: AnyType,
     declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -162,7 +176,7 @@ struct _HALDeviceFunction[
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: HALDeviceContext.Unknown
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_DeviceFunctionInner]
     # Null until the C++ runtime shim provides it; read by the CUDA/HIP
     # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
@@ -305,7 +319,7 @@ struct DeviceFunction[
             info.asm, info.function_name
         )
         self._impl = Self._HAL(
-            ctx._impl.into_unknown_target(),
+            ctx.into_unknown_target(),
             ArcPointer(_DeviceFunctionInner(func_handle, ctx._impl._context)),
             None,
             info,
