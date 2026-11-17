@@ -3144,7 +3144,6 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
         comptime assert conforms_to(type_of(hidden), TileTensorable)
         comptime assert conforms_to(type_of(gate_weight), TileTensorable)
         comptime assert conforms_to(type_of(expert_bias), TileTensorable)
-        comptime weight_type = type_of(expert_weights).dtype
         comptime assert type_of(expert_indices).rank == 2
         comptime assert type_of(expert_weights).rank == 2
         comptime assert type_of(hidden).rank == 2
@@ -3158,7 +3157,7 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
             expert_indices.to_tile_tensor[.int32](),
             expert_weights.to_tile_tensor(),
             hidden.to_tile_tensor[mut=False](),
-            gate_weight.to_tile_tensor[weight_type, mut=False](),
+            gate_weight.to_tile_tensor[mut=False](),
             expert_bias.to_tile_tensor[mut=False](),
             routed_scaling_factor,
             context,

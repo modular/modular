@@ -28,14 +28,24 @@ def test_sigmoid_gemv_router[
     n_experts: Int,
     topk: Int,
     hidden_size: Int,
+    weight_type: DType = .float32,
+    ties: Bool = False,
 ](ctx: DeviceContext) raises:
-    """Checks the fused router against a float32 host reference."""
+    """Checks the fused router, accumulating in float32, against a float32
+    host reference.
+
+    With `ties`, experts 3, 11, 150 and 287 share one gate row and a bias of
+    1.0, so their scores are equal: every token must pick them with equal
+    weights, in ascending id order.
+    """
     comptime routed_scaling_factor = Float32(2.5)
+    comptime assert not ties or n_experts > 287, "the tied experts must exist"
+    var tied: List[Int] = [3, 11, 150, 287]
 
     var hidden_host = ctx.enqueue_create_host_buffer[.bfloat16](
         num_tokens * hidden_size
     )
-    var weight_host = ctx.enqueue_create_host_buffer[.float32](
+    var weight_host = ctx.enqueue_create_host_buffer[weight_type](
         n_experts * hidden_size
     )
     var bias_host = ctx.enqueue_create_host_buffer[.float32](n_experts)
@@ -50,11 +60,18 @@ def test_sigmoid_gemv_router[
     rand(weight_host.unsafe_ptr(), n_experts * hidden_size, min=-0.05, max=0.05)
     # The bias only steers selection, so make it big enough to change winners.
     rand(bias_host.unsafe_ptr(), n_experts, min=-0.2, max=0.2)
+    comptime if ties:
+        for i in range(len(tied)):
+            for k in range(hidden_size):
+                weight_host[tied[i] * hidden_size + k] = weight_host[
+                    tied[0] * hidden_size + k
+                ]
+            bias_host[tied[i]] = 1.0
 
     var hidden_dev = ctx.enqueue_create_buffer[.bfloat16](
         num_tokens * hidden_size
     )
-    var weight_dev = ctx.enqueue_create_buffer[.float32](
+    var weight_dev = ctx.enqueue_create_buffer[weight_type](
         n_experts * hidden_size
     )
     var bias_dev = ctx.enqueue_create_buffer[.float32](n_experts)
@@ -85,7 +102,7 @@ def test_sigmoid_gemv_router[
             for k in range(hidden_size):
                 acc += (
                     hidden_host[t * hidden_size + k].cast[.float32]()
-                    * weight_host[e * hidden_size + k]
+                    * weight_host[e * hidden_size + k].cast[.float32]()
                 )
             scores[e] = 1 / (1 + exp(-acc))
             taken[e] = False
@@ -118,6 +135,28 @@ def test_sigmoid_gemv_router[
                 rtol=1e-4,
                 msg=String("token ", t, " rank ", r),
             )
+
+        comptime if ties:
+            # The tied experts take consecutive ranks in id order, and their
+            # equal scores give bit-equal weights.
+            var first = -1
+            for r in range(topk):
+                if Int(indices_host[t * topk + r]) == tied[0]:
+                    first = r
+            assert_true(
+                first >= 0 and first + len(tied) <= topk,
+                msg=String("token ", t, " skips a tied expert"),
+            )
+            for i in range(len(tied)):
+                var r = t * topk + first + i
+                assert_equal(
+                    Int(indices_host[r]), tied[i], msg=String("token ", t)
+                )
+                assert_equal(
+                    weights_host[r],
+                    weights_host[t * topk + first],
+                    msg=String("token ", t),
+                )
 
 
 def test_sigmoid_gemv_router_no_tokens(ctx: DeviceContext) raises:
@@ -356,6 +395,22 @@ def main() raises:
         test_sigmoid_gemv_router[300, 128, 6, 2688](ctx)
         # A wider expert count and a power-of-two top-k.
         test_sigmoid_gemv_router[16, 256, 8, 1024](ctx)
+        # GLM-5.3-Flash's bf16 gate, accumulated in float32: 288 experts,
+        # top-8, hidden 4096. On NVIDIA GPUs the logits come from tensor
+        # cores up to 128 rows (one row, a ragged second tile, a device's
+        # rows at MTP 5 with 32 requests, the most rows the kernel takes) and
+        # from `matmul` above.
+        test_sigmoid_gemv_router[1, 288, 8, 4096, .bfloat16](ctx)
+        test_sigmoid_gemv_router[29, 288, 8, 4096, .bfloat16](ctx)
+        test_sigmoid_gemv_router[48, 288, 8, 4096, .bfloat16](ctx)
+        test_sigmoid_gemv_router[128, 288, 8, 4096, .bfloat16](ctx)
+        test_sigmoid_gemv_router[130, 288, 8, 4096, .bfloat16](ctx)
+        test_sigmoid_gemv_router[5, 288, 8, 4096, .bfloat16, ties=True](ctx)
+        # A hidden size the tensor-core slices do not divide keeps the
+        # CUDA-core split-K GEMV, accumulating the bf16 gate in float32: one
+        # warp a split up to 16 rows, shared-memory tiles above.
+        test_sigmoid_gemv_router[7, 128, 6, 2688, .bfloat16](ctx)
+        test_sigmoid_gemv_router[33, 128, 6, 2688, .bfloat16](ctx)
         test_sigmoid_gemv_router_no_tokens(ctx)
         # bf16 gate weight with hidden 128: 24-byte shared-memory rows.
         test_sigmoid_gemv_router_bf16_weight[9, 128, 6, 128](ctx)

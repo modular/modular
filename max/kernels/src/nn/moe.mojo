@@ -34,12 +34,15 @@ from max.gpu import (
     lane_id,
     thread_idx,
 )
+from max.gpu.compute.mma import mma
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
+    launch_dependent_grids,
     pdl_launch_attributes,
+    wait_on_dependent_grids,
 )
 from max.gpu.host.info import is_gpu
 from layout import (
@@ -53,6 +56,7 @@ from layout import (
     row_major,
     stack_allocation as tensor_alloc,
 )
+from linalg.matmul import matmul
 from max.runtime.tracing import Trace, TraceLevel
 
 from std.utils.index import StaticTuple
@@ -2800,10 +2804,13 @@ def single_group_router[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(t"router_gemv_partials_{hidden_type}_{weight_type}_t{num_threads}")
+@__name(
+    t"router_gemv_partials_{hidden_type}_{weight_type}_{accum_type}_t{num_threads}"
+)
 def router_gemv_partials_kernel[
     hidden_type: DType,
     weight_type: DType,
+    accum_type: DType,
     PartialsLayoutType: TensorLayout,
     HiddenLayoutType: TensorLayout,
     GateWeightLayoutType: TensorLayout,
@@ -2814,7 +2821,7 @@ def router_gemv_partials_kernel[
     num_threads: Int,
 ](
     partials: TileTensor[
-        mut=True, weight_type, PartialsLayoutType, MutAnyOrigin
+        mut=True, accum_type, PartialsLayoutType, MutAnyOrigin
     ],
     hidden: TileTensor[hidden_type, HiddenLayoutType, ImmutAnyOrigin],
     gate_weight: TileTensor[weight_type, GateWeightLayoutType, ImmutAnyOrigin],
@@ -2824,8 +2831,8 @@ def router_gemv_partials_kernel[
     Splits the hidden dimension into `num_splits` slices so that a decode
     batch spreads over the whole GPU. Each block stages a
     `tile_tokens x slice` block of hidden rows and a `tile_experts x slice`
-    block of gate rows in shared memory, then each thread computes one
-    (token, expert) dot product in `weight_type`.
+    block of gate rows in shared memory, both in `weight_type`, then each
+    thread computes one (token, expert) dot product in `accum_type`.
     """
     comptime assert partials.flat_rank == 3
     comptime assert hidden.flat_rank == 2
@@ -2878,12 +2885,15 @@ def router_gemv_partials_kernel[
         barrier()
 
         var t, e = divmod(tid, tile_experts)
-        var acc = SIMD[weight_type, vec](0)
+        var acc = SIMD[accum_type, vec](0)
         for k in range(0, slice_len, vec):
-            acc += x_smem.unsafe_load[width=vec, alignment=vec_align](
-                t * stride + k
-            ) * w_smem.unsafe_load[width=vec, alignment=vec_align](
-                e * stride + k
+            acc += (
+                x_smem.unsafe_load[width=vec, alignment=vec_align](
+                    t * stride + k
+                ).cast[accum_type]()
+                * w_smem.unsafe_load[width=vec, alignment=vec_align](
+                    e * stride + k
+                ).cast[accum_type]()
             )
         if first_token + t < num_tokens:
             partials.store(
@@ -2895,10 +2905,120 @@ def router_gemv_partials_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(t"router_gemv_partials_warp_{hidden_type}_{weight_type}_t{num_threads}")
+@__name(t"router_gemv_mma_{hidden_type}_{weight_type}_t{num_threads}")
+def router_gemv_mma_kernel[
+    hidden_type: DType,
+    weight_type: DType,
+    logits_type: DType,
+    LogitsLayoutType: TensorLayout,
+    HiddenLayoutType: TensorLayout,
+    GateWeightLayoutType: TensorLayout,
+    hidden_size: Int,
+    num_threads: Int,
+    pdl_level: PDLLevel,
+](
+    logits: TileTensor[mut=True, logits_type, LogitsLayoutType, MutAnyOrigin],
+    hidden: TileTensor[hidden_type, HiddenLayoutType, ImmutAnyOrigin],
+    gate_weight: TileTensor[weight_type, GateWeightLayoutType, ImmutAnyOrigin],
+):
+    """Writes `logits = hidden @ gate_weight.T` on tensor cores, in float32.
+
+    A block computes one 16-token by 8-expert tile. Each warp takes one slice
+    of the hidden dimension with `m16n8k16` MMAs, loading its fragments from
+    global memory, and the block adds the warps' tiles in shared memory in a
+    fixed order. A lane loads 8 adjacent values of a row a step and gives 4 to
+    each of two MMAs; the hidden and gate fragments take the same permutation
+    of the slice, so a tile still holds the slice's dot products. Products of
+    two bf16 values are exact in float32, so only the rounding of the sums
+    differs from a float32 GEMV. The gate fragments load before the wait on
+    the kernel that writes the hidden states, so the weight read overlaps it.
+    """
+    comptime assert (
+        hidden_type == .bfloat16
+        and weight_type == .bfloat16
+        and logits_type == .float32
+    ), "the MMAs take bf16 operands and accumulate in float32"
+    comptime assert logits.flat_rank == 2
+    comptime assert hidden.flat_rank == 2
+    comptime assert gate_weight.flat_rank == 2
+    comptime warps = num_threads // WARP_SIZE
+    comptime slice_len = hidden_size // warps
+    comptime assert slice_len * warps == hidden_size
+    comptime assert slice_len % 32 == 0, "a step covers 32 of a slice"
+    comptime steps = slice_len // 32
+
+    var num_tokens = Int(hidden.dim(0))
+    var first_expert = block_idx.x * 8
+    var first_token = block_idx.y * 16
+    var warp = Int(warp_id())
+    var lane = Int(lane_id())
+    var g, t = divmod(lane, 4)
+    var k0 = warp * slice_len + 8 * t
+
+    comptime vec_align = align_of[SIMD[logits_type, 4]]()
+    var tiles = unsafe_stack_allocation[
+        num_threads * 4,
+        Scalar[logits_type],
+        address_space=.SHARED,
+        alignment=vec_align,
+    ]()
+
+    var w = Array[SIMD[weight_type, 8], steps](fill=SIMD[weight_type, 8](0))
+    comptime for s in range(steps):
+        w[s] = gate_weight.load[width=8]((first_expert + g, k0 + 32 * s))
+
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+    var r0 = first_token + g
+    var r1 = r0 + 8
+    var acc_lo = SIMD[logits_type, 4](0)
+    var acc_hi = SIMD[logits_type, 4](0)
+    comptime for s in range(steps):
+        var x0 = SIMD[hidden_type, 8](0)
+        var x1 = SIMD[hidden_type, 8](0)
+        if r0 < num_tokens:
+            x0 = hidden.load[width=8]((r0, k0 + 32 * s))
+        if r1 < num_tokens:
+            x1 = hidden.load[width=8]((r1, k0 + 32 * s))
+        # The A fragment holds rows g and g + 8 by column pairs.
+        var a_lo = SIMD[hidden_type, 8](
+            x0[0], x0[1], x1[0], x1[1], x0[2], x0[3], x1[2], x1[3]
+        )
+        var a_hi = SIMD[hidden_type, 8](
+            x0[4], x0[5], x1[4], x1[5], x0[6], x0[7], x1[6], x1[7]
+        )
+        mma(acc_lo, a_lo, w[s].slice[4, offset=0](), acc_lo)
+        mma(acc_hi, a_hi, w[s].slice[4, offset=4](), acc_hi)
+    tiles.unsafe_store[alignment=vec_align](
+        (warp * WARP_SIZE + lane) * 4, acc_lo + acc_hi
+    )
+    barrier()
+    if warp == 0:
+        var acc = tiles.unsafe_load[width=4, alignment=vec_align](lane * 4)
+        comptime for v in range(1, warps):
+            acc += tiles.unsafe_load[width=4, alignment=vec_align](
+                (v * WARP_SIZE + lane) * 4
+            )
+        # The C fragment holds columns 2t and 2t + 1 of rows g and g + 8.
+        var e = first_expert + 2 * t
+        if r0 < num_tokens:
+            logits.store((r0, e), acc.slice[2, offset=0]())
+        if r1 < num_tokens:
+            logits.store((r1, e), acc.slice[2, offset=2]())
+    comptime if pdl_level > PDLLevel.OFF:
+        launch_dependent_grids()
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"router_gemv_partials_warp_{hidden_type}_{weight_type}_{accum_type}_t{num_threads}"
+)
 def router_gemv_partials_warp_kernel[
     hidden_type: DType,
     weight_type: DType,
+    accum_type: DType,
     PartialsLayoutType: TensorLayout,
     HiddenLayoutType: TensorLayout,
     GateWeightLayoutType: TensorLayout,
@@ -2908,7 +3028,7 @@ def router_gemv_partials_warp_kernel[
     num_threads: Int,
 ](
     partials: TileTensor[
-        mut=True, weight_type, PartialsLayoutType, MutUntrackedOrigin
+        mut=True, accum_type, PartialsLayoutType, MutUntrackedOrigin
     ],
     hidden: TileTensor[hidden_type, HiddenLayoutType, ImmUntrackedOrigin],
     gate_weight: TileTensor[
@@ -2947,13 +3067,15 @@ def router_gemv_partials_warp_kernel[
 
     with PDL():
         for t in range(Int(hidden.dim(0))):
-            var acc = SIMD[weight_type, vec](0)
+            var acc = SIMD[accum_type, vec](0)
             comptime for i in range(steps):
                 var k = (i * WARP_SIZE + lane) * vec
                 if k < slice_len:
                     acc += (
-                        hidden.load[width=vec]((t, k0 + k)).cast[weight_type]()
-                        * w[i]
+                        hidden.load[width=vec]((t, k0 + k))
+                        .cast[weight_type]()
+                        .cast[accum_type]()
+                        * w[i].cast[accum_type]()
                     )
             var total = warp.sum(acc)
             if lane == 0:
@@ -3014,10 +3136,19 @@ def _single_group_router_on_partials[
     )
 
 
+# Rows up to which `sigmoid_gemv_single_group_router` computes a bf16 gate's
+# logits with `router_gemv_mma_kernel`; above it, `matmul` does. The value is
+# the SM100 row window of the `moe.router.gate.mixed.gemv` op, so above it the
+# fused op takes the same matmul dispatch as that op. It is not a measured
+# crossover of the tensor-core kernel.
+comptime _MMA_ROUTER_GEMV_MAX_TOKENS = 128
+
+
 @inline(.always)
 def sigmoid_gemv_single_group_router[
     hidden_type: DType,
     weight_type: DType,
+    scores_type: DType,
     bias_type: DType,
     //,
     n_routed_experts: Int,
@@ -3025,9 +3156,11 @@ def sigmoid_gemv_single_group_router[
     norm_weights: Bool,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
-    expert_weights: TileTensor[mut=True, weight_type, ...],
-    hidden: TileTensor[mut=False, hidden_type, ...],
-    gate_weight: TileTensor[mut=False, weight_type, ...],
+    expert_weights: TileTensor[mut=True, scores_type, ...],
+    hidden: TileTensor[mut=False, hidden_type, address_space=.GENERIC, ...],
+    gate_weight: TileTensor[
+        mut=False, weight_type, address_space=.GENERIC, ...
+    ],
     expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
@@ -3035,14 +3168,21 @@ def sigmoid_gemv_single_group_router[
     """Runs the sigmoid single-group MoE router, computing its gate GEMV.
 
     Equivalent to `single_group_router` on
-    `sigmoid(hidden.cast[weight_type]() @ gate_weight.T)`. The GEMV splits
-    the hidden dimension across blocks and writes partial dot products; the
-    router kernel adds them and applies the sigmoid as it loads its scores,
-    so no separate reduction runs.
+    `sigmoid(hidden.cast[weight_type]() @ gate_weight.T)`, with the products
+    and their sums in `scores_type`. The GEMV splits the hidden dimension
+    across blocks and writes partial dot products; the router kernel adds
+    them and applies the sigmoid as it loads its scores, so no separate
+    reduction runs. On SM80 and newer NVIDIA GPUs, with bf16 hidden states
+    and gate, float32 scores, `n_routed_experts` a multiple of 8 and
+    `hidden_size` a multiple of 512, `router_gemv_mma_kernel` instead
+    writes the logits on tensor cores (above `_MMA_ROUTER_GEMV_MAX_TOKENS`
+    rows, the matmul dispatch does).
 
     Parameters:
         hidden_type: DType of the hidden states.
-        weight_type: DType of the gate weight, the scores and output weights.
+        weight_type: DType of the gate weight.
+        scores_type: DType the GEMV accumulates in, and of the scores and
+            output weights: `weight_type` or float32.
         bias_type: DType of the expert correction bias.
         n_routed_experts: Total number of experts.
         n_experts_per_tok: Experts selected per token.
@@ -3065,6 +3205,9 @@ def sigmoid_gemv_single_group_router[
     comptime assert (
         not context.target.is_apple_gpu()
     ), "Sigmoid GEMV single group router is not supported on Apple GPUs"
+    comptime assert (
+        scores_type == weight_type or scores_type == .float32
+    ), "the gate GEMV accumulates in the weight's dtype or in float32"
     comptime assert gate_weight.static_shape[0] == n_routed_experts
     comptime hidden_size = gate_weight.static_shape[1]
 
@@ -3072,18 +3215,61 @@ def sigmoid_gemv_single_group_router[
     if num_tokens == 0:
         return
 
-    comptime num_splits = _router_gemv_num_splits[hidden_size]
-    var partials = context.enqueue_create_buffer[weight_type](
+    # A bf16 gate accumulating in float32 runs its GEMV on tensor cores, where
+    # one block reads a tile's weight rows once; the CUDA-core split-K GEMV is
+    # slower on B200 at a `[288, 4096]` gate.
+    comptime mma_threads = 512
+    comptime use_mma = (
+        context.target._is_sm_8x_or_newer()
+        and hidden_type == .bfloat16
+        and weight_type == .bfloat16
+        and scores_type == .float32
+        and n_routed_experts % 8 == 0
+        and hidden_size % (mma_threads // WARP_SIZE * 32) == 0
+    )
+    # The tensor-core GEMV writes whole logits. The split-K GEMV writes a
+    # block of partial dot products a split, which the router adds.
+    comptime num_splits = 1 if use_mma else _router_gemv_num_splits[hidden_size]
+    var partials = context.enqueue_create_buffer[scores_type](
         num_splits * num_tokens * n_routed_experts
+    )
+    var scores = TileTensor(
+        partials, row_major((num_splits * num_tokens, Idx[n_routed_experts]))
     )
 
     with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "mo.moe.sigmoid_gemv_router_single_group",
         task_id=Int(context.device().id),
     ):
-        _enqueue_router_gemv_partials[n_routed_experts, num_splits](
-            partials, hidden, gate_weight, context
-        )
+        comptime if use_mma:
+            # Each 16 rows read the weight again, so a large batch takes the
+            # matmul dispatch.
+            if num_tokens > _MMA_ROUTER_GEMV_MAX_TOKENS:
+                matmul[transpose_b=True](scores, hidden, gate_weight, context)
+            else:
+                comptime gemv = router_gemv_mma_kernel[
+                    hidden_type,
+                    weight_type,
+                    scores_type,
+                    scores.LayoutType,
+                    hidden.LayoutType,
+                    gate_weight.LayoutType,
+                    hidden_size,
+                    mma_threads,
+                    PDLLevel.ON,
+                ]
+                context.enqueue_function[gemv](
+                    scores,
+                    hidden,
+                    gate_weight,
+                    grid_dim=(n_routed_experts // 8, ceildiv(num_tokens, 16)),
+                    block_dim=mma_threads,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                )
+        else:
+            _enqueue_router_gemv_partials[n_routed_experts, num_splits](
+                partials, hidden, gate_weight, context
+            )
         _single_group_router_on_partials[
             n_routed_experts,
             n_experts_per_tok,
@@ -3092,10 +3278,7 @@ def sigmoid_gemv_single_group_router[
         ](
             expert_indices,
             expert_weights,
-            TileTensor(
-                partials,
-                row_major((num_splits * num_tokens, Idx[n_routed_experts])),
-            ).as_imm(),
+            scores.as_imm(),
             expert_bias,
             routed_scaling_factor,
             context,
@@ -3240,17 +3423,21 @@ every slice a whole number of 4-wide vectors."""
 def _enqueue_router_gemv_partials[
     hidden_type: DType,
     weight_type: DType,
+    accum_type: DType,
     //,
     n_routed_experts: Int,
     num_splits: Int,
 ](
-    partials: DeviceBuffer[weight_type],
+    partials: DeviceBuffer[accum_type],
     hidden: TileTensor[mut=False, hidden_type, ...],
     gate_weight: TileTensor[mut=False, weight_type, ...],
     context: DeviceContext,
 ) raises:
     """Writes `num_splits` stacked `[num_tokens, n_routed_experts]` blocks of
     partial gate dot products, one per hidden-dimension split, to `partials`.
+
+    The products and their sums are in the dtype of `partials`: the weight's
+    dtype or float32.
     """
     comptime hidden_size = gate_weight.static_shape[1]
     comptime tile_tokens = 16
@@ -3276,6 +3463,7 @@ def _enqueue_router_gemv_partials[
         comptime gemv_warp = router_gemv_partials_warp_kernel[
             hidden_type,
             weight_type,
+            accum_type,
             partials_by_split.LayoutType,
             hidden.LayoutType,
             gate_weight.LayoutType,
@@ -3296,6 +3484,7 @@ def _enqueue_router_gemv_partials[
     comptime gemv = router_gemv_partials_kernel[
         hidden_type,
         weight_type,
+        accum_type,
         partials_by_split.LayoutType,
         hidden.LayoutType,
         gate_weight.LayoutType,

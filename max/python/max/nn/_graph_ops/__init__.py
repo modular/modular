@@ -9622,6 +9622,7 @@ def _moe_sigmoid_gemv_router(
     n_experts_per_tok: int,
     norm_weights: bool,
     routed_scaling_factor: float,
+    scores_dtype: DType | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Routes tokens with a sigmoid gate, fusing the gate GEMV into the router.
 
@@ -9631,7 +9632,8 @@ def _moe_sigmoid_gemv_router(
     split-K gate GEMV that writes partial dot products, and the router kernel
     adds them and applies the sigmoid as it loads its scores, so no separate
     matmul reduction or sigmoid runs. The gate GEMV accumulates in
-    ``gate_weight.dtype``.
+    ``scores_dtype``. On NVIDIA GPUs a bf16 gate with float32 scores runs
+    its GEMV on tensor cores instead and hands the router whole logits.
 
     NVIDIA and AMD GPUs only. The router runs one thread per routed expert, so
     ``n_routed_experts`` must be a multiple of the warp width (32 on NVIDIA,
@@ -9650,6 +9652,9 @@ def _moe_sigmoid_gemv_router(
         norm_weights: Whether to normalize the selected weights to sum to
             one before scaling.
         routed_scaling_factor: The factor multiplied into every weight.
+        scores_dtype: The dtype the gate GEMV accumulates in and the scores
+            and weights take: ``gate_weight.dtype`` (the default) or
+            ``float32``, which gives a bf16 gate float32 logits.
 
     Returns:
         A tuple of two tensors:
@@ -9657,12 +9662,12 @@ def _moe_sigmoid_gemv_router(
         - expert_indices: The indices of the routed experts for each
           token. Shape: ``[num_tokens, n_experts_per_tok]``.
         - expert_weights: The weights of the routed experts for each
-          token, in ``gate_weight.dtype``. Shape:
+          token, in ``scores_dtype``. Shape:
           ``[num_tokens, n_experts_per_tok]``.
 
     Raises:
-        ValueError: If the inputs aren't on a GPU, or their shapes or the
-            routing configuration aren't supported by the kernel.
+        ValueError: If the inputs aren't on a GPU, or their shapes, dtypes or
+            the routing configuration aren't supported by the kernel.
     """
     device = DeviceRef.from_device(hidden_states.device)
     if not device.is_gpu() or _is_apple_gpu():
@@ -9688,6 +9693,13 @@ def _moe_sigmoid_gemv_router(
         raise ValueError(
             "expected floating point hidden_states and gate_weight but got"
             f" {hidden_states.dtype} and {gate_weight.dtype}"
+        )
+    if scores_dtype is None:
+        scores_dtype = gate_weight.dtype
+    if scores_dtype not in (gate_weight.dtype, DType.float32):
+        raise ValueError(
+            "expected scores_dtype to be the gate weight's dtype or float32"
+            f" but got {scores_dtype}"
         )
 
     # Check the kernel's shape limits here so an unsupported model fails at
@@ -9721,7 +9733,7 @@ def _moe_sigmoid_gemv_router(
                 device=device,
             ),  # expert_indices
             TensorType(
-                dtype=gate_weight.dtype,
+                dtype=scores_dtype,
                 shape=[hidden_states.shape[0], n_experts_per_tok],
                 device=device,
             ),  # expert_weights
@@ -9811,6 +9823,73 @@ def _moe_sigmoid_gemv_group_limited_router_unsupported(
         hidden_size=hidden_size,
         warp_size=warp_size,
         weight_dtype=weight_dtype,
+    )
+
+
+# The tensor-core gate GEMV of `moe.sigmoid.gemv.single.group.router` takes 8
+# experts a block and splits the hidden size over 16 warps, 32 values a step
+# (max/kernels/src/nn/moe.mojo).
+_SIGMOID_GEMV_ROUTER_MMA_EXPERTS = 8
+_SIGMOID_GEMV_ROUTER_MMA_HIDDEN = 512
+
+
+def moe_sigmoid_gemv_router_supports(
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    hidden_size: int,
+    hidden_dtype: DType,
+    weight_dtype: DType,
+    scores_dtype: DType | None = None,
+    *,
+    tensor_cores: bool = False,
+) -> bool:
+    """Returns whether the host's GPU runs a routing config on the fused op.
+
+    On an NVIDIA GPU, :func:`moe_sigmoid_gemv_router` computes the gate GEMV
+    on tensor cores for bf16 hidden states and a bf16 gate with float32
+    scores, when the expert count is a multiple of 8 and the hidden size a
+    multiple of 512. It runs every other config it takes on a CUDA-core
+    split-K GEMV.
+
+    Args:
+        n_routed_experts: The number of routed experts.
+        n_experts_per_tok: The number of experts selected per token.
+        hidden_size: The hidden states' width.
+        hidden_dtype: The hidden states' dtype.
+        weight_dtype: The gate weight's dtype.
+        scores_dtype: The dtype of the scores and the routing weights.
+            Defaults to ``weight_dtype``.
+        tensor_cores: Whether to also require the tensor-core GEMV.
+
+    Returns:
+        True if :func:`moe_sigmoid_gemv_router` takes the config on the
+        host's NVIDIA or AMD GPU and, with ``tensor_cores``, computes its
+        gate GEMV on tensor cores.
+    """
+    if scores_dtype is None:
+        scores_dtype = weight_dtype
+    if (
+        _is_apple_gpu()
+        or not hidden_dtype.is_float()
+        or not weight_dtype.is_float()
+        or scores_dtype not in (weight_dtype, DType.float32)
+        or _moe_sigmoid_gemv_router_unsupported(
+            n_routed_experts=n_routed_experts,
+            n_experts_per_tok=n_experts_per_tok,
+            hidden_size=hidden_size,
+            warp_size=64 if _is_amd_gpu() else 32,
+            weight_dtype=weight_dtype,
+        )
+        is not None
+    ):
+        return False
+    return not tensor_cores or (
+        not _is_amd_gpu()
+        and hidden_dtype == DType.bfloat16
+        and weight_dtype == DType.bfloat16
+        and scores_dtype == DType.float32
+        and n_routed_experts % _SIGMOID_GEMV_ROUTER_MMA_EXPERTS == 0
+        and hidden_size % _SIGMOID_GEMV_ROUTER_MMA_HIDDEN == 0
     )
 
 

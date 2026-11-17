@@ -403,6 +403,8 @@ mojo_binary(
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
+            # Same reason: the GLM-5.3-Flash router arms, timed on remote B200.
+            "gpu/linalg/bench_router_gate_gemv_glm.mojo",
         ],
     )
 ]
@@ -457,6 +459,8 @@ mojo_binary(
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
+            # Same reason: the GLM-5.3-Flash router arms, timed on remote B200.
+            "gpu/linalg/bench_router_gate_gemv_glm.mojo",
         ],
     )
 ]
@@ -516,6 +520,41 @@ build_test(
     name = "gpu/linalg/bench_moe_w4a8_decode.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/linalg/bench_moe_w4a8_decode.mojo.run"],
+)
+
+# The GLM-5.3-Flash router per call at its decode row counts
+# (`--test_arg=--rows=...`): the gate GEMV op and top-k against the fused
+# router op; timed on remote B200.
+mojo_test(
+    name = "gpu/linalg/bench_router_gate_gemv_glm.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/linalg/bench_router_gate_gemv_glm.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        # A whole B200: a test that shares the GPU moves the small-row times
+        # by up to 2.5 us a call from run to run.
+        "test.resources:gpu-memory": "180",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_router_gate_gemv_glm.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_router_gate_gemv_glm.mojo.run"],
 )
 
 build_test(

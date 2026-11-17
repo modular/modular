@@ -14,7 +14,8 @@
 
 Covers MoE, TensorParallelMoE and ExpertParallelMoE, and the sharding rules
 of the MoE kernels in ``max.nn.kernels`` (``moe_finalize``,
-``router_gate_mixed_gemv``) that those layers run on.
+``router_gate_mixed_gemv``, ``moe_sigmoid_gemv_router``) that those layers
+and their routers run on.
 """
 
 from __future__ import annotations
@@ -32,7 +33,11 @@ from max.nn.common_layers.moe import (
     MoE,
     TensorParallelMoE,
 )
-from max.nn.kernels import moe_finalize, router_gate_mixed_gemv
+from max.nn.kernels import (
+    moe_finalize,
+    moe_sigmoid_gemv_router,
+    router_gate_mixed_gemv,
+)
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import (
     DeviceMapping,
@@ -50,6 +55,9 @@ _NUM_EXPERTS = 8
 _NUM_EXPERTS_PER_TOKEN = 2
 _MOE_DIM = 128
 _SEQ_LEN = 4
+# The fused router's shape check takes a multiple of the warp width (32 on
+# NVIDIA, 64 on AMD) as the expert count, so 64 passes it on any runner.
+_ROUTER_EXPERTS = 64
 
 
 def _make_fake_gpu(id: int = 0) -> MagicMock:
@@ -259,3 +267,111 @@ def test_router_gate_mixed_gemv_rejects_a_sharded_gate_weight(
             ),
         ):
             router_gate_mixed_gemv(hidden, weight)
+
+
+def _route_on_two_devices(
+    mock_accelerator: MagicMock,
+    *,
+    placement: Placement,
+    weight_placement: Placement,
+    scores_dtype: DType,
+) -> tuple[DeviceMesh, Tensor, tuple[Tensor, Tensor]]:
+    """Stages the fused router over two devices on a bf16 gate."""
+    devices = [mock_accelerator(0), mock_accelerator(1)]
+    mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+    replicated = DeviceMapping(mesh, (Replicated(),))
+    hidden = Tensor.zeros(
+        [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=replicated
+    )
+    hidden = hidden.rebind_mapping(DeviceMapping(mesh, (placement,)))
+    weight = Tensor.zeros(
+        [_ROUTER_EXPERTS, _HIDDEN_DIM],
+        dtype=DType.bfloat16,
+        device=DeviceMapping(mesh, (weight_placement,)),
+    )
+    bias = Tensor.zeros(
+        [_ROUTER_EXPERTS], dtype=DType.float32, device=replicated
+    )
+    # The op refuses an Apple GPU, and it asks the host, not the mock devices.
+    with patch("max.nn._graph_ops._is_apple_gpu", return_value=False):
+        routing = moe_sigmoid_gemv_router(
+            hidden,
+            weight,
+            bias,
+            _NUM_EXPERTS_PER_TOKEN,
+            norm_weights=True,
+            routed_scaling_factor=1.0,
+            scores_dtype=scores_dtype,
+        )
+    return mesh, hidden, routing
+
+
+@pytest.mark.parametrize("placement", [Replicated(), Sharded(0)])
+def test_moe_sigmoid_gemv_router_takes_the_activation_placement(
+    mock_accelerator: MagicMock, placement: Placement
+) -> None:
+    """The fused router routes each row it reads, so its outputs follow the
+    activation.
+
+    The gate weight and the correction bias are replicated, so a row-sharded
+    activation keeps its rows: the wrapper stages no gather or reshard of the
+    activation ahead of the router.
+    """
+    with F.lazy():
+        mesh, hidden, routing = _route_on_two_devices(
+            mock_accelerator,
+            placement=placement,
+            weight_placement=Replicated(),
+            scores_dtype=DType.float32,
+        )
+
+    expert_ids, expert_weights = routing
+    for out, dtype in (
+        (expert_ids, DType.int32),
+        (expert_weights, DType.float32),
+    ):
+        assert out.mapping.mesh == mesh
+        assert out.mapping.placements == (placement,)
+        assert out.dtype == dtype
+        assert out.shape.rank == 2
+        assert out.shape[0] == hidden.shape[0]
+        assert out.shape[1] == _NUM_EXPERTS_PER_TOKEN
+
+
+def test_moe_sigmoid_gemv_router_rejects_a_sharded_gate_weight(
+    mock_accelerator: MagicMock,
+) -> None:
+    """A gate weight split by expert is a placement the rule refuses.
+
+    Each device would hold the scores of its own experts only, which the
+    top-k cannot rank. No row keeps the weight in place, so satisfying one
+    gathers it, and the default policy refuses that automatic move.
+    """
+    with (
+        F.lazy(),
+        pytest.raises(
+            ShardingError,
+            match=(
+                "needs a resharding; this region does not reshard automatically"
+            ),
+        ),
+    ):
+        _route_on_two_devices(
+            mock_accelerator,
+            placement=Replicated(),
+            weight_placement=Sharded(0),
+            scores_dtype=DType.float32,
+        )
+
+
+def test_moe_sigmoid_gemv_router_rejects_float16_scores_for_a_bf16_gate(
+    mock_accelerator: MagicMock,
+) -> None:
+    """The scores take the gate weight's dtype or float32, nothing else."""
+    with F.lazy(), pytest.raises(ValueError, match="scores_dtype"):
+        _route_on_two_devices(
+            mock_accelerator,
+            placement=Replicated(),
+            weight_placement=Replicated(),
+            scores_dtype=DType.float16,
+        )

@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn._graph_ops import _moe_sigmoid_gemv_router_unsupported
+from max.nn._graph_ops import moe_sigmoid_gemv_router_supports
 from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -175,6 +175,7 @@ def _runs_fused_router(
     num_experts: int,
     num_experts_per_tok: int,
     hidden_size: int,
+    hidden_dtype: DType,
 ) -> bool:
     """Returns whether the MoE router fuses its gate GEMV into top-k.
 
@@ -182,15 +183,13 @@ def _runs_fused_router(
     warp, keep the separate float32 gate matmul.
     """
     return all(
-        device.api in ("hip", "cuda")
-        and _moe_sigmoid_gemv_router_unsupported(
-            n_routed_experts=num_experts,
-            n_experts_per_tok=num_experts_per_tok,
-            hidden_size=hidden_size,
-            warp_size=64 if device.api == "hip" else 32,
-        )
-        is None
-        for device in load_devices(device_specs)
+        device.api in ("hip", "cuda") for device in load_devices(device_specs)
+    ) and moe_sigmoid_gemv_router_supports(
+        num_experts,
+        num_experts_per_tok,
+        hidden_size,
+        hidden_dtype=hidden_dtype,
+        weight_dtype=DType.float32,
     )
 
 
@@ -576,6 +575,7 @@ class NemotronHConfig(
                 num_experts=config.num_experts,
                 num_experts_per_tok=config.num_experts_per_tok,
                 hidden_size=config.hidden_size,
+                hidden_dtype=config.dtype,
             )
         )
         hf_quant_config = resolve_hf_quant_config(hf, {}) or {}

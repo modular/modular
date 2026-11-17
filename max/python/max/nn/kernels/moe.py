@@ -179,10 +179,22 @@ def _moe_sigmoid_gemv_router_rule(
     n_experts_per_tok: int,
     norm_weights: bool,
     routed_scaling_factor: float,
+    scores_dtype: DType | None = None,
 ) -> list[AxisAssignment]:
-    # Sigmoid and top-k need the full gate dot product on every device, so
-    # this op runs on replicated inputs rather than on contraction shards.
-    return [AxisAssignment((R, R, R), (R, R))]
+    """Strategies for ``moe_sigmoid_gemv_router``: routing follows the rows.
+
+    Sigmoid and top-k need each row's full gate dot product, so the gate
+    weight and the correction bias are replicated and the hidden axis is
+    never split. Routing is per row: a replicated activation gives
+    replicated expert ids and weights, and a row-sharded one gives each
+    device the routing of its own rows. As for ``router_gate_mixed_gemv``,
+    no other placement has a row, so under the default policy the call
+    raises ``ShardingError`` rather than labelling the routing wrongly.
+    """
+    return [
+        AxisAssignment((R, R, R), (R, R)),
+        AxisAssignment((Sharded(0), R, R), (Sharded(0), Sharded(0))),
+    ]
 
 
 moe_sigmoid_gemv_router = F.functional(
