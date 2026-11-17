@@ -33,7 +33,7 @@ from std.memory import bitcast
 
 comptime _DEFAULT_ARITHMETIC_ORDERING = CurrentPlugin.default_atomic_ordering
 comptime _DEFAULT_COMPARISON_ORDERING = _DEFAULT_ARITHMETIC_ORDERING
-comptime _DEFAULT_MEMORY_ORDERING = Ordering.SEQUENTIAL
+comptime _DEFAULT_MEMORY_ORDERING = Ordering.sequential
 
 
 struct Ordering(
@@ -77,20 +77,35 @@ struct Ordering(
     comptime sequential = Self(6)
     """Sequentially consistent."""
 
+    # TODO: Use `@deprecated(use=...)` once it can name a sibling `comptime`
+    # member. Today it only resolves methods and module-level declarations.
+    @deprecated("Use `Ordering.not_atomic` instead.")
     comptime NOT_ATOMIC = Self.not_atomic
-    """Alias for `not_atomic`."""
+    """Deprecated: The former name of `not_atomic`."""
+
+    @deprecated("Use `Ordering.unordered` instead.")
     comptime UNORDERED = Self.unordered
-    """Alias for `unordered`."""
+    """Deprecated: The former name of `unordered`."""
+
+    @deprecated("Use `Ordering.relaxed` instead.")
     comptime RELAXED = Self.relaxed
-    """Alias for `relaxed`."""
+    """Deprecated: The former name of `relaxed`."""
+
+    @deprecated("Use `Ordering.acquire` instead.")
     comptime ACQUIRE = Self.acquire
-    """Alias for `acquire`."""
+    """Deprecated: The former name of `acquire`."""
+
+    @deprecated("Use `Ordering.release` instead.")
     comptime RELEASE = Self.release
-    """Alias for `release`."""
+    """Deprecated: The former name of `release`."""
+
+    @deprecated("Use `Ordering.acquire_release` instead.")
     comptime ACQUIRE_RELEASE = Self.acquire_release
-    """Alias for `acquire_release`."""
+    """Deprecated: The former name of `acquire_release`."""
+
+    @deprecated("Use `Ordering.sequential` instead.")
     comptime SEQUENTIAL = Self.sequential
-    """Alias for `sequential`."""
+    """Deprecated: The former name of `sequential`."""
 
     @inline(.always)
     def __init__(out self, value: UInt8):
@@ -132,22 +147,22 @@ struct Ordering(
             A string slice representation of this ordering.
         """
 
-        if self == Self.NOT_ATOMIC:
-            return "Ordering.NOT_ATOMIC"
-        if self == Self.UNORDERED:
-            return "Ordering.UNORDERED"
-        if self == Self.RELAXED:
-            return "Ordering.RELAXED"
-        if self == Self.ACQUIRE:
-            return "Ordering.ACQUIRE"
-        if self == Self.RELEASE:
-            return "Ordering.RELEASE"
-        if self == Self.ACQUIRE_RELEASE:
-            return "Ordering.ACQUIRE_RELEASE"
-        if self == Self.SEQUENTIAL:
-            return "Ordering.SEQUENTIAL"
+        if self == Self.not_atomic:
+            return "Ordering.not_atomic"
+        if self == Self.unordered:
+            return "Ordering.unordered"
+        if self == Self.relaxed:
+            return "Ordering.relaxed"
+        if self == Self.acquire:
+            return "Ordering.acquire"
+        if self == Self.release:
+            return "Ordering.release"
+        if self == Self.acquire_release:
+            return "Ordering.acquire_release"
+        if self == Self.sequential:
+            return "Ordering.sequential"
 
-        return "Ordering.UNKNOWN"
+        return "Ordering.unknown"
 
     def write_to(self, mut writer: Some[Writer]):
         """Write the string representation of this `Ordering` to a writer.
@@ -173,19 +188,19 @@ struct Ordering(
         Returns:
             The MLIR attribute representation of the Ordering object.
         """
-        if self == Self.NOT_ATOMIC:
+        if self == Self.not_atomic:
             return __mlir_attr.`#pop.atomic_ordering<not_atomic>`
-        if self == Self.UNORDERED:
+        if self == Self.unordered:
             return __mlir_attr.`#pop.atomic_ordering<unordered>`
-        if self == Self.RELAXED:
+        if self == Self.relaxed:
             return __mlir_attr.`#pop.atomic_ordering<monotonic>`
-        if self == Self.ACQUIRE:
+        if self == Self.acquire:
             return __mlir_attr.`#pop.atomic_ordering<acquire>`
-        if self == Self.RELEASE:
+        if self == Self.release:
             return __mlir_attr.`#pop.atomic_ordering<release>`
-        if self == Self.ACQUIRE_RELEASE:
+        if self == Self.acquire_release:
             return __mlir_attr.`#pop.atomic_ordering<acq_rel>`
-        if self == Self.SEQUENTIAL:
+        if self == Self.sequential:
             return __mlir_attr.`#pop.atomic_ordering<seq_cst>`
 
         abort()

@@ -226,4 +226,4 @@ struct MetalPluginHooks[target: CompilationTarget](PluginHooks):
         address_space
     ]
 
-    comptime default_atomic_ordering: Ordering = Ordering.RELAXED
+    comptime default_atomic_ordering: Ordering = Ordering.relaxed

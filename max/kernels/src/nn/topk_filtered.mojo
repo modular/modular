@@ -198,9 +198,7 @@ def _round[
     while i < n_keys:
         var key = keys[i]
         if key & live_mask == prefix & live_mask:
-            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
-            ](
+            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
                 hist.unsafe_offset(
                     Int((key >> UInt64(shift)) & UInt64(nb - 1))
                 ),
@@ -273,7 +271,7 @@ def _keep_pass[
             var start = UInt32(0)
             if lane == 0:
                 start = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](ctl.unsafe_offset(3), warp_kept)
             var slot = Int(warp.shuffle_idx(start, 0) + end - n_keep)
             while kept != 0:
@@ -412,9 +410,9 @@ def _filtered_select[
                 SIMD[in_dtype, 1](in_scores[row + col])
             )
         )[0]
-        _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-            ordering=Ordering.RELAXED
-        ](hist.unsafe_offset(Int(sample[i] >> UInt32(32 - _HSEL_BITS))), 1)
+        _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
+            hist.unsafe_offset(Int(sample[i] >> UInt32(32 - _HSEL_BITS))), 1
+        )
     barrier()
     var mean = Float32(n_samples * K) / Float32(count)
     var m = Int(mean + 5 * sqrt(mean)) + 4
@@ -430,7 +428,7 @@ def _filtered_select[
         comptime for i in range(per_thread):
             if sample[i] >> UInt32(32 - _HSEL_BITS) == bound_bin:
                 _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](
                     hist.unsafe_offset(
                         Int(
@@ -514,9 +512,9 @@ def _filtered_select[
         var i = tid
         while i < n_keys:
             var steps = UInt32(keys[i] >> 48) - bound16
-            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
-            ](hist.unsafe_offset(Int(min(steps, UInt32(step_bins - 1)))), 1)
+            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
+                hist.unsafe_offset(Int(min(steps, UInt32(step_bins - 1)))), 1
+            )
             i += _PTOPK_BLOCK
         barrier()
         _split(hist, ctl, step_bins, K, tid)
@@ -555,7 +553,7 @@ def _filtered_select[
             var key = keys[i]
             if (key & pad_mask) >> 32 == t_score:
                 var t = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](ctl.unsafe_offset(5), 1)
                 hist[Int(t)] = UInt32(key & 0xFFFFFFFF)
             i += _PTOPK_BLOCK
@@ -594,7 +592,7 @@ def _filtered_select[
             take = key & pad_mask >= t_key
         if take:
             var slot = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
+                ordering=.relaxed
             ](ctl.unsafe_offset(4), 1)
             sink.store(out_row + Int(slot), _key_column(key))
         i += _PTOPK_BLOCK

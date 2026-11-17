@@ -82,7 +82,7 @@ struct BlockingSpinLock(Defaultable):
         var expected = Int64(Self.UNLOCKED)
         var waiter = SpinWaiter()
         while not self.counter.compare_exchange[
-            success_ordering=.ACQUIRE, failure_ordering=.RELAXED
+            success_ordering=.acquire, failure_ordering=.relaxed
         ](expected, Int64(owner)):
             # this should be yield
             waiter.wait()
@@ -101,10 +101,10 @@ struct BlockingSpinLock(Defaultable):
         # we don't care about anything except the value of the counter here
         # and any modifications to shared data in the case we're not locked
         # are UB data races by (almost) definition.
-        if self.counter.load[ordering=Ordering.RELAXED]() != Int64(owner):
+        if self.counter.load[ordering=.relaxed]() != Int64(owner):
             # No one else can modify other than owner
             return False
-        self.counter.store[ordering=.RELEASE](Self.UNLOCKED)
+        self.counter.store[ordering=.release](Self.UNLOCKED)
         return True
 
 

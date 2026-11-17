@@ -352,9 +352,7 @@ def _dtopk_hist_group[
     """Counts a group into round 0's bins; dead columns go to the spare bin."""
     comptime for j in range(_DTOPK_VEC):
         var b = Int(phi[j] >> UInt32(_DTOPK_FINE_BITS))
-        _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-            ordering=Ordering.RELAXED
-        ](
+        _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
             hist.unsafe_offset(b if j < live else _DTOPK_BINS),
             UInt32(1),
         )
@@ -377,9 +375,7 @@ def _dtopk_fine_group[
         var ok = j < live
         n_above += UInt32(1) if ok and cb > split else UInt32(0)
         var w = 1 + Int(phi[j] & UInt32(_DTOPK_FINE - 1))
-        _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-            ordering=Ordering.RELAXED
-        ](
+        _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
             pub.unsafe_offset(w if ok and cb == split else _DTOPK_PUB),
             UInt32(1),
         )
@@ -645,9 +641,9 @@ def _topk_cluster_det_impl[
             )
         n_above = _warp_sum_u32(n_above)
         if lane_id() == 0:
-            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
-            ](pub, n_above)
+            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
+                pub, n_above
+            )
         comptime if CS > 1:
             cluster_sync()
             if tid < _DTOPK_PUB * CS:

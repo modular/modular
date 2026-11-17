@@ -3401,16 +3401,16 @@ def _gumbel_argmax_fused_kernel[
                 (slot_ptr.unsafe_offset(8)).unsafe_bitcast[Int64]()[0] = Int64(
                     total.p
                 )
-                var previous = Atomic[Int32].fetch_add[
-                    ordering=Ordering.RELEASE
-                ](counters.unsafe_value().unsafe_offset(batch_id), Int32(1))
+                var previous = Atomic[Int32].fetch_add[ordering=.release](
+                    counters.unsafe_value().unsafe_offset(batch_id), Int32(1)
+                )
                 is_last[0] = Int(previous) + 1 == blocks_per_row_int
             barrier()
 
             if tid == 0 and is_last[0]:
                 # This acquire pairs with the release increments that publish
                 # each partial.
-                fence[Ordering.ACQUIRE]()
+                fence[Ordering.acquire]()
                 var row_base = batch_id * blocks_per_row_int
                 var first = partials.unsafe_value().unsafe_offset(
                     row_base * _GUMBEL_PARTIAL_BYTES

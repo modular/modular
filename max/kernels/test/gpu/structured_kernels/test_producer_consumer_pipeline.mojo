@@ -102,7 +102,7 @@ def pingpong_kernel[
             if is_leader:
                 data[Int(slot)] = _produced_value(i)
             # Publish the slot write before raising `full`.
-            fence[ordering=Ordering.RELEASE, scope=StaticString("")]()
+            fence[ordering=.release, scope=StaticString("")]()
             if is_leader:
                 pipeline.backend.arrive_full(slot)
             pipeline.producer_step()
@@ -110,12 +110,12 @@ def pingpong_kernel[
         for i in range(Int(n_items)):
             pipeline.wait_producer()
             var slot = pipeline.consumer_stage()
-            fence[ordering=Ordering.ACQUIRE, scope=StaticString("")]()
+            fence[ordering=.acquire, scope=StaticString("")]()
             if is_leader:
                 result[i] = data[Int(slot)]
             # Retire the read before freeing the slot for the producer's next
             # lap, so the producer cannot overwrite a slot mid-read.
-            fence[ordering=Ordering.RELEASE, scope=StaticString("")]()
+            fence[ordering=.release, scope=StaticString("")]()
             if is_leader:
                 pipeline.backend.arrive_empty(slot)
             pipeline.consumer_step()

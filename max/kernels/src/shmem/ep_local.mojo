@@ -209,7 +209,7 @@ def _count_kernel[
                 )
                 if e >= 0:
                     _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
-                        ordering=Ordering.RELAXED
+                        ordering=.relaxed
                     ](hist.unsafe_offset(Int(e)), 1)
         barrier()
         for e in range(tid, n_local, _EP_SELF_THREADS):
@@ -392,7 +392,7 @@ def _dispatch_kernel[
                 if e >= 0:
                     var slot = tid * top_k + k
                     _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                        ordering=Ordering.RELAXED
+                        ordering=.relaxed
                     ](
                         mask.unsafe_offset(Int(e) * mask_stride + slot // 32),
                         UInt32(1) << UInt32(slot % 32),
@@ -421,11 +421,11 @@ def _dispatch_kernel[
                     if w < n_entries and vals[i] != 0:
                         var c, e = divmod(w, n_local)
                         _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
-                            ordering=Ordering.RELAXED
+                            ordering=.relaxed
                         ](counts.unsafe_offset(e), vals[i])
                         if c < chunk:
                             _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
-                                ordering=Ordering.RELAXED
+                                ordering=.relaxed
                             ](before.unsafe_offset(e), vals[i])
         barrier()
 

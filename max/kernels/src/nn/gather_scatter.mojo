@@ -1177,8 +1177,8 @@ def _atomic_reduce[
         # Apple GPU only exposes a weak compare-exchange primitive; the retry
         # loop already tolerates spurious failures.
         if Atomic.compare_exchange[
-            success_ordering=Ordering.RELAXED,
-            failure_ordering=Ordering.RELAXED,
+            success_ordering=.relaxed,
+            failure_ordering=.relaxed,
             weak=is_apple_gpu(),
         ](ptr, expected, desired):
             return
@@ -1201,7 +1201,7 @@ def _atomic_add[
     and these run one per element.
     """
     comptime if _has_native_atomic_add[dtype]():
-        _ = Atomic.fetch_add[ordering=Ordering.RELAXED](ptr, update)
+        _ = Atomic.fetch_add[ordering=.relaxed](ptr, update)
     else:
 
         @inline(.always)

@@ -294,7 +294,7 @@ def tr_frag(base: Lds, row0: Int, row1: Int, pitch: Int, col: Int) -> Frag:
 def wait_count(word: LPtr[UInt32], target: Int):
     """Spins until the count reaches `target`, sleeping between polls so a
     waiting wave leaves the LDS and the issue slots to the working ones."""
-    while Int(LdsAtomic.load[ordering=Ordering.ACQUIRE](word)) < target:
+    while Int(LdsAtomic.load[ordering=.acquire](word)) < target:
         llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
 
@@ -305,7 +305,7 @@ def arrive(word: LPtr[UInt32]):
     wave's operations in order, so device loads and stores stay in flight."""
     s_waitcnt[lgkmcnt=0]()
     if lane_id() == 0:
-        _ = LdsAtomic.fetch_add[ordering=Ordering.RELEASE](word, UInt32(1))
+        _ = LdsAtomic.fetch_add[ordering=.release](word, UInt32(1))
 
 
 struct Ring[depth: Int, producers: Int, consumers: Int](Movable):

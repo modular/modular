@@ -178,7 +178,7 @@ __async def _run_cpu_range_function[
     # Acquire-release orders every instance's use of `func` before the last
     # instance destroys it. ThreadSanitizer does not model a release
     # decrement followed by an acquire fence, so it would report a race.
-    var pending = Atomic[Int64].fetch_add[ordering=.ACQUIRE_RELEASE](
+    var pending = Atomic[Int64].fetch_add[ordering=.acquire_release](
         Pointer(to=shared[].pending), -1
     )
     if pending == 1:

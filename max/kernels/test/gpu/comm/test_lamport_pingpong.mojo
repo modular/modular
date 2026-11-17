@@ -48,7 +48,7 @@ Design (writer = GPU 0, reader = GPU 1, P2P enabled, peer-addressable buffers):
 
 Note on the fence primitive: `gpu.intrinsics.threadfence` asserts
 `is_nvidia_gpu()` (NVIDIA-only), so it CANNOT be used for the AMD release fence.
-We use the cross-target `std.atomic.fence[ordering=RELEASE, scope=...]`
+We use the cross-target `std.atomic.fence[ordering=release, scope=...]`
 (`pop.fence` with a real `syncscope`) instead. `scope=""` is the LLVM default =
 system scope, which is what a cross-GPU release requires.
 
@@ -121,7 +121,7 @@ def writer_kernel[
             sentinel
         )
         comptime if use_fence:
-            fence[ordering=Ordering.RELEASE, scope=fence_scope]()
+            fence[ordering=.release, scope=fence_scope]()
 
         # Publish the data pack: every lane carries the same generation g.
         var data = SIMD[DTYPE, PACK_WIDTH](Scalar[DTYPE](g))
@@ -129,7 +129,7 @@ def writer_kernel[
             data
         )
         comptime if use_fence:
-            fence[ordering=Ordering.RELEASE, scope=fence_scope]()
+            fence[ordering=.release, scope=fence_scope]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -178,7 +178,7 @@ def reader_kernel[
             comptime if use_fence:
                 # Reader-side acquire fence, paired with the writer release, to
                 # test whether an explicit acquire is needed for visibility.
-                fence[ordering=Ordering.ACQUIRE, scope=fence_scope]()
+                fence[ordering=.acquire, scope=fence_scope]()
 
             # Still the sentinel -> producer has not written this generation.
             if has_neg_zero[DTYPE, PACK_WIDTH](pack):

@@ -160,16 +160,13 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         var counter = self._counter(workspace)
         barrier()
         if thread_idx.x == 0:
-            fence[ordering=Ordering.RELEASE, scope=_DEVICE_SCOPE]()
+            fence[ordering=.release, scope=_DEVICE_SCOPE]()
             var seen = (
-                _coop_atomic.fetch_add[ordering=Ordering.RELAXED](
-                    counter, Int32(1)
-                )
-                + 1
+                _coop_atomic.fetch_add[ordering=.relaxed](counter, Int32(1)) + 1
             )
             var spins = 0
             while seen < target and spins < _COOP_SPIN_LIMIT:
-                seen = _coop_atomic.load[ordering=Ordering.RELAXED](counter)
+                seen = _coop_atomic.load[ordering=.relaxed](counter)
                 spins += 1
             if seen < target:
                 debug_assert(
@@ -177,7 +174,7 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
                     "coop_row barrier timed out; blocks may not be co-resident",
                 )
                 abort()
-            fence[ordering=Ordering.ACQUIRE, scope=_DEVICE_SCOPE]()
+            fence[ordering=.acquire, scope=_DEVICE_SCOPE]()
         barrier()
 
     @inline(.always)

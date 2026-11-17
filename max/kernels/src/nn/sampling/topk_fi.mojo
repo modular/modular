@@ -1939,12 +1939,12 @@ def _topk_topp_cutoff_search[
                 var offset = bits[j] - base
                 if offset < span:
                     var bin = Int(offset >> shift)
-                    _ = Atomic[UInt64].fetch_add[ordering=Ordering.RELAXED](
+                    _ = Atomic[UInt64].fetch_add[ordering=.relaxed](
                         hist_m.unsafe_offset(bin),
                         UInt64(v[j] * _CUTOFF_FIXED_SCALE),
                     )
                     comptime if track_count:
-                        _ = Atomic[UInt64].fetch_add[ordering=Ordering.RELAXED](
+                        _ = Atomic[UInt64].fetch_add[ordering=.relaxed](
                             hist_c.unsafe_offset(bin), UInt64(1)
                         )
                 elif first and v[j] > high_init:
@@ -1952,12 +1952,12 @@ def _topk_topp_cutoff_search[
                     thread_above_c += 1
         if first:
             if thread_above_m > 0:
-                _ = Atomic[UInt64].fetch_add[ordering=Ordering.RELAXED](
+                _ = Atomic[UInt64].fetch_add[ordering=.relaxed](
                     hist_m.unsafe_offset(_CUTOFF_RADIX_BINS), thread_above_m
                 )
             comptime if track_count:
                 if thread_above_c > 0:
-                    _ = Atomic[UInt64].fetch_add[ordering=Ordering.RELAXED](
+                    _ = Atomic[UInt64].fetch_add[ordering=.relaxed](
                         hist_c.unsafe_offset(_CUTOFF_RADIX_BINS),
                         thread_above_c,
                     )

@@ -921,16 +921,12 @@ struct TileScheduler[
         # Every thread's slot stores precede thread 0's release add.
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(Self.PARALLEL_BARRIER_ID))
         if epilogue_thread_idx == 0:
-            _ = Atomic[UInt32, scope="device"].fetch_add[
-                ordering=Ordering.RELEASE
-            ](count, 1)
-        var seen = Atomic[UInt32, scope="device"].load[
-            ordering=Ordering.ACQUIRE
-        ](count)
+            _ = Atomic[UInt32, scope="device"].fetch_add[ordering=.release](
+                count, 1
+            )
+        var seen = Atomic[UInt32, scope="device"].load[ordering=.acquire](count)
         while (seen & 0xFFFF) < UInt32(S):
-            seen = Atomic[UInt32, scope="device"].load[
-                ordering=Ordering.ACQUIRE
-            ](count)
+            seen = Atomic[UInt32, scope="device"].load[ordering=.acquire](count)
 
         var lo = min(split * per, pieces)
         var hi = min(lo + per, pieces)
@@ -984,10 +980,10 @@ struct TileScheduler[
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(Self.PARALLEL_BARRIER_ID))
         if epilogue_thread_idx == 0:
             var old = Atomic[UInt32, scope="device"].fetch_add[
-                ordering=Ordering.ACQUIRE_RELEASE
+                ordering=.acquire_release
             ](count, 0x10000)
             if (old >> 16) == UInt32(S - 1):
-                Atomic[UInt32, scope="device"].store[ordering=Ordering.RELAXED](
+                Atomic[UInt32, scope="device"].store[ordering=.relaxed](
                     count, 0
                 )
 

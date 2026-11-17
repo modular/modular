@@ -60,7 +60,7 @@ def update_mbox(sig: ImmPointer[amd_signal_t, ...]):
             UInt64, UntrackedOrigin[mut=True], address_space=.GLOBAL
         ](unsafe_from_address=Int(mb))
         var id = sig[].event_id.cast[.uint64]()
-        Atomic.store[ordering=Ordering.RELEASE](mb_ptr, id)
+        Atomic.store[ordering=.release](mb_ptr, id)
         sendmsg(1 | (0 << 4), readfirstlane(id.cast[.int32]()) & 0xFF)
 
 
@@ -69,9 +69,7 @@ def hsa_signal_add(sig: UInt64, value: UInt64):
     var s = Pointer(to=sig).unsafe_bitcast[
         Pointer[amd_signal_t, MutUntrackedOrigin, address_space=.GLOBAL]
     ]()[]
-    _ = Atomic.fetch_add[ordering=Ordering.RELEASE](
-        Pointer(to=s[].value), value
-    )
+    _ = Atomic.fetch_add[ordering=.release](Pointer(to=s[].value), value)
     update_mbox(s)
 
 
@@ -561,7 +559,7 @@ struct Header(TrivialRegisterPassable):
             var ready_flag = UInt32(1)
             if me == low:
                 var ptr = Pointer(to=self._handle[].control)
-                var control = Atomic.load[ordering=Ordering.ACQUIRE](ptr)
+                var control = Atomic.load[ordering=.acquire](ptr)
                 ready_flag = get_ready_flag(control)
 
             ready_flag = readfirstlane(ready_flag)
@@ -645,18 +643,16 @@ struct Buffer(TrivialRegisterPassable):
         return Payload(self._payloads.unsafe_offset(ptr & self._index_mask))
 
     def pop(mut self, top: MutPointer[UInt64, ...]) -> UInt64:
-        var f = Atomic.load[ordering=Ordering.ACQUIRE](top)
+        var f = Atomic.load[ordering=.acquire](top)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
         # one packet.
         while True:
             var p = self.get_header(f)
-            var n = Atomic.load[ordering=Ordering.RELAXED](
-                Pointer(to=p._handle[].next)
-            )
+            var n = Atomic.load[ordering=.relaxed](Pointer(to=p._handle[].next))
             if Atomic.compare_exchange[
-                success_ordering=Ordering.ACQUIRE,
-                failure_ordering=Ordering.RELAXED,
+                success_ordering=.acquire,
+                failure_ordering=.relaxed,
             ](top, f, n):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
@@ -677,13 +673,13 @@ struct Buffer(TrivialRegisterPassable):
         return readfirstlane(packet_ptr)
 
     def push(mut self, top: MutPointer[UInt64, ...], ptr: UInt64):
-        var f = Atomic.load[ordering=Ordering.RELAXED](top)
+        var f = Atomic.load[ordering=.relaxed](top)
         var p = self.get_header(ptr)
         while True:
             p._handle[].next = f
             if Atomic.compare_exchange[
-                success_ordering=Ordering.RELEASE,
-                failure_ordering=Ordering.RELAXED,
+                success_ordering=.release,
+                failure_ordering=.relaxed,
             ](top, f, ptr):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))

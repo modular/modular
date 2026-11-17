@@ -363,7 +363,7 @@ def gemv_partial_norm_kernel[
             # global-last arriver's fetch_add makes every peer's
             # writes visible when it reads normed_output back below.
             var prev_global = Atomic[Int32, scope=DEVICE_SCOPE].fetch_add[
-                ordering=Ordering.ACQUIRE_RELEASE
+                ordering=.acquire_release
             ](finish_counter, Int32(1))
             comptime if enable_trace:
                 trace_buf.store(
@@ -390,7 +390,7 @@ def gemv_partial_norm_kernel[
     # later `normed_output` load happens-after peer writes.
     if tid == 0:
         if is_last_block:
-            fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
+            fence[ordering=.acquire, scope=DEVICE_SCOPE]()
         shmem[0, 0] = Scalar[accum_type](1) if is_last_block else Scalar[
             accum_type
         ](0)

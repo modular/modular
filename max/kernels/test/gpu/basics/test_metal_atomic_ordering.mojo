@@ -24,24 +24,24 @@ comptime _ORDERS = 4
 
 
 def _kernel[origin: MutOrigin](counters: MutPointer[Int32, origin]):
-    _ = Atomic[Int32].fetch_add[ordering=Ordering.ACQUIRE](
+    _ = Atomic[Int32].fetch_add[ordering=.acquire](
         counters.unsafe_offset(0), Int32(1)
     )
-    _ = Atomic[Int32].fetch_add[ordering=Ordering.RELEASE](
+    _ = Atomic[Int32].fetch_add[ordering=.release](
         counters.unsafe_offset(1), Int32(1)
     )
-    _ = Atomic[Int32].fetch_add[ordering=Ordering.ACQUIRE_RELEASE](
+    _ = Atomic[Int32].fetch_add[ordering=.acquire_release](
         counters.unsafe_offset(2), Int32(1)
     )
-    _ = Atomic[Int32].fetch_add[ordering=Ordering.SEQUENTIAL](
+    _ = Atomic[Int32].fetch_add[ordering=.sequential](
         counters.unsafe_offset(3), Int32(1)
     )
 
     var p = counters.unsafe_offset(4)
     var expected = p[]
     while not Atomic[Int32].compare_exchange[
-        success_ordering=Ordering.ACQUIRE_RELEASE,
-        failure_ordering=Ordering.ACQUIRE,
+        success_ordering=.acquire_release,
+        failure_ordering=.acquire,
         weak=True,
     ](p, expected, expected + 1):
         pass

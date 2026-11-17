@@ -133,7 +133,7 @@ def _hash_insert[
     var key = UInt32(position) + 1
     var h = _hash_slot[capacity](position)
     for _ in range(capacity):
-        var current = Atomic.load[ordering=Ordering.RELAXED](
+        var current = Atomic.load[ordering=.relaxed](
             keys.unsafe_offset(h).as_imm()
         )
         if current == key:
@@ -141,8 +141,8 @@ def _hash_insert[
         if current == 0:
             var expected = UInt32(0)
             if Atomic.compare_exchange[
-                success_ordering=Ordering.RELAXED,
-                failure_ordering=Ordering.RELAXED,
+                success_ordering=.relaxed,
+                failure_ordering=.relaxed,
             ](keys.unsafe_offset(h), expected, key):
                 vals[unsafe_offset=h] = -1
                 return h
@@ -172,7 +172,7 @@ def _hash_find[
     var key = UInt32(position) + 1
     var h = _hash_slot[capacity](position)
     for _ in range(capacity):
-        var current = Atomic.load[ordering=Ordering.RELAXED](
+        var current = Atomic.load[ordering=.relaxed](
             keys.unsafe_offset(h).as_imm()
         )
         if current == key:
@@ -308,9 +308,7 @@ def _hisparse_resolve_kernel[
         # Host-only physical rows are rewritten below, so they can hold the
         # hash slot between the insertion and final lookup.
         physical[unsafe_offset=first + i] = Int32(h)
-        Atomic.max[ordering=Ordering.RELAXED](
-            firsts.unsafe_offset(h), _first_tag(i)
-        )
+        Atomic.max[ordering=.relaxed](firsts.unsafe_offset(h), _first_tag(i))
     barrier()
 
     # 2. Hits: slots whose position this step selects.
@@ -322,9 +320,7 @@ def _hisparse_resolve_kernel[
             if h >= 0:
                 vals[unsafe_offset=h] = Int32(s)
                 hits[unsafe_offset=s] = epoch
-                _ = Atomic.fetch_add[ordering=Ordering.RELAXED](
-                    hit_count, UInt32(1)
-                )
+                _ = Atomic.fetch_add[ordering=.relaxed](hit_count, UInt32(1))
     barrier()
 
     # 3. Number the misses by first reference, so the plan does not depend
@@ -342,7 +338,7 @@ def _hisparse_resolve_kernel[
                 if page < lut_cols and lut_row[unsafe_offset=page] == 0:
                     h = Int(physical[unsafe_offset=first + i])
                     if vals[unsafe_offset=h] < 0 and _is_first(
-                        Atomic.load[ordering=Ordering.RELAXED](
+                        Atomic.load[ordering=.relaxed](
                             firsts.unsafe_offset(h).as_imm()
                         ),
                         i,

@@ -39,9 +39,9 @@ def _barrier():
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     else:
-        fence[Ordering.RELEASE, scope="workgroup"]()
+        fence[Ordering.release, scope="workgroup"]()
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-        fence[Ordering.ACQUIRE, scope="workgroup"]()
+        fence[Ordering.acquire, scope="workgroup"]()
 
 
 @inline(.always)

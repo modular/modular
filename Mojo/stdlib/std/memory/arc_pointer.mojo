@@ -78,24 +78,24 @@ struct _ArcPointerInner[T: Movable](
         #
         # This is further explained in the [boost documentation]
         # (https://www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
-        _ = self.strong.fetch_add[ordering=Ordering.RELAXED](1)
+        _ = self.strong.fetch_add[ordering=.relaxed](1)
 
     def drop_strong(mut self) -> Bool:
         """Atomically decrement the strong refcount and return true if the
         result hits zero."""
 
-        # `RELEASE` is needed to ensure that all data access happens before
-        # decreasing the refcount. `ACQUIRE_RELEASE` is not needed since we
-        # don't need the guarantees of `ACQUIRE` on the load portion of
+        # `release` is needed to ensure that all data access happens before
+        # decreasing the refcount. `acquire_release` is not needed since we
+        # don't need the guarantees of `acquire` on the load portion of
         # fetch_sub if the refcount does not reach zero.
-        if self.strong.fetch_sub[ordering=Ordering.RELEASE](1) != 1:
+        if self.strong.fetch_sub[ordering=.release](1) != 1:
             return False
 
-        # However, if the refcount results in zero, this `ACQUIRE` fence is
-        # needed to synchronize with the `fetch_sub[RELEASE]` above, ensuring
+        # However, if the refcount results in zero, this `acquire` fence is
+        # needed to synchronize with the `fetch_sub[release]` above, ensuring
         # that use of data happens before the fence and therefore before the
         # deletion of the data.
-        fence[ordering=Ordering.ACQUIRE]()
+        fence[ordering=.acquire]()
         return True
 
     def try_add_strong(mut self) -> Bool:
@@ -103,37 +103,37 @@ struct _ArcPointerInner[T: Movable](
 
         Used by `WeakPointer.try_upgrade` to refuse resurrecting a destroyed payload.
         """
-        var cur = self.strong.load[ordering=Ordering.RELAXED]()
+        var cur = self.strong.load[ordering=.relaxed]()
         while cur != 0:
             # On failure, `compare_exchange` rewrites `cur` with the observed
             # value, so the next iteration retries against the fresh count.
             if self.strong.compare_exchange[
-                success_ordering=Ordering.ACQUIRE,
-                failure_ordering=Ordering.RELAXED,
+                success_ordering=.acquire,
+                failure_ordering=.relaxed,
             ](cur, cur + 1):
                 return True
         return False
 
     def strong_count(self) -> UInt64:
         """Return the current strong refcount."""
-        return self.strong.load[ordering=Ordering.RELAXED]()
+        return self.strong.load[ordering=.relaxed]()
 
     def add_weak(mut self):
         """Atomically increment the weak refcount."""
-        _ = self.weak.fetch_add[ordering=Ordering.RELAXED](1)
+        _ = self.weak.fetch_add[ordering=.relaxed](1)
 
     def drop_weak(mut self) -> Bool:
         """Atomically decrement the weak refcount and return true if the
         result hits zero."""
-        if self.weak.fetch_sub[ordering=Ordering.RELEASE](1) != 1:
+        if self.weak.fetch_sub[ordering=.release](1) != 1:
             return False
-        fence[ordering=Ordering.ACQUIRE]()
+        fence[ordering=.acquire]()
         return True
 
     def weak_count_with_implicit(self) -> UInt64:
         """Return the raw weak counter, including the implicit +1 held
         collectively by all strong references."""
-        return self.weak.load[ordering=Ordering.RELAXED]()
+        return self.weak.load[ordering=.relaxed]()
 
     def destroy_payload(mut self, deinit_func: Some[def(var Self.T)]):
         """Pass the held value to `deinit_func` to destroy it. Caller must

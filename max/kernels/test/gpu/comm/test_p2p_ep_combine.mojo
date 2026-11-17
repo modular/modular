@@ -140,7 +140,7 @@ def _probe_output[
     var stride = grid_dim.x * block_dim.x
     for i in range(tid, Int(n), stride):
         if buf[i] != sentinel:
-            Atomic[Scalar[DType.uint32]].store[ordering=Ordering.RELAXED](
+            Atomic[Scalar[DType.uint32]].store[ordering=.relaxed](
                 changed, UInt32(1)
             )
 

@@ -1509,7 +1509,7 @@ def _allreduce_lamport_kernel[
 
             # (c) Optional release fence (default off; see slice-2 result).
             comptime if use_fence:
-                fence[ordering=Ordering.RELEASE, scope=StaticString("")]()
+                fence[ordering=.release, scope=StaticString("")]()
 
             # (d) Poll the `ngpus - 1` remote slots in this rank's own buffer,
             # re-reading every slot until none still hold the sentinel. This
@@ -1537,7 +1537,7 @@ def _allreduce_lamport_kernel[
                     ](slot_off * atomic_width)
                     done = not has_neg_zero[dtype, atomic_width](packs[1])
                 comptime if use_fence:
-                    fence[ordering=Ordering.ACQUIRE, scope=StaticString("")]()
+                    fence[ordering=.acquire, scope=StaticString("")]()
                 accum = local.cast[accum_type]() + packs[1].cast[accum_type]()
             else:
                 comptime for r in range(ngpus):
@@ -1560,7 +1560,7 @@ def _allreduce_lamport_kernel[
                                     done = False
                         comptime if use_fence:
                             fence[
-                                ordering=Ordering.ACQUIRE,
+                                ordering=.acquire,
                                 scope=StaticString(""),
                             ]()
                         accum = packs[0].cast[accum_type]()

@@ -625,7 +625,7 @@ def _moe_sort_broken_rank_kernel[
             if j0 < n:
                 comptime for l in range(4):
                     _ = Atomic[UInt32, scope="workgroup"].fetch_add[
-                        ordering=Ordering.RELAXED
+                        ordering=.relaxed
                     ](hist.unsafe_offset(Int(keys[l]) >> 16), UInt32(1))
             var local_max = UInt32(0)
             for x in range(tid, NUM_EXPERTS, SORT_BLOCK_THREADS):

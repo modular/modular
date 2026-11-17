@@ -5055,7 +5055,7 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
                     part[q, wid] = cnt
             else:
                 _ = Atomic[UInt32, scope="workgroup"].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](result.ptr.unsafe_offset(q), cnt)
         barrier()
         comptime if warp_aligned:
@@ -5080,7 +5080,7 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
                 comptime for l in range(4):
                     if keys[l] != _MOE_SORT_INVALID_KEY:
                         _ = Atomic[UInt32, scope="workgroup"].fetch_add[
-                            ordering=Ordering.RELAXED
+                            ordering=.relaxed
                         ](hist.ptr.unsafe_offset(Int(keys[l]) >> 16), UInt32(1))
             barrier()
             comptime if warp_aligned:

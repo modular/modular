@@ -845,8 +845,8 @@ def pjoin[
             # never launches on Metal (gated in `launch`), but the phased
             # split-K params still instantiate this.
             comptime _finish_ordering = (
-                Ordering.RELEASE if _SPLITK_ROW_TIER_TUNED else (
-                    Ordering.RELAXED if is_apple_gpu() else Ordering.SEQUENTIAL
+                Ordering.release if _SPLITK_ROW_TIER_TUNED else (
+                    Ordering.relaxed if is_apple_gpu() else Ordering.sequential
                 )
             )
             # The slot holds `State.Single`, not the `W`-lane broadcast: the
@@ -873,7 +873,7 @@ def pjoin[
                 # thread 0. On gfx9 `barrier()` invalidates no cache, so it is
                 # no substitute. Redundant when the counter is seq_cst.
                 comptime if _SPLITK_ROW_TIER_TUNED:
-                    fence[Ordering.ACQUIRE]()
+                    fence[Ordering.acquire]()
                 # Cross-block join: the first `blocks_per_row` threads each
                 # load one partial, the rest pad with the monoid identity,
                 # then one block-wide combine folds them.

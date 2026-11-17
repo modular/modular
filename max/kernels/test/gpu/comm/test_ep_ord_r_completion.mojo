@@ -15,7 +15,7 @@
 Rank-level completion lets a fused consumer acquire ONCE per source rank
 instead of checking each expert's word. That is only sound if the elected
 producer's single system-scope release carries every other producer's state --
-which the `ACQUIRE_RELEASE` election chain establishes. This test runs the
+which the `acquire_release` election chain establishes. This test runs the
 protocol across REAL peer-mapped memory on two GPUs, both directions:
 
   - producers on the SOURCE GPU write payload markers and per-expert count
@@ -105,11 +105,11 @@ def consumer_kernel(
 
     # Spin exactly as the fused activation gate does: sentinel until the
     # elected producer's release lands from the peer GPU.
-    var flag = Atomic[UInt64].load[ordering=Ordering.ACQUIRE](
+    var flag = Atomic[UInt64].load[ordering=.acquire](
         recv_count.unsafe_offset(RANK_FLAG_OFFSET)
     )
     while flag == SENTINEL:
-        flag = Atomic[UInt64].load[ordering=Ordering.ACQUIRE](
+        flag = Atomic[UInt64].load[ordering=.acquire](
             recv_count.unsafe_offset(RANK_FLAG_OFFSET)
         )
 
@@ -132,7 +132,7 @@ def consumer_kernel(
     # Destination-restore rule (frozen protocol): the CONSUMER restores the
     # sentinel after consuming the dispatch, so a stale flag can never satisfy
     # the next generation's wait.
-    Atomic[UInt64].store[ordering=Ordering.RELEASE](
+    Atomic[UInt64].store[ordering=.release](
         recv_count.unsafe_offset(RANK_FLAG_OFFSET), SENTINEL
     )
 

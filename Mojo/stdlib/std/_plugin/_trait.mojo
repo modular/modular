@@ -286,13 +286,13 @@ trait PluginHooks:
         addr: The address to prefetch.
     """
 
-    comptime default_atomic_ordering: Ordering = Ordering.SEQUENTIAL
+    comptime default_atomic_ordering: Ordering = Ordering.sequential
     """The ordering `Atomic` read-modify-write and compare-exchange
     operations use when the caller does not name one.
 
     A target whose backend rejects sequentially consistent atomics, such as
     Metal, sets this to the strongest ordering it lowers. Loads, stores, and
-    fences default to `Ordering.SEQUENTIAL` regardless.
+    fences default to `Ordering.sequential` regardless.
     """
 
     comptime atomic_float_minmax_via_int: Bool = False

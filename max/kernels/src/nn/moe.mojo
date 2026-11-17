@@ -261,7 +261,7 @@ def moe_create_indices_kernel[
                 if e < 0 or e >= chunk_experts:
                     continue
                 _ = Atomic[UInt32, scope=atomic_scope].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](counts.ptr.unsafe_offset(e), UInt32(1))
             barrier()
 
@@ -350,7 +350,7 @@ def moe_create_indices_kernel[
                         ]()
                     continue
                 var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](counts.ptr.unsafe_offset(e), UInt32(1))
                 token_expert_order[pos] = UInt32(i)
                 restore_token_order[i] = pos.cast[restore_type]()
@@ -451,9 +451,9 @@ def _moe_histogram_kernel[
             var e = Int(topk_ids[unsafe_offset=i])
             if e < 0 or e >= num_experts:
                 continue
-            _ = Atomic[UInt32, scope=atomic_scope].fetch_add[
-                ordering=Ordering.RELAXED
-            ](counts.ptr.unsafe_offset(e), UInt32(1))
+            _ = Atomic[UInt32, scope=atomic_scope].fetch_add[ordering=.relaxed](
+                counts.ptr.unsafe_offset(e), UInt32(1)
+            )
         barrier()
         comptime for r in range(experts_per_thread):
             var e = tid * experts_per_thread + r
@@ -593,7 +593,7 @@ def _moe_scatter_kernel[
                 restore_token_order[unsafe_offset=i] = UInt32(total_tokens)
                 continue
             var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
-                ordering=Ordering.RELAXED
+                ordering=.relaxed
             ](cursor.ptr.unsafe_offset(e), UInt32(1))
             token_expert_order[unsafe_offset=Int(pos)] = UInt32(i)
             restore_token_order[unsafe_offset=i] = pos

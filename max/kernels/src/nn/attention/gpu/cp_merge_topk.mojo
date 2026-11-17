@@ -177,7 +177,7 @@ def _cp_merge_topk_kernel[
             if key != 0:
                 n_valid += 1
                 _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](hist.unsafe_offset(Int(key >> _DIGIT_BITS)), UInt32(1))
         var total = block.sum[block_size=NT](n_valid)
         barrier()
@@ -204,7 +204,7 @@ def _cp_merge_topk_kernel[
                 var key = keys[i]
                 if key != 0 and key >> _DIGIT_BITS == hi:
                     _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                        ordering=Ordering.RELAXED
+                        ordering=.relaxed
                     ](hist.unsafe_offset(Int(key & MASK)), UInt32(1))
             barrier()
             if warp_id() == 0:

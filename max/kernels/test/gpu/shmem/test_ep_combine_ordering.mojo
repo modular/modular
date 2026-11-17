@@ -66,7 +66,7 @@ def ordering_guard_kernel[
                 payload[base + e] = Float32(c)
             barrier()
             if tid == 0:
-                _flag_atomic.store[ordering=Ordering.RELEASE](
+                _flag_atomic.store[ordering=.release](
                     flags.unsafe_offset(c), DATA_READY
                 )
     else:
@@ -85,7 +85,7 @@ def ordering_guard_kernel[
         if tid == 0:
             while flags.unsafe_load[volatile=True](c) != DATA_READY:
                 pass
-            fence[ordering=Ordering.ACQUIRE, scope=DEVICE_SCOPE]()
+            fence[ordering=.acquire, scope=DEVICE_SCOPE]()
         barrier()
 
         for e in range(tid, MSG_ELEMS, nthreads):

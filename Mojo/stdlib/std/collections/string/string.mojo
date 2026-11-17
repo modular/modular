@@ -732,7 +732,7 @@ struct String(
     def _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED):
-            return self._refcount().load[ordering=Ordering.RELAXED]() == 1
+            return self._refcount().load[ordering=.relaxed]() == 1
         else:
             return False
 
@@ -746,7 +746,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
-            _ = self._refcount().fetch_add[ordering=Ordering.RELAXED](1)
+            _ = self._refcount().fetch_add[ordering=.relaxed](1)
 
     @inline(.nodebug)
     def _drop_ref(mut self):
@@ -760,8 +760,8 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data.unsafe_offset(-Self.REF_COUNT_SIZE)
             var refcount = ptr.unsafe_bitcast[Atomic[Int]]()
-            if refcount[].fetch_sub[ordering=.RELEASE](1) == 1:
-                fence[ordering=.ACQUIRE]()
+            if refcount[].fetch_sub[ordering=.release](1) == 1:
+                fence[ordering=.acquire]()
                 dealloc(
                     ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                         Layout[Byte](

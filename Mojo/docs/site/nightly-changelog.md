@@ -199,6 +199,12 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The following enum-like types now use `snake_case` member names. The
+  uppercase names remain as deprecated aliases:
+
+  - `Ordering`: `not_atomic`, `unordered`, `relaxed`, `acquire`, `release`,
+    `acquire_release`, and `sequential`.
+
 - An optional mutable pointer now implicitly converts to an optional
   immutable pointer, as `Pointer` does.
 

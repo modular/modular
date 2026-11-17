@@ -561,16 +561,16 @@ def _row_chain_body[
     var mask_ptr = masks.ptr.unsafe_offset(row)
     if tid == threads - 1:
         totals[row, chunk] = offset + thread_sum
-        _ = Atomic[UInt64].fetch_add[ordering=Ordering.RELEASE](
+        _ = Atomic[UInt64].fetch_add[ordering=.release](
             mask_ptr, UInt64(1) << UInt64(8 * chunk)
         )
     if tid == 0:
         var carry: Scalar[accum_type] = 0
         if chunk > 0:
             var need = ((UInt64(1) << UInt64(8 * chunk)) - 1) // 255
-            var seen = Atomic[UInt64].load[ordering=Ordering.ACQUIRE](mask_ptr)
+            var seen = Atomic[UInt64].load[ordering=.acquire](mask_ptr)
             while (seen & need) != need:
-                seen = Atomic[UInt64].load[ordering=Ordering.ACQUIRE](mask_ptr)
+                seen = Atomic[UInt64].load[ordering=.acquire](mask_ptr)
             # Every earlier chunk is published, so these loads are all in
             # flight at once rather than one wait at a time.
             for earlier in range(chunk):

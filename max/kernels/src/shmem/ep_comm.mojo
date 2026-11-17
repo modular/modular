@@ -452,9 +452,7 @@ struct ExpertLoadTally(ExpertLoadSink):
             count: Tokens routed to the expert in this step.
         """
         var row = Int(self.layer_idx.unsafe_load())
-        _ = Atomic[UInt64, scope=DEVICE_SCOPE].fetch_add[
-            ordering=Ordering.RELAXED
-        ](
+        _ = Atomic[UInt64, scope=DEVICE_SCOPE].fetch_add[ordering=.relaxed](
             self.counts.unsafe_offset(row * n_local_experts + local_expert),
             UInt64(count),
         )
@@ -515,7 +513,7 @@ def _acquire_wait[
     else:
         while observed != sentinel:
             observed = ptr.unsafe_load[volatile=True]()
-    fence[ordering=Ordering.ACQUIRE, scope=scope]()
+    fence[ordering=.acquire, scope=scope]()
     return observed
 
 
@@ -545,7 +543,7 @@ def _publish_peer_stores[scope: StaticString = ""]() -> None:
         # no dirty lines for a `buffer_wbl2` to write back.
         s_waitcnt[vmcnt=0]()
     else:
-        fence[ordering=Ordering.RELEASE, scope=scope]()
+        fence[ordering=.release, scope=scope]()
 
 
 @inline(.always)
@@ -980,7 +978,7 @@ def ep_signal_completion[
     With `ep_ord_r` (ORD-R) the routine implements rank-level completion
     instead, which a fused consumer needs when it acquires ONCE per source
     rank rather than per expert: the per-expert count word becomes a plain
-    progress store issued before an `ACQUIRE_RELEASE` election, and the
+    progress store issued before an `acquire_release` election, and the
     elected last producer release-stores a dedicated rank-completion flag.
 
     That election ordering is load-bearing correctness, not an optimization.
@@ -1076,11 +1074,11 @@ def ep_signal_completion[
             else:
                 # TODO(KERN-2792): AMD needs store-release even for words
                 # nothing spins on; mirror the legacy branch until resolved.
-                Atomic[scope=scope].store[ordering=Ordering.RELEASE](
+                Atomic[scope=scope].store[ordering=.release](
                     dst_p2p_ptr, signal
                 )
             var old_count = _counter_atomic.fetch_add[
-                ordering=Ordering.ACQUIRE_RELEASE
+                ordering=.acquire_release
             ](rank_completion_counter.unsafe_offset(Int(dst_p2p_rank)), 1)
             # The last expert for this destination rank is elected to publish
             # the rank-level arrival. `rank_completion_counter` is
@@ -1094,7 +1092,7 @@ def ep_signal_completion[
                 # never satisfy the next generation's wait. By the induction
                 # in the docstring this single release carries every
                 # producer's payload and count stores.
-                Atomic[scope=scope].store[ordering=Ordering.RELEASE](
+                Atomic[scope=scope].store[ordering=.release](
                     recv_count_ptrs[dst_p2p_rank].unsafe_offset(
                         rank_flag_offset
                     ),
@@ -1111,17 +1109,15 @@ def ep_signal_completion[
             # The same release store the `release_every` branches below issue
             # for this publication, without the `rank_completion_counter`
             # increment, comparison and reset, which nothing reads.
-            Atomic[scope=scope].store[ordering=Ordering.RELEASE](
-                dst_p2p_ptr, signal
-            )
+            Atomic[scope=scope].store[ordering=.release](dst_p2p_ptr, signal)
             return -1
 
         # Acquire-release, as in the ORD-R branch, so the last producer
         # happens-after every other one and its system-scope release below
         # carries every expert's payload, not only its own.
-        var old_count = _counter_atomic.fetch_add[
-            ordering=Ordering.ACQUIRE_RELEASE
-        ](rank_completion_counter.unsafe_offset(Int(dst_p2p_rank)), 1)
+        var old_count = _counter_atomic.fetch_add[ordering=.acquire_release](
+            rank_completion_counter.unsafe_offset(Int(dst_p2p_rank)), 1
+        )
 
         # If this is the last expert for this destination rank,
         # use a release store to flush all pending stores.
@@ -1136,15 +1132,13 @@ def ep_signal_completion[
                 # TODO(KERN-2792): Investigate why AMD GPUs require this to be
                 # store-release instead of a normal store as done above. Without
                 # store-release, the kernel can hang spinning on stale data.
-                Atomic[scope=scope].store[ordering=Ordering.RELEASE](
+                Atomic[scope=scope].store[ordering=.release](
                     dst_p2p_ptr, signal
                 )
         else:
             # The waiting kernels acquire every expert's word before reading
             # any payload, so this one release covers the whole rank.
-            Atomic[scope=scope].store[ordering=Ordering.RELEASE](
-                dst_p2p_ptr, signal
-            )
+            Atomic[scope=scope].store[ordering=.release](dst_p2p_ptr, signal)
             # Reset counter for next kernel invocation.
             rank_completion_counter[dst_p2p_rank] = 0
     else:
@@ -4037,7 +4031,7 @@ struct EPDispatchKernel[
             var own = rebind[Int32](topk_ids_flat[i]) - first_expert
             if own >= 0 and own < Int32(Self.n_warps):
                 _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](hist.unsafe_offset(Int(own)), 1)
         barrier()
         return hist[warp_id()]
@@ -4321,7 +4315,7 @@ struct EPDispatchKernel[
             _publish_peer_stores()
             if lane_id() == 0:
                 for i in range(n_pend):
-                    _ = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
+                    _ = _counter_atomic.fetch_add[ordering=.relaxed](
                         expert_finished_counter.unsafe_offset(pend[i]), 1
                     )
                 comptime if TraceT.enabled:
@@ -4458,9 +4452,7 @@ struct EPDispatchKernel[
                             )
                     var slot_idx: Int32 = 0
                     if lane_id() == 0:
-                        slot_idx = _counter_atomic.fetch_add[
-                            ordering=Ordering.RELAXED
-                        ](
+                        slot_idx = _counter_atomic.fetch_add[ordering=.relaxed](
                             expert_reserved_counter.unsafe_offset(
                                 counter_offset
                             ),
@@ -4629,7 +4621,7 @@ struct EPDispatchKernel[
                         and my_p2p_world != dst_p2p_world
                     ):
                         var slot_idx = _counter_atomic.fetch_add[
-                            ordering=Ordering.RELAXED
+                            ordering=.relaxed
                         ](
                             expert_reserved_counter.unsafe_offset(
                                 counter_offset
@@ -4655,9 +4647,7 @@ struct EPDispatchKernel[
                             dst_rank,
                         )
 
-                        _ = _counter_atomic.fetch_add[
-                            ordering=Ordering.RELEASE
-                        ](
+                        _ = _counter_atomic.fetch_add[ordering=.release](
                             expert_finished_counter.unsafe_offset(
                                 counter_offset
                             ),
@@ -4812,7 +4802,7 @@ struct EPDispatchKernel[
             var slot = Int32(0)
             if lane < Self.top_k:
                 target_expert = rebind[Int32](topk_ids[token_idx, lane])
-                slot = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
+                slot = _counter_atomic.fetch_add[ordering=.relaxed](
                     expert_reserved_counter.unsafe_offset(
                         counter_of(target_expert)
                     ),
@@ -4938,7 +4928,7 @@ struct EPDispatchKernel[
             syncwarp()
             _publish_peer_stores()
             if lane < Self.top_k:
-                _ = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
+                _ = _counter_atomic.fetch_add[ordering=.relaxed](
                     expert_finished_counter.unsafe_offset(
                         counter_of(target_expert)
                     ),
@@ -5191,7 +5181,7 @@ struct EPDispatchKernel[
                 Self.cleanup_counter_offset,
                 Int32(n_active_offset_sms),
             )
-            _counter_atomic.store[ordering=Ordering.RELEASE](
+            _counter_atomic.store[ordering=.release](
                 atomic_counter.unsafe_offset(Self.ready_flag_offset),
                 Int32(EP_DATA_READY_FLAG),
             )
@@ -5387,9 +5377,7 @@ struct EPDispatchKernel[
             """Fetch the start of the next tile for `expert`. Should be called
             by a single thread.
             """
-            return Atomic[scope=DEVICE_SCOPE].fetch_add[
-                ordering=Ordering.ACQUIRE
-            ](
+            return Atomic[scope=DEVICE_SCOPE].fetch_add[ordering=.acquire](
                 atomic_counter.unsafe_offset(
                     Self.work_counter_offset
                 ).unsafe_offset(expert),
@@ -5615,7 +5603,7 @@ struct EPDispatchKernel[
                     var m_hi = ufloordiv(tile_end - 1, l1_release_token_block)
                     for _m in range(m_lo, m_hi + 1):
                         _ = Atomic[UInt32, scope=DEVICE_SCOPE].fetch_add[
-                            ordering=Ordering.RELEASE
+                            ordering=.release
                         ](
                             l1_arrival.unsafe_offset(
                                 (pool_base + _m) * l1_release_atomic_pad
@@ -5656,9 +5644,7 @@ struct EPDispatchKernel[
 
         # Cleanup: the last SM to finish resets the flag.
         if warp_id() - comm_warp_base == 0 and tid == 0:
-            var count = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
-            ](
+            var count = Atomic[scope=DEVICE_SCOPE].fetch_add[ordering=.relaxed](
                 atomic_counter.unsafe_offset(Self.cleanup_counter_offset),
                 Int32(-1),
             )
@@ -5716,7 +5702,7 @@ struct EPDispatchKernel[
 
             # Signal that this SM has started; the last one resets both counters.
             var started = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
+                ordering=.relaxed
             ](fused_se_counter.unsafe_offset(1), 1)
             if started == Int32(n_sms_for_shared) - 1:
                 fused_se_counter.unsafe_store(Int32(0))
@@ -6380,7 +6366,7 @@ struct EPCombineKernel[
                             var pr = Int(pend[i])
                             var cn = Int(smem_count[pr])
                             var prev = _counter_atomic.fetch_add[
-                                ordering=Ordering.RELAXED
+                                ordering=.relaxed
                             ](
                                 atomic_counter.unsafe_offset(
                                     Self.pair_done_offset
@@ -6389,7 +6375,7 @@ struct EPCombineKernel[
                             )
                             if Int(prev) + 1 == max(cn, 1):
                                 fence[
-                                    ordering=Ordering.ACQUIRE,
+                                    ordering=.acquire,
                                     scope=DEVICE_SCOPE,
                                 ]()
                                 atomic_counter.unsafe_store(
@@ -6657,9 +6643,7 @@ struct EPCombineKernel[
                                 )
                             var spins = 0
                             while (
-                                Atomic[UInt32].load[ordering=Ordering.ACQUIRE](
-                                    done
-                                )
+                                Atomic[UInt32].load[ordering=.acquire](done)
                                 < target
                             ):
                                 spins += 1
@@ -6840,7 +6824,7 @@ struct EPCombineKernel[
         ]()
         _scoped_barrier[Self.num_threads, comm_barrier_id]()
         if tid == 0:
-            var prev_b = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
+            var prev_b = _counter_atomic.fetch_add[ordering=.relaxed](
                 atomic_counter.unsafe_offset(Self.blocks_done_offset), 1
             )
             smem_done[0] = Int32(1) if Int(prev_b) + 1 == n_send_sms else Int32(
@@ -6899,7 +6883,7 @@ struct EPCombineKernel[
         # Once all the tokens have been received, set flags for other SMs to
         # copy the tokens to the output tensor. Seed only the active reduce SMs.
         if thread_idx.x < n_active_reduce_sms:
-            _counter_atomic.store[ordering=Ordering.RELEASE](
+            _counter_atomic.store[ordering=.release](
                 atomic_counter.unsafe_offset(Self.n_wait_sms).unsafe_offset(
                     thread_idx.x
                 ),
@@ -7645,7 +7629,7 @@ def dispatch_kernel[
                     barrier()
                     if thread_idx.x == 0:
                         _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                            ordering=Ordering.RELEASE
+                            ordering=.release
                         ](
                             wait_atomic_counter.unsafe_offset(
                                 dispatch_impl.send_buf_ready_offset
@@ -8035,7 +8019,7 @@ def _p2p_small_finish(
     barrier()
     if thread_idx.x == 0:
         var done = Atomic[UInt32, scope=DEVICE_SCOPE].fetch_add[
-            ordering=Ordering.ACQUIRE_RELEASE
+            ordering=.acquire_release
         ](small_words.unsafe_offset(1), 1)
         if done == UInt32(grid_dim.x - 1):
             small_words.unsafe_offset(1).unsafe_store[volatile=True](0)
@@ -8043,7 +8027,7 @@ def _p2p_small_finish(
                 UInt32(1) if small else UInt32(0)
             )
             small_words.unsafe_store[volatile=True](epoch)
-            fence[ordering=Ordering.RELEASE, scope=DEVICE_SCOPE]()
+            fence[ordering=.release, scope=DEVICE_SCOPE]()
 
 
 @always_inline
@@ -8360,7 +8344,7 @@ def p2p_small_dispatch_kernel[
         group_rows[tid] = 0
     barrier()
     # After the barrier, so it follows every thread's flag poll.
-    fence[ordering=Ordering.ACQUIRE]()
+    fence[ordering=.acquire]()
 
     for j in range(tid, max_entries, num_threads):
         var slot = j // top_k
@@ -8377,7 +8361,7 @@ def p2p_small_dispatch_kernel[
             e = Int32(line[(topk_addr & 15) // 2]) - first_expert
             if e >= 0 and e < Int32(n_local):
                 _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](group_rows.unsafe_offset(Int(e) + shared_offset), 1)
             else:
                 e = -1
@@ -8605,7 +8589,7 @@ def p2p_small_combine_kernel[
             )
             while p.unsafe_load[volatile=True]() != epoch:
                 pass
-        fence[ordering=Ordering.ACQUIRE]()
+        fence[ordering=.acquire]()
 
         var accum = SIMD[.float32, dst_simd_width](0)
         comptime for k in range(top_k):
@@ -8803,7 +8787,7 @@ def p2p_prefill_combine_prep_kernel[
     barrier()
     if tid == 0:
         var done = Atomic[UInt32, scope=DEVICE_SCOPE].fetch_add[
-            ordering=Ordering.ACQUIRE_RELEASE
+            ordering=.acquire_release
         ](small_words.unsafe_offset(5), 1)
         if done == UInt32(grid_dim.x - 1):
             small_words.unsafe_offset(5).unsafe_store[volatile=True](0)
@@ -8813,7 +8797,7 @@ def p2p_prefill_combine_prep_kernel[
                     Int(recv_buf_ptrs[d]) + L.counts + me * 8,
                     (UInt64(epoch) << 32) | UInt64(n_mine),
                 )
-            fence[ordering=Ordering.RELEASE, scope=DEVICE_SCOPE]()
+            fence[ordering=.release, scope=DEVICE_SCOPE]()
 
 
 @__llvm_metadata(
@@ -8934,7 +8918,7 @@ def p2p_prefill_combine_kernel[
         var warp_hi = min(warp_lo + per_warp, total)
         comptime warp_stride = 1
         # The weights landed before the counts this CTA waited for.
-        fence[ordering=Ordering.ACQUIRE]()
+        fence[ordering=.acquire]()
 
         var first = warp_lo
         while first < warp_hi:
@@ -9035,7 +9019,7 @@ def p2p_prefill_combine_kernel[
                 while (flag >> 1) != epoch:
                     _p2p_backoff()
                     flag = p.unsafe_load[volatile=True]()
-            fence[ordering=Ordering.ACQUIRE]()
+            fence[ordering=.acquire]()
             for b in range(TOK_BATCH):
                 var token_idx = first + b * warp_stride
                 if token_idx >= n_tok:
@@ -9360,7 +9344,7 @@ def p2p_prefill_dispatch_count_kernel[
             var e = Int(ids[k]) - first_expert
             if 0 <= e < n_local:
                 _ = Atomic[Int32, scope=DEVICE_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](hist.unsafe_offset(e), 1)
 
 
@@ -9536,7 +9520,7 @@ def p2p_prefill_dispatch_place_kernel[
         total += Int(n_src[s])
     # The count launch saw every flag, so every message has landed; one
     # acquire lets plain loads read them.
-    fence[ordering=Ordering.ACQUIRE]()
+    fence[ordering=.acquire]()
     var msg = msgs.unsafe_offset(Int(warp_id()) * msg_bytes)
     for item in range(
         block_idx.x * n_warps + warp_id(), total, grid_dim.x * n_warps
@@ -9571,9 +9555,7 @@ def p2p_prefill_dispatch_place_kernel[
             if e >= 0 and e < Int32(n_local):
                 row = Int32(offsets[Int(e) + shared_offset]) + Atomic[
                     Int32, scope=DEVICE_SCOPE
-                ].fetch_add[ordering=Ordering.RELAXED](
-                    cursor.unsafe_offset(Int(e)), 1
-                )
+                ].fetch_add[ordering=.relaxed](cursor.unsafe_offset(Int(e)), 1)
                 src_info[Int(row), 0] = Int32(s * max_tokens_per_rank + t)
                 src_info[Int(row), 1] = Int32(lane)
         comptime for k in range(top_k):

@@ -849,12 +849,12 @@ def _ctopk_hist_group[
         comptime if count_all:
             if live:
                 _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](hist.unsafe_offset(Int(ph[j])), UInt32(1))
         else:
             if live and ph[j] >= slo and ph[j] <= shi:
                 _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](hist.unsafe_offset(Int((ph[j] >> sh) & dmask)), UInt32(1))
 
 
@@ -1037,9 +1037,9 @@ def _ctopk_scan[
     comptime if count_all:
         var pads = (items - my_len % items) % items
         if tid == 0 and pads != 0:
-            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
-            ](hist, UInt32(0) - pads)
+            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
+                hist, UInt32(0) - pads
+            )
     var base = tid * items
     var cur = SIMD[bits_dtype, scan_items](0)
     comptime if prefetch:
@@ -1176,7 +1176,7 @@ def _ctopk_scatter_cols[
             var col = gcol + Int32(j)
             if p > t_phi:
                 var pos = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](ctl, UInt32(1))
                 comptime if cand:
                     if root:
@@ -1188,7 +1188,7 @@ def _ctopk_scatter_cols[
                         selbuf[Int(pos)] = col
             elif p >= t_lo:
                 var pos = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](ctl.unsafe_offset(1), UInt32(1))
                 comptime if cand:
                     if pos < UInt32(_ctopk_cand_cap(root)):
@@ -1577,10 +1577,10 @@ def _ctopk_solo_select[
         if whole or c0 < count:
             comptime for i in range(wpl):
                 _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](hbase.unsafe_offset(Int(f[i] & 0xFFFF)), UInt32(1))
                 _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](hbase.unsafe_offset(Int(f[i] >> 16)), UInt32(1))
     barrier()
 
@@ -1627,9 +1627,9 @@ def _ctopk_solo_select[
     var wpre = warp.prefix_sum[exclusive=True](packed)
     var wb = UInt32(0)
     if lane == UInt32(WARP_SIZE - 1):
-        wb = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-            ordering=Ordering.RELAXED
-        ](ctl, wpre + packed)
+        wb = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
+            ctl, wpre + packed
+        )
     var pos = warp.shuffle_idx(wb, UInt32(WARP_SIZE - 1)) + wpre
     var gp = pos >> 16
     var ep = pos & UInt32(0xFFFF)
@@ -1696,9 +1696,9 @@ def _ctopk_solo_select[
             var c = _ctopk_solo_col[in_dtype](tid, count_trailing_zeros(m))
             m &= m - 1
             var p = _ctopk_solo_phi(in_scores, row_base, c)
-            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
-            ](hist.unsafe_offset(Int((p >> UInt32(sh)) & 0xFF)), UInt32(1))
+            _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[ordering=.relaxed](
+                hist.unsafe_offset(Int((p >> UInt32(sh)) & 0xFF)), UInt32(1)
+            )
         barrier()
         _ctopk_find_threshold[256, with_pre=False](
             hist[Int(tid)] if tid < 256 else UInt32(0),
@@ -1723,7 +1723,7 @@ def _ctopk_solo_select[
             ) & 0xFF
             if d > dthr:
                 var p = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](ctl.unsafe_offset(1).unsafe_offset(2 * r), UInt32(1))
                 sink.store(out_base + Int(base + p), c.cast[.int32]())
                 active &= ~(UInt32(1) << bit)
@@ -1731,7 +1731,7 @@ def _ctopk_solo_select[
                 active &= ~(UInt32(1) << bit)
             elif last:
                 var p = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
+                    ordering=.relaxed
                 ](ctl.unsafe_offset(2).unsafe_offset(2 * r), UInt32(1))
                 if p < remain - na:
                     sink.store(out_base + Int(base + na + p), c.cast[.int32]())
@@ -2222,7 +2222,7 @@ def _topk_cluster_impl[
                     var k = cl[2 * (g if g < lc else g + gap) + 1]
                     if k >= slo and k <= shi:
                         _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                            ordering=Ordering.RELAXED
+                            ordering=.relaxed
                         ](
                             hist.unsafe_offset(
                                 Int((k >> UInt32(w_out)) & dmask)
@@ -2257,14 +2257,14 @@ def _topk_cluster_impl[
                 if e[1] > shi:
                     var p = Int(
                         Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                            ordering=Ordering.RELAXED
+                            ordering=.relaxed
                         ](ctl.unsafe_offset(5), UInt32(1))
                     )
                     sink.store(out_base + above0 + p, Int32(e[0]))
                 elif e[1] >= slo:
                     var p = Int(
                         Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
-                            ordering=Ordering.RELAXED
+                            ordering=.relaxed
                         ](ctl.unsafe_offset(6), UInt32(1))
                     )
                     if few_ok and few:

@@ -71,7 +71,7 @@ def test_compile_compare_exchange() raises:
 
 def test_compile_store() raises:
     def my_store_function(mut atm: Atomic[Int32, scope="agent"], v: Int32):
-        Atomic[Int32, scope="agent"].store[ordering=Ordering.RELEASE](
+        Atomic[Int32, scope="agent"].store[ordering=.release](
             Pointer(to=atm._value), v
         )
 
@@ -83,9 +83,7 @@ def test_compile_store() raises:
 
 def test_compile_store_default_scope() raises:
     def my_store_function(mut atm: Atomic[Int64], v: Int64):
-        Atomic[Int64].store[ordering=Ordering.RELEASE](
-            Pointer(to=atm._value), v
-        )
+        Atomic[Int64].store[ordering=.release](Pointer(to=atm._value), v)
 
     var asm = compile_info[my_store_function, emission_kind="llvm"]()
 
@@ -98,7 +96,7 @@ def test_compile_xchg() raises:
     def my_xchg_function(
         mut atm: Atomic[Int32, scope="agent"], v: Int32
     ) -> Int32:
-        return Atomic[Int32, scope="agent"]._xchg[ordering=Ordering.SEQUENTIAL](
+        return Atomic[Int32, scope="agent"]._xchg[ordering=.sequential](
             Pointer(to=atm._value), v
         )
 

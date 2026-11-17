@@ -537,12 +537,12 @@ def _multi_gpu_barrier[
         comptime if need_fence or is_amd_gpu():
             # broadcast the value to all peers that I reached the barrier
             comptime if arrive:
-                Atomic[Scalar[flag_t]].store[ordering=Ordering.RELEASE](
+                Atomic[Scalar[flag_t]].store[ordering=.release](
                     peer_counter_ptr, val
                 )
             comptime if wait:
                 while (
-                    Atomic[Scalar[flag_t]].load[ordering=Ordering.ACQUIRE](
+                    Atomic[Scalar[flag_t]].load[ordering=.acquire](
                         self_counter_ptr
                     )
                     != val
