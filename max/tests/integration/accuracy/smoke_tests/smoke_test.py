@@ -106,6 +106,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "google/gemma-4-26B-A4B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_26b_a4b.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
     "google/gemma-4-31B-it__cascade": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_cascade.yaml",
+    "google/gemma-4-31B-it__device_graph_synthesis_tp2": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_device_graph_synthesis_tp2.yaml",
     "google/gemma-4-31B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_31b.yaml",
     "google/gemma-4-31B-it__rust_tiered_kvconnector": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_rust_tiered_kvconnector.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
