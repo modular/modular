@@ -58,6 +58,8 @@ __all__ = [
     "kda_verify_ring",
     "kda_verify_ring_conv",
     "kda_verify_ring_conv_packed",
+    "kda_verify_ring_kgroup_conv",
+    "kda_verify_ring_kgroup_conv_servable",
 ]
 
 KdaGateMode = Literal["original", "safe"]
@@ -1290,6 +1292,247 @@ def kda_verify_ring(
     return ops.squeeze(results[0].tensor, 0)
 
 
+_KGROUP_CONV_OP = "kda_verify_ring_kgroup_conv"
+_FUSED_HEAD_DIM = 128
+"""Key and value head width the fused verify ops are compiled for."""
+_FUSED_CONV_TAPS = 4
+"""Taps of the short conv the fused verify ops run."""
+
+
+def _check_fused_conv_shapes(
+    op_name: str,
+    conv_dim: Dim,
+    conv_weight: TensorValue,
+    conv_pool: BufferValue,
+    key_head_dim: Dim,
+    value_head_dim: Dim,
+) -> None:
+    """Raises ``ValueError`` unless the conv and the heads fit the fused ops.
+
+    The fused verify ops are compiled for a 4-tap conv over ``conv_dim``
+    channels and 128-wide heads. Only static head widths are checked.
+    """
+    if (
+        conv_weight.shape[0] != conv_dim
+        or conv_weight.shape[1] != _FUSED_CONV_TAPS
+    ):
+        raise ValueError(
+            f"expected conv_weight to be [{conv_dim}, {_FUSED_CONV_TAPS}],"
+            f" was {conv_weight.shape}"
+        )
+    if (
+        conv_pool.shape[1] != conv_dim
+        or conv_pool.shape[2] != _FUSED_CONV_TAPS - 1
+    ):
+        raise ValueError(
+            f"expected conv_pool to be [conv_rows, {conv_dim},"
+            f" {_FUSED_CONV_TAPS - 1}], was {conv_pool.shape}"
+        )
+    if isinstance(key_head_dim, StaticDim) and isinstance(
+        value_head_dim, StaticDim
+    ):
+        pair = (int(key_head_dim), int(value_head_dim))
+        if pair != (_FUSED_HEAD_DIM, _FUSED_HEAD_DIM):
+            raise ValueError(
+                f"{op_name} is compiled for (key_head_dim, value_head_dim)"
+                f" = ({_FUSED_HEAD_DIM}, {_FUSED_HEAD_DIM}), got {pair}"
+            )
+
+
+def kda_verify_ring_kgroup_conv_servable(
+    head_dim: int, gate_mode: KdaGateMode, pool_dtype: DType
+) -> bool:
+    """Returns whether a verify can take :func:`kda_verify_ring_kgroup_conv`.
+
+    The op runs the K-group verify kernel, so it serves that kernel's
+    contract only: NVIDIA, ``K = V = 128``, the ``"safe"`` gate and a
+    float32 pool, in a build that ships the closed-source kernels. Call this
+    while a graph is being built: it reads that graph's kernel library.
+
+    Args:
+        head_dim: Key and value head width.
+        gate_mode: The forget-gate form the layer passes the op.
+        pool_dtype: Dtype of the recurrent state pool.
+
+    Returns:
+        ``True`` when the op accepts this layer's verify.
+    """
+    return (
+        accelerator_api() == "cuda"
+        and head_dim == _FUSED_HEAD_DIM
+        and gate_mode == "safe"
+        and pool_dtype == DType.float32
+        and _KGROUP_CONV_OP in Graph.current._kernel_library
+    )
+
+
+def kda_verify_ring_kgroup_conv(
+    qkv: TensorValue,
+    conv_weight: TensorValue,
+    conv_pool: BufferValue,
+    conv_rows: TensorValue,
+    raw_gate: TensorValue,
+    beta_logits: TensorValue,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    ring: BufferValue,
+    ring_indices: TensorValue,
+    verify_width: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Runs a verify's short conv and its :func:`kda_verify_ring` as one op.
+
+    Computes
+    :func:`~max.nn._graph_ops.state_space.gated_delta_conv1d_verify_fwd`
+    with ``silu`` over the raw conv input, then :func:`kda_verify_ring`
+    with ``kgroup`` over that conv's q, k and v, and returns what the two
+    ops return, bit for bit: the readout, the ring records, the pools and the
+    conv input copy. With drafts it is one launch that keeps the conv output
+    out of memory. Unlike :func:`kda_verify_ring_conv`, which fuses the conv
+    into the ring kernel that ``kgroup`` replaces, it keeps the K-group
+    kernel. At a verify width of zero, and for a batch holding a prompt row,
+    it runs the two ops' own kernels.
+
+    The contract is :func:`kda_verify_ring_kgroup_conv_servable`'s: float32
+    operands and pools, ``K = V = 128``, the ``"safe"`` gate with logit
+    beta, a ``K_FIRST`` pool and a 4-tap conv, with ``qkv`` holding q and k
+    of the key heads and then v of the value heads.
+
+    Args:
+        qkv: ``[total_tokens, conv_dim]`` float32 raw conv input.
+        conv_weight: ``[conv_dim, 4]`` float32 depthwise conv taps.
+        conv_pool: ``[conv_rows, conv_dim, 3]`` conv window pool, committed
+            in place only at a verify width of zero.
+        conv_rows: ``[batch_size]`` uint32 conv pool row per sequence.
+        raw_gate: ``[total_tokens, num_value_heads, key_head_dim]`` float32
+            forget-gate pre-activation, before ``dt_bias`` is added.
+        beta_logits: ``[total_tokens, num_value_heads]`` float32.
+        a_log: ``[num_value_heads]`` float32.
+        dt_bias: ``[num_value_heads, key_head_dim]`` float32.
+        cu_seqlens: ``[batch_size + 1]`` int32 exclusive prefix offsets.
+        state_pool: ``[max_slots, num_value_heads, key_head_dim,
+            value_head_dim]`` float32 live pool.
+        state_indices: ``[batch_size]`` int32 pool slot per sequence.
+        ring: As for :func:`kda_verify_ring`.
+        ring_indices: ``[batch_size]`` ring row per sequence.
+        verify_width: The operand
+            :func:`~max.nn._graph_ops.state_space.verify_width_operand` returns.
+
+    Returns:
+        The readout, ``[total_tokens, num_value_heads, value_head_dim]``
+        float32, and the conv input copy the rollback places the conv windows
+        from, ``[batch_size * (K + 1), conv_dim]`` float32.
+
+    Raises:
+        ValueError: If the dtypes, ranks or extents fall outside the contract.
+    """
+    _check_dtype(
+        DType.float32,
+        qkv=qkv,
+        conv_weight=conv_weight,
+        raw_gate=raw_gate,
+        beta_logits=beta_logits,
+        a_log=a_log,
+        dt_bias=dt_bias,
+        state_pool=state_pool,
+        ring=ring,
+    )
+    _check_dtype(DType.uint32, conv_rows=conv_rows)
+    _check_dtype(
+        DType.int32, cu_seqlens=cu_seqlens, state_indices=state_indices
+    )
+    _check_rank(
+        2,
+        qkv=qkv,
+        conv_weight=conv_weight,
+        beta_logits=beta_logits,
+        dt_bias=dt_bias,
+    )
+    _check_rank(3, conv_pool=conv_pool, raw_gate=raw_gate)
+    _check_rank(4, state_pool=state_pool, ring=ring)
+    _check_rank(
+        1,
+        conv_rows=conv_rows,
+        a_log=a_log,
+        cu_seqlens=cu_seqlens,
+        state_indices=state_indices,
+        ring_indices=ring_indices,
+    )
+    total_tokens, num_value_heads, key_head_dim = raw_gate.shape
+    conv_dim = qkv.shape[1]
+    _check_same_dim(
+        "the token axis",
+        qkv=qkv.shape[0],
+        raw_gate=total_tokens,
+        beta_logits=beta_logits.shape[0],
+    )
+    _check_same_dim(
+        "the value-head axis",
+        raw_gate=num_value_heads,
+        beta_logits=beta_logits.shape[1],
+        a_log=a_log.shape[0],
+        dt_bias=dt_bias.shape[0],
+        state_pool=state_pool.shape[1],
+        ring=ring.shape[1],
+    )
+    # The pool is K_FIRST, so its third axis is the key-head width.
+    _check_same_dim(
+        "the key-head width",
+        raw_gate=key_head_dim,
+        state_pool=state_pool.shape[2],
+    )
+    _check_fused_conv_shapes(
+        _KGROUP_CONV_OP,
+        conv_dim,
+        conv_weight,
+        conv_pool,
+        key_head_dim,
+        state_pool.shape[3],
+    )
+    device = raw_gate.device
+    results = ops.inplace_custom(
+        _KGROUP_CONV_OP,
+        device,
+        [
+            qkv,
+            conv_weight,
+            conv_pool,
+            conv_rows,
+            ops.unsqueeze(raw_gate, 0),
+            ops.unsqueeze(beta_logits, 0),
+            a_log,
+            dt_bias,
+            cu_seqlens,
+            state_pool,
+            state_indices,
+            ring,
+            ring_indices.cast(DType.int32),
+            verify_width,
+        ],
+        [
+            TensorType(
+                DType.float32,
+                [1, total_tokens, num_value_heads, _FUSED_HEAD_DIM],
+                device,
+            ),
+            TensorType(
+                DType.float32,
+                [
+                    Dim(conv_rows.shape[0]) * (Dim(verify_width.shape[0]) + 1),
+                    conv_dim,
+                ],
+                device,
+            ),
+        ],
+    )
+    return (
+        ops.squeeze(results[0].tensor, 0),
+        cast(TensorValue, results[1]),
+    )
+
+
 def _check_verify_ring_conv(
     qkv: TensorValue,
     conv_weight: TensorValue,
@@ -1489,16 +1732,9 @@ def _check_verify_ring_conv(
                 "expected raw_qkv to hold q | k | v thirds of "
                 f"{inner} channels ({3 * inner} total), was {conv_dim}"
             )
-    if conv_weight.shape[0] != conv_dim or conv_weight.shape[1] != 4:
-        raise ValueError(
-            f"expected conv_weight to be [{conv_dim}, 4], was "
-            f"{conv_weight.shape}"
-        )
-    if conv_pool.shape[1] != conv_dim or conv_pool.shape[2] != 3:
-        raise ValueError(
-            f"expected conv_pool to be [conv_rows, {conv_dim}, 3], was "
-            f"{conv_pool.shape}"
-        )
+    _check_fused_conv_shapes(
+        op_name, conv_dim, conv_weight, conv_pool, key_head_dim, value_head_dim
+    )
     if (
         isinstance(cu_seqlens.shape[0], StaticDim)
         and isinstance(batch_size, StaticDim)
@@ -1539,15 +1775,6 @@ def _check_verify_ring_conv(
             f"expected state_pool to have trailing axes {expected} for "
             f"state_layout={state_layout!r}, was {pool_axes}"
         )
-    if isinstance(key_head_dim, StaticDim) and isinstance(
-        value_head_dim, StaticDim
-    ):
-        pair = (int(key_head_dim), int(value_head_dim))
-        if pair != (128, 128):
-            raise ValueError(
-                f"{op_name} is compiled for (key_head_dim, value_head_dim)"
-                f" = (128, 128), got {pair}"
-            )
     return conv_dim
 
 

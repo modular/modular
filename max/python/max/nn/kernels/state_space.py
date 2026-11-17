@@ -35,11 +35,15 @@ from max.nn._graph_ops.state_space import (
     kda_chunk_is_registered,
     kda_chunk_rows_servable,
     kda_chunk_supports_head_dims,
+    kda_verify_ring_kgroup_conv_servable,
 )
 from max.nn._graph_ops.state_space import kda_chunk_rows as _kda_chunk_rows
 from max.nn._graph_ops.state_space import kda_decode as _kda_decode
 from max.nn._graph_ops.state_space import kda_state_fold as _kda_state_fold
 from max.nn._graph_ops.state_space import kda_verify_ring as _kda_verify_ring
+from max.nn._graph_ops.state_space import (
+    kda_verify_ring_kgroup_conv as _kda_verify_ring_kgroup_conv,
+)
 
 gated_delta_conv1d_fwd = F.functional(_gated_delta_conv1d_fwd)
 gated_delta_conv1d_verify_fwd = F.functional(_gated_delta_conv1d_verify_fwd)
@@ -52,6 +56,7 @@ kda_chunk_rows = F.functional(_kda_chunk_rows)
 kda_decode = F.functional(_kda_decode)
 kda_state_fold = F.functional(_kda_state_fold)
 kda_verify_ring = F.functional(_kda_verify_ring)
+kda_verify_ring_kgroup_conv = F.functional(_kda_verify_ring_kgroup_conv)
 
 
 __all__ = [
@@ -67,4 +72,6 @@ __all__ = [
     "kda_decode",
     "kda_state_fold",
     "kda_verify_ring",
+    "kda_verify_ring_kgroup_conv",
+    "kda_verify_ring_kgroup_conv_servable",
 ]

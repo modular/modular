@@ -55,6 +55,6 @@ class KdaReplayInputs(NamedTuple):
 
     qkv_window: Tensor | None = None
     """``[batch_size * (K + 1), conv_dim]`` copy of each row the verify
-    window holds, one slot per row, that a verify's conv kernel writes when
-    there are drafts, or ``None`` outside a verify. The rollback's fold places
-    each conv window from it."""
+    window holds, one slot per row, that the kernel running a verify's conv
+    writes when there are drafts, or ``None`` outside a verify. The
+    rollback's fold places each conv window from it."""

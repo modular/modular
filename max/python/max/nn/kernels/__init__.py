@@ -120,6 +120,8 @@ from .state_space import (
     kda_decode,
     kda_state_fold,
     kda_verify_ring,
+    kda_verify_ring_kgroup_conv,
+    kda_verify_ring_kgroup_conv_servable,
 )
 from .vision import spatial_merge
 
@@ -163,6 +165,8 @@ __all__ = [
     "kda_decode",
     "kda_state_fold",
     "kda_verify_ring",
+    "kda_verify_ring_kgroup_conv",
+    "kda_verify_ring_kgroup_conv_servable",
     "kv_cache_pack_owned_rows",
     "kv_cache_row_bytes",
     "kv_cache_unpack_prefix_rows",

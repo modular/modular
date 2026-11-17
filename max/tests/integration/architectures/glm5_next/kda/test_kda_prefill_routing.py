@@ -272,9 +272,16 @@ def test_gfx950_bf16_pool_stays_sequential(
     _assert_sequential(_core_mlir(pool_dtype=DType.bfloat16))
 
 
+def _ops(mlir: str, symbol: str) -> int:
+    return len(re.findall(rf'symbol\s*=\s*"{re.escape(symbol)}"', mlir))
+
+
 @pytest.mark.parametrize(
-    ("api", "architecture", "output_dtype", "computebound"),
-    [("hip", "gfx950", "bf16", False), ("cuda", "sm_100a", "f32", True)],
+    ("api", "architecture", "output_dtype", "computebound", "ring"),
+    [
+        ("hip", "gfx950", "bf16", False, "kda_verify_ring"),
+        ("cuda", "sm_100a", "f32", True, "kda_verify_ring_kgroup_conv"),
+    ],
 )
 def test_verify_keeps_drafts_on_the_ring(
     monkeypatch: pytest.MonkeyPatch,
@@ -282,20 +289,66 @@ def test_verify_keeps_drafts_on_the_ring(
     architecture: str,
     output_dtype: str,
     computebound: bool,
+    ring: str,
 ) -> None:
     """A batch with drafts records into the ring the rollback folds.
 
     Only a draft-free prefill, which has nothing to roll back, takes
     ``kda_chunk``, behind the same conditional as the forward's, with the
-    forward's chunk launch on either vendor. The ring asks for the K-group
-    kernel, which the op runs only on NVIDIA.
+    forward's chunk launch on either vendor. On NVIDIA the ring is the
+    K-group kernel with the short conv in it.
     """
     _patch_accelerator(monkeypatch, api, architecture)
     mlir = _core_mlir(verify=True)
-    _assert_routed(mlir, "bf16", output_dtype, fallback="kda_verify_ring")
+    _assert_routed(mlir, "bf16", output_dtype, fallback=f'"{ring}"')
+    assert _ops(mlir, ring) == 1
     assert ("use_computebound = true" in mlir) == computebound
-    assert "kgroup = true" in mlir
     assert "kda_decode" not in mlir
+
+
+def test_gfx950_verify_asks_for_the_kgroup_ring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The flag the op ignores off NVIDIA, so both vendors trace one call."""
+    _patch_accelerator(monkeypatch, "hip", "gfx950")
+    mlir = _core_mlir(verify=True)
+    assert "kgroup = true" in mlir
+    assert _ops(mlir, "kda_verify_ring_kgroup_conv") == 0
+
+
+@pytest.mark.parametrize("architecture", ["sm_100a", "sm_90a"])
+def test_nvidia_verify_runs_the_conv_in_the_ring(
+    monkeypatch: pytest.MonkeyPatch, architecture: str
+) -> None:
+    """With drafts, the conv runs in the ring op, so the ring branch has
+    neither a conv op nor the conv output's bf16 cast; the conv op is the
+    draft-free prefill's, inside the chunk branch where ``kda_chunk`` is
+    built."""
+    _patch_accelerator(monkeypatch, "cuda", architecture)
+    mlir = _core_mlir(verify=True)
+    chunked = architecture == "sm_100a"
+    assert _ops(mlir, "kda_verify_ring_kgroup_conv") == 1
+    assert _ops(mlir, "kda_verify_ring") == 0
+    assert _ops(mlir, "gated_delta_conv1d_verify_fwd") == int(chunked)
+    assert ("mo.if" in mlir) == chunked
+
+
+def test_nvidia_verify_without_the_conv_op_keeps_the_conv_launch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A build without the K-group conv op keeps the conv and the ring
+    apart."""
+    _patch_accelerator(monkeypatch, "cuda", "sm_100a")
+    monkeypatch.setattr(
+        kda,
+        "kda_verify_ring_kgroup_conv_servable",
+        lambda head_dim, gate_mode, pool_dtype: False,
+    )
+    mlir = _core_mlir(verify=True)
+    assert _ops(mlir, "kda_verify_ring_kgroup_conv") == 0
+    assert _ops(mlir, "kda_verify_ring") == 1
+    assert _ops(mlir, "gated_delta_conv1d_verify_fwd") == 1
+    assert "kgroup = true" in mlir
 
 
 def _legacy_predicate(
