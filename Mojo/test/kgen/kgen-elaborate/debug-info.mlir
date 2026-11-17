@@ -132,3 +132,37 @@ kgen.generator @"mangled::original_name"() {
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #export_loc = loc(fused<#original_sp>["export.mlir":1:1])
+
+// -----
+
+// A generator named only by a debug attribute is not an operation dependency,
+// so the node completes before the value exists. Concretizing the location
+// then elaborates it on demand. Only the non-parametric elaborator emits the
+// callee.
+
+#file = #debuginfo.file<"pending.mlir" in "">
+
+kgen.generator @computeWidth() -> index {
+  %0 = kgen.param.constant = <7>
+  hlcf.return %0 : index
+}
+
+#applied = #kgen.param.expr<apply,
+    #kgen.gen<#kgen.func.symbol<@computeWidth>> : !lit.generator<() -> index>> : index
+
+#pendingSp = #debuginfo.subprogram<file = #file, sourceName = <"usesPendingParam">>
+    : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!kgen.simd<#applied, index>>): DW_CC_normal>
+
+// CHECK-LABEL: kgen.func @usesPendingParam() -> index
+kgen.generator @usesPendingParam() -> index {
+  // CHECK: kgen.param.constant = <1>
+  %0 = kgen.param.constant = <1> loc(fused<#pendingSp>["pending.mlir":3:3])
+  hlcf.return %0 : index loc(fused<#pendingSp>["pending.mlir":3:3])
+} loc(fused<#pendingSp>["pending.mlir":2:3])
+
+kgen.generator export @pendingTop() {
+  %0 = kgen.call @usesPendingParam() : () -> index
+  hlcf.return
+}
+
+// CHECK: subroutine<() -> (!kgen.simd<7, index>)

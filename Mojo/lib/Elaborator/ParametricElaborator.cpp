@@ -436,12 +436,17 @@ ParametricElaborator::getConcreteFunction(PImplNode *parent, Location loc,
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
   if (!gen) {
-    return concreteNodes.read([name](auto &insts) {
+    FuncOp func = concreteNodes.read([name](auto &insts) {
       auto iter = insts.find(name);
       if (iter == insts.end())
         return FuncOp();
       return cast<FuncOp>(iter->second->inst);
     });
+    if (!func) {
+      return ErrorTree(loc, "no concrete function for symbol '@" +
+                                name.getValue().str() + "'");
+    }
+    return func;
   }
 
   auto vals =

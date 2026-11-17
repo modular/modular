@@ -25,6 +25,8 @@
 #include "mlir/Support/IndentedOstream.h"
 
 namespace M::KGEN {
+
+class ElaborationState;
 class Elaborator;
 class FuncOp;
 struct ImplNode;
@@ -184,8 +186,9 @@ struct ImplNode : public ImplNodeBase {
     /// access operations, modify bindings and worklists, etc. It is imperative
     /// that the callback closure does not capture any operation handles but
     /// that it accessing them through the node. This is because nodes can be
-    /// cloned and the operations get remapped.
-    std::function<LogicalResult(ImplNode *)> onComplete;
+    /// cloned and the operations get remapped. Returning `skipNode` leaves the
+    /// work item in place, so the resume runs the callback again.
+    std::function<ElaborationState(ImplNode *)> onComplete;
 
     /// The evaluator to use. We need one per work item because each represents
     /// a distinct parameter scope.
