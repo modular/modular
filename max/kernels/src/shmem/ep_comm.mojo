@@ -1212,6 +1212,14 @@ trait TokenFormat(Deinitable, DevicePassable):
     # the warp-per-token dispatch may take it.
     comptime one_warp_copy: Bool
 
+    # Whether `copy_token_to_output_rows` writes this format's rows, so the
+    # all-reduce mode's local dispatch (`shmem.ep_local`) may take it.
+    comptime local_rows: Bool = False
+
+    # Rows that `pad_expert_offsets` rounds each expert group up to, which the
+    # local dispatch rounds its groups up to as well.
+    comptime expert_m_padding: Int = 1
+
     @inline(.always)
     @staticmethod
     def token_size() -> Int:
@@ -1297,6 +1305,43 @@ trait TokenFormat(Deinitable, DevicePassable):
         comptime assert src_type != src_type, (
             "this token format has no one-warp copy, so it cannot take the"
             " warp-per-token dispatch"
+        )
+
+    @always_inline
+    def copy_token_to_output_rows[
+        src_type: DType,
+        width: Int,
+        per_thread: Int,
+        n_rows: Int,
+        //,
+        block_size: Int,
+    ](
+        self,
+        token: Array[SIMD[src_type, width], per_thread],
+        rows: Array[Int, n_rows],
+    ) -> None:
+        """Writes one token straight to its output rows.
+
+        The rows get the bytes and scales that copying the token's message
+        to them would give. The all-reduce mode's local dispatch calls it
+        only when `local_rows`, from every thread of a CTA at once: thread
+        `t` holds the token's vectors `t + v * block_size`, and those past
+        the token's end are skipped.
+
+        Parameters:
+            src_type: The type of the token's elements (inferred).
+            width: The elements of each vector (inferred).
+            per_thread: The vectors each thread holds (inferred).
+            n_rows: The entries of `rows` (inferred).
+            block_size: The threads of the CTA.
+
+        Args:
+            token: This thread's vectors of the token.
+            rows: The output rows to write; negative entries are skipped.
+        """
+        comptime assert src_type != src_type, (
+            "this token format has no local rows, so it cannot take the"
+            " all-reduce mode's local dispatch"
         )
 
     @always_inline
@@ -1431,6 +1476,7 @@ struct BF16TokenFormat[
     comptime dispatch_wait_tile_shape = (128, 1)
     comptime dispatch_smem_size = 0
     comptime one_warp_copy = False
+    comptime local_rows = True
 
     comptime TensorType = TileTensor[
         .bfloat16, Self.output_layout, MutUntrackedOrigin
@@ -1505,6 +1551,31 @@ struct BF16TokenFormat[
             thread_idx.x - thread_base,
         )
 
+    @always_inline
+    def copy_token_to_output_rows[
+        src_type: DType,
+        width: Int,
+        per_thread: Int,
+        n_rows: Int,
+        //,
+        block_size: Int,
+    ](
+        self,
+        token: Array[SIMD[src_type, width], per_thread],
+        rows: Array[Int, n_rows],
+    ) -> None:
+        comptime assert src_type == .bfloat16, "the rows hold the token as is"
+        comptime n_vecs = Self.hid_dim // width
+        comptime for k in range(n_rows):
+            if rows[k] >= 0:
+                comptime for v in range(per_thread):
+                    var i = thread_idx.x + v * block_size
+                    if i < n_vecs:
+                        self.output_tokens.store(
+                            (rows[k], i * width),
+                            rebind[SIMD[DType.bfloat16, width]](token[v]),
+                        )
+
     @inline(.always)
     def copy_msg_to_output_tensor[
         buf_addr_space: AddressSpace = .GENERIC,
@@ -1533,6 +1604,10 @@ struct BF16TokenFormat[
                     )
                 ),
             )
+
+
+comptime EP_BLOCKWISE_FP8_GROUP = 128
+"""Elements sharing one scale in `BlockwiseFP8TokenFormat`."""
 
 
 struct BlockwiseFP8TokenFormat[
@@ -1571,6 +1646,7 @@ struct BlockwiseFP8TokenFormat[
     comptime dispatch_wait_tile_shape = (128, 1)
     comptime dispatch_smem_size = 0
     comptime one_warp_copy = False
+    comptime local_rows = True
 
     comptime TensorType = TileTensor[
         Self.fp8_dtype, Self.output_layout, MutUntrackedOrigin
@@ -1581,7 +1657,7 @@ struct BlockwiseFP8TokenFormat[
     var output_tokens: Self.TensorType
     var output_scales: Self.ScalesTensorType
 
-    comptime group_size = 128
+    comptime group_size = EP_BLOCKWISE_FP8_GROUP
 
     comptime device_type: AnyType = Self
 
@@ -1690,6 +1766,31 @@ struct BlockwiseFP8TokenFormat[
         if tid < n_groups:
             row_offsets[tid + 1] = aligned_exp_end
 
+    @always_inline
+    @staticmethod
+    def _quantize_vec[
+        src_type: DType, width: Int, //, group_lanes: Int
+    ](vec: SIMD[src_type, width]) -> Tuple[
+        SIMD[Self.fp8_dtype, width], Scalar[Self.scales_dtype]
+    ]:
+        """Returns one vector of a token in FP8, and its group's scale.
+
+        The `group_lanes` adjacent lanes that hold a group's vectors call it
+        together: the scale is their shared maximum.
+        """
+        comptime fp8_max_t = Scalar[Self.fp8_dtype].MAX_FINITE.cast[
+            Self.scales_dtype
+        ]()
+        var loaded_vec = vec.cast[Self.scales_dtype]()
+        var thread_max = abs(loaded_vec).reduce_max()
+        var group_max = warp.lane_group_max[group_lanes](thread_max)
+
+        # 1e-4 is taken from DeepEP.
+        var scale_factor = max(group_max, 1e-4) / fp8_max_t
+        var output_vec = loaded_vec / scale_factor
+        output_vec = output_vec.clamp(-fp8_max_t, fp8_max_t)
+        return (output_vec.cast[Self.fp8_dtype](), scale_factor)
+
     @inline(.always)
     @staticmethod
     def copy_token_to_send_buf[
@@ -1705,11 +1806,6 @@ struct BlockwiseFP8TokenFormat[
         comptime src_width = simd_width_of[src_type]()
         comptime byte_width = src_width * size_of[Self.fp8_dtype]()
 
-        comptime fp8_max = Scalar[Self.fp8_dtype].MAX_FINITE
-        comptime fp8_max_t = Scalar[Self.fp8_dtype].MAX_FINITE.cast[
-            Self.scales_dtype
-        ]()
-
         comptime n_threads_per_group = Self.group_size // src_width
         comptime assert (
             WARP_SIZE % n_threads_per_group == 0
@@ -1718,20 +1814,14 @@ struct BlockwiseFP8TokenFormat[
         for i in range(
             thread_idx.x - thread_base, Self.hid_dim // src_width, block_size
         ):
-            var loaded_vec = src_p.unsafe_load[
-                width=src_width, alignment=Self.alignment, invariant=True
-            ](i * src_width).cast[Self.scales_dtype]()
-            var thread_max = abs(loaded_vec).reduce_max()
-            var group_max = warp.lane_group_max[n_threads_per_group](thread_max)
-
-            # 1e-4 is taken from DeepEP.
-            var scale_factor = max(group_max, 1e-4) / fp8_max_t
-            var output_vec = loaded_vec / scale_factor
-            output_vec = output_vec.clamp(-fp8_max_t, fp8_max_t)
+            var quant, scale_factor = Self._quantize_vec[n_threads_per_group](
+                src_p.unsafe_load[
+                    width=src_width, alignment=Self.alignment, invariant=True
+                ](i * src_width)
+            )
 
             buf_p.unsafe_store[alignment=byte_width](
-                i * byte_width,
-                bitcast[.uint8, byte_width](output_vec.cast[Self.fp8_dtype]()),
+                i * byte_width, bitcast[.uint8, byte_width](quant)
             )
 
             # The first thread in each group stores the scale factor.
@@ -1742,6 +1832,56 @@ struct BlockwiseFP8TokenFormat[
                     Self.scales_offset() + scale_idx * scale_bytes,
                     bitcast[.uint8, scale_bytes](scale_factor),
                 )
+
+    @always_inline
+    def copy_token_to_output_rows[
+        src_type: DType,
+        width: Int,
+        per_thread: Int,
+        n_rows: Int,
+        //,
+        block_size: Int,
+    ](
+        self,
+        token: Array[SIMD[src_type, width], per_thread],
+        rows: Array[Int, n_rows],
+    ) -> None:
+        comptime n_vecs = Self.hid_dim // width
+        comptime group_lanes = Self.group_size // width
+        comptime assert (
+            WARP_SIZE % group_lanes == 0
+        ), "Each warp must process a multiple of quantization groups"
+        comptime assert (
+            n_vecs % WARP_SIZE == 0 and block_size % WARP_SIZE == 0
+        ), (
+            "each warp must quantize whole groups at once, for the scale's"
+            " lane reduction"
+        )
+        # Every vector is quantized before any is stored, so the store loop
+        # keeps one row's addresses live at a time.
+        var quants = Array[SIMD[Self.fp8_dtype, width], per_thread](fill=0)
+        var scales = Array[Scalar[Self.scales_dtype], per_thread](fill=0)
+        comptime for v in range(per_thread):
+            if thread_idx.x + v * block_size < n_vecs:
+                var quant, scale_factor = Self._quantize_vec[group_lanes](
+                    token[v]
+                )
+                quants[v] = quant
+                scales[v] = scale_factor
+        var stores_scale = lane_id() % group_lanes == 0
+        comptime for k in range(n_rows):
+            if rows[k] >= 0:
+                comptime for v in range(per_thread):
+                    var i = thread_idx.x + v * block_size
+                    if i < n_vecs:
+                        self.output_tokens.store(
+                            (rows[k], i * width), quants[v]
+                        )
+                        if stores_scale:
+                            self.output_scales.store(
+                                (i * width // Self.group_size, rows[k]),
+                                scales[v],
+                            )
 
     @inline(.always)
     def copy_msg_to_output_tensor[
@@ -7189,6 +7329,33 @@ def combine_wait_kernel[
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
+def ep_shared_expert_rows[
+    world_size: Int
+](n_tokens: UInt32, rank: UInt32) -> Tuple[UInt32, UInt32]:
+    """Returns a device's share of the shared expert's rows in all-reduce mode.
+
+    The all-reduce mode splits a step's tokens among its devices in
+    contiguous ranges, and each device runs the shared expert on its own
+    range. The first `n_tokens % world_size` ranges hold one token more than
+    the others.
+
+    Parameters:
+        world_size: Devices of the all-reduce.
+
+    Args:
+        n_tokens: Tokens in the step.
+        rank: The device's rank in the all-reduce.
+
+    Returns:
+        The `(begin, count)` of the device's tokens.
+    """
+    comptime world = UInt32(world_size)
+    var count = (n_tokens + world - rank - 1) // world
+    var begin = rank * (n_tokens // world) + min(rank, n_tokens % world)
+    return (begin, count)
+
+
 # Below this many tokens a rank the warp-per-token dispatch keeps the per-CTA
 # send: with a few tokens per CTA there is little queue to drain, and a
 # 1,024-thread quantize has a shorter latency than one warp's. Set for
@@ -7413,16 +7580,14 @@ def dispatch_kernel[
         token_recv=token_recv,
     ]
 
-    comptime _allreduce_world_size = UInt32(allreduce_world_size)
-
     var num_tokens = UInt32(input_tokens.dim(0))
     var shared_expert_token_count = UInt32(0)
     comptime if fused_shared_expert:
         shared_expert_token_count = num_tokens
         comptime if skip_a2a:
-            shared_expert_token_count = (
-                num_tokens + _allreduce_world_size - UInt32(my_rank) - 1
-            ) // _allreduce_world_size
+            shared_expert_token_count = ep_shared_expert_rows[
+                allreduce_world_size
+            ](num_tokens, UInt32(my_rank))[1]
 
     # The P2P small path ran this step already (`p2p_small_dispatch_kernel`).
     comptime if p2p_small_counter_words > 0:
@@ -7509,12 +7674,9 @@ def dispatch_kernel[
             comptime if fused_shared_expert:
                 var _send_buf_p = send_buf_p
                 comptime if skip_a2a:
-                    var rank_offset = UInt32(my_rank) * (
-                        num_tokens // _allreduce_world_size
-                    ) + min(
-                        UInt32(my_rank),
-                        num_tokens % _allreduce_world_size,
-                    )
+                    var rank_offset = ep_shared_expert_rows[
+                        allreduce_world_size
+                    ](num_tokens, UInt32(my_rank))[0]
                     _send_buf_p = _send_buf_p.unsafe_offset(
                         rank_offset * UInt32(token_fmt_type.msg_size())
                     )
@@ -7668,7 +7830,6 @@ def combine_kernel[
             "has_router_weights. Cannot add shared expert "
             "output to non-reduced routed expert outputs."
         )
-    comptime _allreduce_world_size = UInt32(allreduce_world_size)
 
     comptime combine_impl = EPCombineKernel[
         num_threads,
@@ -7741,18 +7902,10 @@ def combine_kernel[
                     var shared_expert_val = SIMD[dtype, width]()
 
                     comptime if combine_impl.skip_a2a:
-                        var n_tokens = UInt32(num_tokens)
-                        var shared_expert_token_count = (
-                            n_tokens
-                            + _allreduce_world_size
-                            - UInt32(my_rank)
-                            - 1
-                        ) // _allreduce_world_size
-                        var rank_start = UInt32(my_rank) * (
-                            n_tokens // _allreduce_world_size
-                        ) + min(
-                            UInt32(my_rank),
-                            n_tokens % _allreduce_world_size,
+                        var rank_start, shared_expert_token_count = (
+                            ep_shared_expert_rows[allreduce_world_size](
+                                UInt32(num_tokens), UInt32(my_rank)
+                            )
                         )
 
                         if (

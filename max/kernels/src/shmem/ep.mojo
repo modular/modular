@@ -57,6 +57,7 @@ from shmem.ep_comm import (
     RouterWeightsFn,
     InputScalesFn,
 )
+from shmem.ep_local import ep_local_combine, ep_local_dispatch
 
 
 @inline(.always)
@@ -247,6 +248,41 @@ def ep_p2p_small_on[
         and hidden_size % EP_P2P_SMALL_HIDDEN_MULTIPLE == 0
         and EPLocalSyncCounters[n_experts].has_p2p_small_words(counter_words)
     )
+
+
+@always_inline
+def ep_local_on[
+    skip_a2a: Bool,
+    is_nvidia: Bool,
+    *,
+    local_rows: Bool = True,
+    has_router_weights: Bool = True,
+]() -> Bool:
+    """Returns whether a fused dispatch or combine runs within one device.
+
+    In the all-reduce mode every device holds every row, so
+    `ep_local_dispatch` and `ep_local_combine` replace the protocol kernels
+    and their cross-CTA handoffs, with the same results bit for bit. Either
+    one pairs with the other's protocol kernels, so the dispatch and the
+    combine decide on their own.
+
+    Parameters:
+        skip_a2a: Whether each device routes within itself.
+        is_nvidia: Whether the target is an NVIDIA GPU.
+        local_rows: Whether the dispatch's token format writes local rows
+            (`TokenFormat.local_rows`). Defaults to True, for the combine,
+            which reads the rows of any format.
+        has_router_weights: Whether the combine sums the routed rows by
+            weight, which the local combine always does. Defaults to True,
+            for the dispatch.
+
+    Returns:
+        Whether `ep_local_dispatch` or `ep_local_combine` runs.
+    """
+    # TODO(KERN-4016): AMD GPUs keep the protocol kernels until a run of
+    # `test_ep_local_allreduce` on AMD shows the local kernels match them bit
+    # for bit there.
+    return skip_a2a and is_nvidia and local_rows and has_router_weights
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1127,6 +1163,127 @@ def ep_fused_dispatch_kernel_api[
         )
         return
 
+    @inline(.always)
+    def description_fn() {imm} -> String:
+        # fmt: off
+        return String(
+            "token_fmt_type=", token_fmt_type.get_type_name(),
+            ";n_experts=", n_experts,
+            ";max_token_per_rank=", max_token_per_rank,
+            ";n_gpus_per_node=", n_gpus_per_node,
+            ";n_nodes=", n_nodes,
+            ";my_rank=", my_rank,
+        )
+        # fmt: on
+
+    comptime if ep_local_on[
+        skip_a2a,
+        gpu_ctx.target.is_nvidia_gpu(),
+        local_rows=token_fmt_type.local_rows,
+    ]():
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+            "ep.dispatch",
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
+            task_id=get_safe_task_id(context),
+        ):
+            comptime assert n_gpus_per_node * n_nodes == 1, (
+                "the all-reduce mode gives each device a one-rank view, so"
+                " `n_experts` counts its own experts"
+            )
+            ep_local_dispatch[
+                n_experts,
+                fused_shared_expert,
+                allreduce_world_size,
+                ExpertLoadT=ExpertLoadT,
+            ](
+                token_handler,
+                row_offsets,
+                expert_ids,
+                src_info,
+                atomic_counters,
+                input_tokens,
+                topk_ids,
+                send_ptrs,
+                context,
+                expert_load,
+            )
+        return
+
+    _ep_fused_dispatch_protocol[
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        use_shmem,
+        allreduce_world_size,
+        has_input_scales,
+        dispatch_warp_min_tokens,
+        p2p_small_counter_words,
+    ](
+        token_handler,
+        row_offsets,
+        expert_ids,
+        src_info,
+        atomic_counters,
+        input_tokens,
+        topk_ids,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        my_rank,
+        input_scales_fn,
+        expert_load,
+    )
+
+
+@inline(.always)
+def _ep_fused_dispatch_protocol[
+    token_fmt_type: TokenFormat,
+    dispatch_dtype: DType,
+    InputScalesFnType: InputScalesFn,
+    ExpertLoadT: ExpertLoadSink,
+    //,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool,
+    skip_a2a: Bool,
+    use_shmem: Bool,
+    allreduce_world_size: Int,
+    has_input_scales: Bool,
+    dispatch_warp_min_tokens: Int,
+    p2p_small_counter_words: Int,
+](
+    token_handler: token_fmt_type,
+    row_offsets: TileTensor[.uint32, ...],
+    expert_ids: TileTensor[.int32, ...],
+    src_info: TileTensor[.int32, ...],
+    atomic_counters: TileTensor[.int32, ...],
+    input_tokens: TileTensor[mut=False, dispatch_dtype, ...],
+    topk_ids: TileTensor[mut=False, .int32, ...],
+    send_ptrs: TileTensor[.uint64, ...],
+    recv_ptrs: TileTensor[.uint64, ...],
+    recv_count_ptrs: TileTensor[.uint64, ...],
+    context: DeviceContext,
+    my_rank: Int32,
+    input_scales_fn: InputScalesFnType,
+    expert_load: ExpertLoadT,
+) raises:
+    """Launches `dispatch_kernel`, the fused dispatch's protocol kernel.
+
+    `ep_fused_dispatch_kernel_api` and `test_ep_local_allreduce` call it.
+    Where `ep_local_on` holds, the API runs `ep_local_dispatch` instead, and
+    the test checks that kernel against this one. `p2p_small_counter_words`
+    is the element count of the counter buffer when the P2P small path is on
+    (`ep_p2p_small_on`), or 0. `my_rank` is the rank of this device. The
+    other parameters and arguments are as in the API.
+    """
+    var gpu_ctx = context
+    var gpu_id = Int(gpu_ctx.device().id)
     comptime hw_info = gpu_ctx.default_device_info
     comptime n_ranks = n_gpus_per_node * n_nodes
 
@@ -2068,6 +2225,122 @@ def ep_fused_combine_kernel_api[
             )
         return
 
+    @inline(.always)
+    def description_fn() {imm} -> String:
+        # fmt: off
+        return String(
+            "combine_dtype=", combine_dtype,
+            ";hidden_size=", hidden_size,
+            ";top_k=", top_k,
+            ";n_experts=", n_experts,
+            ";max_token_per_rank=", max_token_per_rank,
+            ";n_gpus_per_node=", n_gpus_per_node,
+            ";n_nodes=", n_nodes,
+            ";my_rank=", my_rank,
+        )
+        # fmt: on
+
+    comptime if ep_local_on[
+        skip_a2a,
+        gpu_ctx.target.is_nvidia_gpu(),
+        has_router_weights=has_router_weights,
+    ]():
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+            "ep.combine",
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
+            task_id=get_safe_task_id(context),
+        ):
+            comptime assert n_gpus_per_node * n_nodes == 1, (
+                "the all-reduce mode gives each device a one-rank view, so"
+                " `n_experts` counts its own experts"
+            )
+            ep_local_combine[
+                top_k, n_experts, fused_shared_expert, allreduce_world_size
+            ](
+                num_tokens,
+                atomic_counters,
+                input_tokens,
+                src_info,
+                recv_ptrs,
+                context,
+                store_fn,
+                router_weights_fn,
+                topk_ids_p.value(),
+            )
+        return
+
+    _ep_fused_combine_protocol[
+        hidden_size,
+        top_k,
+        n_experts,
+        max_token_per_rank,
+        n_gpus_per_node,
+        n_nodes,
+        fused_shared_expert,
+        skip_a2a,
+        use_shmem,
+        allreduce_world_size,
+        has_router_weights,
+        p2p_small_counter_words,
+    ](
+        num_tokens,
+        atomic_counters,
+        input_tokens,
+        src_info,
+        send_ptrs,
+        recv_ptrs,
+        recv_count_ptrs,
+        context,
+        my_rank,
+        store_fn,
+        router_weights_fn,
+        topk_ids_p,
+    )
+
+
+@inline(.always)
+def _ep_fused_combine_protocol[
+    combine_dtype: DType,
+    StoreFnType: EPCombineStoreFn,
+    RouterWeightsFnType: RouterWeightsFn,
+    //,
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    fused_shared_expert: Bool,
+    skip_a2a: Bool,
+    use_shmem: Bool,
+    allreduce_world_size: Int,
+    has_router_weights: Bool,
+    p2p_small_counter_words: Int,
+](
+    num_tokens: Int,
+    atomic_counters: TileTensor[.int32, ...],
+    input_tokens: TileTensor[mut=False, combine_dtype, ...],
+    src_info: TileTensor[mut=False, .int32, ...],
+    send_ptrs: TileTensor[.uint64, ...],
+    recv_ptrs: TileTensor[.uint64, ...],
+    recv_count_ptrs: TileTensor[.uint64, ...],
+    context: DeviceContext,
+    my_rank: Int32,
+    store_fn: StoreFnType,
+    router_weights_fn: RouterWeightsFnType,
+    topk_ids_p: Optional[ImmPointer[Int32, ImmUntrackedOrigin]],
+) raises:
+    """Launches `combine_kernel`, the fused combine's protocol kernel.
+
+    `ep_fused_combine_kernel_api` and `test_ep_local_allreduce` call it.
+    Where `ep_local_on` holds, the API runs `ep_local_combine` instead, and
+    the test checks that kernel against this one. `p2p_small_counter_words`
+    is the element count of the counter buffer when the P2P small path is on
+    (`ep_p2p_small_on`), or 0. `my_rank` is the rank of this device. The
+    other parameters and arguments are as in the API.
+    """
+    var gpu_ctx = context
+    var gpu_id = Int(gpu_ctx.device().id)
     comptime hw_info = gpu_ctx.default_device_info
     comptime combine_msg_size = hidden_size * size_of[combine_dtype]()
     comptime n_ranks = n_gpus_per_node * n_nodes

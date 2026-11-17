@@ -105,6 +105,13 @@ _TARGET_COMPATIBLE_WITH = {
         "//:b200_gpu": ["//:has_multi_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # The local all-reduce-mode EP kernels serve NVIDIA GPUs, and the test
+    # needs one of them with FP8 conversions.
+    "test_ep_local_allreduce.mojo": select({
+        "//:b200_gpu": ["//:has_gpu"],
+        "//:h100_gpu": ["//:has_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # The P2P small EP path it tests is AMD-only.
     "test_ep_p2p_small_path.mojo": select({
         "//:amd_gpu": ["//:has_multi_gpu"],
