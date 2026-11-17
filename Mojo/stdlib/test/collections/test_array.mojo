@@ -199,6 +199,43 @@ def test_array_fill_with_crosses_batch_boundary() raises:
         assert_equal(arr[i], i + 1)
 
 
+def test_array_fill_with_non_raising_closure_constructs_in_place() raises:
+    var squares = Array[MoveCounter[Int], 3](
+        fill_with=lambda (i: Int) -> MoveCounter[Int]: MoveCounter(i * i)
+    )
+    for i in range(3):
+        assert_equal(squares[i].move_count, 0)
+
+
+def test_array_fill_with_raising_closure() raises:
+    var squares = Array[Int, 3](fill_with=lambda (i: Int) raises -> Int: i * i)
+    for i in range(3):
+        assert_equal(squares[i], i * i)
+
+
+def destroyed_by_fill_with(fail_at: Int) raises -> List[Int]:
+    var destructor_recorder = List[Int]()
+    var ptr = Pointer(to=destructor_recorder).as_imm()
+
+    def fill(i: Int) raises FillError {imm} -> DelRecorder[ptr.origin]:
+        if i == fail_at:
+            raise FillError(i)
+        return DelRecorder(i, ptr)
+
+    try:
+        _ = Array[DelRecorder[ptr.origin], 4](fill_with=fill)
+    except e:
+        assert_equal(e.index, fail_at)
+    return destructor_recorder^
+
+
+def test_array_fill_with_raises_destroys_written_elements() raises:
+    assert_equal(destroyed_by_fill_with(fail_at=0), List[Int]())
+    assert_equal(destroyed_by_fill_with(fail_at=2), [0, 1])
+    assert_equal(destroyed_by_fill_with(fail_at=3), [0, 1, 2])
+    assert_equal(destroyed_by_fill_with(fail_at=4), [0, 1, 2, 3])
+
+
 def test_array_String() raises:
     var arr: Array[String, 3] = ["hi", "hello", "hey"]
 
@@ -565,6 +602,11 @@ def _test_array_iter_bounds[
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
     assert_equal(Optional(0), upper)
+
+
+@fieldwise_init
+struct FillError(Movable):
+    var index: Int
 
 
 struct NonWritable(Copyable):

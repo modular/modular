@@ -460,6 +460,52 @@ struct List[T: AnyType, /](
         self._len = length
         _ = self._storage.storage().unsafe_init_with(fill_with)
 
+    # TODO(MOCO-4470): Merge into the non-raising overload above once a
+    # non-raising closure can be called as `raises E` with `E` bound to
+    # `Never`.
+    # TODO(https://github.com/modular/modular/issues/7637): Drop `Movable` from
+    # the `T` constraint once a raising call can construct its result in
+    # place behind a `Pointer`, and a raising closure can return a
+    # non-`Movable` type (https://github.com/modular/modular/issues/7636).
+    @inline(.always)
+    def __init__[
+        E: AnyType, //
+    ](
+        out self, *, length: Int, fill_with: Some[def(Int) raises E -> Self.T]
+    ) raises E where conforms_to(Self.T, Movable & Deinitable):
+        """Constructs a list by calling `fill_with(i)` for each index `i`,
+        where `fill_with` can raise.
+
+        If `fill_with` raises, the list destroys the elements it already
+        holds, frees its memory, and propagates the error.
+
+        Parameters:
+            E: The type of error that `fill_with` raises.
+
+        Args:
+            length: The requested length of the list.
+            fill_with: A function called with each index in `[0, length)`,
+                whose result is written to that position.
+
+        Raises:
+            E: If `fill_with` raises for any index.
+
+        Examples:
+
+        ```mojo
+        def num(i: Int) raises -> Int:
+            raise "error"
+
+        try:
+            var numbers = List(length=3, fill_with=num)
+        except e:
+            print(e)  # error
+        ```
+        """
+        self = Self(capacity=length)
+        for i in range(length):
+            self.append(fill_with(i))
+
     @inline(.always)
     def __init__(
         out self, var *values: Self.T, __list_literal__: NoneType

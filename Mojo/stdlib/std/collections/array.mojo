@@ -538,6 +538,59 @@ struct Array[T: AnyType, length: Int](
                 )
                 ptr = ptr.unsafe_offset(1)
 
+    # TODO(MOCO-4470): Merge into the non-raising overload above once a
+    # non-raising closure can be called as `raises E` with `E` bound to
+    # `Never`.
+    # TODO(https://github.com/modular/modular/issues/7637): Drop `Movable` from
+    # the `T` constraint once a raising call can construct its result in
+    # place behind a `Pointer`, and a raising closure can return a
+    # non-`Movable` type (https://github.com/modular/modular/issues/7636).
+    @inline(.always)
+    def __init__[
+        E: Movable, //
+    ](
+        out self, *, fill_with: Some[def(Int) raises E -> Self.T]
+    ) raises E where conforms_to(Self.T, Movable & Deinitable):
+        """Constructs an array by calling `fill_with(i)` for each index `i`,
+        where `fill_with` can raise.
+
+        If `fill_with` raises, the array destroys the elements it already
+        holds and propagates the error.
+
+        Parameters:
+            E: The type of error that `fill_with` raises.
+
+        Args:
+            fill_with: A function called with each index in `[0, length)`,
+                whose result is written to that position.
+
+        Raises:
+            E: If `fill_with` raises for any index.
+
+        Examples:
+
+        ```mojo
+        def num(i: Int) raises -> Int:
+            raise "error"
+
+        try:
+            var numbers = Array[Int, 3](fill_with=num)
+        except e:
+            print(e)  # error
+        ```
+        """
+        self = {uninitialized = True}
+        var ptr = self.unsafe_ptr()
+        var initialized = 0
+        try:
+            for i in range(Self.length):
+                ptr.unsafe_offset(i).unsafe_write(fill_with(i))
+                initialized += 1
+        except e:
+            unsafe_destroy_n(ptr, initialized)
+            forget_deinit(self^)
+            raise e^
+
     def __init__[
         *, __literal_size__: Int
     ](

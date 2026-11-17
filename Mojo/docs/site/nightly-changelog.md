@@ -215,6 +215,10 @@ This version is still a work in progress.
   that captures values. Write `take_while(items, pred)` instead of
   `take_while[pred](items)`.
 
+- `List(length=, fill_with=)` and `Array(fill_with=)` now accept a function
+  that raises. If it raises, the initializer destroys the elements it already
+  wrote and propagates the error.
+
 - `Span.binary_search_by()` no longer takes the comparator as a compile-time
   parameter. Pass it as an argument, `span.binary_search_by(cmp)`, which also
   lets it capture the value being searched for.
