@@ -13,7 +13,6 @@
 """The HAL `DeviceContext` compat layer.
 
 Compiles in every configuration as `max._driver.max_license.device_context_hal`.
-Under --config=hal-device-context, `_dcc_overlay.mojo` replaces
-`max/gpu/host/_overlay.mojo`, so `max.gpu.host` resolves to the DeviceContext
-defined here.
+Under --config=hal-device-context, the `HAL_DEVICE_CONTEXT` define makes
+`max.gpu.host` resolve to the DeviceContext defined here.
 """

@@ -26,23 +26,9 @@ overlay_layer(
     strip_prefix = "max/mojo/",
 )
 
-# Points `max.gpu.host._overlay`, and through it `max.gpu.host`, at the HAL
-# DeviceContext. Shared: both this package's `max_srcs_hal` and a downstream
-# HAL max variant stack it over their own base (+ overlay) layers.
-overlay_layer(
-    name = "dcc_overlay",
-    file_map = {
-        "device_context_hal/_dcc_overlay.mojo": "max/gpu/host/_overlay.mojo",
-    },
-    visibility = ["//visibility:public"],
-)
-
 overlay_srcs(
     name = "max_srcs_hal",
-    layers = [
-        ":max_base_layer",
-        ":dcc_overlay",
-    ],
+    layers = [":max_base_layer"],
 )
 
 mojo_library(

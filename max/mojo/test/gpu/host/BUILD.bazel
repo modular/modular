@@ -90,13 +90,6 @@ mojo_test(
 mojo_test(
     name = "test_device_view.mojo.test",
     srcs = ["test_device_view.mojo"],
-    copts = select({
-        "//:hal_device_context_enabled": [
-            "-D",
-            "HAL_DEVICE_CONTEXT",
-        ],
-        "//conditions:default": [],
-    }),
     data = select({
         ":hal_nvidia_gpu": [
             "//Target:CPUPlugin.so",

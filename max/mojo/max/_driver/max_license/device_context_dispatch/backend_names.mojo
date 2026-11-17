@@ -27,7 +27,9 @@ from max.gpu.host._legacy._nvidia_cuda import (
 from max.gpu.host._legacy.device_context import (
     DefaultDeviceTypeEncoder as _LegacyDefaultDeviceTypeEncoder,
 )
-from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
+from max._driver.max_license.device_context_dispatch.device_context import (
+    HAL_DEVICE_CONTEXT,
+)
 
 comptime DefaultDeviceTypeEncoder = _LegacyDefaultDeviceTypeEncoder
 """The encoder kernels use for device arguments."""

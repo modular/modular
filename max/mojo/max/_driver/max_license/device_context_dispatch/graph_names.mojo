@@ -12,14 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """The device graph names that `max.gpu.host` exports.
 
-Both backends use the legacy device graph types, except `DeviceGraph`: the HAL
-backend has no device graphs, so its `DeviceGraph` is a stand-in that raises
-from `create` and `replay` instead of failing to compile.
+Both backends use the legacy device graph types. On the HAL backend, which has
+no device graphs, the legacy `DeviceGraph` entry points raise instead of
+failing to compile.
 """
 
-from max._driver.max_license.device_context_hal.device_graph_hal import (
-    HALDeviceGraph,
-)
 from max.gpu.host._legacy.device_graph import (
     LegacyDeviceGraph,
     LegacyDeviceGraphBuilder,
@@ -29,11 +26,8 @@ from max.gpu.host._legacy.device_graph import (
     LegacyDeviceGraphNode,
     LegacyStableAddr,
 )
-from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
 
-comptime DeviceGraph = (
-    LegacyDeviceGraph if not HAL_DEVICE_CONTEXT else HALDeviceGraph
-)
+comptime DeviceGraph = LegacyDeviceGraph
 """A captured sequence of device operations that can be replayed."""
 
 comptime DeviceGraphBuilder[arena_origin: ImmOrigin] = LegacyDeviceGraphBuilder[

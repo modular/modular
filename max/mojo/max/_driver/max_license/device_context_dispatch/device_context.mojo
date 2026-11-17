@@ -35,6 +35,7 @@ from std.reflection import (
 )
 from std.memory.unsafe import bitcast
 from std.sys import bit_width_of, size_of
+from std.sys.defines import is_defined
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_dispatch.device_function import (
@@ -87,7 +88,6 @@ from max.gpu.host._legacy.device_context import (
 )
 from max.gpu.host._driver_common import _DumpPath
 from max.gpu.host._launch_args import DeviceFunctionWrapper
-from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
 from max.gpu.host._driver_common import (
     StreamPriorityRange as _OverlayStreamPriorityRange,
     _check_dim_in_range,
@@ -400,6 +400,14 @@ def _enqueue_copy_device_to_device[
         ctx._stream[].copy_inter_device(
             dst_view, src_view, src_context[]._handle
         )
+
+
+comptime HAL_DEVICE_CONTEXT = is_defined["HAL_DEVICE_CONTEXT"]()
+"""Whether this build uses the HAL `DeviceContext`.
+
+`--config=hal-device-context` defines `HAL_DEVICE_CONTEXT` for every Mojo
+compile, through the Mojo toolchain.
+"""
 
 
 def use_legacy_backend() -> Bool:
