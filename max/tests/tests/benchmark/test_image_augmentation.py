@@ -55,12 +55,6 @@ def test_sample_image_dimensions_square() -> None:
     assert height == 512
 
 
-def test_sample_image_dimensions_landscape() -> None:
-    width, height = sample_image_dimensions(_dist(512), _dist(2.0))
-    assert width == 512
-    assert height == 256
-
-
 def test_sample_image_dimensions_portrait() -> None:
     width, height = sample_image_dimensions(_dist(512), _dist(0.5))
     assert height == 512

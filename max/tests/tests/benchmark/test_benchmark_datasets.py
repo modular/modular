@@ -318,12 +318,21 @@ def test_benchmark_dataset_from_flags_nonexistent_path(
     mock_exists.assert_called_once_with("/nonexistent/path.json")
 
 
-def test_benchmark_dataset_from_flags_unknown_dataset() -> None:
+@pytest.mark.parametrize(
+    "dataset_name",
+    [
+        pytest.param("unknown_dataset", id="unknown_dataset"),
+        pytest.param("vision-arena-unknown", id="registered_name_prefix"),
+    ],
+)
+def test_benchmark_dataset_from_flags_unknown_dataset(
+    dataset_name: str,
+) -> None:
     """Test that unknown dataset names raise ValueError."""
     with pytest.raises(ValueError) as exc_info:
-        BenchmarkDataset.from_flags(dataset_name="unknown_dataset")
+        BenchmarkDataset.from_flags(dataset_name=dataset_name)
 
-    assert "Unknown dataset: unknown_dataset" in str(exc_info.value)
+    assert f"Unknown dataset: {dataset_name}" in str(exc_info.value)
     assert "Available datasets:" in str(exc_info.value)
 
 
@@ -533,87 +542,52 @@ def test_shared_contexts_at_most_max_unique() -> None:
         assert entry.num_tokens > 0
 
 
-@patch("os.path.exists")
-def test_sonnet_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that SonnetBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="sonnet", dataset_path="/path/to/sonnet.txt"
-    )
-
-    assert isinstance(dataset, SonnetBenchmarkDataset)
-    assert dataset.dataset_name == "sonnet"
-    assert dataset.dataset_path == "/path/to/sonnet.txt"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_vision_arena_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that VisionArenaBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="vision-arena", dataset_path="/path/to/vision_arena.json"
-    )
-
-    assert isinstance(dataset, VisionArenaBenchmarkDataset)
-    assert dataset.dataset_name == "vision-arena"
-    assert dataset.dataset_path == "/path/to/vision_arena.json"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_axolotl_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that AxolotlBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="axolotl", dataset_path="/path/to/axolotl.json"
-    )
-
-    assert isinstance(dataset, AxolotlBenchmarkDataset)
-    assert dataset.dataset_name == "axolotl"
-    assert dataset.dataset_path == "/path/to/axolotl.json"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_arxiv_summarization_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that ArxivSummarizationBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="arxiv-summarization", dataset_path="/path/to/arxiv.json"
-    )
-
-    assert isinstance(dataset, ArxivSummarizationBenchmarkDataset)
-    assert dataset.dataset_name == "arxiv-summarization"
-    assert dataset.dataset_path == "/path/to/arxiv.json"
-    assert dataset.dataset_mode == "local"
-
-
-def test_vision_arena_from_flags_unknown() -> None:
-    """Test fetching unknown dataset raises ValueError."""
-    with pytest.raises(ValueError, match="Unknown dataset"):
-        BenchmarkDataset.from_flags(dataset_name="vision-arena-unknown")
-
-
-@patch("os.path.exists")
-def test_obfuscated_conversations_from_flags_local_mode(
-    mock_exists: Mock,
+@pytest.mark.parametrize(
+    ("dataset_name", "dataset_path", "dataset_class"),
+    [
+        pytest.param(
+            "sonnet", "/path/to/sonnet.txt", SonnetBenchmarkDataset, id="sonnet"
+        ),
+        pytest.param(
+            "vision-arena",
+            "/path/to/vision_arena.json",
+            VisionArenaBenchmarkDataset,
+            id="vision_arena",
+        ),
+        pytest.param(
+            "axolotl",
+            "/path/to/axolotl.json",
+            AxolotlBenchmarkDataset,
+            id="axolotl",
+        ),
+        pytest.param(
+            "arxiv-summarization",
+            "/path/to/arxiv.json",
+            ArxivSummarizationBenchmarkDataset,
+            id="arxiv_summarization",
+        ),
+        pytest.param(
+            "obfuscated-conversations",
+            "/path/to/obfuscated.jsonl",
+            ObfuscatedConversationsBenchmarkDataset,
+            id="obfuscated_conversations",
+        ),
+    ],
+)
+def test_from_flags_with_dataset_path_is_local_mode(
+    dataset_name: str,
+    dataset_path: str,
+    dataset_class: type[LocalBenchmarkDataset],
 ) -> None:
-    """Test that ObfuscatedConversationsBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
+    """from_flags builds a local-mode dataset from an explicit path."""
+    with patch("os.path.exists", return_value=True):
+        dataset = BenchmarkDataset.from_flags(
+            dataset_name=dataset_name, dataset_path=dataset_path
+        )
 
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="obfuscated-conversations",
-        dataset_path="/path/to/obfuscated.jsonl",
-    )
-
-    assert isinstance(dataset, ObfuscatedConversationsBenchmarkDataset)
-    assert dataset.dataset_name == "obfuscated-conversations"
-    assert dataset.dataset_path == "/path/to/obfuscated.jsonl"
+    assert isinstance(dataset, dataset_class)
+    assert dataset.dataset_name == dataset_name
+    assert dataset.dataset_path == dataset_path
     assert dataset.dataset_mode == "local"
 
 

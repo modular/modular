@@ -235,9 +235,16 @@ def test_non_float_data_assertion(
         metrics_cls([1, 2, 3])
 
 
-def test_standard_percentile_metrics_single_value() -> None:
+@pytest.mark.parametrize(
+    "metrics_cls",
+    [StandardPercentileMetrics, ThroughputMetrics],
+    ids=["standard_percentile_metrics", "throughput_metrics"],
+)
+def test_single_value(
+    metrics_cls: type[StandardPercentileMetrics | ThroughputMetrics],
+) -> None:
     """Test with single value in data."""
-    metrics = StandardPercentileMetrics([5.0])
+    metrics = metrics_cls([5.0])
 
     assert metrics.mean == 5.0
     assert metrics.std == 0.0
@@ -294,18 +301,6 @@ def test_throughput_metrics_str_representation() -> None:
     """Test string representation uses 'throughput' prefix."""
     result = str(ThroughputMetrics([1.0, 2.0, 3.0]))
     assert "throughput" in result.lower()
-
-
-def test_throughput_metrics_single_value() -> None:
-    """Test with single value in data."""
-    metrics = ThroughputMetrics([5.0])
-
-    assert metrics.mean == 5.0
-    assert metrics.std == 0.0
-    assert metrics.p50 == 5.0
-    assert metrics.p90 == 5.0
-    assert metrics.p95 == 5.0
-    assert metrics.p99 == 5.0
 
 
 # ---------------------------------------------------------------------------

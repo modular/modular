@@ -17,6 +17,7 @@ import json
 import logging
 import resource
 import time
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -364,38 +365,37 @@ def test_print_section_formats_output(
 # ---- parse_comma_separated ----
 
 
-def test_parse_comma_separated_single_value() -> None:
-    assert parse_comma_separated("42", int) == [42]
-
-
-def test_parse_comma_separated_multiple_values() -> None:
-    assert parse_comma_separated("1,2,4", int) == [1, 2, 4]
-
-
-def test_parse_comma_separated_strips_whitespace() -> None:
-    assert parse_comma_separated(" 10 , 20 , 30 ", float) == [10.0, 20.0, 30.0]
-
-
-def test_parse_comma_separated_none_returns_default() -> None:
-    assert parse_comma_separated(None, int) == [None]
+@pytest.mark.parametrize(
+    ("value", "convert", "expected"),
+    [
+        pytest.param("42", int, [42], id="single_value"),
+        pytest.param("1,2,4", int, [1, 2, 4], id="multiple_values"),
+        pytest.param(
+            " 10 , 20 , 30 ",
+            float,
+            [10.0, 20.0, 30.0],
+            id="strips_whitespace",
+        ),
+        pytest.param(None, int, [None], id="none_returns_default"),
+        pytest.param(
+            "1,None,3", int_or_none, [1, None, 3], id="with_int_or_none"
+        ),
+        pytest.param("inf", float, [float("inf")], id="float_inf"),
+        pytest.param(
+            "10,inf,0.5", float, [10.0, float("inf"), 0.5], id="mixed_floats"
+        ),
+    ],
+)
+def test_parse_comma_separated(
+    value: str | None,
+    convert: Callable[[str], float | None],
+    expected: list[float | None],
+) -> None:
+    assert parse_comma_separated(value, convert) == expected
 
 
 def test_parse_comma_separated_none_with_explicit_default() -> None:
     assert parse_comma_separated(None, int, default=0) == [0]
-
-
-def test_parse_comma_separated_with_int_or_none() -> None:
-    assert parse_comma_separated("1,None,3", int_or_none) == [1, None, 3]
-
-
-def test_parse_comma_separated_float_inf() -> None:
-    result = parse_comma_separated("inf", float)
-    assert result == [float("inf")]
-
-
-def test_parse_comma_separated_mixed_floats() -> None:
-    result = parse_comma_separated("10,inf,0.5", float)
-    assert result == [10.0, float("inf"), 0.5]
 
 
 # ---- is_castable_to_int ----

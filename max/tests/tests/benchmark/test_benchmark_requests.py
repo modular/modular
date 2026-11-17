@@ -508,6 +508,28 @@ def _streaming_response(
     return response
 
 
+def _request_input(
+    api_url: str,
+    *,
+    prompt: str | list[ChatMessage] = "Test prompt",
+    prompt_len: int = 10,
+    max_tokens: int = 100,
+    images: list[OpenAIImage] | None = None,
+) -> RequestFuncInput:
+    """Returns a ``test-model`` text request with default sampling."""
+    return RequestFuncInput(
+        model="test-model",
+        session_id=None,
+        sampling=SamplingConfig(),
+        prompt=prompt,
+        images=[] if images is None else images,
+        api_url=api_url,
+        prompt_len=prompt_len,
+        max_tokens=max_tokens,
+        ignore_eos=False,
+    )
+
+
 class TestRequestDriver:
     """Test cases for RequestDriver classes."""
 
@@ -519,17 +541,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test successful OpenAICompletionsRequestDriver request."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
+        request_input = _request_input("http://localhost:8000/completions")
 
         # Mock response data
         mock_response_data = [
@@ -558,17 +570,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test successful OpenAIChatCompletionsRequestDriver request."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
+        request_input = _request_input("http://localhost:8000/chat/completions")
 
         # Mock response data
         mock_response_data = [
@@ -606,17 +608,7 @@ class TestRequestDriver:
         "0 valid requests" steady-state warning. Such a response must now be a
         failure.
         """
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
+        request_input = _request_input("http://localhost:8000/chat/completions")
 
         # Chunks have choices but the text is in an unmodeled delta field;
         # reasoning/reasoning_content/content are all absent, so no text is
@@ -656,16 +648,8 @@ class TestRequestDriver:
         the ``tool_calls`` field and treat those chunks as content-bearing
         rather than reporting the request as failed.
         """
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Write a file",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
+        request_input = _request_input(
+            "http://localhost:8000/chat/completions", prompt="Write a file"
         )
 
         # Mirrors the server's streaming shape for a tool-call-only turn:
@@ -719,16 +703,9 @@ class TestRequestDriver:
         length/text check rather than relying on that invariant by
         inspection alone.
         """
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = _request_input(
+            "http://localhost:8000/chat/completions",
             prompt="What's the weather, then check the time",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
         )
 
         mock_response_data = [
@@ -772,16 +749,10 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test that reasoning, reasoning_content, and content are merged in order."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = _request_input(
+            "http://localhost:8000/chat/completions",
             prompt="Think step by step",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
             prompt_len=5,
-            max_tokens=100,
-            ignore_eos=False,
         )
 
         # Chunks: out-of-order reasoning, reasoning_content, and content
@@ -818,16 +789,11 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test that missing or None reasoning/reasoning_content/content are treated as empty."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = _request_input(
+            "http://localhost:8000/chat/completions",
             prompt="Test",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
             prompt_len=1,
             max_tokens=50,
-            ignore_eos=False,
         )
 
         # Chunks with only some keys present or None; no "reasoning" or "reasoning_content"
@@ -860,16 +826,10 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Regression test for MXTOOLS-203: server error message is surfaced in output.error."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = _request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="A very long prompt",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=264408,
-            max_tokens=100,
-            ignore_eos=False,
         )
 
         error_msg = "Input string is larger than tokenizer's max length (264823 > 262144)."
@@ -960,17 +920,11 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """No ``tools`` field is sent when SampledRequest.tools is None/empty."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = _request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt="hi",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=1,
             max_tokens=8,
-            ignore_eos=False,
-            tools=None,
         )
 
         mock_aiohttp_session.setup_post_response(
@@ -1040,16 +994,12 @@ class TestRequestDriver:
         expected: bool,
     ) -> None:
         """A turn that only resends an earlier image still carries one."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
+        request_input = _request_input(
+            "http://localhost:8000/v1/chat/completions",
             prompt=prompt,
-            images=images,
-            api_url="http://localhost:8000/v1/chat/completions",
             prompt_len=1,
             max_tokens=8,
-            ignore_eos=False,
+            images=images,
         )
 
         mock_aiohttp_session.setup_post_response(
@@ -1077,17 +1027,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test that missing content returns an error."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
+        request_input = _request_input("http://localhost:8000/completions")
 
         mock_response_data = [
             b"data: [DONE]\n\n",
@@ -1108,17 +1048,7 @@ class TestRequestDriver:
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
         """Test that RequestDriver works with progress bars."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/generate_stream",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
+        request_input = _request_input("http://localhost:8000/generate_stream")
 
         # Create a mock progress bar
         mock_pbar = mocker.Mock(spec=tqdm)
@@ -1145,17 +1075,7 @@ class TestRequestDriver:
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
         """Test that RequestDriver works without progress bars."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/generate_stream",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
+        request_input = _request_input("http://localhost:8000/generate_stream")
 
         mock_aiohttp_session.setup_post_response(
             _streaming_response(
@@ -1234,19 +1154,6 @@ class TestDriverExtraBody:
         "vendor_ext": {"flags": ["a", "b"]},
     }
 
-    def _make_input(self, api_url: str) -> RequestFuncInput:
-        return RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="hi",
-            images=[],
-            api_url=api_url,
-            prompt_len=1,
-            max_tokens=100,
-            ignore_eos=False,
-        )
-
     @pytest.mark.asyncio
     async def test_chat_driver_merges_extra_body(
         self,
@@ -1266,7 +1173,11 @@ class TestDriverExtraBody:
 
         driver = OpenAIChatCompletionsRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
-            self._make_input("http://localhost:8000/v1/chat/completions")
+            _request_input(
+                "http://localhost:8000/v1/chat/completions",
+                prompt="hi",
+                prompt_len=1,
+            )
         )
         assert result.success is True
         sent = mock_aiohttp_session.post.call_args[1]["json"]
@@ -1293,7 +1204,11 @@ class TestDriverExtraBody:
 
         driver = OpenAICompletionsRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
-            self._make_input("http://localhost:8000/v1/completions")
+            _request_input(
+                "http://localhost:8000/v1/completions",
+                prompt="hi",
+                prompt_len=1,
+            )
         )
         assert result.success is True
         sent = mock_aiohttp_session.post.call_args[1]["json"]
@@ -1319,8 +1234,10 @@ class TestDriverExtraBody:
 
         driver = TRTLLMRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
-            self._make_input(
-                "http://localhost:8000/v2/models/ensemble/generate_stream"
+            _request_input(
+                "http://localhost:8000/v2/models/ensemble/generate_stream",
+                prompt="hi",
+                prompt_len=1,
             )
         )
         assert result.success is True
