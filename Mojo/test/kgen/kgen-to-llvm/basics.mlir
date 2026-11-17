@@ -138,14 +138,14 @@ kgen.func @address_of() -> !kgen.generator<() -> !kgen.scalar<f32>> {
 }
 
 // CHECK: llvm.func @used_internally
-kgen.func export @used_internally() cabi -> !kgen.struct<(i32, i32)>{
+kgen.func export @used_internally() cabi -> !kgen.struct<(scalar<si32>, scalar<si32>)>{
   hlcf.unreachable
 }
 
 // CHECK: llvm.func internal @used_func
 kgen.func @used_func() {
   // CHECK-NEXT: call @used_internally
-  kgen.call @used_internally() : () -> !kgen.struct<(i32, i32)>
+  kgen.call @used_internally() : () -> !kgen.struct<(scalar<si32>, scalar<si32>)>
   hlcf.return
 }
 

@@ -2,17 +2,17 @@
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @external_call
-  kgen.func @external_call(%a: !kgen.simd<1, ui32>, %b: !kgen.pointer<i32>) -> !kgen.simd<4, f64> {
+  kgen.func @external_call(%a: !kgen.simd<1, ui32>, %b: !kgen.pointer<scalar<si32>>) -> !kgen.simd<4, f64> {
     // CHECK: llvm.call @foo
     %0 = pop.external_call @foo(%a) : (!kgen.simd<1, ui32>) -> !kgen.simd<4, f64> <
       funcAttrs = ["noinline", "noreturn"],
       memory = #llvm.memory_effects<other = read, argMem = read, inaccessibleMem = read, errnoMem = none, targetMem0 = none, targetMem1 = none>
     >
     // CHECK: llvm.call @bar
-    %1 = pop.external_call @bar(%b) : (!kgen.pointer<i32>) -> i32 <argAttrs = [{llvm.noalias}], resAttrs = {llvm.signext}>
+    %1 = pop.external_call @bar(%b) : (!kgen.pointer<scalar<si32>>) -> !kgen.scalar<si32> <argAttrs = [{llvm.noalias}], resAttrs = {llvm.signext}>
 
     // CHECK: llvm.call @bar
-    %2 = pop.external_call @bar(%b) : (!kgen.pointer<i32>) -> i32 <argAttrs = [{llvm.noalias}], resAttrs = {llvm.signext}>
+    %2 = pop.external_call @bar(%b) : (!kgen.pointer<scalar<si32>>) -> !kgen.scalar<si32> <argAttrs = [{llvm.noalias}], resAttrs = {llvm.signext}>
     hlcf.return %0 : !kgen.simd<4, f64>
   }
   // CHECK: llvm.func @foo(i32) -> vector<4xf64>

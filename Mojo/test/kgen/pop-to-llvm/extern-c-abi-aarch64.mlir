@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -lower-global-pop-to-llvm %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm -lower-global-pop-to-llvm -split-input-file %s | FileCheck %s
 
 // Unit tests for C ABI lowering on ARM64 (AAPCS — Procedure Call Standard
 // for the Arm 64-bit Architecture).
@@ -20,12 +20,11 @@
 //                                multi-value return, identity pass-through
 //   extern-c-abi-x86-64.mlir   — x86-64 System V AMD64 tests
 //
-// INPUT FORMAT NOTE: Each test uses llvm.func (not kgen.func) as the enclosing function.
-// The -lower-global-pop-to-llvm pass processes pop.external_call ops
-// after kgen.func has already been lowered to llvm.func by an earlier pass.
-// For coercion to work, createEntryBlockAlloca requires the enclosing
-// function to be an LLVM::LLVMFuncOp. These tests exercise that final
-// lowering step in isolation.
+// INPUT FORMAT NOTE: Each test is a kgen.func whose operands and results of
+// pop.external_call are KGEN types (!kgen.struct, !kgen.scalar), as the Mojo
+// compiler emits them. The C ABI classifier reads these KGEN types. The pass
+// -lower-kgen-to-llvm changes each kgen.func to an internal llvm.func, and
+// then -lower-global-pop-to-llvm lowers the pop.external_call ops in it.
 //
 // KEY DIFFERENCES FROM x86-64:
 //   1. HFA (Homogeneous Float Aggregate): a struct of 1-4 members of one
@@ -107,10 +106,10 @@
 // A1: 1-byte struct {i8} → i8.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_1byte_int_struct
-llvm.func @arg_1byte_int_struct(%arg0: !llvm.struct<(i8)>) {
+kgen.func @arg_1byte_int_struct(%arg0: !kgen.struct<(scalar<si8>)>) {
   // CHECK: llvm.call @c_a1(%{{.*}}) : (i8) -> ()
-  pop.external_call @c_a1(%arg0) : (!llvm.struct<(i8)>) -> ()
-  llvm.return
+  pop.external_call @c_a1(%arg0) : (!kgen.struct<(scalar<si8>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a1(i8)
 }
@@ -120,10 +119,10 @@ llvm.func @arg_1byte_int_struct(%arg0: !llvm.struct<(i8)>) {
 // A2: 2-byte struct {i8, i8} → i16.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_2byte_int_struct
-llvm.func @arg_2byte_int_struct(%arg0: !llvm.struct<(i8, i8)>) {
+kgen.func @arg_2byte_int_struct(%arg0: !kgen.struct<(scalar<si8>, scalar<si8>)>) {
   // CHECK: llvm.call @c_a2(%{{.*}}) : (i16) -> ()
-  pop.external_call @c_a2(%arg0) : (!llvm.struct<(i8, i8)>) -> ()
-  llvm.return
+  pop.external_call @c_a2(%arg0) : (!kgen.struct<(scalar<si8>, scalar<si8>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a2(i16)
 }
@@ -133,10 +132,10 @@ llvm.func @arg_2byte_int_struct(%arg0: !llvm.struct<(i8, i8)>) {
 // A3: 3-byte struct {i8, i8, i8} → i32 (rounds up).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_3byte_int_struct
-llvm.func @arg_3byte_int_struct(%arg0: !llvm.struct<(i8, i8, i8)>) {
+kgen.func @arg_3byte_int_struct(%arg0: !kgen.struct<(scalar<si8>, scalar<si8>, scalar<si8>)>) {
   // CHECK: llvm.call @c_a3(%{{.*}}) : (i32) -> ()
-  pop.external_call @c_a3(%arg0) : (!llvm.struct<(i8, i8, i8)>) -> ()
-  llvm.return
+  pop.external_call @c_a3(%arg0) : (!kgen.struct<(scalar<si8>, scalar<si8>, scalar<si8>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a3(i32)
 }
@@ -146,10 +145,10 @@ llvm.func @arg_3byte_int_struct(%arg0: !llvm.struct<(i8, i8, i8)>) {
 // A4: 8-byte struct {i32, i32} → i64.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_8byte_int_struct
-llvm.func @arg_8byte_int_struct(%arg0: !llvm.struct<(i32, i32)>) {
+kgen.func @arg_8byte_int_struct(%arg0: !kgen.struct<(scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_a4(%{{.*}}) : (i64) -> ()
-  pop.external_call @c_a4(%arg0) : (!llvm.struct<(i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_a4(%arg0) : (!kgen.struct<(scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a4(i64)
 }
@@ -177,10 +176,10 @@ llvm.func @arg_8byte_int_struct(%arg0: !llvm.struct<(i32, i32)>) {
 // F1: {f32, f32} (8 bytes, all-float, 2 fields) -> HFA -> [2 x f32].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_2xf32
-llvm.func @arg_hfa_2xf32(%arg0: !llvm.struct<(f32, f32)>) {
+kgen.func @arg_hfa_2xf32(%arg0: !kgen.struct<(scalar<f32>, scalar<f32>)>) {
   // CHECK: llvm.call @c_f1(%{{.*}}) : (!llvm.array<2 x f32>) -> ()
-  pop.external_call @c_f1(%arg0) : (!llvm.struct<(f32, f32)>) -> ()
-  llvm.return
+  pop.external_call @c_f1(%arg0) : (!kgen.struct<(scalar<f32>, scalar<f32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_f1(!llvm.array<2 x f32>)
 }
@@ -191,10 +190,10 @@ llvm.func @arg_hfa_2xf32(%arg0: !llvm.struct<(f32, f32)>) {
 // [4 x f32]. 4 is the maximum field count for HFA.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_4xf32
-llvm.func @arg_hfa_4xf32(%arg0: !llvm.struct<(f32, f32, f32, f32)>) {
+kgen.func @arg_hfa_4xf32(%arg0: !kgen.struct<(scalar<f32>, scalar<f32>, scalar<f32>, scalar<f32>)>) {
   // CHECK: llvm.call @c_f2(%{{.*}}) : (!llvm.array<4 x f32>) -> ()
-  pop.external_call @c_f2(%arg0) : (!llvm.struct<(f32, f32, f32, f32)>) -> ()
-  llvm.return
+  pop.external_call @c_f2(%arg0) : (!kgen.struct<(scalar<f32>, scalar<f32>, scalar<f32>, scalar<f32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_f2(!llvm.array<4 x f32>)
 }
@@ -204,10 +203,10 @@ llvm.func @arg_hfa_4xf32(%arg0: !llvm.struct<(f32, f32, f32, f32)>) {
 // F3: {f64, f64} (16 bytes, all-float doubles, 2 fields) -> HFA -> [2 x f64].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_2xf64
-llvm.func @arg_hfa_2xf64(%arg0: !llvm.struct<(f64, f64)>) {
+kgen.func @arg_hfa_2xf64(%arg0: !kgen.struct<(scalar<f64>, scalar<f64>)>) {
   // CHECK: llvm.call @c_f3(%{{.*}}) : (!llvm.array<2 x f64>) -> ()
-  pop.external_call @c_f3(%arg0) : (!llvm.struct<(f64, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_f3(%arg0) : (!kgen.struct<(scalar<f64>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_f3(!llvm.array<2 x f64>)
 }
@@ -219,10 +218,10 @@ llvm.func @arg_hfa_2xf64(%arg0: !llvm.struct<(f64, f64)>) {
 // structs, so the struct falls through to size classification (>16 → indirect).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_not_hfa_5xf32
-llvm.func @arg_not_hfa_5xf32(%arg0: !llvm.struct<(f32, f32, f32, f32, f32)>) {
+kgen.func @arg_not_hfa_5xf32(%arg0: !kgen.struct<(scalar<f32>, scalar<f32>, scalar<f32>, scalar<f32>, scalar<f32>)>) {
   // CHECK: llvm.call @c_f4(%{{.*}}) : (!llvm.ptr) -> ()
-  pop.external_call @c_f4(%arg0) : (!llvm.struct<(f32, f32, f32, f32, f32)>) -> ()
-  llvm.return
+  pop.external_call @c_f4(%arg0) : (!kgen.struct<(scalar<f32>, scalar<f32>, scalar<f32>, scalar<f32>, scalar<f32>)>) -> ()
+  hlcf.return
 }
 }
 
@@ -233,11 +232,11 @@ llvm.func @arg_not_hfa_5xf32(%arg0: !llvm.struct<(f32, f32, f32, f32, f32)>) {
 // as a non-HFA integer struct.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_not_hfa_mixed
-llvm.func @arg_not_hfa_mixed(%arg0: !llvm.struct<(f32, i32)>) {
+kgen.func @arg_not_hfa_mixed(%arg0: !kgen.struct<(scalar<f32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_f5(%{{.*}}) : (i64) -> ()
   // CHECK-NOT: llvm.call @c_f5(%{{.*}}) : (!llvm.struct
-  pop.external_call @c_f5(%arg0) : (!llvm.struct<(f32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_f5(%arg0) : (!kgen.struct<(scalar<f32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_f5(i64)
 }
@@ -249,10 +248,10 @@ llvm.func @arg_not_hfa_mixed(%arg0: !llvm.struct<(f32, i32)>) {
 // same.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_hfa
-llvm.func @ret_hfa() {
+kgen.func @ret_hfa() {
   // CHECK: llvm.call @c_f6() : () -> !llvm.array<2 x f32>
-  %r = pop.external_call @c_f6() : () -> !llvm.struct<(f32, f32)>
-  llvm.return
+  %r = pop.external_call @c_f6() : () -> !kgen.struct<(scalar<f32>, scalar<f32>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_f6() -> !llvm.array<2 x f32>
 }
@@ -265,10 +264,10 @@ llvm.func @ret_hfa() {
 // argument in V7.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_after_7xf64
-llvm.func @arg_hfa_after_7xf64(%d: f64, %s: !llvm.struct<(f64, f64)>) {
+kgen.func @arg_hfa_after_7xf64(%d: !kgen.scalar<f64>, %s: !kgen.struct<(scalar<f64>, scalar<f64>)>) {
   // CHECK: llvm.call @c_f7(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (f64, f64, f64, f64, f64, f64, f64, !llvm.array<2 x f64>) -> ()
-  pop.external_call @c_f7(%d, %d, %d, %d, %d, %d, %d, %s) : (f64, f64, f64, f64, f64, f64, f64, !llvm.struct<(f64, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_f7(%d, %d, %d, %d, %d, %d, %d, %s) : (!kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.struct<(scalar<f64>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_f7(f64, f64, f64, f64, f64, f64, f64, !llvm.array<2 x f64>)
 }
@@ -288,10 +287,10 @@ llvm.func @arg_hfa_after_7xf64(%d: f64, %s: !llvm.struct<(f64, f64)>) {
 // ARM64: first 8 bytes → i64, remaining 4 bytes → i32.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_int_pair_12
-llvm.func @arg_int_pair_12(%arg0: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_int_pair_12(%arg0: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_b1(%{{.*}}, %{{.*}}) : (i64, i32) -> ()
-  pop.external_call @c_b1(%arg0) : (!llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_b1(%arg0) : (!kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b1(i64, i32)
 }
@@ -301,10 +300,10 @@ llvm.func @arg_int_pair_12(%arg0: !llvm.struct<(i32, i32, i32)>) {
 // B2: {i64, i64} (16 bytes) → IntegerPair → (i64, i64).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_int_pair_16
-llvm.func @arg_int_pair_16(%arg0: !llvm.struct<(i64, i64)>) {
+kgen.func @arg_int_pair_16(%arg0: !kgen.struct<(scalar<si64>, scalar<si64>)>) {
   // CHECK: llvm.call @c_b2(%{{.*}}, %{{.*}}) : (i64, i64) -> ()
-  pop.external_call @c_b2(%arg0) : (!llvm.struct<(i64, i64)>) -> ()
-  llvm.return
+  pop.external_call @c_b2(%arg0) : (!kgen.struct<(scalar<si64>, scalar<si64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b2(i64, i64)
 }
@@ -317,11 +316,11 @@ llvm.func @arg_int_pair_16(%arg0: !llvm.struct<(i64, i64)>) {
 // Compare with x86-64 which classifies each eightbyte and could produce Mixed.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_mixed_12_arm64
-llvm.func @arg_mixed_12_arm64(%arg0: !llvm.struct<(f32, f32, i32)>) {
+kgen.func @arg_mixed_12_arm64(%arg0: !kgen.struct<(scalar<f32>, scalar<f32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_b3(%{{.*}}, %{{.*}}) : (i64, i32) -> ()
   // CHECK-NOT: llvm.call @c_b3(%{{.*}}) : (f64
-  pop.external_call @c_b3(%arg0) : (!llvm.struct<(f32, f32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_b3(%arg0) : (!kgen.struct<(scalar<f32>, scalar<f32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b3(i64, i32)
 }
@@ -342,10 +341,10 @@ llvm.func @arg_mixed_12_arm64(%arg0: !llvm.struct<(f32, f32, i32)>) {
 // behavioral difference from x86-64 (see extern-c-abi-x86-64.mlir test C1).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_large_indirect_no_byval
-llvm.func @arg_large_indirect_no_byval(%arg0: !llvm.struct<(i64, i64, i64)>) {
+kgen.func @arg_large_indirect_no_byval(%arg0: !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>) {
   // CHECK: llvm.call @c_c1(%{{.*}}) : (!llvm.ptr) -> ()
-  pop.external_call @c_c1(%arg0) : (!llvm.struct<(i64, i64, i64)>) -> ()
-  llvm.return
+  pop.external_call @c_c1(%arg0) : (!kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>) -> ()
+  hlcf.return
 }
 // The function takes a plain ptr — no byval attribute.
 // CHECK: llvm.func @c_c1(!llvm.ptr)
@@ -361,12 +360,12 @@ llvm.func @arg_large_indirect_no_byval(%arg0: !llvm.struct<(i64, i64, i64)>) {
 // D1: return {i32} (4 bytes) → call returns i32, bitcast back to struct.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_small_int_struct
-llvm.func @ret_small_int_struct() {
+kgen.func @ret_small_int_struct() {
   // CHECK: [[R:%.*]] = llvm.call @c_d1() : () -> i32
   // CHECK: llvm.store [[R]], %{{.*}} : i32, !llvm.ptr
   // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i32)>
-  %r = pop.external_call @c_d1() : () -> !llvm.struct<(i32)>
-  llvm.return
+  %r = pop.external_call @c_d1() : () -> !kgen.struct<(scalar<si32>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_d1() -> i32
 }
@@ -377,12 +376,12 @@ llvm.func @ret_small_int_struct() {
 // !llvm.struct<(i64, i32)>. Two-register reconstruction.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_int_pair
-llvm.func @ret_int_pair() {
+kgen.func @ret_int_pair() {
   // CHECK: [[R:%.*]] = llvm.call @c_d2() : () -> !llvm.struct<(i64, i32)>
   // CHECK: llvm.store [[R]], [[SLOT:%.*]] : !llvm.struct<(i64, i32)>, !llvm.ptr
   // CHECK: llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
-  %r = pop.external_call @c_d2() : () -> !llvm.struct<(i32, i32, i32)>
-  llvm.return
+  %r = pop.external_call @c_d2() : () -> !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_d2() -> !llvm.struct<(i64, i32)>
 }
@@ -394,11 +393,11 @@ llvm.func @ret_int_pair() {
 // for large returns, though the register differs at the hardware level).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_sret
-llvm.func @ret_sret() {
+kgen.func @ret_sret() {
   // CHECK: llvm.call @c_d3(%{{.*}}) : (!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}) -> ()
   // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i64, i64, i64)>
-  %r = pop.external_call @c_d3() : () -> !llvm.struct<(i64, i64, i64)>
-  llvm.return
+  %r = pop.external_call @c_d3() : () -> !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_d3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>})
 }
@@ -432,13 +431,13 @@ llvm.func @ret_sret() {
 // structs reads from the VR save area.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_hfa_linux
-llvm.func @variadic_hfa_linux(%fixed: i32, %s: !llvm.struct<(f32, f32)>) {
+kgen.func @variadic_hfa_linux(%fixed: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<f32>, scalar<f32>)>) {
   // The HFA is coerced to an array of f32, not to i64.
   // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, !llvm.array<2 x f32>) -> ()
   // CHECK-NOT: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, i64)
   pop.external_call @c_g1(%fixed, %s)
-    : (i32, !llvm.struct<(f32, f32)>) -> () <numFixedArgs = 1 : index>
-  llvm.return
+    : (!kgen.scalar<si32>, !kgen.struct<(scalar<f32>, scalar<f32>)>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g1(i32, ...)
 }
@@ -451,13 +450,13 @@ llvm.func @variadic_hfa_linux(%fixed: i32, %s: !llvm.struct<(f32, f32)>) {
 // without any bitcast. No applyARM64VariadicFloatBitcast on Linux.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_float_linux
-llvm.func @variadic_float_linux(%fixed: i32, %f: f32) {
+kgen.func @variadic_float_linux(%fixed: !kgen.scalar<si32>, %f: !kgen.scalar<f32>) {
   // No bitcast on Linux — f32 is passed as f32 directly.
   // CHECK-NOT: llvm.bitcast %{{.*}} : f32 to i32
   // CHECK: llvm.call @c_g2(%{{.*}}, %{{.*}}) : (i32, f32) -> ()
   pop.external_call @c_g2(%fixed, %f)
-    : (i32, f32) -> () <numFixedArgs = 1 : index>
-  llvm.return
+    : (!kgen.scalar<si32>, !kgen.scalar<f32>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g2(i32, ...)
 }
@@ -471,13 +470,13 @@ llvm.func @variadic_float_linux(%fixed: i32, %f: f32) {
 // through to size classification: 8 bytes → i64.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_hfa_darwin
-llvm.func @variadic_hfa_darwin(%fixed: i32, %s: !llvm.struct<(f32, f32)>) {
+kgen.func @variadic_hfa_darwin(%fixed: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<f32>, scalar<f32>)>) {
   // HFA struct coerced to i64 on Darwin so va_arg reads from GP save area.
   // CHECK: llvm.call @c_g3(%{{.*}}, %{{.*}}) : (i32, i64) -> ()
   // CHECK-NOT: llvm.call @c_g3(%{{.*}}, %{{.*}}) : (i32, !llvm.struct
   pop.external_call @c_g3(%fixed, %s)
-    : (i32, !llvm.struct<(f32, f32)>) -> () <numFixedArgs = 1 : index>
-  llvm.return
+    : (!kgen.scalar<si32>, !kgen.struct<(scalar<f32>, scalar<f32>)>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g3(i32, ...)
 }
@@ -491,12 +490,12 @@ llvm.func @variadic_hfa_darwin(%fixed: i32, %s: !llvm.struct<(f32, f32)>) {
 // applyARM64VariadicFloatBitcast helper bitcasts f32→i32 to force bits into GPR.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_float_darwin
-llvm.func @variadic_float_darwin(%fixed: i32, %f: f32) {
+kgen.func @variadic_float_darwin(%fixed: !kgen.scalar<si32>, %f: !kgen.scalar<f32>) {
   // CHECK: [[BITS:%.*]] = llvm.bitcast %{{.*}} : f32 to i32
   // CHECK: llvm.call @c_g4(%{{.*}}, [[BITS]])
   pop.external_call @c_g4(%fixed, %f)
-    : (i32, f32) -> () <numFixedArgs = 1 : index>
-  llvm.return
+    : (!kgen.scalar<si32>, !kgen.scalar<f32>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g4(i32, ...)
 }
@@ -508,11 +507,11 @@ llvm.func @variadic_float_darwin(%fixed: i32, %f: f32) {
 // takes clang's single-integer form even though X1-X7 are free.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_pair_early_darwin
-llvm.func @variadic_pair_early_darwin(%fixed: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @variadic_pair_early_darwin(%fixed: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_g5(%{{.*}}, %{{.*}}) : (i32, !llvm.array<2 x i64>) -> ()
   pop.external_call @c_g5(%fixed, %s)
-    : (i32, !llvm.struct<(i32, i32, i32)>) -> () <numFixedArgs = 1 : index>
-  llvm.return
+    : (!kgen.scalar<si32>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g5(i32, ...)
 }
@@ -523,11 +522,11 @@ llvm.func @variadic_pair_early_darwin(%fixed: i32, %s: !llvm.struct<(i32, i32, i
 // form as in G5.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_pair_late_darwin
-llvm.func @variadic_pair_late_darwin(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @variadic_pair_late_darwin(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %g: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_g6(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>) -> ()
   pop.external_call @c_g6(%a, %b, %c, %d, %e, %f, %g, %s)
-    : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> () <numFixedArgs = 7 : index>
-  llvm.return
+    : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> () <numFixedArgs = 7 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g6(i64, i64, i64, i64, i64, i64, i64, ...)
 }
@@ -538,11 +537,11 @@ llvm.func @variadic_pair_late_darwin(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64
 // keeps its 16-byte stack-slot alignment.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_align16_darwin
-llvm.func @variadic_align16_darwin(%fixed: i32, %s: !llvm.struct<(i128)>) {
+kgen.func @variadic_align16_darwin(%fixed: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<si128>)>) {
   // CHECK: llvm.call @c_g7(%{{.*}}, %{{.*}}) : (i32, i128) -> ()
   pop.external_call @c_g7(%fixed, %s)
-    : (i32, !llvm.struct<(i128)>) -> () <numFixedArgs = 1 : index>
-  llvm.return
+    : (!kgen.scalar<si32>, !kgen.struct<(scalar<si128>)>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g7(i32, ...)
 }
@@ -553,11 +552,11 @@ llvm.func @variadic_align16_darwin(%fixed: i32, %s: !llvm.struct<(i128)>) {
 // in X0-X7 like fixed arguments, so the composite stays a two-register pair.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_pair_linux
-llvm.func @variadic_pair_linux(%fixed: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @variadic_pair_linux(%fixed: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_g8(%{{.*}}, %{{.*}}, %{{.*}}) : (i32, i64, i32) -> ()
   pop.external_call @c_g8(%fixed, %s)
-    : (i32, !llvm.struct<(i32, i32, i32)>) -> () <numFixedArgs = 1 : index>
-  llvm.return
+    : (!kgen.scalar<si32>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g8(i32, ...)
 }
@@ -567,8 +566,7 @@ llvm.func @variadic_pair_linux(%fixed: i32, %s: !llvm.struct<(i32, i32, i32)>) {
 //
 // Apple's arm64 ABI requires the caller to extend a narrow integer; AAPCS64
 // does not, and clang emits no extension on Linux. The sign
-// comes from the POP dtype, so the operands arrive as KGEN scalars, as they do
-// from a real compile. Only the arguments are marked: a mark on the result
+// comes from the POP dtype. Only the arguments are marked: a mark on the result
 // would let LLVM assume the callee extended it, but a C struct flattened to a
 // bare Mojo integer comes back with unspecified upper bits.
 //===----------------------------------------------------------------------===//
@@ -578,14 +576,10 @@ llvm.func @variadic_pair_linux(%fixed: i32, %s: !llvm.struct<(i32, i32, i32)>) {
 // I1: Darwin - ui8, si16, bool and si32 arguments, si8 result.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_narrow_ints_darwin
-llvm.func @arg_narrow_ints_darwin(%a: i8, %b: i16, %c: i1, %d: i32) {
-  %u8 = builtin.unrealized_conversion_cast %a : i8 to !kgen.scalar<ui8>
-  %s16 = builtin.unrealized_conversion_cast %b : i16 to !kgen.scalar<si16>
-  %bool = builtin.unrealized_conversion_cast %c : i1 to !kgen.scalar<bool>
-  %s32 = builtin.unrealized_conversion_cast %d : i32 to !kgen.scalar<si32>
+kgen.func @arg_narrow_ints_darwin(%u8: !kgen.scalar<ui8>, %s16: !kgen.scalar<si16>, %bool: !kgen.scalar<bool>, %s32: !kgen.scalar<si32>) {
   // CHECK: llvm.call @c_i1(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i8 {llvm.zeroext}, i16 {llvm.signext}, i1 {llvm.zeroext}, i32) -> i8
   %r = pop.external_call @c_i1(%u8, %s16, %bool, %s32) : (!kgen.scalar<ui8>, !kgen.scalar<si16>, !kgen.scalar<bool>, !kgen.scalar<si32>) -> !kgen.scalar<si8>
-  llvm.return
+  hlcf.return
 }
 // CHECK: llvm.func @c_i1(i8 {llvm.zeroext}, i16 {llvm.signext}, i1 {llvm.zeroext}, i32) -> i8
 }
@@ -595,12 +589,10 @@ llvm.func @arg_narrow_ints_darwin(%a: i8, %b: i16, %c: i1, %d: i32) {
 // I2: Linux - the same signature gets no extension.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_narrow_ints_linux
-llvm.func @arg_narrow_ints_linux(%a: i8, %b: i16) {
-  %u8 = builtin.unrealized_conversion_cast %a : i8 to !kgen.scalar<ui8>
-  %s16 = builtin.unrealized_conversion_cast %b : i16 to !kgen.scalar<si16>
+kgen.func @arg_narrow_ints_linux(%u8: !kgen.scalar<ui8>, %s16: !kgen.scalar<si16>) {
   // CHECK: llvm.call @c_i2(%{{.*}}, %{{.*}}) : (i8, i16) -> i8
   %r = pop.external_call @c_i2(%u8, %s16) : (!kgen.scalar<ui8>, !kgen.scalar<si16>) -> !kgen.scalar<si8>
-  llvm.return
+  hlcf.return
 }
 // CHECK: llvm.func @c_i2(i8, i16) -> i8
 }
@@ -613,13 +605,10 @@ llvm.func @arg_narrow_ints_linux(%a: i8, %b: i16) {
 // field.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_single_field_structs_darwin
-llvm.func @arg_single_field_structs_darwin(%a: !llvm.struct<(i8)>, %b: !llvm.struct<(i16)>, %c: !llvm.struct<(i1)>) {
-  %s8 = builtin.unrealized_conversion_cast %a : !llvm.struct<(i8)> to !kgen.struct<(scalar<si8>)>
-  %u16 = builtin.unrealized_conversion_cast %b : !llvm.struct<(i16)> to !kgen.struct<(scalar<ui16>)>
-  %bool = builtin.unrealized_conversion_cast %c : !llvm.struct<(i1)> to !kgen.struct<(scalar<bool>)>
+kgen.func @arg_single_field_structs_darwin(%s8: !kgen.struct<(scalar<si8>)>, %u16: !kgen.struct<(scalar<ui16>)>, %bool: !kgen.struct<(scalar<bool>)>) {
   // CHECK: llvm.call @c_i3(%{{.*}}, %{{.*}}, %{{.*}}) : (i8, i16, i8) -> i8
   %r = pop.external_call @c_i3(%s8, %u16, %bool) : (!kgen.struct<(scalar<si8>)>, !kgen.struct<(scalar<ui16>)>, !kgen.struct<(scalar<bool>)>) -> !kgen.struct<(scalar<si8>)>
-  llvm.return
+  hlcf.return
 }
 // CHECK: llvm.func @c_i3(i8, i16, i8) -> i8
 }
@@ -640,10 +629,10 @@ llvm.func @arg_single_field_structs_darwin(%a: !llvm.struct<(i8)>, %b: !llvm.str
 // and only X7 remains, so it rolls back to memory: coerced to [2 x i64] by value.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_rollback_after_seven
-llvm.func @arg_rollback_after_seven(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_rollback_after_seven(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %g: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_ar1(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>) -> ()
-  pop.external_call @c_ar1(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_ar1(%a, %b, %c, %d, %e, %f, %g, %s) : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar1(i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>)
 }
@@ -654,10 +643,10 @@ llvm.func @arg_rollback_after_seven(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64,
 // stays a two-register IntegerPair (i64, i32).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_no_rollback_after_six
-llvm.func @arg_no_rollback_after_six(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_no_rollback_after_six(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_ar2(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, i32) -> ()
-  pop.external_call @c_ar2(%a, %b, %c, %d, %e, %f, %s) : (i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_ar2(%a, %b, %c, %d, %e, %f, %s) : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar2(i64, i64, i64, i64, i64, i64, i64, i32)
 }
@@ -668,9 +657,9 @@ llvm.func @arg_no_rollback_after_six(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64
 // X7 and the struct rolls back to memory.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_sret_rollback
-llvm.func @arg_sret_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>) {
-  %r = pop.external_call @c_ar3(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> !llvm.struct<(i64, i64, i64)>
-  llvm.return
+kgen.func @arg_sret_rollback(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %g: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
+  %r = pop.external_call @c_ar3(%a, %b, %c, %d, %e, %f, %g, %s) : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>)
 }
@@ -682,9 +671,9 @@ llvm.func @arg_sret_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i6
 // sret takes one of the six integer registers.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_sret_no_rollback
-llvm.func @arg_sret_no_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %s: !llvm.struct<(i32, i32, i32)>) {
-  %r = pop.external_call @c_ar4(%a, %b, %c, %d, %e, %f, %s) : (i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> !llvm.struct<(i64, i64, i64)>
-  llvm.return
+kgen.func @arg_sret_no_rollback(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
+  %r = pop.external_call @c_ar4(%a, %b, %c, %d, %e, %f, %s) : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar4(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i64, i64, i64, i64, i64, i64, i64, i32)
 }
@@ -696,10 +685,10 @@ llvm.func @arg_sret_no_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f:
 // stays a direct parameter after the [2 x i64] aggregate.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_after_rollback
-llvm.func @arg_after_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i32, i32, i32)>, %t: i64) {
+kgen.func @arg_after_rollback(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %g: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>, %t: !kgen.scalar<si64>) {
   // CHECK: llvm.call @c_ar5(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>, i64) -> ()
-  pop.external_call @c_ar5(%a, %b, %c, %d, %e, %f, %g, %s, %t) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i32, i32, i32)>, i64) -> ()
-  llvm.return
+  pop.external_call @c_ar5(%a, %b, %c, %d, %e, %f, %g, %s, %t) : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>, !kgen.scalar<si64>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar5(i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>, i64)
 }
@@ -710,10 +699,10 @@ llvm.func @arg_after_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i
 // its 16-byte stack-slot alignment (clang's rule for aligned aggregates).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_align16_rollback
-llvm.func @arg_align16_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %s: !llvm.struct<(i128)>) {
+kgen.func @arg_align16_rollback(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %g: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si128>)>) {
   // CHECK: llvm.call @c_ar6(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, i128) -> ()
-  pop.external_call @c_ar6(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !llvm.struct<(i128)>) -> ()
-  llvm.return
+  pop.external_call @c_ar6(%a, %b, %c, %d, %e, %f, %g, %s) : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si128>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar6(i64, i64, i64, i64, i64, i64, i64, i128)
 }
@@ -724,10 +713,10 @@ llvm.func @arg_align16_rollback(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f:
 // the backend starts it at an even register (X2), as clang does.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_align16_in_registers
-llvm.func @arg_align16_in_registers(%a: i64, %s: !llvm.struct<(i128)>) {
+kgen.func @arg_align16_in_registers(%a: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si128>)>) {
   // CHECK: llvm.call @c_ar7(%{{.*}}, %{{.*}}) : (i64, i128) -> ()
-  pop.external_call @c_ar7(%a, %s) : (i64, !llvm.struct<(i128)>) -> ()
-  llvm.return
+  pop.external_call @c_ar7(%a, %s) : (!kgen.scalar<si64>, !kgen.struct<(scalar<si128>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar7(i64, i128)
 }
@@ -738,10 +727,10 @@ llvm.func @arg_align16_in_registers(%a: i64, %s: !llvm.struct<(i128)>) {
 // 12-byte struct rolls back to memory.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_align16_skip_then_rollback
-llvm.func @arg_align16_skip_then_rollback(%a: i64, %w: !llvm.struct<(i128)>, %b: i64, %c: i64, %d: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_align16_skip_then_rollback(%a: !kgen.scalar<si64>, %w: !kgen.struct<(scalar<si128>)>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_ar8(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i128, i64, i64, i64, !llvm.array<2 x i64>) -> ()
-  pop.external_call @c_ar8(%a, %w, %b, %c, %d, %s) : (i64, !llvm.struct<(i128)>, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_ar8(%a, %w, %b, %c, %d, %s) : (!kgen.scalar<si64>, !kgen.struct<(scalar<si128>)>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar8(i64, i128, i64, i64, i64, !llvm.array<2 x i64>)
 }
@@ -752,26 +741,25 @@ llvm.func @arg_align16_skip_then_rollback(%a: i64, %w: !llvm.struct<(i128)>, %b:
 // 12-byte struct still fits in X6 and X7.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_align16_no_skip_darwin
-llvm.func @arg_align16_no_skip_darwin(%a: i64, %w: !llvm.struct<(i128)>, %b: i64, %c: i64, %d: i64, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_align16_no_skip_darwin(%a: !kgen.scalar<si64>, %w: !kgen.struct<(scalar<si128>)>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_ar9(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i128, i64, i64, i64, i64, i32) -> ()
-  pop.external_call @c_ar9(%a, %w, %b, %c, %d, %s) : (i64, !llvm.struct<(i128)>, i64, i64, i64, !llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_ar9(%a, %w, %b, %c, %d, %s) : (!kgen.scalar<si64>, !kgen.struct<(scalar<si128>)>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar9(i64, i128, i64, i64, i64, i64, i32)
 }
 
 // -----
 
-// R10: the LLVM type of an `@align(16)` {i64, i64} is {i64, i64}, which has
-// 8-byte alignment. Apple's arm64 ABI uses the alignment of the type, so the
-// struct rolls back to i128 and keeps its 16-byte stack slot.
+// R10: an `@align(16)` struct of two si64 has 16-byte alignment, but its
+// fields have only 8-byte alignment. Apple's arm64 ABI uses the alignment of
+// the type, so the struct rolls back to i128 and keeps its 16-byte stack slot.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_decorated_align16_rollback_darwin
-llvm.func @arg_decorated_align16_rollback_darwin(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %v: !llvm.struct<(i64, i64)>) {
-  %s = builtin.unrealized_conversion_cast %v : !llvm.struct<(i64, i64)> to !kgen.struct<(i64, i64) align(16)>
+kgen.func @arg_decorated_align16_rollback_darwin(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %g: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si64>, scalar<si64>) align(16)>) {
   // CHECK: llvm.call @c_ar10(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, i128) -> ()
-  pop.external_call @c_ar10(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !kgen.struct<(i64, i64) align(16)>) -> ()
-  llvm.return
+  pop.external_call @c_ar10(%a, %b, %c, %d, %e, %f, %g, %s) : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si64>, scalar<si64>) align(16)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar10(i64, i64, i64, i64, i64, i64, i64, i128)
 }
@@ -782,11 +770,10 @@ llvm.func @arg_decorated_align16_rollback_darwin(%a: i64, %b: i64, %c: i64, %d: 
 // not include `@align`, so the struct rolls back to [2 x i64].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_decorated_align16_rollback_linux
-llvm.func @arg_decorated_align16_rollback_linux(%a: i64, %b: i64, %c: i64, %d: i64, %e: i64, %f: i64, %g: i64, %v: !llvm.struct<(i64, i64)>) {
-  %s = builtin.unrealized_conversion_cast %v : !llvm.struct<(i64, i64)> to !kgen.struct<(i64, i64) align(16)>
+kgen.func @arg_decorated_align16_rollback_linux(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %f: !kgen.scalar<si64>, %g: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si64>, scalar<si64>) align(16)>) {
   // CHECK: llvm.call @c_ar11(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>) -> ()
-  pop.external_call @c_ar11(%a, %b, %c, %d, %e, %f, %g, %s) : (i64, i64, i64, i64, i64, i64, i64, !kgen.struct<(i64, i64) align(16)>) -> ()
-  llvm.return
+  pop.external_call @c_ar11(%a, %b, %c, %d, %e, %f, %g, %s) : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si64>, scalar<si64>) align(16)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_ar11(i64, i64, i64, i64, i64, i64, i64, !llvm.array<2 x i64>)
 }
