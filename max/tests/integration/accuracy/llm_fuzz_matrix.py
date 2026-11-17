@@ -120,6 +120,18 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.8",
         timeout=90,
     ),
+    # Mirrors the production MiniMax-M3.1-Flash recipe (kadabra-m31-prod-7):
+    # DP=2 x EP=8, NVFP4 KV, DSpark draft from the target repo's dspark/
+    # folder, with the tiered connector standing in for dKV. The longer
+    # timeout covers the draft model's warm-up on top of the target's.
+    PipelineEntry(
+        pipeline="minimax/MiniMax-M3.1-Flash",
+        model_path="MiniMaxAI/MiniMax-M3.1-Flash",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=120,
+    ),
     # Laguna S-2.1 on one B200: the gated lane, carrying the mixed NVFP4/bf16
     # expert split. Mach only.
     PipelineEntry(
