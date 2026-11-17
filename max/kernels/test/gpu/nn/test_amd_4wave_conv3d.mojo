@@ -16,7 +16,7 @@ End-to-end correctness sweep for the native 3D implicit-GEMM conv
 path. Each shape runs both:
 
   - `dispatch_amd_4wave_conv3d` (the new path being added by this PR),
-  - `conv_miopen[conv_rank=3, ...]` (the reference, autotuned per
+  - `conv_miopen[filter_is_fcrs=False]` (the reference, autotuned per
     shape via MIOpen's Find mode).
 
 and asserts the two outputs match within the BF16 reduction-order
@@ -221,7 +221,7 @@ def test_4wave_conv3d_vs_miopen[
     var pad_idx = (pad_d, pad_h, pad_w)
 
     # -------- MIOpen reference (3D conv, QRSCF filter) --------
-    conv_miopen[conv_rank=3, filter_is_fcrs=False](
+    conv_miopen[filter_is_fcrs=False](
         input_tt,
         filter_qrscf_tt,
         output_miopen_tt,

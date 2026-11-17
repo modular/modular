@@ -44,6 +44,7 @@ from std.benchmark import (
 from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import (
+    Coord,
     Idx,
     TileTensor,
     row_major,
@@ -239,9 +240,9 @@ def bench_conv3d[
         ),
     )
 
-    var stride_idx = IndexList[3](stride_d, stride_h, stride_w)
-    var dilation_idx = IndexList[3](1, 1, 1)
-    var pad_idx = IndexList[3](pad_d, pad_h, pad_w)
+    var stride_idx = Coord(stride_d, stride_h, stride_w)
+    var dilation_idx = Coord(1, 1, 1)
+    var pad_idx = Coord(pad_d, pad_h, pad_w)
 
     comptime block_size = 16
 

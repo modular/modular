@@ -431,9 +431,9 @@ def test_winograd_conv_gpu[
         input_tt,
         filter_tt,
         output_ref_tt,
-        stride,
-        dilation,
-        pad,
+        Coord(stride),
+        Coord(dilation),
+        Coord(pad),
         num_groups,
         ctx,
     )

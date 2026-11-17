@@ -38,7 +38,6 @@ from max.gpu.primitives.grid_controls import (
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.apple import ConvIm2colParams, enqueue_apple_conv2d
-from std.utils.index import IndexList
 from nn.conv.conv_utils import (
     ConvSimdComputeFn,
     ConvSimdEpilogueFn,
@@ -202,9 +201,9 @@ def dispatch_im2col_matmul_conv2d[
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    symmetric_padding: IndexList[2],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    symmetric_padding: Coord[Int, Int],
     num_groups: Int,
     ctx: DeviceContext,
     epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,
@@ -502,9 +501,9 @@ def dispatch_fused_im2col_conv2d_apple[
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    symmetric_padding: IndexList[2],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    symmetric_padding: Coord[Int, Int],
     num_groups: Int,
     ctx: DeviceContext,
     epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,

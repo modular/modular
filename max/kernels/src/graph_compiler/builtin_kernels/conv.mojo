@@ -605,11 +605,11 @@ struct ConvCPU:
             input.to_tile_tensor(),
             filter.to_tile_tensor(),
             row_major(output.shape()),
-            attrs.stride,
-            attrs.dilation,
-            attrs.pad_d(),
-            attrs.pad_h(),
-            attrs.pad_w(),
+            Coord(attrs.stride),
+            Coord(attrs.dilation),
+            Coord(attrs.pad_d()),
+            Coord(attrs.pad_h()),
+            Coord(attrs.pad_w()),
             Int(num_groups),
             output_fn,
             ctx,
@@ -663,11 +663,11 @@ struct ConvCPU:
             input.to_tile_tensor(),
             filter.to_tile_tensor(),
             output.to_tile_tensor(),
-            attrs.stride,
-            attrs.dilation,
-            attrs.pad_d(),
-            attrs.pad_h(),
-            attrs.pad_w(),
+            Coord(attrs.stride),
+            Coord(attrs.dilation),
+            Coord(attrs.pad_d()),
+            Coord(attrs.pad_h()),
+            Coord(attrs.pad_w()),
             Int(num_groups),
             no_conv_simd_epilogue_fn,
             Optional(ctx.assert_cpu_target()),
@@ -718,9 +718,9 @@ def _conv_gpu[
         input_mut,
         filter,
         output,
-        attrs.stride,
-        attrs.dilation,
-        attrs.padding,
+        Coord(attrs.stride),
+        Coord(attrs.dilation),
+        Coord(attrs.padding),
         num_groups,
         ctx,
         epilogue_fn=epilogue_fn,
@@ -843,13 +843,15 @@ def mo_conv_shape(
     comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
     comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        conv_shape(
-            input.to_tile_tensor(),
-            filter.to_tile_tensor(),
-            strides.to_tile_tensor(),
-            dilations.to_tile_tensor(),
-            paddings.to_tile_tensor(),
-            num_groups,
+        coord_to_index_list(
+            conv_shape(
+                input.to_tile_tensor(),
+                filter.to_tile_tensor(),
+                strides.to_tile_tensor(),
+                dilations.to_tile_tensor(),
+                paddings.to_tile_tensor(),
+                num_groups,
+            )
         )
     )
 
@@ -944,9 +946,9 @@ struct Conv2dResidualAdd:
             output_ptr._unsafe_nullable(), row_major(output.shape())
         )
 
-        var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
-        var stride_tuple = IndexList[2](stride_h, stride_w)
-        var dilation_tuple = IndexList[2](1, 1)
+        var pad_tuple = Coord(pad_top, pad_bottom, pad_left, pad_right)
+        var stride_tuple = Coord(stride_h, stride_w)
+        var dilation_tuple = Coord(1, 1)
 
         conv_gpu[
             dtype,
@@ -1460,16 +1462,18 @@ def pack_conv_filter_shape_fn[
     """
 
     return rebind[IndexList[type_of(filter_buf).rank + 1]](
-        pack_filter_shape_conv[
-            type_of(filter_buf).dtype,
-            Coord[*input_shape.element_types](),
-            Coord[*filter_shape.element_types](),
-            Coord[*output_shape.element_types](),
-            Coord[*strides.element_types](),
-            Coord[*dilations.element_types](),
-            Coord[*paddings.element_types](),
-            num_groups,
-        ](filter_buf.to_tile_tensor())
+        coord_to_index_list(
+            pack_filter_shape_conv[
+                type_of(filter_buf).dtype,
+                Coord[*input_shape.element_types](),
+                Coord[*filter_shape.element_types](),
+                Coord[*output_shape.element_types](),
+                Coord[*strides.element_types](),
+                Coord[*dilations.element_types](),
+                Coord[*paddings.element_types](),
+                num_groups,
+            ](filter_buf.to_tile_tensor())
+        )
     )
 
 

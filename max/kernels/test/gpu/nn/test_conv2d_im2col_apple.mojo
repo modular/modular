@@ -132,9 +132,9 @@ def test_conv2d_fused_apple_dynamic_round(
         input_tt,
         filter_tt,
         output_tt,
-        IndexList[2](stride, stride),
-        IndexList[2](1, 1),
-        IndexList[2](pad, pad),
+        Coord(stride, stride),
+        Coord(1, 1),
+        Coord(pad, pad),
         1,
         ctx,
         compute_fn=round_compute,
@@ -228,8 +228,8 @@ def test_conv2d_im2col_direct[
     comptime S = filter_layout.static_shape[1]
     comptime F = filter_layout.static_shape[3]
 
-    comptime pad_h = IndexList[2](pad[0], pad[0])
-    comptime pad_w = IndexList[2](pad[1], pad[1])
+    comptime pad_h = Coord(pad[0], pad[0])
+    comptime pad_w = Coord(pad[1], pad[1])
 
     comptime H_out = (H + pad_h[0] + pad_h[1] - (R - 1) - 1) // stride[0] + 1
     comptime W_out = (W + pad_w[0] + pad_w[1] - (S - 1) - 1) // stride[1] + 1
@@ -265,14 +265,14 @@ def test_conv2d_im2col_direct[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, 1, H_out, W_out, F),
-        Index(N, 1, H, W, C),
-        Index(1, R, S, C, F),
-        IndexList[2](0, 0),
+        Coord(N, 1, H_out, W_out, F),
+        Coord(N, 1, H, W, C),
+        Coord(1, R, S, C, F),
+        Coord(0, 0),
         pad_h,
         pad_w,
-        IndexList[3](1, stride[0], stride[1]),
-        IndexList[3](1, 1, 1),
+        Coord(1, stride[0], stride[1]),
+        Coord(1, 1, 1),
         1,
     )
     var scale = Scalar[accum_dtype](2.0) if with_epilogue else Scalar[
@@ -305,9 +305,9 @@ def test_conv2d_im2col_direct[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
             compute_fn=scale_compute,
@@ -317,9 +317,9 @@ def test_conv2d_im2col_direct[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -375,8 +375,8 @@ def test_conv2d_fused_apple[
     comptime S = filter_layout.static_shape[1]
     comptime F = filter_layout.static_shape[3]
 
-    comptime pad_h = IndexList[2](pad[0], pad[0])
-    comptime pad_w = IndexList[2](pad[1], pad[1])
+    comptime pad_h = Coord(pad[0], pad[0])
+    comptime pad_w = Coord(pad[1], pad[1])
 
     comptime H_out = (H + pad_h[0] + pad_h[1] - (R - 1) - 1) // stride[0] + 1
     comptime W_out = (W + pad_w[0] + pad_w[1] - (S - 1) - 1) // stride[1] + 1
@@ -407,14 +407,14 @@ def test_conv2d_fused_apple[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, 1, H_out, W_out, F),
-        Index(N, 1, H, W, C),
-        Index(1, R, S, C, F),
-        IndexList[2](0, 0),
+        Coord(N, 1, H_out, W_out, F),
+        Coord(N, 1, H, W, C),
+        Coord(1, R, S, C, F),
+        Coord(0, 0),
         pad_h,
         pad_w,
-        IndexList[3](1, stride[0], stride[1]),
-        IndexList[3](1, 1, 1),
+        Coord(1, stride[0], stride[1]),
+        Coord(1, 1, 1),
         1,
     )
     var scale = Scalar[accum_dtype](2.0) if with_epilogue else Scalar[
@@ -447,9 +447,9 @@ def test_conv2d_fused_apple[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
             compute_fn=scale_compute,
@@ -459,9 +459,9 @@ def test_conv2d_fused_apple[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -515,8 +515,8 @@ def test_conv2d_gpu_dispatch[
     comptime S = filter_layout.static_shape[1]
     comptime F = filter_layout.static_shape[3]
 
-    comptime pad_h = IndexList[2](pad[0], pad[0])
-    comptime pad_w = IndexList[2](pad[1], pad[1])
+    comptime pad_h = Coord(pad[0], pad[0])
+    comptime pad_w = Coord(pad[1], pad[1])
 
     comptime H_out = (H + pad_h[0] + pad_h[1] - (R - 1) - 1) // stride[0] + 1
     comptime W_out = (W + pad_w[0] + pad_w[1] - (S - 1) - 1) // stride[1] + 1
@@ -547,14 +547,14 @@ def test_conv2d_gpu_dispatch[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, 1, H_out, W_out, F),
-        Index(N, 1, H, W, C),
-        Index(1, R, S, C, F),
-        IndexList[2](0, 0),
+        Coord(N, 1, H_out, W_out, F),
+        Coord(N, 1, H, W, C),
+        Coord(1, R, S, C, F),
+        Coord(0, 0),
         pad_h,
         pad_w,
-        IndexList[3](1, stride[0], stride[1]),
-        IndexList[3](1, 1, 1),
+        Coord(1, stride[0], stride[1]),
+        Coord(1, 1, 1),
         1,
     )
     for i in range(output_size):
@@ -589,9 +589,9 @@ def test_conv2d_gpu_dispatch[
         input_tt,
         filter_tt,
         output_tt,
-        stride,
-        IndexList[2](1, 1),
-        IndexList[4](pad[0], pad[0], pad[1], pad[1]),
+        Coord(stride),
+        Coord(1, 1),
+        Coord(pad[0], pad[0], pad[1], pad[1]),
         1,
         ctx,
         compute_fn=scale_compute,

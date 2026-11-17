@@ -184,9 +184,9 @@ def test_4wave_conv_vs_miopen[
         input_miopen,
         filter_miopen,
         output_miopen_tt,
-        IndexList[2](1, 1),  # stride
-        IndexList[2](1, 1),  # dilation
-        IndexList[2](pad_h, pad_w),  # padding
+        Coord(1, 1),  # stride
+        Coord(1, 1),  # dilation
+        Coord(pad_h, pad_w),  # padding
         1,  # num_groups
         ctx,
     )

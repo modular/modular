@@ -52,9 +52,9 @@ def test_conv3d_gpu[
     comptime S = filter_layout.static_shape[2]
     comptime F = filter_layout.static_shape[4]
 
-    comptime pad_d = IndexList[2](pad[0], pad[0])
-    comptime pad_h = IndexList[2](pad[1], pad[1])
-    comptime pad_w = IndexList[2](pad[2], pad[2])
+    comptime pad_d = Coord(pad[0], pad[0])
+    comptime pad_h = Coord(pad[1], pad[1])
+    comptime pad_w = Coord(pad[2], pad[2])
 
     # compute output dimensions, just working backwards to see what the output shape will be
     comptime D_out = (
@@ -96,14 +96,14 @@ def test_conv3d_gpu[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, D_out, H_out, W_out, F),  # output shape
-        Index(N, D, H, W, C),  # input shape
-        Index(Q, R, S, C, F),  # filter shape
+        Coord(N, D_out, H_out, W_out, F),  # output shape
+        Coord(N, D, H, W, C),  # input shape
+        Coord(Q, R, S, C, F),  # filter shape
         pad_d,
         pad_h,
         pad_w,
-        IndexList[3](stride[0], stride[1], stride[2]),
-        IndexList[3](dilation[0], dilation[1], dilation[2]),
+        Coord(stride[0], stride[1], stride[2]),
+        Coord(dilation[0], dilation[1], dilation[2]),
         1,  # num_groups
     )
     for i in range(output_size):
@@ -148,9 +148,9 @@ def test_conv3d_gpu[
         input_buf.as_unsafe_any_origin(),
         filter_buf.as_unsafe_any_origin(),
         output_buf.as_unsafe_any_origin(),
-        stride,
-        dilation,
-        pad,
+        Coord(stride[0], stride[1], stride[2]),
+        Coord(dilation[0], dilation[1], dilation[2]),
+        Coord(pad[0], pad[1], pad[2]),
         Int32(1),  # num_groups
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size, 1),
@@ -202,9 +202,9 @@ def test_conv3d_gpu_dispatch[
     comptime S = filter_layout.static_shape[2]
     comptime F = filter_layout.static_shape[4]
 
-    comptime pad_d = IndexList[2](pad[0], pad[0])
-    comptime pad_h = IndexList[2](pad[1], pad[1])
-    comptime pad_w = IndexList[2](pad[2], pad[2])
+    comptime pad_d = Coord(pad[0], pad[0])
+    comptime pad_h = Coord(pad[1], pad[1])
+    comptime pad_w = Coord(pad[2], pad[2])
 
     comptime D_out = (
         D + pad_d[0] + pad_d[1] - dilation[0] * (Q - 1) - 1
@@ -239,14 +239,14 @@ def test_conv3d_gpu_dispatch[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, D_out, H_out, W_out, F),
-        Index(N, D, H, W, C),
-        Index(Q, R, S, C, F),
+        Coord(N, D_out, H_out, W_out, F),
+        Coord(N, D, H, W, C),
+        Coord(Q, R, S, C, F),
         pad_d,
         pad_h,
         pad_w,
-        IndexList[3](stride[0], stride[1], stride[2]),
-        IndexList[3](dilation[0], dilation[1], dilation[2]),
+        Coord(stride[0], stride[1], stride[2]),
+        Coord(dilation[0], dilation[1], dilation[2]),
         1,
     )
     for i in range(output_size):
@@ -282,9 +282,9 @@ def test_conv3d_gpu_dispatch[
         input_tt,
         filter_tt,
         output_tt,
-        stride,
-        dilation,
-        IndexList[6](pad[0], pad[0], pad[1], pad[1], pad[2], pad[2]),
+        Coord(stride),
+        Coord(dilation),
+        Coord(pad[0], pad[0], pad[1], pad[1], pad[2], pad[2]),
         1,
         ctx,
         compute_fn=scale_compute,
@@ -344,9 +344,9 @@ def test_conv3d_im2col_multi_tile[
     comptime S = filter_layout.static_shape[2]
     comptime F = filter_layout.static_shape[4]
 
-    comptime pad_d = IndexList[2](pad[0], pad[0])
-    comptime pad_h = IndexList[2](pad[1], pad[1])
-    comptime pad_w = IndexList[2](pad[2], pad[2])
+    comptime pad_d = Coord(pad[0], pad[0])
+    comptime pad_h = Coord(pad[1], pad[1])
+    comptime pad_w = Coord(pad[2], pad[2])
 
     comptime D_out = (
         D + pad_d[0] + pad_d[1] - dilation[0] * (Q - 1) - 1
@@ -378,14 +378,14 @@ def test_conv3d_im2col_multi_tile[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, D_out, H_out, W_out, F),
-        Index(N, D, H, W, C),
-        Index(Q, R, S, C, F),
+        Coord(N, D_out, H_out, W_out, F),
+        Coord(N, D, H, W, C),
+        Coord(Q, R, S, C, F),
         pad_d,
         pad_h,
         pad_w,
-        IndexList[3](stride[0], stride[1], stride[2]),
-        IndexList[3](dilation[0], dilation[1], dilation[2]),
+        Coord(stride[0], stride[1], stride[2]),
+        Coord(dilation[0], dilation[1], dilation[2]),
         1,
     )
     var scale = Scalar[accum_dtype](2.0) if with_epilogue else Scalar[
@@ -507,8 +507,8 @@ def test_conv2d_im2col_multi_tile[
     comptime S = filter_layout.static_shape[1]
     comptime F = filter_layout.static_shape[3]
 
-    comptime pad_h = IndexList[2](pad[0], pad[0])
-    comptime pad_w = IndexList[2](pad[1], pad[1])
+    comptime pad_h = Coord(pad[0], pad[0])
+    comptime pad_w = Coord(pad[1], pad[1])
 
     comptime H_out = (
         H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1
@@ -538,14 +538,14 @@ def test_conv2d_im2col_multi_tile[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, 1, H_out, W_out, F),
-        Index(N, 1, H, W, C),
-        Index(1, R, S, C, F),
-        IndexList[2](0, 0),
+        Coord(N, 1, H_out, W_out, F),
+        Coord(N, 1, H, W, C),
+        Coord(1, R, S, C, F),
+        Coord(0, 0),
         pad_h,
         pad_w,
-        IndexList[3](1, stride[0], stride[1]),
-        IndexList[3](1, dilation[0], dilation[1]),
+        Coord(1, stride[0], stride[1]),
+        Coord(1, dilation[0], dilation[1]),
         1,
     )
     var scale = Scalar[accum_dtype](2.0) if with_epilogue else Scalar[
@@ -582,9 +582,9 @@ def test_conv2d_im2col_multi_tile[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            dilation,
-            pad,
+            (stride[0], stride[1]),
+            (dilation[0], dilation[1]),
+            (pad[0], pad[1]),
             1,
             ctx,
             compute_fn=scale_compute,
@@ -596,9 +596,9 @@ def test_conv2d_im2col_multi_tile[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            dilation,
-            pad,
+            (stride[0], stride[1]),
+            (dilation[0], dilation[1]),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -674,8 +674,8 @@ def test_conv2d_im2col_chain_lifetime[
     comptime S = filter_layout.static_shape[1]
     comptime F = filter_layout.static_shape[3]
 
-    comptime pad_h = IndexList[2](pad[0], pad[0])
-    comptime pad_w = IndexList[2](pad[1], pad[1])
+    comptime pad_h = Coord(pad[0], pad[0])
+    comptime pad_w = Coord(pad[1], pad[1])
 
     comptime H_out = (
         H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1
@@ -737,7 +737,16 @@ def test_conv2d_im2col_chain_lifetime[
         )
         handled = dispatch_im2col_matmul_conv2d[
             m_tile_byte_budget=m_tile_byte_budget
-        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, ctx)
+        ](
+            in_tt,
+            filter_tt,
+            out_tt,
+            (stride[0], stride[1]),
+            (dilation[0], dilation[1]),
+            (pad[0], pad[1]),
+            1,
+            ctx,
+        )
         ctx.synchronize()
         slot += 1
 
@@ -764,7 +773,16 @@ def test_conv2d_im2col_chain_lifetime[
         )
         handled = dispatch_im2col_matmul_conv2d[
             m_tile_byte_budget=m_tile_byte_budget
-        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, alt)
+        ](
+            in_tt,
+            filter_tt,
+            out_tt,
+            (stride[0], stride[1]),
+            (dilation[0], dilation[1]),
+            (pad[0], pad[1]),
+            1,
+            alt,
+        )
         slot += 1
     _ = alt^
 
@@ -788,7 +806,16 @@ def test_conv2d_im2col_chain_lifetime[
         )
         handled = dispatch_im2col_matmul_conv2d[
             m_tile_byte_budget=m_tile_byte_budget
-        ](in_tt, filter_tt, out_tt, stride, dilation, pad, 1, alt2)
+        ](
+            in_tt,
+            filter_tt,
+            out_tt,
+            (stride[0], stride[1]),
+            (dilation[0], dilation[1]),
+            (pad[0], pad[1]),
+            1,
+            alt2,
+        )
         slot += 1
     _ = alt2^
 
@@ -857,9 +884,9 @@ def test_conv3d_1x1x1_matmul_direct[
         Q == 1 and R == 1 and S == 1
     ), "test_conv3d_1x1x1_matmul_direct requires a 1x1x1 filter"
 
-    comptime stride = IndexList[3](1, 1, 1)
-    comptime dilation = IndexList[3](1, 1, 1)
-    comptime pad = IndexList[3](0, 0, 0)
+    comptime stride = Coord(1, 1, 1)
+    comptime dilation = Coord(1, 1, 1)
+    comptime pad = Coord(0, 0, 0)
 
     comptime input_size = input_layout.size()
     comptime filter_size = filter_layout.size()
@@ -882,12 +909,12 @@ def test_conv3d_1x1x1_matmul_direct[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, D, H, W, F),
-        Index(N, D, H, W, C),
-        Index(Q, R, S, C, F),
-        IndexList[2](0, 0),
-        IndexList[2](0, 0),
-        IndexList[2](0, 0),
+        Coord(N, D, H, W, F),
+        Coord(N, D, H, W, C),
+        Coord(Q, R, S, C, F),
+        Coord(0, 0),
+        Coord(0, 0),
+        Coord(0, 0),
         stride,
         dilation,
         1,

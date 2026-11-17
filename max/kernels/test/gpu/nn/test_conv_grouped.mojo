@@ -19,7 +19,7 @@ iteration to group-local channels when num_groups > 1.
 from std.random import rand
 from std.testing import assert_false
 
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution, conv_gpu
 from std.utils.index import Index, IndexList
@@ -67,14 +67,14 @@ def test_grouped_conv2d[
         out_ref_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, 1, H_out, W_out, C_out),
-        Index(N, 1, H, W, C_in),
-        Index(1, R, S, C_per_group, C_out),
-        IndexList[2](0, 0),  # pad_d
-        IndexList[2](pad, pad),  # pad_h
-        IndexList[2](pad, pad),  # pad_w
-        IndexList[3](1, 1, 1),  # stride
-        IndexList[3](1, 1, 1),  # dilation
+        Coord(N, 1, H_out, W_out, C_out),
+        Coord(N, 1, H, W, C_in),
+        Coord(1, R, S, C_per_group, C_out),
+        Coord(0, 0),  # pad_d
+        Coord(pad, pad),  # pad_h
+        Coord(pad, pad),  # pad_w
+        Coord(1, 1, 1),  # stride
+        Coord(1, 1, 1),  # dilation
         num_groups,
     )
 
@@ -106,9 +106,9 @@ def test_grouped_conv2d[
         input_tt,
         filter_tt,
         out_tt,
-        IndexList[2](1, 1),  # stride
-        IndexList[2](1, 1),  # dilation
-        IndexList[4](pad, pad, pad, pad),
+        Coord(1, 1),  # stride
+        Coord(1, 1),  # dilation
+        Coord(pad, pad, pad, pad),
         num_groups,
         ctx,
     )

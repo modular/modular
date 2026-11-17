@@ -276,9 +276,9 @@ def test_conv_miopen[
         input_dev_tensor,
         filter_dev_tensor,
         output_dev_tensor,
-        stride_dim,
-        dilation_dim,
-        pad_dim,
+        Coord(stride_dim),
+        Coord(dilation_dim),
+        Coord(pad_dim),
         num_groups,
         ctx,
     )

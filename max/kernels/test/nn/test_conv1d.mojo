@@ -94,10 +94,10 @@ def test[
     var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
 
     var packed_filter_ptr = List(
-        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
+        length=packed_filter_shape.product(), fill=Scalar[dtype](0)
     )
     var packed_filter = TileTensor(
-        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
+        Span(packed_filter_ptr), row_major(packed_filter_shape)
     )
     var output = TileTensor(Span(output_ptr), row_major(Coord(Index(N, WO, F))))
 
@@ -113,14 +113,14 @@ def test[
         output_ref_ptr.unsafe_ptr(),
         input_ptr.unsafe_ptr(),
         filter_ptr.unsafe_ptr(),
-        Index(N, 1, 1, WO, F),  # output shape
-        Index(N, 1, 1, W, C),  # input shape
-        Index(1, 1, S, C // num_groups, F),  # filter shape
-        Index(0, 0),  #  pad_d
-        Index(0, 0),  #  pad_h
-        pad_w,
-        Index(1, 1, stride),
-        Index(1, 1, dilation),
+        Coord(N, 1, 1, WO, F),  # output shape
+        Coord(N, 1, 1, W, C),  # input shape
+        Coord(1, 1, S, C // num_groups, F),  # filter shape
+        Coord(0, 0),  #  pad_d
+        Coord(0, 0),  #  pad_h
+        Coord(pad_w),
+        Coord(1, 1, stride),
+        Coord(1, 1, dilation),
         num_groups,
     )
 

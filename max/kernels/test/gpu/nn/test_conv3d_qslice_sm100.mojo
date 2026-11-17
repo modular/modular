@@ -69,9 +69,9 @@ def test_conv3d_qslice_direct[
     comptime S = filter_layout.static_shape[2]
     comptime F = filter_layout.static_shape[4]
 
-    comptime stride = IndexList[3](1, 1, 1)
-    comptime dilation = IndexList[3](1, 1, 1)
-    comptime pad = IndexList[3](0, pad_h, pad_w)
+    comptime stride = Coord(1, 1, 1)
+    comptime dilation = Coord(1, 1, 1)
+    comptime pad = Coord(0, pad_h, pad_w)
 
     comptime D_out = D - Q + 1
     comptime H_out = H + 2 * pad_h - R + 1
@@ -98,12 +98,12 @@ def test_conv3d_qslice_direct[
         output_ref_accum_host.unsafe_ptr(),
         input_host.unsafe_ptr(),
         filter_host.unsafe_ptr(),
-        Index(N, D_out, H_out, W_out, F),
-        Index(N, D, H, W, C),
-        Index(Q, R, S, C, F),
-        IndexList[2](0, 0),
-        IndexList[2](pad_h, pad_h),
-        IndexList[2](pad_w, pad_w),
+        Coord(N, D_out, H_out, W_out, F),
+        Coord(N, D, H, W, C),
+        Coord(Q, R, S, C, F),
+        Coord(0, 0),
+        Coord(pad_h, pad_h),
+        Coord(pad_w, pad_w),
         stride,
         dilation,
         1,

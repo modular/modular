@@ -16,7 +16,7 @@ from std.random import rand
 
 from nn.conv.conv import Naive2dConvolution
 
-from std.utils.index import Index
+from layout import Coord
 
 
 def winograd_1d_convolution_3[
@@ -73,11 +73,11 @@ def test[dtype: DType](C: Int):  # Input Len
     var output_shape = (1, 1, 1, O, 1)
     var input_shape = (1, 1, 1, C, 1)
     comptime filter_shape = (1, 1, S, 1, 1)
-    comptime pad_d = Index(0, 0)
-    comptime pad_h = Index(0, 0)
-    comptime pad_w = Index(0, 0)
-    comptime stride = Index(1, 1, 1)
-    comptime dilation = Index(1, 1, 1)
+    comptime pad_d = Coord(0, 0)
+    comptime pad_h = Coord(0, 0)
+    comptime pad_w = Coord(0, 0)
+    comptime stride = Coord(1, 1, 1)
+    comptime dilation = Coord(1, 1, 1)
     comptime num_groups = 1
 
     Naive2dConvolution[

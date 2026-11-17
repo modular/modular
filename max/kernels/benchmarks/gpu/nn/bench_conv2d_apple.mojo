@@ -36,7 +36,7 @@ Run with: `mojo max/kernels/benchmarks/gpu/nn/bench_conv2d_apple.mojo`.
 from std.math import ceildiv
 from std.time import perf_counter
 
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from layout.layout import Layout
 from max.gpu.host import DeviceContext
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf
@@ -91,9 +91,9 @@ def bench_shape[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -104,9 +104,9 @@ def bench_shape[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -119,9 +119,9 @@ def bench_shape[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -132,9 +132,9 @@ def bench_shape[
             input_tt,
             filter_tt,
             output_tt,
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            (stride[0], stride[1]),
+            Coord(1, 1),
+            (pad[0], pad[1]),
             1,
             ctx,
         )
@@ -166,9 +166,9 @@ def bench_shape[
             input_tt.as_unsafe_any_origin(),
             filter_tt.as_unsafe_any_origin(),
             output_tt.as_unsafe_any_origin(),
-            stride,
-            IndexList[2](1, 1),
-            pad,
+            Coord(stride[0], stride[1]),
+            Coord(1, 1),
+            Coord(pad[0], pad[1]),
             Int32(1),
             grid_dim=(gx, gy, gz),
             block_dim=(block_size, block_size),

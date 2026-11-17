@@ -133,10 +133,10 @@ def test[
 
     var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
-        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
+        length=packed_filter_shape.product(), fill=Scalar[dtype](0)
     )
     var packed_filter = TileTensor(
-        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
+        Span(packed_filter_ptr), row_major(packed_filter_shape)
     )
 
     var output_shape = extend_shape(Coord(output_dims), N, F)

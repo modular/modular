@@ -53,7 +53,6 @@ from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
-from std.utils import IndexList
 
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
@@ -187,9 +186,9 @@ def dispatch_amd_4wave_conv3d[
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    stride: IndexList[3],
-    dilation: IndexList[3],
-    symmetric_padding: IndexList[3],
+    stride: Coord[Int, Int, Int],
+    dilation: Coord[Int, Int, Int],
+    symmetric_padding: Coord[Int, Int, Int],
     num_groups: Int,
     ctx: DeviceContext,
     epilogue_fn: EpilogueFnType = no_epilogue_fn,

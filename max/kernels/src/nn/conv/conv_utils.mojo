@@ -27,6 +27,36 @@ from layout.coord import Coord, CoordLike, DynamicCoord, _Flattened, coord
 from linalg.utils import partition_work
 
 
+@inline(.always)
+def _int_coord[
+    rank: Int, dtype: DType = DType.int
+](values: Coord) -> DynamicCoord[dtype, rank]:
+    """Converts a flat `Coord` of any element types to runtime integers.
+
+    Conv entry points accept stride, dilation, and padding as any flat `Coord`,
+    so callers can pass tuples, static values, or values of another integer
+    type. The backends take runtime `Scalar[dtype]` elements. Unlike
+    `Coord.make_dynamic`, the result type is spelled with `rank`, so this also
+    narrows a coordinate whose rank is a parameter, such as `conv_rank`, to
+    the fixed-rank `Coord` a backend takes inside a `comptime if` on the rank.
+
+    Parameters:
+        rank: The number of elements in `values`.
+        dtype: The integer type of the result elements.
+
+    Args:
+        values: The coordinate to convert.
+
+    Returns:
+        A `Coord` that holds each element of `values` as a `Scalar[dtype]`.
+    """
+    comptime assert values.rank == rank, "values must have `rank` elements"
+    var result = DynamicCoord[dtype, rank]()
+    comptime for i in range(rank):
+        result.replace_dynamic[i](Scalar[dtype](Int(values[i])))
+    return result
+
+
 # ===----------------------------------------------------------------------=== #
 # Epilogue Helper                                                              #
 # ===----------------------------------------------------------------------=== #

@@ -77,7 +77,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from layout import Coord, TileTensor, row_major
 from std.sys import align_of, simd_width_of
-from std.utils import IndexList
 from nn.conv.conv_utils import (
     ConvSimdComputeFn,
     ConvSimdEpilogueFn,
@@ -268,9 +267,9 @@ def dispatch_qslice_conv3d_sm100[
     input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    stride: IndexList[3],
-    dilation: IndexList[3],
-    symmetric_padding: IndexList[3],
+    stride: Coord[Int, Int, Int],
+    dilation: Coord[Int, Int, Int],
+    symmetric_padding: Coord[Int, Int, Int],
     num_groups: Int,
     ctx: DeviceContext,
     epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,

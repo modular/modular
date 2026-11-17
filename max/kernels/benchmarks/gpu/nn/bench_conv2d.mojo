@@ -270,9 +270,9 @@ def bench_conv2d[
         row_major(Idx[batch], h_out, w_out, Idx[out_channels]),
     )
 
-    var stride_idx = IndexList[2](stride_h, stride_w)
-    var dilation_idx = IndexList[2](1, 1)
-    var pad_idx = IndexList[2](pad_h, pad_w)
+    var stride_idx = Coord(stride_h, stride_w)
+    var dilation_idx = Coord(1, 1)
+    var pad_idx = Coord(pad_h, pad_w)
 
     comptime block_size = 16
 

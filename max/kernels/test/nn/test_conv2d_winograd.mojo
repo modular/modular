@@ -14,11 +14,9 @@
 from std.math import isclose
 from std.random import rand
 
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from layout.tensor_engine import DefaultEngine
 from nn.conv.conv import Naive2dConvolution
-
-from std.utils.index import Index
 
 
 @inline(.always)
@@ -207,11 +205,11 @@ def test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     comptime output_shape = (1, 1, Oh, Ow, 1)
     comptime input_shape = (1, 1, H, W, 1)
     comptime filter_shape = (1, Kh, Kw, 1, 1)
-    comptime pad_d = Index(0, 0)
-    comptime pad_h = Index(0, 0)
-    comptime pad_w = Index(0, 0)
-    comptime stride = Index(1, 1, 1)
-    comptime dilation = Index(1, 1, 1)
+    comptime pad_d = Coord(0, 0)
+    comptime pad_h = Coord(0, 0)
+    comptime pad_w = Coord(0, 0)
+    comptime stride = Coord(1, 1, 1)
+    comptime dilation = Coord(1, 1, 1)
 
     Naive2dConvolution[dtype, dtype, dtype].run(
         output_ptr_naive.unsafe_ptr(),
