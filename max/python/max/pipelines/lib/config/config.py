@@ -1027,6 +1027,16 @@ class PipelineConfig(ConfigFileModel):
     )
     """Whether to run eager verification before device graph replay."""
 
+    export_only: bool = Field(
+        default=False,
+        description=(
+            "Build the module and skip the KV cache, sampler, and warmup. "
+            "Quantized checkpoint export sets this so no generate graph "
+            "is compiled."
+        ),
+    )
+    """Build the module and skip generation setup."""
+
     tokenizer_impl: str | None = Field(
         default=None,
         description=(

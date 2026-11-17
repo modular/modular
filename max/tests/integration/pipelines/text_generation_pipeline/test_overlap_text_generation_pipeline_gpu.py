@@ -198,6 +198,7 @@ class FakePipelineConfig(ConfigFileModel):
     runtime: FakeRuntimeConfig = FakeRuntimeConfig()
     enable_echo: bool = False
     debug_verify_replay: bool = False
+    export_only: bool = False
     speculative: FakeSpeculativeConfig | None = None
 
     def configure_session(self, *args: Any, **kwargs: Any) -> None:

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Literal
 
 from max.driver import Device
@@ -104,7 +105,7 @@ class QuantizedMLP(Module[[Tensor], Tensor]):
         hidden_dim: int,
         feed_forward_length: int,
         bias: bool = False,
-        activation_function: str = "silu",
+        activation_function: str | Callable[[Tensor], Tensor] = "silu",
         *,
         quant_config: QuantConfig | None = None,
     ) -> None:
@@ -129,8 +130,10 @@ class QuantizedMLP(Module[[Tensor], Tensor]):
             bias=bias,
             quant_config=quant_config,
         )
-        self.activation_function = activation_function_from_name(
-            activation_function
+        self.activation_function = (
+            activation_function_from_name(activation_function)
+            if isinstance(activation_function, str)
+            else activation_function
         )
 
     def forward(self, x: Tensor) -> Tensor:

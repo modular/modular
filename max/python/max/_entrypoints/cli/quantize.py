@@ -16,14 +16,17 @@ import asyncio
 import contextlib
 import dataclasses
 import functools
+import json
 import logging
 import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections import defaultdict
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import requests
 from max import tree
+from max.driver import CPU, Accelerator, accelerator_count
 from max.engine import InferenceSession, Model
 from max.engine.api import PrintStyle
 from max.nn import Linear, Module
@@ -47,11 +50,12 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4TensorQuantizer,
 )
 from max.nn.quant_config import QuantConfig, QuantFormat, WeightSource
-from max.pipelines import PIPELINE_REGISTRY, TextGenerationPipelineInterface
+from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import (
     SamplingParams,
 )
 from max.pipelines.lib import (
+    GraphRole,
     ModuleV3MultiGraphPipelineModelWithKVCache,
     ModuleV3PipelineModelWithKVCache,
     PipelineArgs,
@@ -62,18 +66,18 @@ from max.pipelines.modeling.types import (
     Pipeline,
 )
 from max.pipelines.weights.checkpoint_files import (
+    ShardWriter,
     _host_tensor,
     _SavedTensor,
     copy_auxiliary_files,
     write_quantization_config,
-    write_shards,
 )
 from max.pipelines.weights.fp4_quantization import (
     FP4Format,
     nvfp4_quantization_config,
 )
 from max.profiler import OneShotCapture, Tracer
-from max.tensor import Tensor, compilation, defaults
+from max.tensor import Tensor, compilation
 
 from .generate import stream_text_to_console
 from .metrics import TextGenerationMetrics
@@ -83,9 +87,11 @@ logger = logging.getLogger("max._entrypoints")
 
 MODEL_NAME = "model"
 
+# MoE before MLP. Rebuilding a MoE constructs new experts, so the MLP walk
+# must run after that and see those experts rather than the ones discarded.
 _FUSED_GROUPS = (
-    (MLP, ("gate_proj", "up_proj")),
     (MoE, ("gate_proj", "up_proj")),
+    (MLP, ("gate_proj", "up_proj")),
     (QKVLinear, ("q_proj", "k_proj", "v_proj")),
 )
 
@@ -150,50 +156,32 @@ def _routed_experts_match(
     return True
 
 
-def _fused_modules_to_swap(
-    module: Module[..., Any], patterns: Iterable[re.Pattern[str]]
-) -> list[MLP | QKVLinear | MoE]:
-    """Returns fusers whose members all match ``patterns``.
+def _can_swap_fused_module(
+    cls: type[Any],
+    names: tuple[str, ...],
+    path: str,
+    node: Any,
+    patterns: list[re.Pattern[str]],
+) -> bool:
+    """Whether ``node`` is an exact ``cls`` whose fused members all match.
 
     Gate/up and q/k/v are each one matmul. A pattern that hits only part of
-    a group has no shared global scale, so that is rejected before compile.
-    A stacked ``QKVLinear`` is already one weight and is left alone. A MoE
-    is swapped only when every routed expert's gate and up match; the MoE
-    has no projections of its own.
+    a group has no shared global scale, so that is rejected. A stacked
+    ``QKVLinear`` is already one weight. A MoE is swapped only when every
+    routed expert's gate and up match.
     """
-    compiled = list(patterns)
-    swaps: list[MLP | QKVLinear | MoE] = []
-    for cls, names in _FUSED_GROUPS:
-        for path, node in tree.nodes(module, cls).items():
-            if type(node) is not cls:
-                continue
-            if isinstance(node, QKVLinear) and not node.name_transparent:
-                continue
-            if cls is MoE:
-                moe = cast(MoE, node)
-                if _routed_experts_match(path, moe, names, compiled):
-                    swaps.append(moe)
-                continue
-            paths = [_child_path(path, name) for name in names]
-            hits = _projection_hits(paths, compiled)
-            if not hits:
-                continue
-            _require_full_group(names, paths, hits)
-            swaps.append(node)
-    return swaps
-
-
-def _finish_quantized_moe(moe: MoE, quant_config: QuantConfig) -> None:
-    """Turns a built MoE into a QuantizedMoE without rebuilding its weights.
-
-    The class swap skips ``QuantizedMoE.__init__``, which is where the mesh
-    and the routed-expert config are stored. Forward reads both.
-    """
-    quantized = cast(QuantizedMoE, moe)
-    quantized.__class__ = QuantizedMoE
-    _, quantized.mesh = defaults()
-    quantized.quant_config = quant_config
-    quantized.swiglu_limit = 0.0
+    if type(node) is not cls:
+        return False
+    if isinstance(node, QKVLinear) and not node.name_transparent:
+        return False
+    if cls is MoE and isinstance(node, MoE):
+        return _routed_experts_match(path, node, names, patterns)
+    child_paths = [_child_path(path, name) for name in names]
+    hits = _projection_hits(child_paths, patterns)
+    if not hits:
+        return False
+    _require_full_group(names, child_paths, hits)
+    return True
 
 
 #: Formats whose on-the-fly quantizer can decode in the graph to measure
@@ -209,19 +197,27 @@ def insert_quantized_linears(
     quant_config: QuantConfig,
     *,
     verbose: bool = False,
-) -> None:
-    """Replaces every ``Linear`` matching ``targets`` with a quantized one.
+) -> Module[Any, Any]:
+    """Quantizes every weight matching ``targets``.
 
-    The config is supplied rather than built here: it is the caller's
-    statement of intent. Gate/up and unstacked q/k/v are one matmul, so a
-    full match swaps the parent onto the quant fuser. A MoE whose routed
-    experts all match becomes a ``QuantizedMoE``. A partial match is
-    rejected.
+    A full gate/up, q/k/v, or expert group is rebuilt as the quant container
+    first, so its forward fuses those members. Each matching projection,
+    including one the model built as its own module around a plain ``[out,
+    in]`` tensor, is then constructed as a :class:`QuantizedLinear`. A
+    projection that is not a common layer logs a warning. Weights-only
+    export still writes those weights, and on-the-fly quantization is
+    likely to break. A partial fused group is rejected. The constructor's
+    weight is the parameter the checkpoint fills. Its values stay the
+    constructor's zeros, and it takes the replaced linear's device map.
 
     With ``quant_config.report_error``, each quantizer is built to print its
     weight's quantization error from inside the graph, named after the
     weight. Only the on-the-fly block-scaled formats in
     :data:`_ERROR_REPORT_FORMATS` can measure their error.
+
+    Returns:
+        ``module``. A new object when ``module`` itself was the container:
+        a constructor cannot change the object the caller already holds.
 
     Raises:
         ValueError: If ``quant_config.report_error`` is set for a format that
@@ -236,33 +232,121 @@ def insert_quantized_linears(
             f"{known}; got {quant_config.format.value}"
         )
     patterns = [re.compile(pattern) for pattern in targets]
-    swaps = _fused_modules_to_swap(module, patterns)
     count = 0
-    for key, value in tree.nodes(module, Linear).items():
-        if any(pattern.search(key) for pattern in patterns):
-            wrapped = QuantizedLinear(
-                int(value.in_dim),
-                int(value.out_dim),
-                bias=isinstance(value.bias, Tensor),
-                quant_config=quant_config,
+    # The container is built first, with plain linear children. The loop
+    # below is what gives a matching child its quantizer, so an untargeted
+    # sibling (down_proj, a shared expert) stays a plain tensor.
+    for cls, names in _FUSED_GROUPS:
+        containers: dict[str, Module[Any, Any]] = {}
+        container_ids: set[int] = set()
+        for path, node in tree.nodes(module, cls).items():
+            if not _can_swap_fused_module(cls, names, path, node, patterns):
+                continue
+            built: Module[Any, Any]
+            if type(node) is MLP:
+                built = QuantizedMLP(
+                    int(node.hidden_dim),
+                    int(node.feed_forward_length),
+                    bias=bool(node.has_bias),
+                    activation_function=node.activation_function,
+                )
+            elif type(node) is QKVLinear:
+                built = QuantizedQKVLinear(
+                    int(node.q_proj.in_dim),
+                    node.q_dim,
+                    node.kv_dim,
+                    bias=node._has_bias,
+                )
+            elif type(node) is MoE:
+                shared = node.shared_experts
+                built = QuantizedMoE(
+                    hidden_dim=int(node.hidden_dim),
+                    num_experts=node.num_experts,
+                    num_experts_per_token=node.num_experts_per_token,
+                    moe_dim=int(node.moe_dim),
+                    has_shared_experts=shared is not None,
+                    shared_experts_dim=(
+                        int(shared.feed_forward_length)
+                        if shared is not None
+                        else 0
+                    ),
+                )
+            else:
+                raise TypeError(
+                    f"{type(node).__name__} is not a fused container this "
+                    "command replaces"
+                )
+            containers[path] = built
+            container_ids.add(id(node))
+        # The root is not a child, so a container built in its place
+        # comes back as the return value. One update per container type,
+        # after MoE, so an MLP walk does not rebuild experts the new MoE
+        # already replaced.
+        if not containers:
+            continue
+        updated = tree.update(
+            module,
+            containers,
+            leaf=lambda found, ids=container_ids: id(found) in ids,
+        )
+        if not isinstance(updated, Module):
+            raise TypeError(f"rebuilt {type(module).__name__} is not a Module")
+        module = updated
+    # One walk for a Linear, a QuantizedLinear still holding a plain
+    # tensor, and a projection the model built as its own module. The
+    # container updates above have already landed, so this sees those new
+    # children. A weight that is already a quantizer is not a Tensor and
+    # is skipped. The tree cannot be edited while it is walked, so the
+    # replacements are applied once afterwards.
+    replacements: dict[str, QuantizedLinear] = {}
+    replacing: set[int] = set()
+    for path, node in tree.nodes(module, Module).items():
+        weight = getattr(node, "weight", None)
+        if type(weight) is not Tensor or weight.rank != 2:
+            continue
+        if not any(pattern.search(path) for pattern in patterns):
+            continue
+        if type(node) not in (Linear, QuantizedLinear):
+            logger.warning(
+                "Replaced a custom %s with a common QuantizedLinear. "
+                "This should be ok for weights-only export but is likely "
+                "to break on-the-fly quantization.",
+                type(node).__name__,
             )
-            tree.update(
-                module,
-                {key: wrapped},
-                leaf=lambda node, value=value: node is value,
-            )
-            count += 1
-    for fused in swaps:
-        if type(fused) is MLP:
-            # QuantizedMLP does not subclass MLP, so this is not a type[MLP].
-            fused.__class__ = cast(type[MLP], QuantizedMLP)
-        elif type(fused) is QKVLinear:
-            fused.__class__ = QuantizedQKVLinear
-        elif type(fused) is MoE:
-            _finish_quantized_moe(fused, quant_config)
+        if hasattr(node, "in_dim") and hasattr(node, "out_dim"):
+            in_dim, out_dim = int(node.in_dim), int(node.out_dim)
+        else:
+            in_dim, out_dim = int(weight.shape[1]), int(weight.shape[0])
+        bias = getattr(node, "bias", None)
+        wrapped = QuantizedLinear(
+            in_dim,
+            out_dim,
+            bias=isinstance(bias, Tensor),
+            quant_config=quant_config,
+        )
+        # The zeros are the parameter. The map is the one the model already
+        # gave this weight, including a tensor-parallel shard or an expert's
+        # device. Bias is sharded on its own map, and QuantizedLinear.to
+        # leaves a plain bias where it was constructed.
+        wrapped.weight = wrapped.weight.to(weight.mapping)
+        if isinstance(bias, Tensor) and isinstance(wrapped.bias, Tensor):
+            wrapped.bias = wrapped.bias.to(bias.mapping)
+        replacements[path] = wrapped
+        replacing.add(id(node))
+        count += 1
+    if replacements:
+        updated = tree.update(
+            module,
+            replacements,
+            leaf=lambda found: id(found) in replacing,
+        )
+        if not isinstance(updated, Module):
+            raise TypeError(f"rebuilt {type(module).__name__} is not a Module")
+        module = updated
     if verbose:
         print(module)
     logger.info(f"Quantizing {count} weight tensors.")
+    return module
 
 
 # Leaves each on-the-fly quantizer writes, in checkpoint order. The name is
@@ -313,31 +397,126 @@ def checkpoint_quantization_config(
     )
 
 
+def _ignore_pattern(name: str, quantized_stems: Iterable[str]) -> str | None:
+    """The ignore glob for one tensor that was copied unchanged.
+
+    A layer subtree that also holds a quantized weight keeps this tensor's
+    own module, so ``mlp.gate*`` does not unquantize the experts beside it.
+    A subtree with nothing quantized is ignored whole, as ``self_attn*``.
+    """
+    match = re.search(r"^(.*\.layers\.\d+\.)([^.]+)", name)
+    if match is None:
+        return None
+    top = f"{match.group(1)}{match.group(2)}"
+    if any(stem.startswith(f"{top}.") for stem in quantized_stems):
+        return f"{name.rsplit('.', 1)[0]}*"
+    return f"{top}*"
+
+
+def _state_key(path: str) -> str:
+    """The checkpoint key for a quantizer found at ``path``."""
+    return path if path.endswith(".weight") else f"{path}.weight"
+
+
+def _source_files(model: Any) -> dict[str, str]:
+    """Maps a checkpoint tensor name to the safetensors file holding it."""
+    src = Path(model.pipeline_config.model.resolved_weight_paths()[0]).parent
+    index_path = src / "model.safetensors.index.json"
+    if not index_path.is_file():
+        return {}
+    weight_map = json.loads(index_path.read_text()).get("weight_map", {})
+    return weight_map if isinstance(weight_map, dict) else {}
+
+
+def _release_cached_weight(model: Any, checkpoint_name: str) -> None:
+    """Drops one safetensors view from the loader cache."""
+    cache = getattr(getattr(model, "weights", None), "_st_weight_map", None)
+    if isinstance(cache, dict):
+        cache.pop(checkpoint_name, None)
+
+
+def _module_at_paths(quantizers: Mapping[str, Any]) -> Module[Any, Any]:
+    """A module whose parameters sit at the same paths as ``quantizers``."""
+    root: Module[Any, Any] = Module()
+    for path, quantizer in quantizers.items():
+        cursor = root
+        parts = path.split(".")
+        for part in parts[:-1]:
+            child = getattr(cursor, part, None)
+            if not isinstance(child, Module):
+                child = Module()
+                setattr(cursor, part, child)
+            cursor = child
+        setattr(cursor, parts[-1], quantizer)
+    return root
+
+
+@contextlib.contextmanager
+def _place_host_quantizers(module: Module[..., Any]) -> Iterator[None]:
+    """Moves host-only quantizers onto a GPU for the body of the block.
+
+    The block-scaled quantize kernel runs on a GPU. MiniMax keeps each
+    routed expert on the host until ``stacked()`` places it. With no
+    accelerator the weights stay where they are. The wrapped tensor is
+    moved back to the host when the block ends.
+    """
+    placed: list[Any] = []
+    gpu: Accelerator | None = None
+    if accelerator_count() == 0:
+        yield
+        return
+    for cls, _names in _QUANTIZER_LEAVES:
+        for quantizer in tree.nodes(module, cls).values():
+            tensor = getattr(quantizer, "_tensor", None)
+            if not isinstance(tensor, Tensor) or not all(
+                isinstance(device, CPU)
+                for device in tensor.mapping.mesh.devices
+            ):
+                continue
+            if gpu is None:
+                gpu = Accelerator(0)
+            placed.append(quantizer)
+            quantizer.to(gpu)
+    try:
+        yield
+    finally:
+        for quantizer in placed:
+            quantizer.to(CPU())
+
+
 def _materialize_quantizers(
-    module: Module[..., Any], state_dict: Mapping[str, Any]
+    module: Module[..., Any],
+    state_dict: Mapping[str, Any],
 ) -> dict[str, dict[str, Tensor]]:
     """Runs the quantizers and returns packed weights and scales.
 
     The generate trace's quant tensors are graph values with no host bytes,
     so this graph produces the buffers that get written.
     """
-    declared = tree.map(_ExternalWeight.like, module, leaf=Tensor, shared=True)
-    name_weights(declared)
-    registry = shard_checkpoint(declared, state_dict)
+    with _place_host_quantizers(module):
+        declared = tree.map(
+            _ExternalWeight.like, module, leaf=Tensor, shared=True
+        )
+        name_weights(declared)
+        registry = shard_checkpoint(declared, state_dict)
 
-    def export_quants() -> dict[str, dict[str, Tensor]]:
-        exported: dict[str, dict[str, Tensor]] = {}
-        for cls, names in _QUANTIZER_LEAVES:
-            for path, quantizer in tree.nodes(declared, cls).items():
-                quantized = quantizer.quant_tensor
-                exported[path] = {
-                    name: getattr(quantized, name) for name in names
-                }
-        return exported
+        def export_quants() -> dict[str, dict[str, Tensor]]:
+            exported: dict[str, dict[str, Tensor]] = {}
+            for cls, names in _QUANTIZER_LEAVES:
+                for path, quantizer in tree.nodes(declared, cls).items():
+                    quantized = quantizer.quant_tensor
+                    exported[path] = {
+                        name: getattr(quantized, name) for name in names
+                    }
+            return exported
 
-    # ``compile`` returns a function of input types. This graph takes none.
-    compiled = compilation.compile(export_quants, weights=registry)()
-    return compiled()
+        # ``compile`` returns a function of input types. This graph takes none.
+        # The session is the process-wide one: the weights carry their devices.
+        compiled = compilation.compile(export_quants, weights=registry)()
+        try:
+            return compiled()
+        finally:
+            del compiled
 
 
 def export_quantized_checkpoint(
@@ -345,9 +524,11 @@ def export_quantized_checkpoint(
 ) -> None:
     """Writes a new sharded checkpoint from the quantizers on ``model``.
 
-    Quantized tensors and the weights left beside them are written under
-    the source checkpoint's names. Sidecars are copied and the index
-    describes the new files.
+    Quantizers are grouped by the safetensors file that holds their source
+    weight. Each file is quantized, written, and dropped from the loader
+    cache before the next file is read. Tensors left unquantized are copied
+    under their original names. Anything not on the decoder is copied from
+    the source shard unchanged.
     """
     module = model.nn_module
     if not isinstance(module, Module):
@@ -355,40 +536,81 @@ def export_quantized_checkpoint(
             f"{type(module).__name__} is not a ModuleV3 module, so its "
             "quantizers cannot be exported"
         )
-    state_dict = model.final_state_dict
-    ready = _materialize_quantizers(module, state_dict)
-    if not ready:
+    state_dict = dict(model.final_state_dict)
+    # ``found`` is what ``ready`` will be, before this file is quantized.
+    found: list[tuple[str, Any, str]] = []
+    for cls, _names in _QUANTIZER_LEAVES:
+        for path, quantizer in tree.nodes(module, cls).items():
+            state_key = _state_key(path)
+            found.append((path, quantizer, state_dict[state_key].name))
+    if not found:
         logger.info("No quantizers inserted, aborting export.")
         return
 
-    saved: list[tuple[str, _SavedTensor]] = []
-    for path, leaves in ready.items():
-        checkpoint_path = state_dict[f"{path}.weight"].name.removesuffix(
-            ".weight"
-        )
-        saved.extend(quantized_host_tensors(checkpoint_path, leaves))
+    files = _source_files(model)
+    quantized_keys = {_state_key(path) for path, _, _ in found}
+    quantized_stems = [name.removesuffix(".weight") for _, _, name in found]
 
-    ignore = set()
-    for name, value in state_dict.items():
-        if name.removesuffix(".weight") not in ready:
-            checkpoint_name = state_dict[f"{name}"].name
-            saved.append((checkpoint_name, _host_tensor(value)))
-            if "layers" in checkpoint_name:
-                _, suffix = re.split(r"\.layers\.\d+\.", checkpoint_name)
-                suffix = suffix.split(".")[0]
-                prefix = checkpoint_name[: checkpoint_name.find(suffix)]
-                ignore.add(f"{prefix}{suffix}*")
+    def source_file(checkpoint_name: str) -> str:
+        return str(files.get(checkpoint_name, ""))
+
+    groups: dict[str, list[tuple[str, Any]]] = defaultdict(list)
+    for path, quantizer, checkpoint_name in found:
+        groups[source_file(checkpoint_name)].append((path, quantizer))
+    copied: dict[str, list[tuple[str, Any]]] = defaultdict(list)
+    for key, value in state_dict.items():
+        if key not in quantized_keys:
+            copied[source_file(value.name)].append((key, value))
 
     src = Path(model.pipeline_config.model.resolved_weight_paths()[0]).parent
-    dest.mkdir(parents=True, exist_ok=True)
-    write_shards(dest, saved)
+    shards = set(files.values())
+    writer = ShardWriter(dest)
+    ignore: set[str] = set()
+    exported = 0
+    for filename in sorted(set(groups) | set(copied) | shards):
+        batch = groups.get(filename, [])
+        ready: dict[str, dict[str, Tensor]] = {}
+        if batch:
+            logger.info(
+                "Quantizing %s (%d weights).",
+                filename or "checkpoint",
+                len(batch),
+            )
+            ready = _materialize_quantizers(
+                _module_at_paths(dict(batch)), state_dict
+            )
+            exported += len(ready)
+        saved: dict[str, _SavedTensor] = {}
+        for path, leaves in ready.items():
+            source = state_dict[_state_key(path)]
+            checkpoint_path = source.name.removesuffix(".weight")
+            for name, tensor in quantized_host_tensors(checkpoint_path, leaves):
+                saved[name] = tensor
+            _release_cached_weight(model, source.name)
+        if filename in shards:
+            for name in writer.copy_except(src / filename, saved):
+                _release_cached_weight(model, name)
+        else:
+            for name, tensor in saved.items():
+                writer.add(name, tensor)
+        for key, value in copied.get(filename, []):
+            if value.name not in files:
+                writer.add(value.name, _host_tensor(value))
+            pattern = _ignore_pattern(value.name, quantized_stems)
+            if pattern is not None:
+                ignore.add(pattern)
+            _release_cached_weight(model, value.name)
+            del state_dict[key]
+        del ready
+    writer.close()
+
     write_quantization_config(
         src,
         dest,
-        checkpoint_quantization_config(quantization_format, list(ignore)),
+        checkpoint_quantization_config(quantization_format, sorted(ignore)),
     )
     copy_auxiliary_files(src, dest)
-    logger.info("Exported %d quantized weights to %s", len(ready), dest)
+    logger.info("Exported %d quantized weights to %s", exported, dest)
 
 
 #: The config each ``--quantization-format`` value selects.
@@ -461,6 +683,30 @@ def _enable_error_prints(
     )
 
 
+def _graphs_without_compile(
+    model: Any, session: InferenceSession
+) -> dict[str, Model]:
+    """Builds the graphs' modules and does not compile them.
+
+    ``_load_decoder`` and ``_load_towers`` read ``compiled_modules`` after
+    this returns, so the uncompiled modules stand in for the engine models.
+    The decoder ``nn_module`` is the one the insert hook stored. The export
+    state dict is the decoder. A tower that is not quantized is copied from
+    the source shard.
+    """
+    model._session = session
+    state_dict = model._load_state_dict()
+    model_config = model._create_model_config(state_dict)
+    specs = model.graph_specs(model_config)
+    exported: dict[str, Any] = {}
+    decoder = specs.get(GraphRole.DECODER)
+    if getattr(decoder, "weights", None):
+        exported.update(decoder.weights)
+    model._export_state_dict = exported
+    model.compiled_modules = {role: spec.module for role, spec in specs.items()}
+    return {}
+
+
 def _single_graph_quantizing_model(
     model_cls: type[Any],
     targets: Iterable[str],
@@ -482,9 +728,18 @@ def _single_graph_quantizing_model(
 
     class QuantizingPipelineModel(base):
         def _instantiate_module(self, model_config: Any) -> Any:
-            nn_model = super()._instantiate_module(model_config)
-            insert_quantized_linears(
-                nn_model,
+            # Sparse attention reads this while the decoder is built, after
+            # expert-parallel init, so a bf16 checkpoint still dispatches in
+            # bf16. The on-the-fly layer tuples are empty, so the projections
+            # stay plain tensors for the wrap below. V3 treats a present
+            # config as "quantize these layers", so a bf16 V3 checkpoint
+            # keeps None.
+            if getattr(model_config, "quant_config", None) is None and hasattr(
+                model_config, "index_n_heads"
+            ):
+                model_config.quant_config = quant_config
+            nn_model = insert_quantized_linears(
+                super()._instantiate_module(model_config),
                 targets,
                 quant_config,
                 verbose=verbose,
@@ -494,11 +749,16 @@ def _single_graph_quantizing_model(
 
         @property
         def final_state_dict(self) -> dict[str, Any]:
+            prepared = getattr(self, "_export_state_dict", None)
+            if prepared is not None:
+                return prepared
             state_dict = self._load_state_dict()
             model_config = self._create_model_config(state_dict)
             return self._prepare_state_dict(state_dict, model_config)
 
         def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+            if self.pipeline_config.export_only:
+                return _graphs_without_compile(self, session)
             _enable_error_prints(session, error_report_dir)
             return super().load_graphs(session)
 
@@ -533,21 +793,30 @@ def _multi_graph_quantizing_model(
                     f"{type(language).__name__} is not a ModuleV3 module, "
                     "so layer quantizers cannot be inserted"
                 )
-            insert_quantized_linears(
+            language = insert_quantized_linears(
                 language,
                 targets,
                 quant_config,
                 verbose=verbose,
             )
             self.nn_module = language
+            if language is not spec.module:
+                spec = dataclasses.replace(spec, module=language)
             return spec
 
         @property
         def final_state_dict(self) -> dict[str, Any]:
-            _ = self._load_state_dict()
+            prepared = getattr(self, "_export_state_dict", None)
+            if prepared is not None:
+                return prepared
+            # ``_load_state_dict`` splits the checkpoint and leaves the
+            # decoder weights on ``_language_weights_dict``.
+            self._load_state_dict()
             return self._language_weights_dict
 
         def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+            if self.pipeline_config.export_only:
+                return _graphs_without_compile(self, session)
             _enable_error_prints(session, error_report_dir)
             return super().load_graphs(session)
 
@@ -611,24 +880,45 @@ def quantize_pipeline(
 ) -> None:
     """Quantizes the targeted layers on load, then generates text.
 
-    With ``error_report_dir``, every quantized weight's error against its
-    native-precision source is measured inside the compiled graph and
-    printed as the graph runs. The report is built from the files that run
-    leaves behind.
+    With ``--export-path``, the model is built and exported without a
+    generate graph. With ``error_report_dir``, every quantized weight's
+    error against its native-precision source is measured inside the
+    compiled graph and printed as the graph runs.
     """
     quant_config = on_the_fly_config(
         quantization_format, report_error=error_report_dir is not None
     )
     pipeline_config = PipelineConfig.from_args(pipeline_args)
-    retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
-    tokenizer = retrieved.tokenizer
-    pipeline = _factory_with_layer_quantizers(
+    if export_path is not None:
+        pipeline_config = pipeline_config.model_copy(
+            update={"export_only": True}
+        )
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(
+        pipeline_config, plan_memory=export_path is None
+    )
+    factory = _factory_with_layer_quantizers(
         retrieved.factory,
         targets,
         quant_config,
         verbose=verbose,
         error_report_dir=error_report_dir,
-    )()
+    )
+    # Export uses this same pipeline. Its constructor returns once the model
+    # exists, before the KV cache and the sampler.
+    pipeline = factory()
+    if export_path is not None:
+        logger.info(
+            "Exporting quantized weights without generation to %s",
+            export_path,
+        )
+        export_quantized_checkpoint(
+            pipeline._pipeline_model, export_path, quantization_format
+        )
+        if error_report_dir is not None:
+            write_report(error_report_dir)
+            logger.info(f"Wrote {error_report_dir / JSON_NAME}")
+        return
+    tokenizer = retrieved.tokenizer
     assert isinstance(pipeline, Pipeline)
     log_basic_config(pipeline_config, memory_plan=retrieved.memory_plan)
     logger.info("max_batch_size: %d", pipeline.max_batch_size)
@@ -692,8 +982,3 @@ def quantize_pipeline(
     if error_report_dir is not None:
         write_report(error_report_dir)
         logger.info(f"Wrote {error_report_dir / JSON_NAME}")
-    if export_path is not None:
-        assert isinstance(pipeline, TextGenerationPipelineInterface)
-        export_quantized_checkpoint(
-            pipeline._pipeline_model, export_path, quantization_format
-        )

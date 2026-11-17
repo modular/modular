@@ -316,6 +316,9 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
                 "lora",
                 "speculative",
                 "runtime",
+                # Quantize sets this when writing a checkpoint, before
+                # the KV cache is built.
+                "export_only",
             }
         )
     elif cls is PipelineRuntimeConfig:

@@ -332,6 +332,10 @@ class TextGenerationPipeline(
                 max_batch_size=max_batch_size,
                 memory_plan=memory_plan,
             )
+        # Quantized export builds the model and writes its weights. The KV
+        # cache, sampler, and warmup measurement are for generation.
+        if pipeline_config.export_only:
+            return
         if pipeline_config.runtime.eager and not isinstance(
             self._pipeline_model.compiled_modules.get(GraphRole.DECODER),
             _EagerCallable,

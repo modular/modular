@@ -52,7 +52,12 @@ if TYPE_CHECKING:
 from max.pipelines.audio.pipeline import AudioGenerationPipeline
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
-from max.pipelines.lib.memory_plan import MemoryPlan, plan_memory
+from max.pipelines.lib.memory_plan import (
+    MemoryPlan,
+)
+from max.pipelines.lib.memory_plan import (
+    plan_memory as _plan_memory,
+)
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .arch_lookup import (
@@ -711,8 +716,15 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
+        *,
+        plan_memory: bool = True,
     ) -> RetrievedPipeline:
-        """Retrieves the tokenizer, pipeline factory, and memory plan for the config."""
+        """Retrieves the tokenizer, pipeline factory, and memory plan.
+
+        ``plan_memory=False`` keeps the config's own batch and length. An
+        export that never allocates a KV cache uses it so a checkpoint larger
+        than the devices is not rejected before it is built.
+        """
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
 
@@ -778,8 +790,9 @@ class PipelineRegistry:
         # anything else (a raw Module, an executor) gets a pass-through plan
         # carrying the config's own values. Multi-component pipelines have no
         # "main" model and are handled inside ``for_pipeline``.
-        if "main" in pipeline_config.models and not issubclass(
-            arch.pipeline_model, PipelineModel
+        if not plan_memory or (
+            "main" in pipeline_config.models
+            and not issubclass(arch.pipeline_model, PipelineModel)
         ):
             memory_plan = MemoryPlan(
                 planned_max_batch_size=pipeline_config.runtime.max_batch_size
@@ -790,7 +803,7 @@ class PipelineRegistry:
                 planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
         else:
-            memory_plan = plan_memory(
+            memory_plan = _plan_memory(
                 pipeline_config,
                 arch,
                 draft_arch=draft_arch,

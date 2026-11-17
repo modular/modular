@@ -2134,6 +2134,10 @@ class OverlapTextGenerationPipeline(
                     memory_plan=memory_plan,
                 )
             )
+        # Quantized export builds the model and writes its weights. The KV
+        # cache, sampler, and warmup measurement are for generation.
+        if pipeline_config.export_only:
+            return
 
         kv_params = self._pipeline_model.kv_params
         self.memory_plan = memory_plan

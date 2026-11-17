@@ -895,7 +895,10 @@ def cli_pipeline(
     "--export-path",
     type=click.Path(file_okay=False, path_type=Path),
     default=None,
-    help="After generation, write a quantized checkpoint to this directory.",
+    help=(
+        "Write a quantized checkpoint to this directory. The model is"
+        " exported without running generation."
+    ),
 )
 @click.option(
     "--prompt",
@@ -978,10 +981,9 @@ def quantize(
     seed: int,
     **config_kwargs: Any,
 ) -> None:
-    """Quantize the specified model and run text generation.
+    """Quantize the specified model.
 
-    If ``--export-path`` is set, write an NVFP4 checkpoint afterwards from
-    the same module the generate graph ran.
+    With ``--export-path``, the model is exported without running generation.
     """
     from max._entrypoints.cli.quantize import quantize_pipeline
     from max.pipelines.context import SamplingParams, SamplingParamsInput

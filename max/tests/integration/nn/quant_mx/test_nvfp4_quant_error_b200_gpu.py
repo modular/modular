@@ -289,9 +289,8 @@ def test_flag_leaves_output_unchanged_and_names_layers(tmp_path: Path) -> None:
 
     def run(report_error: bool, session: InferenceSession) -> np.ndarray:
         with F.lazy():
-            mlp = MLP(hidden, ff)
-            insert_quantized_linears(
-                mlp,
+            mlp = insert_quantized_linears(
+                MLP(hidden, ff),
                 [r"^gate_proj$", r"^up_proj$", r"^down_proj$"],
                 on_the_fly_config("nvfp4", report_error=report_error),
             )

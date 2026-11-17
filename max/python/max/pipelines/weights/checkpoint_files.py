@@ -19,6 +19,7 @@ writer. ``quantize_checkpoint`` keeps its own torch writer.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import struct
 from collections.abc import Mapping
@@ -32,6 +33,8 @@ from max.tensor import Tensor
 
 _WEIGHT_INDEX = "model.safetensors.index.json"
 _SHARD_BYTES = 5 * 1024**3
+
+logger = logging.getLogger(__name__)
 
 # One written tensor: dtype, shape, contiguous bytes.
 _SavedTensor = tuple[DType, list[int], bytes]
@@ -56,6 +59,9 @@ _SAFETENSORS_DTYPE: dict[DType, str] = {
     DType.float8_e5m2: "F8_E5M2",
     DType.float8_e8m0fnu: "F8_E8M0",
 }
+_DTYPE_FROM_SAFETENSORS = {
+    name: dtype for dtype, name in _SAFETENSORS_DTYPE.items()
+}
 
 
 def copy_auxiliary_files(src: Path, dst: Path) -> None:
@@ -77,6 +83,27 @@ def write_quantization_config(
     config = json.loads(config_path.read_text())
     config["quantization_config"] = dict(quantization_config)
     (dst / "config.json").write_text(json.dumps(config, indent=2))
+
+
+def _read_saved_tensor(path: Path, name: str) -> _SavedTensor:
+    """Reads one tensor's dtype, shape, and bytes from a safetensors shard."""
+    with path.open("rb") as handle:
+        header_len = struct.unpack("<Q", handle.read(8))[0]
+        header = json.loads(handle.read(header_len))
+        try:
+            entry = header[name]
+        except KeyError:
+            raise KeyError(f"{name} is not in {path}") from None
+        start, end = entry["data_offsets"]
+        handle.seek(8 + header_len + start)
+        raw = handle.read(end - start)
+    try:
+        dtype = _DTYPE_FROM_SAFETENSORS[entry["dtype"]]
+    except KeyError:
+        raise TypeError(
+            f"{name} has dtype {entry['dtype']}, which this writer cannot store"
+        ) from None
+    return dtype, [int(dim) for dim in entry["shape"]], raw
 
 
 def _host_tensor(value: Any) -> _SavedTensor:
@@ -135,6 +162,109 @@ def _write_safetensors(
         for blob in blobs:
             handle.write(blob)
     return offset
+
+
+class ShardWriter:
+    """Appends tensors and flushes a safetensors file as the shard fills.
+
+    ``close`` renames each flushed file to ``model-XXXXX-of-NNNNN`` once the
+    count is known, and writes the index.
+    """
+
+    def __init__(self, dest: Path, *, shard_bytes: int = _SHARD_BYTES) -> None:
+        self.dest = dest
+        self._shard_bytes = shard_bytes
+        self.dest.mkdir(parents=True, exist_ok=True)
+        self._current: list[tuple[str, _SavedTensor]] = []
+        self._size = 0
+        self._parts: list[tuple[Path, list[str]]] = []
+        self._total = 0
+
+    def add(self, name: str, value: _SavedTensor) -> None:
+        """Appends one tensor, flushing the open shard when it is full."""
+        nbytes = len(value[2])
+        if self._current and self._size + nbytes > self._shard_bytes:
+            self._flush()
+        self._current.append((name, value))
+        self._size += nbytes
+
+    def copy_except(
+        self, path: Path, replace: Mapping[str, _SavedTensor]
+    ) -> list[str]:
+        """Copies ``path``, substituting ``replace`` for same-named tensors.
+
+        Entries in ``replace`` that this shard does not contain are appended,
+        so a quantized weight can bring its scales along. Returns the shard's
+        tensor names.
+        """
+        pending = dict(replace)
+        names: list[str] = []
+        with path.open("rb") as handle:
+            header_len = struct.unpack("<Q", handle.read(8))[0]
+            header = json.loads(handle.read(header_len))
+            data_start = 8 + header_len
+            for name, entry in header.items():
+                if not isinstance(entry, dict) or "data_offsets" not in entry:
+                    continue
+                names.append(name)
+                saved = pending.pop(name, None)
+                if saved is None:
+                    start, end = entry["data_offsets"]
+                    handle.seek(data_start + start)
+                    raw = handle.read(end - start)
+                    try:
+                        dtype = _DTYPE_FROM_SAFETENSORS[entry["dtype"]]
+                    except KeyError:
+                        raise TypeError(
+                            f"{name} has dtype {entry['dtype']}, which this "
+                            "writer cannot store"
+                        ) from None
+                    saved = (
+                        dtype,
+                        [int(dim) for dim in entry["shape"]],
+                        raw,
+                    )
+                self.add(name, saved)
+        for name, saved in pending.items():
+            self.add(name, saved)
+        return names
+
+    def _flush(self) -> None:
+        index = len(self._parts) + 1
+        # Visible while the export is running. close() adds the of-count
+        # once every shard exists.
+        path = self.dest / f"model-{index:05d}.safetensors"
+        self._total += _write_safetensors(path, self._current)
+        self._parts.append((path, [name for name, _ in self._current]))
+        logger.info(
+            "Flushed %s (%.1f GiB so far).", path.name, self._total / 1024**3
+        )
+        self._current = []
+        self._size = 0
+
+    def close(self) -> None:
+        """Flushes the last shard, renames each one, and writes the index."""
+        if self._current:
+            self._flush()
+        n = len(self._parts)
+        weight_map: dict[str, str] = {}
+        for index, (path, names) in enumerate(self._parts, start=1):
+            filename = (
+                "model.safetensors"
+                if n == 1
+                else f"model-{index:05d}-of-{n:05d}.safetensors"
+            )
+            path.rename(self.dest / filename)
+            weight_map.update({name: filename for name in names})
+        (self.dest / _WEIGHT_INDEX).write_text(
+            json.dumps(
+                {
+                    "metadata": {"total_size": self._total},
+                    "weight_map": weight_map,
+                },
+                indent=2,
+            )
+        )
 
 
 def write_shards(dest: Path, tensors: list[tuple[str, _SavedTensor]]) -> None:
