@@ -886,3 +886,171 @@ params:
   CLUSTER_Y: 1
   BLOCK_SWIZZLE_SIZE: 8
   RASTERIZE_ORDER: 1
+# GLM-5.3 decode at DP8: o_proj (16384 -> 6144) and the shared expert's down
+# projection (2048 -> 6144) at MTP5 verify rows: one token tile covers every
+# row, so each weight tile streams once.
+- <<: *defaults
+  M: 17
+  M_END: 32
+  N: 6144
+  K: 16384
+  MMA_M: 128
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 65
+  M_END: 81
+  N: 6144
+  K: 16384
+  MMA_M: 128
+  MMA_N: 80
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 81
+  M_END: 97
+  N: 6144
+  K: 16384
+  MMA_M: 128
+  MMA_N: 96
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 17
+  M_END: 32
+  N: 6144
+  K: 2048
+  MMA_M: 128
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 65
+  M_END: 81
+  N: 6144
+  K: 2048
+  MMA_M: 128
+  MMA_N: 80
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 81
+  M_END: 97
+  N: 6144
+  K: 2048
+  MMA_M: 128
+  MMA_N: 96
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+# GLM-5.3's q_b (2048 -> 16384) and fused q_a + kv_a (6144 -> 2624)
+# projections at 25-31 rows: the heuristic's choice there is not among the
+# configs `build_sm100_matmul_configs` instantiates, so these rows replace
+# the dispatch's default config.
+# TODO(KERN-4044): drop both rows once the builder covers M 25-31.
+- <<: *defaults
+  M: 25
+  M_END: 32
+  N: 16384
+  K: 2048
+  MMA_M: 256
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+- <<: *defaults
+  M: 25
+  M_END: 32
+  N: 2624
+  K: 6144
+  MMA_M: 128
+  MMA_N: 32
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+# GLM-5.3's MoE router gate (6144 -> 256 experts) at decode: the heuristic
+# streams K = 6144 through 8 CTAs; a swap-AB split-K tile covers every decode M.
+# It beat the small-MN table's split-K GEMV and cp.async kernels, where other
+# router gates sit, at every decode M (7.0 vs 7.5-14 us at M 24-192).
+- <<: *defaults
+  M: 1
+  M_END: 193
+  N: 256
+  K: 6144
+  MMA_M: 128
+  MMA_N: 32
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 8
+# GLM-5.3's DSA indexer key projection (6144 -> 128) at decode: the same
+# swap-AB split-K tile as the router gate, 6.8-7.1 vs 9.1-11.1 us at M 2-256.
+- <<: *defaults
+  M: 1
+  M_END: 257
+  N: 128
+  K: 6144
+  MMA_M: 128
+  MMA_N: 32
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 8

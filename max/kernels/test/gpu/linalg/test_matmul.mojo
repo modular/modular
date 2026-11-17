@@ -544,3 +544,63 @@ def main() raises:
             test[.bfloat16, transpose_b=True, N=Int(16), K=Int(4096)](
                 ctx, m, 16, 4096
             )
+        # GLM-5.3's o_proj (N 6144, K 16384) and shared-expert down projection
+        # (N 6144, K 2048) at DP8 MTP5 verify M: every row's edges, ragged M
+        # included, and the shapes the rows leave to the heuristic.
+        for m in [16, 17, 23, 31, 32, 64, 65, 79, 80, 81, 95, 96, 97]:
+            test[.bfloat16, transpose_b=True, N=Int(6144), K=Int(16384)](
+                ctx, m, 6144, 16384
+            )
+            test[.bfloat16, transpose_b=True, N=Int(6144), K=Int(2048)](
+                ctx, m, 6144, 2048
+            )
+        for m in [20, 72, 90]:
+            test[
+                .bfloat16,
+                transpose_b=True,
+                lambda_fn=epilogue_test_fn,
+                N=Int(6144),
+                K=Int(16384),
+            ](ctx, m, 6144, 16384)
+        # GLM-5.3's q_b (N 16384, K 2048) and fused q_a + kv_a (N 2624,
+        # K 6144) projections: the 25-31 row band and its neighbors.
+        for m in [24, 25, 30, 31, 32]:
+            test[.bfloat16, transpose_b=True, N=Int(16384), K=Int(2048)](
+                ctx, m, 16384, 2048
+            )
+            test[.bfloat16, transpose_b=True, N=Int(2624), K=Int(6144)](
+                ctx, m, 2624, 6144
+            )
+        test[
+            .bfloat16,
+            transpose_b=True,
+            lambda_fn=epilogue_test_fn,
+            N=Int(2624),
+            K=Int(6144),
+        ](ctx, 30, 2624, 6144)
+        # GLM-5.3's MoE router gate (N 256, K 6144): the split-K row's edges,
+        # ragged M included, and the first M past it.
+        for m in [1, 2, 31, 33, 72, 97, 144, 192, 193]:
+            test[.bfloat16, transpose_b=True, N=Int(256), K=Int(6144)](
+                ctx, m, 256, 6144
+            )
+        test[
+            .bfloat16,
+            transpose_b=True,
+            lambda_fn=epilogue_test_fn,
+            N=Int(256),
+            K=Int(6144),
+        ](ctx, 72, 256, 6144)
+        # GLM-5.3's indexer key projection (N 128, K 6144): the split-K row's
+        # edges, ragged M included, and the first M past it.
+        for m in [1, 2, 31, 33, 72, 97, 144, 192, 256, 257]:
+            test[.bfloat16, transpose_b=True, N=Int(128), K=Int(6144)](
+                ctx, m, 128, 6144
+            )
+        test[
+            .bfloat16,
+            transpose_b=True,
+            lambda_fn=epilogue_test_fn,
+            N=Int(128),
+            K=Int(6144),
+        ](ctx, 72, 128, 6144)
