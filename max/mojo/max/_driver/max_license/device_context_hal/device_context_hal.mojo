@@ -23,22 +23,13 @@ This variant of the module provides the `max.gpu.host._legacy.device_context`
 implementation when the HAL backend is enabled."""
 
 
-from std.builtin.device_passable import (
-    DevicePointerLike,
-    DeviceTypeEncoder,
-)
-from std.collections.optional import OptionalReg
 from std.ffi import _Global
 from std.memory import ArcPointer
-from std.memory.unsafe import bitcast
 
 
 from std.os import getenv
-from std.reflection import call_location, SourceLocation
-from std.sys import (
-    bit_width_of,
-    CompilationTarget,
-)
+from std.reflection import call_location
+from std.sys import CompilationTarget
 
 
 from ..hal import (
@@ -52,15 +43,7 @@ from ..hal import (
     get_device_spec,
 )
 from max._plugin import MaxPluginForTarget
-from max._driver.max_license.device_context_dispatch.device_context import (
-    DeviceContext,
-)
 from ..hal._machine import DeviceRef, DeviceSpec
-from ..hal.event import EVENT_FLAG_CPU_VISIBLE
-
-from ..hal.extensions.traits import (
-    SupportsCompletionFlagResetV1,
-)
 
 from max.gpu.host import (
     ExecutionConfig,
@@ -68,71 +51,19 @@ from max.gpu.host import (
     ClusterExecutionConfig,
     ClusterLaunchConfig,
     GridBlockLaunchConfig,
-    LaunchAttribute,
     default_accelerator,
 )
-from ..hal.execution_config import check_config_fields_launchable
 from max.gpu.host.nvidia import (
     ClusterAttributeLaunchConfig,
     GridBlockAttributeLaunchConfig,
     LaunchAttributeHolderExecutionConfig,
 )
 
-from max.gpu.host.info import _device_type_encoder_target
 
 # Re-exports any `__extension`s an overlay's hook file declares.
 from ._device_context_hal_extras import *
 from max.gpu.host._driver_handles import _DeviceContextPtr
 from max.gpu.host._vendor_handles import CUstream
-from max.gpu.host._driver_common import _check_dim_in_range
-
-
-def _launch_attributes_ptr(
-    mut attributes: List[LaunchAttribute],
-) -> OptionalReg[OpaquePointer[MutUntrackedOrigin]]:
-    # The caller keeps `attributes` alive until the plugin has read them.
-    if len(attributes) == 0:
-        return None
-    return (
-        attributes.unsafe_ptr()
-        .unsafe_bitcast[NoneType]()
-        .unsafe_origin_cast[MutUntrackedOrigin]()
-    )
-
-
-def _check_exec_config_launch_support[
-    ExecutionConfigType: ExecutionConfig, target: CompilationTarget
-]():
-    comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
-        comptime assert conforms_to(
-            HALDeviceContext[target].ExecutionConfigType, ClusterExecutionConfig
-        ), "cluster launch is not supported on this device"
-
-    comptime if conforms_to(
-        ExecutionConfigType, LaunchAttributeHolderExecutionConfig
-    ):
-        comptime assert conforms_to(
-            HALDeviceContext[target].ExecutionConfigType,
-            LaunchAttributeHolderExecutionConfig,
-        ), "this target does not support launch attributes"
-
-    check_config_fields_launchable[
-        ExecutionConfigType, "HAL DeviceContext.enqueue_function"
-    ]()
-
-
-def _check_config_dims[
-    func_name_for_msg: StringLiteral,
-    ExecutionConfigType: ExecutionConfig,
-](execution_config: ExecutionConfigType, *, location: SourceLocation) raises:
-    """Checks a grid/block config's dims; any other config has none."""
-    comptime if conforms_to(ExecutionConfigType, GridBlockExecutionConfig):
-        _check_dim_in_range[func_name_for_msg, "grid_dim"](
-            execution_config.get_grid_dim(), location=location
-        )
-        _check_dim_in_range[func_name_for_msg, "block_dim"](
-            execution_config.get_block_dim(), location=location
-        )
 
 
 @fieldwise_init
@@ -567,184 +498,8 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def supports_flag_wait(self) -> Bool:
-        """Returns whether this device supports completion flags.
-
-        Returns:
-            True when the device's plugin exports both the completion-flag
-            and the flag-reset extensions.
-        """
-        # A context boxed under another target's type, such as a CPU context
-        # in the accelerator's `DeviceContext[]`, would read the wrong
-        # extension struct, so check the runtime API first.
-        if self.api() != DeviceContext[Self.target]._default_api():
-            return False
-        comptime Ext = type_of(self._context[].extensions())
-        comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
-            ref ext = self._context[].extensions()
-            return Bool(ext.completion_flag()) and Bool(
-                ext.completion_flag_reset()
-            )
-        return False
-
     @doc_hidden
     def _hal_stream(
         self,
     ) -> ArcPointer[Stream[get_device_spec[0]()]]:
         return self._stream
-
-    # ===-------------------------------------------------------------------===#
-    # Buffer operations
-    # ===-------------------------------------------------------------------===#
-
-    def api(self) -> String:
-        """Returns the name of the API used to program the device.
-
-        Possible values are:
-
-        - "cpu": Generic host device (CPU).
-        - "cuda": NVIDIA GPUs.
-        - "hip": AMD GPUs.
-
-        Returns:
-            A string identifying the device API.
-        """
-        # The HAL plugin names are "CUDA"/"HIP"/"Metal"; AsyncRT exposes
-        # them lowercased so dispatchers can match `ctx.api() == "cuda"`.
-        return String(self._driver[].name()).lower()
-
-    def enqueue_wait_for(self, other: HALDeviceContext) raises:
-        """Enqueues a wait operation for another device context to complete its work.
-
-        This method creates a dependency between two device contexts, ensuring that operations
-        in the current context will not begin execution until all previously enqueued operations
-        in the other context have completed. This is useful for synchronizing work across
-        multiple devices or streams.
-
-        Args:
-            other: The device context whose operations must complete before operations in this context can proceed.
-
-        Raises:
-            If there's an error enqueuing the wait operation or if the operation
-            is not supported by the underlying device API.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        # Create two device contexts
-        var ctx1 = DeviceContext(0)  # First GPU
-        var ctx2 = DeviceContext(1)  # Second GPU
-
-        # Enqueue operations on ctx1
-        # ...
-
-        # Make ctx2 wait for ctx1 to complete before proceeding
-        ctx2.enqueue_wait_for(ctx1)
-
-        # Enqueue operations on ctx2 that depend on ctx1's completion
-        # ...
-        ```
-        """
-        # Compose existing primitives: record an event on `other`'s default
-        # stream, then make this context's stream wait on it.
-        var event = other._stream[].record_event[EVENT_FLAG_CPU_VISIBLE]()
-        self._stream[].wait_for_events(event)
-
-
-struct _HALDeviceContextScope(Movable):
-    var _device_context: HALDeviceContext.Unknown
-    # Driver-context handle to restore on exit; only meaningful when `_active`
-    # (any value, including zero, can be a live handle).
-    var _prev_driver_ctx: Int
-    var _active: Bool
-
-    def __init__(out self, device_context: HALDeviceContext):
-        self._device_context = device_context.into_unknown_target()
-        self._prev_driver_ctx = 0
-        self._active = False
-
-    def __deinit__(deinit self):
-        # Ensure restoration in all cases.
-        if self._active:
-            try:
-                self._device_context._context[].set_current_driver_context(
-                    self._prev_driver_ctx
-                )
-            except e:
-                print("warning: restoring driver context failed:", e)
-
-    def __enter__(mut self) raises -> HALDeviceContext[]:
-        self._prev_driver_ctx = (
-            self._device_context._context[].get_current_driver_context()
-        )
-        self._device_context._context[].set_current()
-        self._active = True
-        return rebind[HALDeviceContext[]](self._device_context)
-
-    def __exit__(mut self) raises:
-        if self._active:
-            self._device_context._context[].set_current_driver_context(
-                self._prev_driver_ctx
-            )
-            self._active = False
-
-
-def _check_copy_src_size(
-    dst: Buffer[get_device_spec[0]()], src: Buffer[get_device_spec[0]()]
-) raises:
-    """Raises if `src` holds fewer bytes than a copy sized by `dst` reads."""
-    if src.byte_size < dst.byte_size:
-        raise Error(
-            String(
-                t"enqueue_copy: src is {src.byte_size} bytes but dst needs"
-                t" {dst.byte_size} bytes"
-            )
-        )
-
-
-def _memset_value_as_u64[dtype: DType](val: Scalar[dtype]) -> UInt64:
-    """Packs a scalar value into the low bytes of a UInt64 for `set_memory`.
-
-    This logic is copied directly from the existing DeviceContext, but is
-    refactored into a separate function for conciceness.
-    """
-    comptime bitwidth = bit_width_of[dtype]()
-    comptime assert (
-        bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64
-    ), "bitwidth of memset dtype must be one of [8, 16, 32, 64]"
-    comptime if bitwidth == 8:
-        return UInt64(Int(bitcast[.uint8, 1](val)))
-    elif bitwidth == 16:
-        return UInt64(Int(bitcast[.uint16, 1](val)))
-    elif bitwidth == 32:
-        return UInt64(bitcast[.uint32, 1](val))
-    else:
-        return bitcast[.uint64, 1](val)
-
-
-# ===-----------------------------------------------------------------------===#
-# DeviceFunction
-# ===-----------------------------------------------------------------------===#
-
-
-@fieldwise_init
-struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
-    """Provides a default implementation of the `DeviceTypeEncoder` trait."""
-
-    comptime _raw_mlir_target = _device_type_encoder_target()
-
-    def encode_device_ptr[
-        DevicePointerType: DevicePointerLike
-    ](mut self, value: DevicePointerType, dst: MutOpaquePointer[_],):
-        """Encodes a device pointer into `dst` as its raw pointer.
-
-        Parameters:
-            DevicePointerType: The type of the device pointer.
-
-        Args:
-            value: The device pointer to encode.
-            dst: The opaque destination pointer to encode into.
-        """
-        value.unsafe_ptr()._to_device_type(self, dst)

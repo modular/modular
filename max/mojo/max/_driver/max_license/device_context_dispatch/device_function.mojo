@@ -34,15 +34,13 @@ from std.sys import get_defined_bool, size_of
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
-    DefaultDeviceTypeEncoder,
     HALDeviceContext,
     _DeviceFunctionInner,
-    _check_exec_config_launch_support,
-    _launch_attributes_ptr,
 )
 from max._driver.max_license.hal._machine import DeviceSpec
 from max._driver.max_license.hal.execution_config import (
     GPUExecutionConfiguration,
+    check_config_fields_launchable,
 )
 from max._plugin import MaxPluginForTarget
 from max.gpu.host import (
@@ -52,6 +50,7 @@ from max.gpu.host import (
     NearComputeGeneralPurposeScratchpadExecutionConfig,
     _launch_args,
 )
+from max.gpu.host._driver_common import _check_dim_in_range
 from max.gpu.host._driver_handles import _DeviceFunctionPtr
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
@@ -66,6 +65,7 @@ from max.gpu.host._launch_args import (
     _IdentityWrapper,
 )
 from max.gpu.host._legacy.device_context import (
+    DefaultDeviceTypeEncoder,
     LegacyDeviceExternalFunction,
     LegacyDeviceFunction,
     _FunctionEnqueuer,
@@ -77,6 +77,54 @@ from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from max.gpu.host.func_attribute import Attribute
 from max.gpu.host.info import default_accelerator
 from max.gpu.host.launch_config import GridBlockExecutionConfig
+
+
+def _launch_attributes_ptr(
+    mut attributes: List[LaunchAttribute],
+) -> OptionalReg[OpaquePointer[MutUntrackedOrigin]]:
+    # The caller keeps `attributes` alive until the plugin has read them.
+    if len(attributes) == 0:
+        return None
+    return (
+        attributes.unsafe_ptr()
+        .unsafe_bitcast[NoneType]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+    )
+
+
+def _check_exec_config_launch_support[
+    ExecutionConfigType: ExecutionConfig, target: CompilationTarget
+]():
+    comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
+        comptime assert conforms_to(
+            HALDeviceContext[target].ExecutionConfigType, ClusterExecutionConfig
+        ), "cluster launch is not supported on this device"
+
+    comptime if conforms_to(
+        ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+    ):
+        comptime assert conforms_to(
+            HALDeviceContext[target].ExecutionConfigType,
+            LaunchAttributeHolderExecutionConfig,
+        ), "this target does not support launch attributes"
+
+    check_config_fields_launchable[
+        ExecutionConfigType, "HAL DeviceContext.enqueue_function"
+    ]()
+
+
+def _check_config_dims[
+    func_name_for_msg: StringLiteral,
+    ExecutionConfigType: ExecutionConfig,
+](execution_config: ExecutionConfigType, *, location: SourceLocation) raises:
+    """Checks a grid/block config's dims; any other config has none."""
+    comptime if conforms_to(ExecutionConfigType, GridBlockExecutionConfig):
+        _check_dim_in_range[func_name_for_msg, "grid_dim"](
+            execution_config.get_grid_dim(), location=location
+        )
+        _check_dim_in_range[func_name_for_msg, "block_dim"](
+            execution_config.get_block_dim(), location=location
+        )
 
 
 trait _DispatchEnqueuer:

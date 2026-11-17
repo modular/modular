@@ -33,7 +33,8 @@ from std.reflection import (
     SourceLocation,
     call_location,
 )
-from std.sys import size_of
+from std.memory.unsafe import bitcast
+from std.sys import bit_width_of, size_of
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_dispatch.device_function import (
@@ -42,17 +43,15 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     _DispatchEnqueuer,
     _HALDeviceExternalFunction,
     _HALDeviceFunction,
+    _check_config_dims,
 )
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
-    _HALDeviceContextScope,
     _GPU_DRIVER,
-    _check_config_dims,
-    _check_copy_src_size,
-    _memset_value_as_u64,
     _driver_satisfies_api,
 )
 from max._driver.max_license.hal import (
+    Buffer,
     Context,
     Device as _HALDevice,
     Event,
@@ -64,6 +63,9 @@ from max._driver.max_license.hal.extensions.traits import (
     SupportsPeerAccessV1,
 )
 from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
+from max._driver.max_license.hal.extensions.traits import (
+    SupportsCompletionFlagResetV1,
+)
 from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
 from max._plugin import MaxPluginForTarget
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
@@ -177,6 +179,39 @@ def _init_peer_state() -> _PeerState:
 
 
 comptime _PEER_STATE = _Global["MODULAR_HAL_PEER_STATE", _init_peer_state]
+
+
+def _check_copy_src_size(
+    dst: Buffer[get_device_spec[0]()], src: Buffer[get_device_spec[0]()]
+) raises:
+    """Raises if `src` holds fewer bytes than a copy sized by `dst` reads."""
+    if src.byte_size < dst.byte_size:
+        raise Error(
+            String(
+                t"enqueue_copy: src is {src.byte_size} bytes but dst needs"
+                t" {dst.byte_size} bytes"
+            )
+        )
+
+
+def _memset_value_as_u64[dtype: DType](val: Scalar[dtype]) -> UInt64:
+    """Packs a scalar value into the low bytes of a UInt64 for `set_memory`.
+
+    This logic is copied directly from the existing DeviceContext, but is
+    refactored into a separate function for conciceness.
+    """
+    comptime bitwidth = bit_width_of[dtype]()
+    comptime assert (
+        bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64
+    ), "bitwidth of memset dtype must be one of [8, 16, 32, 64]"
+    comptime if bitwidth == 8:
+        return UInt64(Int(bitcast[.uint8, 1](val)))
+    elif bitwidth == 16:
+        return UInt64(Int(bitcast[.uint16, 1](val)))
+    elif bitwidth == 32:
+        return UInt64(bitcast[.uint32, 1](val))
+    else:
+        return bitcast[.uint64, 1](val)
 
 
 def _check_device_to_device_copy[
@@ -822,7 +857,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             return self._impl.api()
         else:
-            return self._impl.api()
+            # The HAL plugin names are "CUDA"/"HIP"/"Metal"; AsyncRT exposes
+            # them lowercased so dispatchers can match `ctx.api() == "cuda"`.
+            return String(self._impl._driver[].name()).lower()
 
     @deprecated("Use `DeviceContext.device().get_name()` instead.")
     def name(self) -> String:
@@ -1102,7 +1139,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             return self._impl.supports_flag_wait()
         else:
-            return self._impl.supports_flag_wait()
+            # A context boxed under another target's type, such as a CPU
+            # context in the accelerator's `DeviceContext[]`, would read the
+            # wrong extension struct, so check the runtime API first.
+            if self.api() != Self._default_api():
+                return False
+            comptime Ext = type_of(self._impl._context[].extensions())
+            comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
+                ref ext = self._impl._context[].extensions()
+                return Bool(ext.completion_flag()) and Bool(
+                    ext.completion_flag_reset()
+                )
+            return False
 
     def num_streams(self) -> Int:
         """Returns the number of streams available on this device context.
@@ -1570,13 +1618,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # As in legacy: the copy waits for `src_buf`'s writes, and `src_buf`'s
         # stream can't overwrite or free it until the copy has read it.
         _check_device_to_device_copy(self._impl, dst_buf._impl, src_buf._impl)
-        var src_ctx = src_buf._impl._ctx._impl
-        var sync = not (src_ctx._hal_stream() is self._impl._hal_stream())
+        var src_ctx = src_buf._impl._ctx
+        var sync = not (src_ctx._hal_stream() is self._hal_stream())
         if sync:
-            self._impl.enqueue_wait_for(src_ctx)
+            self.enqueue_wait_for(src_ctx)
         _enqueue_copy_device_to_device(self._impl, dst_buf._impl, src_buf._impl)
         if sync:
-            src_ctx.enqueue_wait_for(self._impl)
+            src_ctx.enqueue_wait_for(self)
 
     def enqueue_copy[
         dtype: DType
@@ -3212,16 +3260,58 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def enqueue_wait_for(self, other: DeviceContext) raises:
         """Enqueues a wait for all work currently pending on `other`.
 
+        This creates a dependency between two device contexts: operations in
+        the current context will not begin execution until all previously
+        enqueued operations in the other context have completed. This is
+        useful for synchronizing work across multiple devices or streams.
+
         Args:
-            other: The context to wait for.
+            other: The device context whose operations must complete before
+                operations in this context can proceed.
 
         Raises:
-            If the operation fails.
+            If there's an error enqueuing the wait operation or if the
+            operation is not supported by the underlying device API.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        # Create two device contexts
+        var ctx1 = DeviceContext(0)  # First GPU
+        var ctx2 = DeviceContext(1)  # Second GPU
+
+        # Enqueue operations on ctx1
+        # ...
+
+        # Make ctx2 wait for ctx1 to complete before proceeding
+        ctx2.enqueue_wait_for(ctx1)
+
+        # Enqueue operations on ctx2 that depend on ctx1's completion
+        # ...
+        ```
         """
         comptime if use_legacy_backend():
             self._impl.enqueue_wait_for(other._impl)
         else:
-            self._impl.enqueue_wait_for(other._impl)
+            # Compose existing primitives: record an event on `other`'s default
+            # stream, then make this context's stream wait on it.
+            var event = other._impl._stream[].record_event[
+                EVENT_FLAG_CPU_VISIBLE
+            ]()
+            self._impl._stream[].wait_for_events(event)
+
+
+@fieldwise_init
+struct _HALDeviceContextScope(Movable):
+    """The state of a `_DeviceContextScope` on the HAL backend."""
+
+    var _device_context: HALDeviceContext.Unknown
+    # Driver-context handle to restore on exit; only meaningful when `_active`
+    # (any value, including zero, can be a live handle).
+    var _prev_driver_ctx: Int
+    var _active: Bool
 
 
 struct _DeviceContextScope[target: CompilationTarget]:
@@ -3242,7 +3332,7 @@ struct _DeviceContextScope[target: CompilationTarget]:
         comptime if use_legacy_backend():
             self._impl = Self._Legacy(ctx._impl)
         else:
-            self._impl = Self._HAL(ctx._impl)
+            self._impl = Self._HAL(ctx._impl.into_unknown_target(), 0, False)
 
     def __enter__(mut self) raises -> DeviceContext[Self.target]:
         """Makes the driver context current.
@@ -3256,8 +3346,13 @@ struct _DeviceContextScope[target: CompilationTarget]:
         comptime if use_legacy_backend():
             return DeviceContext[Self.target](_impl=self._impl.__enter__())
         else:
+            self._impl._prev_driver_ctx = (
+                self._impl._device_context._context[].get_current_driver_context()
+            )
+            self._impl._device_context._context[].set_current()
+            self._impl._active = True
             return rebind_var[DeviceContext[Self.target]](
-                self._impl.__enter__()
+                rebind[HALDeviceContext[]](self._impl._device_context)
             )
 
     def __exit__(mut self) raises:
@@ -3269,4 +3364,19 @@ struct _DeviceContextScope[target: CompilationTarget]:
         comptime if use_legacy_backend():
             self._impl.__exit__()
         else:
-            self._impl.__exit__()
+            if self._impl._active:
+                self._impl._device_context._context[].set_current_driver_context(
+                    self._impl._prev_driver_ctx
+                )
+                self._impl._active = False
+
+    def __deinit__(deinit self):
+        # Ensure restoration in all cases.
+        comptime if not use_legacy_backend():
+            if self._impl._active:
+                try:
+                    self._impl._device_context._context[].set_current_driver_context(
+                        self._impl._prev_driver_ctx
+                    )
+                except e:
+                    print("warning: restoring driver context failed:", e)

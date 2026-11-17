@@ -21,9 +21,6 @@ imports it from `max.gpu.host` never names a backend.
 
 from max.gpu.host._vendor_handles import CUcontext
 
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    DefaultDeviceTypeEncoder as _HALDefaultDeviceTypeEncoder,
-)
 from max.gpu.host._legacy._nvidia_cuda import (
     CUDA_get_current_context as _legacy_CUDA_get_current_context,
 )
@@ -32,9 +29,7 @@ from max.gpu.host._legacy.device_context import (
 )
 from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
 
-comptime DefaultDeviceTypeEncoder = (
-    _LegacyDefaultDeviceTypeEncoder if not HAL_DEVICE_CONTEXT else _HALDefaultDeviceTypeEncoder
-)
+comptime DefaultDeviceTypeEncoder = _LegacyDefaultDeviceTypeEncoder
 """The encoder kernels use for device arguments."""
 
 

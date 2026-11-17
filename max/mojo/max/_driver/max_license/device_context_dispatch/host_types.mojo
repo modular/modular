@@ -28,6 +28,8 @@ from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
+)
+from max._driver.max_license.device_context_dispatch.device_function import (
     _check_config_dims,
 )
 from max._driver.max_license.hal import Event, Stream, get_device_spec
