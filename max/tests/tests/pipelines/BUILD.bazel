@@ -184,7 +184,6 @@ modular_py_test(
 exports_files(
     [
         "testdata/graph_group_kinds.json",
-        "testdata/graph_input_trees.json",
         "testdata/vision_input_trees.json",
     ],
     visibility = ["//mach:__subpackages__"],

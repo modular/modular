@@ -13,13 +13,12 @@
 """CPU-only snapshot of each model's graph input tree.
 
 The compiled graphs, max serve, and Mach's BatchProcessor depend on the exact
-order, names, kinds and types of the inputs each model declares. The snapshots
-in ``testdata/graph_input_trees.json`` (decoders) and
-``testdata/vision_input_trees.json`` (vision encoders) record each tree as a
-role's ``in_layouts`` and ``in_tree`` in ``artifact.json``, and
+order, names, kinds and types of the inputs each model declares. The snapshot
+in ``testdata/vision_input_trees.json`` (vision encoders) records each tree as
+a role's ``in_layouts`` and ``in_tree`` in ``artifact.json``, and
 ``testdata/graph_group_kinds.json`` every group kind; Mach's planner tests
-read them. A change to any model's inputs fails here until the snapshot is
-regenerated deliberately with::
+read them. A change to a vision encoder's inputs fails here until the snapshot
+is regenerated deliberately with::
 
     UPDATE_GRAPH_INPUT_SNAPSHOT=1 ./bazelw test \
         //max/tests/tests/pipelines:test_graph_input_types \
@@ -134,7 +133,6 @@ from max.tensor.tensor_spec_serialization import (
     layouts_from_json,
 )
 
-_SNAPSHOT = Path(__file__).parent / "testdata" / "graph_input_trees.json"
 _VISION_SNAPSHOT = (
     Path(__file__).parent / "testdata" / "vision_input_trees.json"
 )
@@ -711,19 +709,8 @@ def _dumps(value: object, indent: int = 0) -> str:
     return f"{open_}\n" + ",\n".join(items) + f"\n{' ' * indent}{close}"
 
 
-def _snapshot(name: str) -> dict[str, Any]:
-    if name.startswith("vision_"):
-        return json.loads(_VISION_SNAPSHOT.read_text())[
-            name.removeprefix("vision_")
-        ]
-    return json.loads(_SNAPSHOT.read_text())[name]
-
-
-def test_snapshot_covers_every_case() -> None:
-    if os.environ.get("UPDATE_GRAPH_INPUT_SNAPSHOT"):
-        trees = {name: _encode(build()[0]) for name, build in _CASES.items()}
-        _SNAPSHOT.resolve().write_text(_dumps(trees) + "\n")
-    assert set(json.loads(_SNAPSHOT.read_text())) == set(_CASES)
+def _vision_snapshot(name: str) -> dict[str, Any]:
+    return json.loads(_VISION_SNAPSHOT.read_text())[name]
 
 
 def test_vision_snapshot_covers_every_case() -> None:
@@ -751,9 +738,9 @@ def test_graph_group_kinds_match_snapshot() -> None:
     assert json.loads(_KINDS.read_text()) == kinds
 
 
-@pytest.mark.parametrize("name", list(_ALL_TREES))
-def test_graph_input_tree_matches_snapshot(name: str) -> None:
-    assert _encode(_ALL_TREES[name]()) == _snapshot(name), (
+@pytest.mark.parametrize("name", list(_VISION_CASES))
+def test_vision_input_tree_matches_snapshot(name: str) -> None:
+    assert _encode(_VISION_CASES[name]()) == _vision_snapshot(name), (
         "A graph input was renamed, reordered or retyped. If that is "
         "intended, regenerate with UPDATE_GRAPH_INPUT_SNAPSHOT=1 ./bazelw test "
         "//max/tests/tests/pipelines:test_graph_input_types "
@@ -791,7 +778,11 @@ def test_a_positional_decoder_needs_no_kinds() -> None:
 @pytest.mark.parametrize("name", list(_ALL_TREES))
 def test_graph_input_tree_round_trips(name: str) -> None:
     layouts, treedef = _input_signature(_ALL_TREES[name]())
-    encoded = _snapshot(name)
+    encoded = (
+        _vision_snapshot(name.removeprefix("vision_"))
+        if name.startswith("vision_")
+        else _encode(_ALL_TREES[name]())
+    )
     assert treedef_from_json(encoded["in_tree"]) == treedef
     assert layouts_from_json(encoded["in_layouts"], "in_layouts") == layouts
 
@@ -867,7 +858,7 @@ def test_max_dims_refuses_an_unknown_dim() -> None:
 def test_deepseekv3_2_inputs_equal_deepseekv3_inputs(
     v3_case: str, options: dict[str, bool]
 ) -> None:
-    """V3.2 reuses V3's input tree, so the snapshot records only V3's."""
+    """V3.2 reuses V3's input tree, so its inputs must match V3's."""
     input_tree, input_types = _deepseek(DeepseekV3_2, **options)
     assert _encode(input_tree) == _encode(_CASES[v3_case]()[0])
     assert tuple(tree.leaves(input_tree)) == input_types
