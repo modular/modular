@@ -1049,6 +1049,19 @@ class ExpertParallelMoE(QuantizedMoE):
         """
         return down
 
+    def _dispatched_rows(self, x_shards: Sequence[Tensor]) -> Tensor:
+        """Returns how many rows the devices dispatch together.
+
+        Times ``top_k / n_gpus_per_node``, it is the estimate of one
+        device's expert rows that the grouped matmuls pick their tiles by.
+        It sums the devices' shards, so under allreduce, where every device
+        holds every row, it counts each row once per device.
+        """
+        rows = F.shape_to_tensor(x_shards[0].shape)[0]
+        for shard in x_shards[1:]:
+            rows = rows + F.shape_to_tensor(shard.shape)[0]
+        return rows
+
     def _local_expert_sum(
         self,
         down: Tensor,
@@ -1316,9 +1329,7 @@ class ExpertParallelMoE(QuantizedMoE):
             )
 
         # Estimated total token-expert pairs across all devices.
-        total_tokens = F.shape_to_tensor(x_shards[0].shape)[0]
-        for shard in x_shards[1:]:
-            total_tokens = total_tokens + F.shape_to_tensor(shard.shape)[0]
+        total_tokens = self._dispatched_rows(x_shards)
         estimated_total_m = (
             total_tokens * self.num_experts_per_token // config.n_gpus_per_node
         ).cast(DType.uint32)

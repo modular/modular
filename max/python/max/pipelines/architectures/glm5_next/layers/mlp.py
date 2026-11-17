@@ -21,6 +21,7 @@ test never reaches and a real checkpoint does.
 from __future__ import annotations
 
 import functools
+from collections.abc import Sequence
 from typing import ClassVar
 
 from max import functional as F
@@ -37,6 +38,7 @@ from max.nn.kernels import moe_router_group_limited, router_gate_mixed_gemv
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
+from typing_extensions import override
 
 from ..model_config import Glm5NextConfig
 
@@ -111,6 +113,17 @@ class Glm5NextExpertParallelMoE(ExpertParallelMoE):
     combine already accumulates in the dispatch dtype. The dense MLP and an
     unfused shared expert keep float32.
     """
+
+    @override
+    def _dispatched_rows(self, x_shards: Sequence[Tensor]) -> Tensor:
+        if not self.ep_batch_manager.config.use_allreduce:
+            return super()._dispatched_rows(x_shards)
+        # Every device holds every row under allreduce, so the rows count
+        # once. The base's sum would estimate each device's expert rows at
+        # the device count times their number, and the grouped matmuls pick
+        # their tiles from that. The base keeps the sum so that no other
+        # model's kernel choice changes with this one.
+        return F.shape_to_tensor(x_shards[0].shape)[0]
 
 
 class Glm5NextTopKRouter(MoEGate):

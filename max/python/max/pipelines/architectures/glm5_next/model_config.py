@@ -246,6 +246,17 @@ class Glm5NextConfig(
 
     ep_dispatch_token_layout: ClassVar[str] = "tp_sharded"
 
+    @override
+    @classmethod
+    def ep_dispatch_token_layout_for(cls, *, use_allreduce: bool) -> str:
+        """Returns ``"replicated"`` under allreduce, else ``"tp_sharded"``.
+
+        The decoder dispatches each device's share of the rows to the P2P
+        backend. Under allreduce every device routes all of them, which it
+        already holds (:func:`.layers.decoder.feed_forward`).
+        """
+        return "replicated" if use_allreduce else cls.ep_dispatch_token_layout
+
     def finalize(
         self,
         huggingface_config: AutoConfig,
@@ -343,8 +354,9 @@ class Glm5NextConfig(
         Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
         quantized, else in bf16. The shared expert fuses with the routed ones
         only when it has their shape and weight layout. Flash is
-        tensor-parallel only, so attention reduce-scatters every step's tokens
-        evenly across the ranks before the dispatch.
+        tensor-parallel only, so the ranks' token counts differ by at most
+        one: each dispatches an even share of the step's rows, or all of
+        them under allreduce.
         """
         quant_config = self.quant_config
         quantized_dispatch = quant_config is not None and (

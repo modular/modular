@@ -241,13 +241,29 @@ class ExpertParallelDeploymentConfig(DeploymentConfig, abc.ABC):
 
     ep_dispatch_token_layout: ClassVar[str | None] = None
     """How tokens reach the expert dispatch, when the decoder fixes it.
-    Exporters read it off the pipeline model to pick the matching
-    expert-parallel backend."""
+    Registrations copy it onto the pipeline model. Exporters ask
+    :meth:`ep_dispatch_token_layout_for`, which returns it unless the
+    decoder's layout follows the backend."""
 
     expert_parallel_inputs: ClassVar[ExpertParallelInputs] = (
         ExpertParallelInputs()
     )
     """How the decoder's graph takes the exchange's buffers."""
+
+    @classmethod
+    def ep_dispatch_token_layout_for(cls, *, use_allreduce: bool) -> str | None:
+        """Returns how tokens reach the expert dispatch under a backend.
+
+        Exporters ask before any config is built, with the backend they
+        export for. The default is :attr:`ep_dispatch_token_layout` under
+        both backends; a decoder whose layout follows the backend overrides
+        this instead.
+
+        Args:
+            use_allreduce: Whether the export uses the allreduce backend.
+        """
+        del use_allreduce
+        return cls.ep_dispatch_token_layout
 
     @abc.abstractmethod
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:

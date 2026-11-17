@@ -76,6 +76,15 @@ def feed_forward(
         # It all-reduces its float32 combine before rounding to bfloat16, so
         # this transfer moves nothing.
         return mlp(h).to(replicated)
+    if (
+        isinstance(mlp, ExpertParallelMoE)
+        and mlp.ep_batch_manager.config.use_allreduce
+    ):
+        # Every device already holds every row, so each one routes all of
+        # them to its own experts and returns their partial sums. One
+        # all-reduce completes them, in place of the P2P exchange and the
+        # gather.
+        return F.allreduce_sum(mlp(h, comm_buffers))
     # The other feed-forward blocks are per token, so each device runs
     # them over its own share of the rows rather than every device over
     # all of them. That is also what keeps a device's EP dispatch under
