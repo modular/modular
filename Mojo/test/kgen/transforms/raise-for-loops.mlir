@@ -983,3 +983,72 @@ kgen.func @select_arms_no_progress_arm_not_ind_var(%ub: !kgen.scalar<index>) {
   }
   hlcf.return
 }
+
+// -----
+
+// A break-branch op whose region uses a loop-internal value can't be moved
+// after the loop.
+// CHECK-LABEL: @nested_dependent_ops_in_break_branch
+// CHECK: hlcf.loop
+// CHECK-NOT: hlcf.for
+kgen.func @nested_dependent_ops_in_break_branch(%cond: !kgen.scalar<bool>) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx10 = index.constant 10
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %1 = index.cmp sgt(%arg0, %idx10)
+    %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c1 {
+      hlcf.yield
+    } else {
+      hlcf.if %cond {
+        kgen.call @foo(%arg0) : (index) -> ()
+        hlcf.yield
+      } else {
+        hlcf.yield
+      }
+      hlcf.break
+    }
+    %2 = index.add %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// A region may use values from outside the loop or from earlier in the break
+// branch; the op still moves after the loop.
+// CHECK-LABEL: @nested_independent_ops_in_break_branch
+// CHECK: hlcf.for [%idx0 to %idx10 step %idx1 sgt add]
+// CHECK:        hlcf.for.yield
+// CHECK-NEXT: }
+// CHECK-NEXT: [[V0:%.*]] = kgen.call @foo(%idx10)
+// CHECK-NEXT: hlcf.if %arg0 {
+// CHECK-NEXT:   kgen.call @bar([[V0]], %idx10)
+kgen.func @nested_independent_ops_in_break_branch(%cond: !kgen.scalar<bool>) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx10 = index.constant 10
+
+  hlcf.loop (%arg0 = %idx0 : index) {
+    %1 = index.cmp sgt(%arg0, %idx10)
+    %c1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c1 {
+      hlcf.yield
+    } else {
+      %v0 = kgen.call @foo(%idx10) : (index) -> (index)
+      hlcf.if %cond {
+        kgen.call @bar(%v0, %idx10) : (index, index) -> ()
+        hlcf.yield
+      } else {
+        hlcf.yield
+      }
+      hlcf.break
+    }
+    %2 = index.add %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  hlcf.return
+}

@@ -26,6 +26,7 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #define DEBUG_TYPE "raise-for-loops"
 
@@ -724,7 +725,10 @@ static bool hasComplexExitLogic(LoopOp loop, IfLikeOp ifOp) {
   // break is the only exit for the loop.
   DenseSet<Value> intermediateValues;
   for (Operation &op : breakBlock->without_terminator()) {
-    for (Value operand : op.getOperands()) {
+    // Also check values used inside op's regions; they move with op.
+    llvm::SetVector<Value> usedValues(op.operand_begin(), op.operand_end());
+    mlir::getUsedValuesDefinedAbove(op.getRegions(), usedValues);
+    for (Value operand : usedValues) {
       if (intermediateValues.contains(operand))
         continue;
 
