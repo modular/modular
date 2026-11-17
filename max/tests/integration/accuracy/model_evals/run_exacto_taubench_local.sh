@@ -126,6 +126,12 @@
 #                       score you cannot attribute to a config is not
 #                       evidence.
 #   --out-dir DIR      Results directory (default: /tmp/exacto-taubench-results).
+#                       The run writes tau2-results.json here even when it
+#                       fails or is interrupted, so --resume can pick it up.
+#   --resume FILE      Continue the run a tau2-results.json records: skip its
+#                       finished simulations and rerun the rest, including
+#                       those whose requests failed. Pass the same options as
+#                       that run; a changed config or task set is refused.
 #   --refresh          Re-clone the harness and rebuild its venv.
 #   -h, --help         Show this help.
 #
@@ -186,9 +192,10 @@ reference_range=""
 reference_source=""
 serve_config=""
 out_dir="/tmp/exacto-taubench-results"
+resume=""
 refresh=0
 
-usage() { sed -n '15,149p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '15,155p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -212,6 +219,7 @@ while [[ $# -gt 0 ]]; do
     --reference-source) reference_source="$2"; shift 2 ;;
     --serve-config) serve_config="$2"; shift 2 ;;
     --out-dir) out_dir="$2"; shift 2 ;;
+    --resume) resume="$2"; shift 2 ;;
     --refresh) refresh=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown option: $1" >&2; echo "try --help" >&2; exit 1 ;;
@@ -219,6 +227,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 url="${url%/}"; url="${url%/v1}"; url="${url%/}"
+if [[ -n "$resume" && ! -f "$resume" ]]; then
+  echo "error: --resume file not found: $resume" >&2
+  exit 1
+fi
 [[ "$user_llm" == "self" ]] && user_llm=""
 if [[ "$reasoning_passback" != on && "$reasoning_passback" != off ]]; then
   echo "error: --reasoning-passback must be on or off, got '$reasoning_passback'" >&2
@@ -427,6 +439,105 @@ open(path, "w").write(src.replace(anchor, addition + anchor))
 PYPATCH
 }
 
+# tau2 re-raises any other exception from a simulation, such as an HTTP 400
+# after litellm's retries, and that aborts the whole run with no score. This
+# ends only that simulation, as an agent_error (a user_error when the
+# simulator's request failed), so it scores 0 and counts against the error
+# budget in exacto_report.py. The partial trajectory is kept, and the error
+# text goes in reward_info.info["exacto_request_error"]. A failure outside the
+# conversation loop still saves an agent_error with no messages instead of
+# aborting the run.
+# tau2's resume check pairs the saved and requested tasks with zip, which stops
+# at the shorter list, so a resume with a different --num-tasks passes it and
+# appends simulations the saved task list does not cover.
+patch_resume_task_check() {
+  vpy - "$CHECKOUT/src/tau2/run.py" <<'PYPATCH'
+import sys
+path = sys.argv[1]
+anchor = (
+    "                # Check if the task set has changed\n"
+    "                if not all(\n"
+)
+replacement = (
+    "                # Check if the task set has changed\n"
+    "                if len(simulation_results.tasks) != len(prev_simulation_results.tasks) or not all(\n"
+)
+src = open(path).read()
+if src.count(anchor) != 1:
+    sys.exit(f"ERROR: tau2 changed; cannot patch the resume task check in {path}")
+open(path, "w").write(src.replace(anchor, replacement))
+PYPATCH
+}
+
+patch_task_error() {
+  vpy - "$CHECKOUT/src/tau2/orchestrator/orchestrator.py" \
+    "$CHECKOUT/src/tau2/run.py" <<'PYPATCH'
+import sys
+
+
+def patch(path, anchor, replacement, what):
+    src = open(path).read()
+    if src.count(anchor) != 1:
+        sys.exit(f"ERROR: tau2 changed; cannot patch the {what} in {path}")
+    open(path, "w").write(src.replace(anchor, replacement))
+
+
+orchestrator, run = sys.argv[1], sys.argv[2]
+patch(
+    orchestrator,
+    "        while not self.done:\n"
+    "            self.step()\n",
+    "        while not self.done:\n"
+    "            try:\n"
+    "                self.step()\n"
+    "            except Exception as _e:\n"
+    "                logger.error(f\"request failed in task {self.task.id}: {_e}\")\n"
+    "                self.exacto_request_error = f\"{type(_e).__name__}: {_e}\"[:2000]\n"
+    "                self.done = True\n"
+    "                self.termination_reason = (\n"
+    "                    TerminationReason.USER_ERROR\n"
+    "                    if self.to_role == Role.USER\n"
+    "                    else TerminationReason.AGENT_ERROR\n"
+    "                )\n"
+    "                break\n",
+    "conversation loop",
+)
+patch(
+    run,
+    "    simulation.reward_info = reward_info\n",
+    "    simulation.reward_info = reward_info\n"
+    "    _request_error = getattr(orchestrator, \"exacto_request_error\", None)\n"
+    "    if _request_error:\n"
+    "        reward_info.info = {\n"
+    "            **(reward_info.info or {}),\n"
+    "            \"exacto_request_error\": _request_error,\n"
+    "        }\n",
+    "request-error record",
+)
+patch(
+    run,
+    "            logger.error(f\"Error running task {task.id}, trial {trial}: {e}\")\n"
+    "            raise e\n",
+    "            logger.error(f\"Error running task {task.id}, trial {trial}: {e}\")\n"
+    "            import uuid\n"
+    "            from tau2.data_model.simulation import RewardInfo, SimulationRun, TerminationReason\n"
+    "            _now = get_now()\n"
+    "            simulation = SimulationRun(\n"
+    "                id=str(uuid.uuid4()), task_id=task.id, start_time=_now,\n"
+    "                end_time=_now, duration=0.0,\n"
+    "                termination_reason=TerminationReason.AGENT_ERROR,\n"
+    "                reward_info=RewardInfo(\n"
+    "                    reward=0.0,\n"
+    "                    info={\"exacto_request_error\": f\"{type(e).__name__}: {e}\"[:2000]},\n"
+    "                ),\n"
+    "                messages=[], trial=trial, seed=seed,\n"
+    "            )\n"
+    "            _save(simulation)\n",
+    "per-task error handling",
+)
+PYPATCH
+}
+
 # tau2 rebuilds each earlier agent turn from its content and tool calls only, so
 # a reasoning model sees a history without its own reasoning, which some chat
 # templates render as an empty reasoning block. The OpenRouter harness replays
@@ -500,6 +611,8 @@ ensure_checkout() {
   patch_empty_agent_turn
   patch_empty_user_turn
   patch_api_key_env
+  patch_task_error
+  patch_resume_task_check
   if [[ "$reasoning_passback" == on ]]; then patch_reasoning_passback; fi
 }
 
@@ -665,6 +778,72 @@ RUN_NAME="exacto-airline-$$"
 RESULTS_JSON="$CHECKOUT/data/simulations/$RUN_NAME.json"
 rm -f "$RESULTS_JSON"
 
+# tau2 saves each simulation as it finishes, so the file is a checkpoint. The
+# exported copy also records the reasoning passback setting, which tau2's own
+# config check cannot see, so --resume can refuse a mismatch.
+export_results() {
+  vpy - "$RESULTS_JSON" "$out_dir/tau2-results.json" "$reasoning_passback" <<'PYEXPORT'
+import json, sys
+src, dst, passback = sys.argv[1:]
+with open(src) as f:
+    results = json.load(f)
+results["exacto"] = {"reasoning_passback": passback}
+with open(dst, "w") as f:
+    json.dump(results, f, indent=2)
+PYEXPORT
+}
+
+# Keep the checkpoint however the run ends, and say how to continue. A resume
+# that tau2 refused saved nothing new, so it leaves the --resume file as it was.
+RESUME_MARKER="$RESULTS_JSON.resumed"
+rm -f "$RESUME_MARKER"
+keep_partial_results() {
+  local status=$?
+  if [[ -f "$RESUME_MARKER" && ! "$RESULTS_JSON" -nt "$RESUME_MARKER" ]]; then
+    return
+  fi
+  if [[ -f "$RESULTS_JSON" ]]; then
+    export_results || true
+    if (( status != 0 )); then
+      echo "[exacto] to continue this run, rerun with the same options plus --resume $out_dir/tau2-results.json" >&2
+    fi
+  fi
+}
+trap keep_partial_results EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# A failed request is saved as a finished simulation, so drop those first:
+# tau2 then runs them again along with the ones that never ran.
+if [[ -n "$resume" ]]; then
+  vpy - "$resume" "$RESULTS_JSON" "$reasoning_passback" <<'PYRESUME'
+import json, sys
+
+src, dst, passback = sys.argv[1:]
+with open(src) as f:
+    results = json.load(f)
+saved = (results.get("exacto") or {}).get("reasoning_passback")
+if saved != passback:
+    sys.exit(
+        f"ERROR: {src} was run with reasoning passback {saved or 'unrecorded'}, "
+        f"but this run has it {passback}. Resume with the same setting."
+    )
+sims = results.get("simulations") or []
+kept = [
+    s for s in sims
+    if not ((s.get("reward_info") or {}).get("info") or {}).get("exacto_request_error")
+]
+results["simulations"] = kept
+with open(dst, "w") as f:
+    json.dump(results, f, indent=2)
+print(
+    f"[exacto] resuming from {src}: keeping {len(kept)} finished simulations, "
+    f"rerunning {len(sims) - len(kept)} whose requests failed"
+)
+PYRESUME
+  touch "$RESUME_MARKER"
+fi
+
 # litellm reaches our endpoint through the openai provider, which takes the base
 # URL as an api_base kwarg rather than a flag.
 # "unset" leaves reasoning_effort out, so the chat template's default applies.
@@ -744,14 +923,19 @@ echo "[exacto] running tau2 airline: trials=$num_trials tasks=${num_tasks:-50(al
     TAU2_DATA_DIR="$CHECKOUT/data" \
     OPENAI_API_KEY="${api_key:-dummy}" \
     EXACTO_USER_API_KEY="${user_api_key:-${api_key:-dummy}}" \
-    "$VENV/bin/tau2" "${args[@]}"
+    "$VENV/bin/tau2" "${args[@]}" < <(
+      # tau2 asks before it resumes an existing file and again if the config
+      # changed. Answer yes to the first and no to the second, so a resume
+      # never mixes two configs in one score.
+      if [[ -n "$resume" ]]; then printf 'y\nn\n'; fi
+    )
 )
 
 if [[ ! -f "$RESULTS_JSON" ]]; then
   echo "ERROR: tau2 produced no results at $RESULTS_JSON" >&2
   exit 1
 fi
-cp "$RESULTS_JSON" "$out_dir/tau2-results.json"
+export_results
 echo "[exacto] harness results: $out_dir/tau2-results.json"
 
 ENDPOINT_META="$out_dir/endpoint.json"

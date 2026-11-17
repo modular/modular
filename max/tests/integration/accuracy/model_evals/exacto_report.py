@@ -374,6 +374,7 @@ def parse_tau2_log(
     rows: list[dict[str, Any]] = []
     rewards: list[float] = []
     errors = 0
+    request_errors = 0
     hit_step_cap = 0
     empty_user_finish: collections.Counter[str] = collections.Counter()
     output_tokens: list[int] = []
@@ -392,6 +393,13 @@ def parse_tau2_log(
             rewards.append(float(reward))
         if termination in TAU2_ERROR_TERMINATIONS:
             errors += 1
+        # Set by the runner's patch when a request failed outright, such as
+        # an HTTP 400, instead of the run aborting.
+        request_error = (reward_info.get("info") or {}).get(
+            "exacto_request_error"
+        )
+        if request_error:
+            request_errors += 1
         if termination == "max_steps":
             hit_step_cap += 1
         db_check = reward_info.get("db_check") or {}
@@ -414,7 +422,8 @@ def parse_tau2_log(
                 "max_turn_completion_tokens": agent.max_turn_output_tokens,
                 "agent_turns": agent.turns,
                 "length_capped_turns": agent.length_capped_turns,
-                "error": (
+                "error": request_error
+                or (
                     termination
                     if termination in TAU2_ERROR_TERMINATIONS
                     else None
@@ -451,6 +460,8 @@ def parse_tau2_log(
         "total": len(simulations),
         "completed": len(rewards),
         "errors": errors,
+        # The subset of errors where a request failed, such as an HTTP 400.
+        "request_errors": request_errors,
         "hit_step_cap": hit_step_cap,
         # Per simulation: every agent turn's output tokens, summed.
         "mean_output_tokens": (

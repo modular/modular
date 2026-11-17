@@ -763,6 +763,24 @@ def test_empty_simulator_attempts_are_counted_by_finish_reason() -> None:
     }
 
 
+def test_a_failed_request_is_an_error_with_its_message() -> None:
+    log = json.loads(json.dumps(TAU2_LOG))
+    sims = log["simulations"]
+    sims[0]["termination_reason"] = "agent_error"
+    sims[0]["reward_info"] = {
+        "reward": 0.0,
+        "info": {
+            "exacto_request_error": "BadRequestError: input length 131550 "
+            "leaves no generation position"
+        },
+    }
+    rows, summary = exacto_report.parse_tau2_log(log)
+    assert rows[0]["reward"] == 0.0
+    assert rows[0]["error"].startswith("BadRequestError: input length")
+    assert summary["request_errors"] == 1
+    assert summary["errors"] >= 1
+
+
 def test_a_run_without_empty_simulator_turns_records_zero() -> None:
     _, summary = exacto_report.parse_tau2_log(TAU2_LOG)
     assert summary["empty_user_turns"] == 0
