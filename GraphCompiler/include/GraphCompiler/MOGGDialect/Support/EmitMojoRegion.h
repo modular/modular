@@ -19,6 +19,7 @@
 
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Value.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <memory>
@@ -151,6 +152,9 @@ public:
   MojoValue row;
   /// The tile the phase printing now reads.
   MojoValue tile;
+  /// Each `mogg.rowwise.cache`'s `compute` closure, which the cached Row
+  /// overloads take again to recompute off the register tier.
+  llvm::DenseMap<Value, MojoValue> cacheComputes;
 };
 
 /// The declarative calls of the `mogg.graph_blob` being emitted, gathered as

@@ -286,3 +286,38 @@ func.func @normalizeBf16(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tens
   }
   return
 }
+
+// A fold of a cache isn't a phase of its own, and a cache keeps the row whole:
+// one fold of the tile gives `num_phases` 2, and `dtype_size` is 0.
+// CHECK-LABEL: func.func @foldOfCache
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  attributes {cols = 128 : i64, computationally_expensive, dtype_size = 0 : i64, num_phases = 2 : i64, simd_monoid = @builtin_kernels.monoids.ReduceSum}
+func.func @foldOfCache(%ctx: !mogg.context, %x: !mogg.tensor, %h: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %ch = %h : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.tile (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    %c = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
+      %d = mogg.call.elementwise @builtin_kernels.elementwise.Div(%v, %acc) moOpName = "mo.div" : !mogg.simd<f32>, !mogg.simd<f32> -> !mogg.simd<f32>
+      mogg.tensor.store %ch[%k] = %d : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+      mogg.yield %d : !mogg.simd<f32>
+    }
+    %acc2 = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.cache.load %c : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load %c : !mogg.simd<f32>
+      %y = mogg.call.elementwise @builtin_kernels.elementwise.Div(%v, %acc2) moOpName = "mo.div" : !mogg.simd<f32>, !mogg.simd<f32> -> !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %y : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}

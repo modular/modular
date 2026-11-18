@@ -51,6 +51,18 @@ class CallLike : public mlir::OpTrait::TraitBase<ConcreteType, CallLike> {};
 #include "GraphCompiler/MOGGDialect/MOGG.h.inc"
 
 namespace M::MOGG {
+// Defined here, where the cache ops are complete.
+inline RowwiseCacheOp RowwisePhaseOpInterface::getReadCache() {
+  RowwiseCacheOp cache;
+  (*this)->walk<mlir::WalkOrder::PreOrder>([&](RowwiseCacheLoadOp load) {
+    cache = load.getCache().getDefiningOp<RowwiseCacheOp>();
+    return mlir::WalkResult::interrupt();
+  });
+  return cache;
+}
+} // namespace M::MOGG
+
+namespace M::MOGG {
 
 /// Returns `__<ops>`, a stub name built from the ops `fusionInfo` fuses. The
 /// caller inserts the stub into a symbol table for a unique name.

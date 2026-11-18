@@ -90,3 +90,42 @@ mo.graph @twoFoldsAndMap(%x: !mo.tensor<[8, 128], f32>, %y: !mo.tensor<[8, 128],
   }
   mo.output %r : !mo.tensor<[8, 128], f32>
 }
+
+// The cache reads the tile; a fold of the cache gets the cache, not the tile,
+// so its own load of x stays a load.
+// CHECK-LABEL: mo.graph @cacheReader
+// CHECK:         %[[P3:.*]] = map.iter.tile
+// CHECK:         map.iter.cache index (%[[K3:.*]]: !map.index<2>) -> f32 {
+// CHECK-NEXT:      map.iter.tile.load %[[P3]][%[[K3]]]
+// CHECK:         map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%[[I3:.*]]: !map.index<2>) -> f32 {
+// CHECK-NEXT:      map.iter.cache.load
+// CHECK-NEXT:      map.load %{{.*}}[%[[I3]]] : !mo.tensor<[8, 128], f32>
+mo.graph @cacheReader(%x: !mo.tensor<[8, 128], f32>) -> (!mo.tensor<[8, 128], f32>, !mo.tensor<[8, 128], f32>) {
+  %r:2 = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>, %h: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> (!mo.tensor<[8, 128], f32>, !mo.tensor<[8, 128], f32>) {
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      map.yield %v : f32
+    }
+    %c = map.iter.cache index (%k: !map.index<2>) -> f32 {
+      %v = map.load %x[%k] : !mo.tensor<[8, 128], f32>
+      %hv = map.call.elementwise @builtin_kernels.elementwise.Mul(%k, %v, %acc) : !map.index<2>, f32, f32 -> f32
+      map.store %h[%k] = %hv : !mo.tensor<[8, 128], f32>
+      map.yield %hv : f32
+    }
+    %acc2 = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %hv = map.iter.cache.load %c[%i] : !map.index<2>, f32
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      %s = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %hv, %v) : !map.index<2>, f32, f32 -> f32
+      map.yield %s : f32
+    }
+    map.iter.map index (%j: !map.index<2>) {
+      %hv = map.iter.cache.load %c[%j] : !map.index<2>, f32
+      %y = map.call.elementwise @builtin_kernels.elementwise.Mul(%j, %hv, %acc2) : !map.index<2>, f32, f32 -> f32
+      map.store %out[%j] = %y : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r#0, %r#1 : !mo.tensor<[8, 128], f32>, !mo.tensor<[8, 128], f32>
+}

@@ -412,6 +412,62 @@ LogicalResult RowwiseTileOp::verify() {
   return success();
 }
 
+LogicalResult RowwiseCacheOp::verify() {
+  Block &body = getBody().front();
+  if (body.getNumArguments() != 1)
+    return emitOpError("body takes exactly one argument, the index");
+  auto yield = body.empty() ? YieldOp() : dyn_cast<YieldOp>(body.back());
+  if (!yield || yield.getNumOperands() != 1 ||
+      yield.getOperand(0).getType() != getType())
+    return emitOpError("body must yield one value of the result type");
+  if (MO::fromMLIRType(getType().getElementType()).isError())
+    return emitOpError("must cache a dtype, got ") << getType();
+  if (getBody()
+          .walk<mlir::WalkOrder::PreOrder>([&](TensorStoreOp store) {
+            return store.getIndex() == body.getArgument(0)
+                       ? WalkResult::advance()
+                       : WalkResult::interrupt();
+          })
+          .wasInterrupted())
+    return emitOpError("must store at its own index");
+  // The Row API caches only in a body that folds the tile (one launch phase
+  // per such fold) and writes every element.
+  Block *row = getOperation()->getBlock();
+  auto tileFold = [](Operation &op) {
+    auto fold = dyn_cast<RowwiseReduceOp>(op);
+    return fold && !cast<RowwisePhaseOpInterface>(*fold).getReadCache();
+  };
+  if (!llvm::any_of(
+          llvm::make_range(row->begin(), getOperation()->getIterator()),
+          tileFold))
+    return emitOpError("must follow a fold of the tile");
+  if (!llvm::any_of(llvm::make_range(std::next(getOperation()->getIterator()),
+                                     row->end()),
+                    llvm::IsaPred<RowwiseMapOp>))
+    return emitOpError("must be followed by a map phase");
+  return success();
+}
+
+LogicalResult RowwiseCacheLoadOp::verify() {
+  if (!getCache().getDefiningOp<RowwiseCacheOp>())
+    return emitOpError("reads a value that isn't a mogg.rowwise.cache");
+  // The phase's closure gets either the tile or one cache as its argument.
+  WalkResult other =
+      getOperation()->getParentOp()->walk<mlir::WalkOrder::PreOrder>(
+          [&](Operation *op) {
+            if (isa<RowwiseTileLoadOp>(op))
+              return WalkResult::interrupt();
+            if (auto load = dyn_cast<RowwiseCacheLoadOp>(op);
+                load && load.getCache() != getCache())
+              return WalkResult::interrupt();
+            return WalkResult::advance();
+          });
+  if (other.wasInterrupted())
+    return emitOpError("must be the only source of its phase: it reads the "
+                       "tile or another cache too");
+  return success();
+}
+
 LogicalResult RowwiseMapOp::verify() {
   if (getBody().front().getNumArguments() != 1)
     return emitOpError("body takes exactly one argument, the index");

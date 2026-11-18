@@ -300,7 +300,8 @@ def RowwiseCreateTile
     skipped `map-rcse`) a tile that loads the capture its first fold reads
     at the element index, and turns those loads, in every phase, into
     `mogg.rowwise.tile.load`. Sets `keep_tile` when more than one phase
-    reads the tile.
+    reads the tile, or the kernel has a `mogg.rowwise.cache`, which computes
+    from the kept tile.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];
@@ -342,10 +343,11 @@ def RowwiseSetLaunchParams
     - A body that writes one value per row has `num_phases` 1 and
       `dtype_size` 0, and is expensive when its per-element cost reaches
       the threshold.
-    - A body that writes every element has `num_phases` folds + 1, and is
-      expensive. `dtype_size` is the row's element size, which lets a long
-      row split, when every fold keeps one field (as in rms_norm and
-      softmax), else 0 (as in layer_norm).
+    - A body that writes every element has `num_phases` folds + 1, not
+      counting folds of a `mogg.rowwise.cache`, and is expensive.
+      `dtype_size` is the row's element size, which lets a long row split,
+      when every fold keeps one field (as in rms_norm and softmax) and
+      there is no cache, else 0 (as in layer_norm).
 
     Runs after `mogg-rowwise-group-row-stores`, which leaves no store
     directly in the body.

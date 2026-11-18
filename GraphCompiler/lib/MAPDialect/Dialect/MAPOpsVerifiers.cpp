@@ -214,26 +214,25 @@ static bool isPerRowShape(MOSH::ShapeAttr shape, MOSH::ShapeAttr full,
   return true;
 }
 
-// A store in a map phase writes a per-element tensor; one outside the phases
-// writes a per-row tensor at the row index. Folds check their own bodies.
+// A store in a phase that stores elements writes a per-element tensor; one
+// outside the phases writes a per-row tensor at the row index. Folds check
+// their own bodies.
 static LogicalResult verifyRowwiseStores(RowwiseOpInterface rowwise) {
   Operation *op = rowwise.getOperation();
   MOSH::ShapeAttr shape = rowwise.getShape();
   int64_t axis = rowwise.getAxis();
   BlockArgument row = rowwise.getRowArg();
   WalkResult result = op->getRegion(0).walk([&](StoreOp store) {
-    Operation *phase = store->getParentOp();
-    while (phase != op && !isa<RowwisePhaseOpInterface>(phase))
-      phase = phase->getParentOp();
-    if (isa<IterReduceOp>(phase))
+    auto phase = store->getParentOfType<RowwisePhaseOpInterface>();
+    if (phase && !phase->hasTrait<StoresElements>())
       return WalkResult::advance();
     MOSH::ShapeAttr target =
         MO::castFromTensorLike(store.getTensor().getType()).getShape();
-    if (isa<IterMapOp>(phase)) {
+    if (phase) {
       if (target == shape)
         return WalkResult::advance();
-      store.emitOpError() << "in a map phase must write a tensor of the "
-                             "rowwise shape";
+      store.emitOpError() << "in a map phase or a cache must write a tensor "
+                             "of the rowwise shape";
       return WalkResult::interrupt();
     }
     if (target == shape) {
@@ -445,15 +444,81 @@ LogicalResult IterTileLoadOp::verify() {
   return mlir::success();
 }
 
+// A phase that writes every element stores only at its own index.
+static LogicalResult verifyElementStores(RowwisePhaseOpInterface phase) {
+  WalkResult stores =
+      phase->getRegion(0).walk<WalkOrder::PreOrder>([&](StoreOp store) {
+        return store.getIndex() == phase.getIndexArg()
+                   ? WalkResult::advance()
+                   : WalkResult::interrupt();
+      });
+  if (stores.wasInterrupted())
+    return phase->emitOpError() << "must store at its own index";
+  return mlir::success();
+}
+
 LogicalResult IterMapOp::verify() {
   if (failed(verifyPhaseIndex(*this)))
     return mlir::failure();
-  WalkResult stores = getBody().walk([&](StoreOp store) {
-    return store.getIndex() == getIndexArg() ? WalkResult::advance()
-                                             : WalkResult::interrupt();
+  return verifyElementStores(*this);
+}
+
+//===----------------------------------------------------------------------===//
+// map.iter.cache
+//===----------------------------------------------------------------------===//
+
+LogicalResult IterCacheOp::verify() {
+  if (failed(verifyPhaseIndex(*this)))
+    return mlir::failure();
+  Block &body = getBody().front();
+  auto yield = body.empty() ? YieldOp() : llvm::dyn_cast<YieldOp>(body.back());
+  if (!yield || yield.getNumOperands() != 1 ||
+      yield.getOperand(0).getType() != getType())
+    return emitOpError() << "body must yield one value of the result type";
+  if (!isScalarType(getType()))
+    return emitOpError() << "must cache a scalar, got " << getType();
+  if (failed(verifyElementStores(*this)))
+    return mlir::failure();
+  // The Row API caches only in a body that folds the tile (one launch phase
+  // per such fold) and writes every element.
+  auto tileFold = [](Operation &op) {
+    auto fold = dyn_cast<IterReduceOp>(op);
+    return fold && !cast<RowwisePhaseOpInterface>(*fold).getReadCache();
+  };
+  Block *row = getOperation()->getBlock();
+  if (!llvm::any_of(
+          llvm::make_range(row->begin(), getOperation()->getIterator()),
+          tileFold))
+    return emitOpError() << "must follow a fold of the tile";
+  if (!llvm::any_of(llvm::make_range(std::next(getOperation()->getIterator()),
+                                     row->end()),
+                    llvm::IsaPred<IterMapOp>))
+    return emitOpError() << "must be followed by a map phase";
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// map.iter.cache.load
+//===----------------------------------------------------------------------===//
+
+LogicalResult IterCacheLoadOp::verify() {
+  if (!getCache().getDefiningOp<IterCacheOp>())
+    return emitOpError() << "reads a value that isn't a map.iter.cache";
+  auto phase = cast<RowwisePhaseOpInterface>(getOperation()->getParentOp());
+  if (getIndex() != phase.getIndexArg())
+    return emitOpError() << "must read at its phase's index";
+  // The phase's closure gets either the tile or one cache as its argument.
+  WalkResult other = phase->walk<WalkOrder::PreOrder>([&](Operation *op) {
+    if (isa<IterTileLoadOp>(op))
+      return WalkResult::interrupt();
+    if (auto load = dyn_cast<IterCacheLoadOp>(op);
+        load && load.getCache() != getCache())
+      return WalkResult::interrupt();
+    return WalkResult::advance();
   });
-  if (stores.wasInterrupted())
-    return emitOpError() << "must store at its own index";
+  if (other.wasInterrupted())
+    return emitOpError() << "must be the only source of its phase: it reads "
+                            "the tile or another cache too";
   return mlir::success();
 }
 

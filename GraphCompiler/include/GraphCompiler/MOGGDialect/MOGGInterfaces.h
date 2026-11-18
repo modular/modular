@@ -29,6 +29,9 @@ namespace M::MOGG {
 // types.
 ::llvm::LogicalResult
 verifyTensorCreateInterfaceMutability(::mlir::Operation *op);
+
+// What `RowwisePhaseOpInterface::getReadCache` returns.
+class RowwiseCacheOp;
 } // namespace M::MOGG
 
 //===----------------------------------------------------------------------===//

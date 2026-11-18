@@ -291,4 +291,42 @@ mo.graph @tile(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   mo.output %r : !mo.tensor<[8, 128], f32>
 }
 
+
+// A cache after a fold of the tile reads the tile, stores a side output, and
+// later phases read it.
+// CHECK-LABEL: mo.graph @cache
+// CHECK:         map.iter.reduce
+// CHECK:         [[C8:%[^ ]+]] = map.iter.cache index ([[K8:%[^ :,]+]]: !map.index<2>) -> f32 {
+// CHECK-NEXT:      [[XV8:%[^ ]+]] = map.iter.tile.load %{{.*}}[[[K8]]] : !map.index<2>, f32
+// CHECK-NEXT:      map.store %{{.*}}[[[K8]]] = [[XV8]] : !mo.tensor<[8, 128], f32>
+// CHECK-NEXT:      map.yield [[XV8]] : f32
+// CHECK-NEXT:    }
+// CHECK:         map.iter.map index ([[J8:%[^ :,]+]]: !map.index<2>) {
+// CHECK-NEXT:      [[V8:%[^ ]+]] = map.iter.cache.load [[C8]][[[J8]]] : !map.index<2>, f32
+mo.graph @cache(%x: !mo.tensor<[8, 128], f32>) -> (!mo.tensor<[8, 128], f32>, !mo.tensor<[8, 128], f32>) {
+  %r:2 = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>, %h: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> (!mo.tensor<[8, 128], f32>, !mo.tensor<[8, 128], f32>) {
+    %p = map.iter.tile index (%k: !map.index<2>) -> f32 {
+      %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
+      map.yield %xv : f32
+    }
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %v = map.iter.tile.load %p[%i] : !map.index<2>, f32
+      map.yield %v : f32
+    }
+    %c = map.iter.cache index (%k: !map.index<2>) -> f32 {
+      %xv = map.iter.tile.load %p[%k] : !map.index<2>, f32
+      map.store %h[%k] = %xv : !mo.tensor<[8, 128], f32>
+      map.yield %xv : f32
+    }
+    map.iter.map index (%j: !map.index<2>) {
+      %v = map.iter.cache.load %c[%j] : !map.index<2>, f32
+      map.store %out[%j] = %v : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r#0, %r#1 : !mo.tensor<[8, 128], f32>, !mo.tensor<[8, 128], f32>
+}
+
 }

@@ -138,9 +138,10 @@ def MOGG_FusedEpilogueInterface : OpInterface<"FusedEpilogueInterface"> {
 
 def MOGG_RowwisePhaseOpInterface : OpInterface<"RowwisePhaseOpInterface"> {
   let description = [{
-    A phase of a `mogg.call.rowwise` row: a fold (`mogg.rowwise.reduce`) or a
-    per-element phase (`mogg.rowwise.map`). Its body runs once per element of
-    the row, at the index in its only block argument.
+    A phase of a `mogg.call.rowwise` row: a fold (`mogg.rowwise.reduce`), a
+    per-element phase (`mogg.rowwise.map`) or a row cache
+    (`mogg.rowwise.cache`). Its body runs once per element of the row, at the
+    index in its only block argument.
   }];
 
   let cppNamespace = "::M::MOGG";
@@ -152,6 +153,11 @@ def MOGG_RowwisePhaseOpInterface : OpInterface<"RowwisePhaseOpInterface"> {
       "return $_op.getBody().front().getArgument(0);"
     >,
   ];
+
+  let extraClassDeclaration = [{
+    /// The cache the phase reads in place of the row's tile, or null.
+    RowwiseCacheOp getReadCache();
+  }];
 }
 
 def MOGG_KernelTerminator : OpInterface<"KernelTerminator"> {

@@ -1714,6 +1714,41 @@ static LogicalResult lowerPhaseBody(EmitMojoState &state,
   return success();
 }
 
+// What a phase's closure reads as `tile`: the row's tile, or the cache it
+// reads. A phase that reads a cache calls the Row's cached overload, which
+// takes the cache first and the cache's `compute` last:
+//
+//   row.<call>(<closure>, load)                     the tile
+//   row.<call>(cache, <closure>, load, compute)     a cache
+struct PhaseTile {
+  MojoValue dtype;
+  RowwiseCacheOp cache;
+
+  SmallVector<MojoValue> callArgs(EmitMojoState &state,
+                                  const MojoValue &closure) {
+    const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+    if (!cache)
+      return {closure, info.load};
+    return {state.getMojoValueFor(cache.getResult()), closure, info.load,
+            info.cacheComputes.lookup(cache.getResult())};
+  }
+};
+
+// The Mojo dtype `cache` keeps; its verifier checks it is one.
+static MojoValue cachedDType(EmitMojoState &state, RowwiseCacheOp cache) {
+  ErrorOr<DType> dtype = M::MO::fromMLIRType(cache.getType().getElementType());
+  ASSERT_STREAM(!dtype.isError(), << "a verified cache keeps a dtype");
+  return state.mlirDTypeToMojoType(*dtype);
+}
+
+static PhaseTile phaseTile(EmitMojoState &state,
+                           RowwisePhaseOpInterface phase) {
+  RowwiseCacheOp cache = phase.getReadCache();
+  return {cache ? cachedDType(state, cache)
+                : state.currentRegion<RowwiseBodyRegion>().dtype,
+          cache};
+}
+
 // Appends a launch's width limit to its arguments: a static one as an `Idx`,
 // a run-time one as the largest power of two dividing its dims (widths are
 // powers of two, so that is all the launch needs, not their GCD).
@@ -1936,11 +1971,15 @@ LogicalResult RowwiseSplatLaneOp::emitMojo(EmitMojoState &state) {
 //     <fold body, reading `tile`>
 //   var acc = row.reduce[Monoid[..., W = params.simd_width]](           (2)
 //       contribute, load)
+//
+// `dtype` and the call's arguments are a cache's when the fold reads one
+// (`PhaseTile`).
 LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
   if (!getFieldsAttr())
     return emitOpError("has no bound fields");
   const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
   auto yield = cast<YieldOp>(getBody().front().getTerminator());
+  PhaseTile tile = phaseTile(state, *this);
 
   // (1) def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:
   bool failedToLower = false;
@@ -1948,7 +1987,7 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
       "contribute_",
       {NamedMojoDef::asVerbatim(kParameterTileWidth, kStructInt)},
       {NamedMojoDef::asVerbatim("tile",
-                                kStructSIMD[{info.dtype, kParameterTileWidth}]),
+                                kStructSIMD[{tile.dtype, kParameterTileWidth}]),
        NamedMojoDef::asVerbatim("idx", info.rowCoord)},
       kStructSIMD[{info.accum, kParameterTileWidth}],
       MojoBuilder::LambdaInline::kAlways, false, false, "var",
@@ -1971,9 +2010,9 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
       monoidType(state, *this, info.params.get(kParameterSimdWidth));
   if (failed(monoid))
     return failure();
-  MojoValue folded =
-      state.file->var(info.row.get("reduce")[*monoid]({contribute, info.load}),
-                      /*cache=*/false);
+  MojoValue folded = state.file->var(
+      info.row.get("reduce")[*monoid](tile.callArgs(state, contribute)),
+      /*cache=*/false);
   // acc.<field>
   for (auto [result, field] : llvm::zip(getResults(), getFieldsAttr()))
     state.setMojoValueFor(result,
@@ -1990,6 +2029,7 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
 //   row.elementwise(elementwise, load)                                  (2)
 LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
   const RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+  PhaseTile tile = phaseTile(state, *this);
 
   // (1) def elementwise[w](tile: SIMD[dtype, w], idx):
   bool failedToLower = false;
@@ -1997,7 +2037,7 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
       "elementwise_",
       {NamedMojoDef::asVerbatim(kParameterTileWidth, kStructInt)},
       {NamedMojoDef::asVerbatim("tile",
-                                kStructSIMD[{info.dtype, kParameterTileWidth}]),
+                                kStructSIMD[{tile.dtype, kParameterTileWidth}]),
        NamedMojoDef::asVerbatim("idx", info.rowCoord)},
       /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAlways, false,
       false, "var", [&](const FunctionBody &functionBody) {
@@ -2015,7 +2055,65 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
     return failure();
 
   // (2) row.elementwise(elementwise, load)
-  state.file->call(info.row.get("elementwise"), {}, {elementwise, info.load});
+  state.file->call(info.row.get("elementwise"), {},
+                   tile.callArgs(state, elementwise));
+  return success();
+}
+
+// Prints the cache as the Row's `cache`, which runs `compute` once per
+// element and keeps the result for the phases that read it:
+//
+//   @inline(.always)
+//   def compute[w](tile: SIMD[dtype, w], idx) -> SIMD[T, w]:           (1)
+//     comptime al = Context[params].element_alignment[dtype, w]()
+//     <cache body, reading `tile` and row values as .slice[w]()>
+//     return <the yielded value>
+//   var cache = row.cache[T](compute)                                   (2)
+LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
+  RowwiseBodyRegion &info = state.currentRegion<RowwiseBodyRegion>();
+  MojoValue cached = cachedDType(state, *this);
+  auto yield = cast<YieldOp>(getBody().front().getTerminator());
+
+  // (1) def compute[w](tile: SIMD[dtype, w], idx) -> SIMD[T, w]:
+  bool failedToLower = false;
+  MojoValue compute = state.file->lambda(
+      "compute_", {NamedMojoDef::asVerbatim(kParameterTileWidth, kStructInt)},
+      {NamedMojoDef::asVerbatim("tile",
+                                kStructSIMD[{info.dtype, kParameterTileWidth}]),
+       NamedMojoDef::asVerbatim("idx", info.rowCoord)},
+      kStructSIMD[{cached, kParameterTileWidth}],
+      MojoBuilder::LambdaInline::kAlways, false, false, "var",
+      [&](const FunctionBody &functionBody) {
+        EmitMojoState::ValueScope scope(state);
+        MojoValue width = functionBody.parameter(kParameterTileWidth);
+        // comptime al = Context[params].element_alignment[dtype, w]()
+        MojoValue alignment =
+            state.file->comptime(kStructRowwiseContext[info.params].get(
+                kParameterElementAlignment)[{info.dtype, width}]({}));
+        if (failed(lowerPhaseBody(state, *this, width, alignment,
+                                  functionBody.arguments[0].resolvedName))) {
+          failedToLower = true;
+          return;
+        }
+        // return <the yielded value>
+        state.file->returnsValue(state.getMojoValueFor(yield.getOperand(0)));
+      });
+  if (failedToLower)
+    return failure();
+
+  // (2) var cache = row.cache[T](compute)
+  info.cacheComputes[getResult()] = compute;
+  state.setMojoValueFor(
+      getResult(), state.file->var(info.row.get("cache")[cached]({compute}),
+                                   /*cache=*/false));
+  return success();
+}
+
+// The phase's closure gets the cached value as its argument; the read prints
+// nothing: tile
+LogicalResult RowwiseCacheLoadOp::emitMojo(EmitMojoState &state) {
+  state.setMojoValueFor(getResult(),
+                        state.currentRegion<RowwiseBodyRegion>().tile);
   return success();
 }
 

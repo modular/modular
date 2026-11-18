@@ -1243,27 +1243,35 @@ LogicalResult IterReduceOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
-// map.iter.tile -> mogg.rowwise.tile.
-LogicalResult IterTileOp::lowerToMOGG(MAPToMOGGState &state) {
-  Location loc = getLoc();
-  auto tile = MOGG::RowwiseTileOp::create(state.builder, loc,
-                                          MOGG::SimdType::get(getType()));
-  Block *tileBlock = state.builder.createBlock(&tile.getBody());
-  state.mapping.map(getIndexArg(),
-                    tileBlock->addArgument(getIndexArg().getType(), loc));
+// Lowers a `map.iter.tile` or `map.iter.cache` to `MOGGOp`, its body at a
+// fresh index argument.
+template <typename MOGGOp>
+static LogicalResult lowerRowValue(Operation *op, MAPToMOGGState &state) {
+  Location loc = op->getLoc();
+  Value result = op->getResult(0);
+  auto newOp =
+      MOGGOp::create(state.builder, loc, MOGG::SimdType::get(result.getType()));
+  Block &body = op->getRegion(0).front();
+  Block *newBlock = state.builder.createBlock(&newOp.getBody());
+  BlockArgument index = body.getArgument(0);
+  state.mapping.map(index, newBlock->addArgument(index.getType(), loc));
 
-  state.builder.setInsertionPointToStart(tileBlock);
-  Block &body = getBody().front();
-  for (Operation &op : body.without_terminator())
-    if (failed(state.lowerOp(&op)))
+  state.builder.setInsertionPointToStart(newBlock);
+  for (Operation &bodyOp : body.without_terminator())
+    if (failed(state.lowerOp(&bodyOp)))
       return failure();
   auto yield = cast<YieldOp>(body.getTerminator());
   MOGG::YieldOp::create(state.builder, yield.getLoc(),
                         state.mapping.lookup(yield.getOperand(0)));
 
-  state.builder.setInsertionPointAfter(tile);
-  state.mapping.map(getResult(), tile.getResult());
+  state.builder.setInsertionPointAfter(newOp);
+  state.mapping.map(result, newOp.getResult());
   return success();
+}
+
+// map.iter.tile -> mogg.rowwise.tile.
+LogicalResult IterTileOp::lowerToMOGG(MAPToMOGGState &state) {
+  return lowerRowValue<MOGG::RowwiseTileOp>(*this, state);
 }
 
 // map.iter.tile.load -> mogg.rowwise.tile.load.
@@ -1272,6 +1280,20 @@ LogicalResult IterTileLoadOp::lowerToMOGG(MAPToMOGGState &state) {
                     MOGG::RowwiseTileLoadOp::create(
                         state.builder, getLoc(), MOGG::SimdType::get(getType()))
                         .getResult());
+  return success();
+}
+
+// map.iter.cache -> mogg.rowwise.cache.
+LogicalResult IterCacheOp::lowerToMOGG(MAPToMOGGState &state) {
+  return lowerRowValue<MOGG::RowwiseCacheOp>(*this, state);
+}
+
+// map.iter.cache.load -> mogg.rowwise.cache.load.
+LogicalResult IterCacheLoadOp::lowerToMOGG(MAPToMOGGState &state) {
+  state.mapping.map(getResult(), MOGG::RowwiseCacheLoadOp::create(
+                                     state.builder, getLoc(),
+                                     state.mapping.lookup(getCache()))
+                                     .getResult());
   return success();
 }
 
