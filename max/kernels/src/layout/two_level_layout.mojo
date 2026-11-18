@@ -51,6 +51,7 @@ from .coord import (
     _IntToComptimeInt,
     _NestedDynamicCoord,
 )
+from .bit_layout import BitLayout, BitLinear, bit, bits
 from .swizzle import Swizzle
 from .layout import Layout, TensorLayout
 
@@ -468,12 +469,56 @@ def _nested_box_check[
 # ===----------------------------------------------------------------------=== #
 
 
+def _two_level_images[
+    Outer: TensorLayout, Inner: TypeList[Trait=CoordLike, ...]
+]() -> BitLayout:
+    """Returns a two-level layout's placement: mode by mode, its inner bits'
+    basis images, then its outer bits' outer offsets."""
+    var m = BitLayout()
+    var d = 0
+    comptime for i in range(Outer.rank):
+        comptime for j in range(_InnerBitCount[Inner, i]):
+            m = m.put(d, UInt64(_InnerImage[Inner, i, j]))
+            d += 1
+        comptime extent = Outer.static_shape[i]
+        comptime stride = Outer.static_stride[i]
+        for b in range(_log2_or_zero(extent)):
+            m = m.put(d, UInt64(stride) << UInt64(b))
+            d += 1
+    return m
+
+
+def _two_level_linear[
+    Outer: TensorLayout, Inner: TypeList[Trait=CoordLike, ...]
+]() -> Bool:
+    """Returns whether `_two_level_images` describes a two-level layout."""
+    comptime if not Outer.is_affine:
+        return False
+    if not Outer.all_dims_known:
+        return False
+    var reached = UInt64(_InnerMask[Inner])
+    comptime for i in range(Outer.rank):
+        comptime extent = Outer.static_shape[i]
+        comptime stride = Outer.static_stride[i]
+        if extent <= 0 or extent & (extent - 1) != 0:
+            return False
+        if stride != 0:
+            if stride < 0 or stride & (stride - 1) != 0:
+                return False
+            var span = bits(_log2_or_zero(stride), _log2_or_zero(extent))
+            if reached & span != 0:
+                return False
+            reached |= span
+    return True
+
+
 struct _TwoLevelLayout[
     Outer: TensorLayout,
     FullShapes: TypeList[Trait=CoordLike, ...],
     FullStrides: TypeList[Trait=CoordLike, ...],
     Inner: TypeList[Trait=CoordLike, ...],
 ](
+    BitLinear,
     DevicePassable,
     ImplicitlyCopyable,
     TensorLayout,
@@ -511,6 +556,12 @@ struct _TwoLevelLayout[
 
     comptime rank = Self.Outer.rank
     """The number of dimensions in the layout."""
+    comptime bit_images = _two_level_images[Self.Outer, Self.Inner]()
+    """Each mode's inner bits go to their basis images, then its outer bits
+    to the outer stride's."""
+    comptime bit_linear = _two_level_linear[Self.Outer, Self.Inner]()
+    """Whether the outer extents and strides are powers of two that reach
+    neither each other's offset bits nor the inner map's."""
     comptime flat_rank = Self.Outer.flat_rank
     """The number of dimensions after flattening nested coordinates."""
     comptime shape_known = Self.Outer.shape_known
