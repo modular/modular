@@ -1040,7 +1040,12 @@ ErrorOr<DeviceContextRef> DeviceContext::selectStream(unsigned streamId) {
 }
 
 bool DeviceContext::operator==(const DeviceContext &other) const {
-  return this == &other;
+  if (this == &other)
+    return true;
+  // A virtual context has no stream to share.
+  if (!mojoCtx_ || !other.mojoCtx_)
+    return false;
+  return MojoHAL_DeviceContext_sameStream(mojoCtx_, other.mojoCtx_);
 }
 
 ErrorOr<DeviceEventRef> DeviceContext::enqueueEvent() {

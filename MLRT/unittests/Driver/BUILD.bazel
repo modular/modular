@@ -890,6 +890,29 @@ modular_cc_test(
     ],
 )
 
+modular_cc_test(
+    name = "HALContextEqualityTest",
+    size = "small",
+    srcs = [
+        "HALContextEqualityTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    data = ["//MLRT/test/Driver/HAL:MockPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+    },
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 # Source-only, so it runs in every configuration.
 modular_py_test(
     name = "test_mojohal_exports_abi",
