@@ -1,0 +1,67 @@
+{
+  "argument_syntax": "glm_xml",
+  "call": {
+    "begin": {
+      "id": 120033,
+      "special": false,
+      "text": "<tool_call:opensource>"
+    },
+    "end": {
+      "id": 120034,
+      "special": false,
+      "text": "</tool_call:opensource>"
+    },
+    "name_layout": {
+      "kind": "bare_then_args"
+    },
+    "section": {
+      "begin": {
+        "id": 120035,
+        "special": false,
+        "text": "<tool_calls:opensource>"
+      },
+      "end": {
+        "id": 120036,
+        "special": false,
+        "text": "</tool_calls:opensource>"
+      }
+    },
+    "sep": null
+  },
+  "delivery": {
+    "kind": "id",
+    "string_delim": null
+  },
+  "format": "formatspec.spec",
+  "glm_xml_dialect": "hy_v4",
+  "glm_xml_marker_ids": [
+    120040,
+    120041,
+    120042,
+    120043
+  ],
+  "json_whitespace": "spaced",
+  "reasoning": {
+    "close": {
+      "id": 120030,
+      "special": false,
+      "text": "</think:opensource>"
+    },
+    "close_suffix": "",
+    "default": "on",
+    "open": {
+      "id": 120029,
+      "special": false,
+      "text": "<think:opensource>"
+    },
+    "prompt_start": "prefilled_when_on",
+    "strip_prefix": ""
+  },
+  "spec_version": 1,
+  "terminators": [
+    {
+      "id": 120025,
+      "text": "<｜hy_end:opensource｜>"
+    }
+  ]
+}
