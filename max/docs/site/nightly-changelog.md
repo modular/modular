@@ -477,10 +477,13 @@ This version is still a work in progress.
   Prefer to accept generic `DeviceContext` as input instead of restricting an
   implementation to the default parameter values.
 
-- The `load_fn`, `compute_fn` and `compute_finalize_fn` callbacks of
-  `stencil()` and `stencil_gpu()` in `max.algorithm` now take a `Coord`
-  instead of an `IndexList[rank]`. `map_fn` still takes and returns
-  `IndexList`. The coordinate holds the same values as before:
+- `stencil()` and `stencil_gpu()` in `max.algorithm` now take a `Coord` where
+  they took an `IndexList[rank]`: the `shape` and `input_shape` arguments, and
+  the point passed to the `load_fn`, `compute_fn` and `compute_finalize_fn`
+  callbacks. A shape `Coord` keeps its static dimensions on the way to the
+  kernel. Wrap an existing `IndexList` shape with `Coord(shape)`. `map_fn`
+  still takes and returns `IndexList`. The point holds the same values as
+  before:
 
   ```mojo
   # was: def load_fn[...](point: IndexList[rank, ...]) -> ...

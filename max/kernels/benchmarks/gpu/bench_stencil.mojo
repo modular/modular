@@ -26,7 +26,6 @@ from layout import (
     Coord,
     Idx,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from max.gpu.host import DeviceContext
@@ -70,12 +69,11 @@ def bench_stencil_avg_pool[
     comptime output_width = input_width - pool_window_w + 1
     comptime input_size = 1 * input_height * input_width * num_channels
     comptime output_size = 1 * output_height * output_width * num_channels
-    comptime dynamic_input_shape = (1, input_height, input_width, num_channels)
-    comptime dynamic_output_shape = (
-        1,
-        output_height,
-        output_width,
-        num_channels,
+    comptime dynamic_input_shape = Coord(
+        1, input_height, input_width, num_channels
+    )
+    comptime dynamic_output_shape = Coord(
+        1, output_height, output_width, num_channels
     )
 
     # Create host buffers
@@ -167,12 +165,8 @@ def bench_stencil_avg_pool[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store(point, res)
 
-    var out_shape = rebind[IndexList[rank]](
-        coord_to_index_list(d_output.layout.shape_coord())
-    )
-    var in_shape = rebind[IndexList[rank]](
-        coord_to_index_list(d_input.layout.shape_coord())
-    )
+    var out_shape = d_output.layout.shape_coord()
+    var in_shape = d_input.layout.shape_coord()
 
     @inline(.always)
     def kernel_launch(
@@ -329,12 +323,11 @@ def bench_stencil_max_pool[
     comptime output_width = input_width - pool_window_w + 1
     comptime input_size = 1 * input_height * input_width * num_channels
     comptime output_size = 1 * output_height * output_width * num_channels
-    comptime dynamic_input_shape = (1, input_height, input_width, num_channels)
-    comptime dynamic_output_shape = (
-        1,
-        output_height,
-        output_width,
-        num_channels,
+    comptime dynamic_input_shape = Coord(
+        1, input_height, input_width, num_channels
+    )
+    comptime dynamic_output_shape = Coord(
+        1, output_height, output_width, num_channels
     )
 
     # Create host buffers
@@ -425,12 +418,8 @@ def bench_stencil_max_pool[
     ](point: Coord, val: SIMD[dtype, simd_width]) {var d_output,}:
         d_output.store(point, val)
 
-    var out_shape = rebind[IndexList[rank]](
-        coord_to_index_list(d_output.layout.shape_coord())
-    )
-    var in_shape = rebind[IndexList[rank]](
-        coord_to_index_list(d_input.layout.shape_coord())
-    )
+    var out_shape = d_output.layout.shape_coord()
+    var in_shape = d_input.layout.shape_coord()
 
     @inline(.always)
     def kernel_launch(
@@ -584,8 +573,8 @@ def bench_stencil_avg_pool_padded[
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
     comptime input_size = 1 * input_height * input_width * 1
     comptime output_size = 1 * output_height * output_width * 1
-    var dynamic_input_shape = (1, input_height, input_width, 1)
-    comptime dynamic_output_shape = (1, output_height, output_width, 1)
+    var dynamic_input_shape = Coord(1, input_height, input_width, 1)
+    comptime dynamic_output_shape = Coord(1, output_height, output_width, 1)
 
     # Create host buffers
     var h_input_ptr = List(length=input_size, fill=Scalar[dtype](0))
@@ -668,12 +657,8 @@ def bench_stencil_avg_pool_padded[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store(point, res)
 
-    var out_shape = rebind[IndexList[rank]](
-        coord_to_index_list(d_output.layout.shape_coord())
-    )
-    var in_shape = rebind[IndexList[rank]](
-        coord_to_index_list(d_input.layout.shape_coord())
-    )
+    var out_shape = d_output.layout.shape_coord()
+    var in_shape = d_input.layout.shape_coord()
 
     @inline(.always)
     def kernel_launch(

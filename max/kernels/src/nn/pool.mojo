@@ -18,7 +18,7 @@ from std.sys.info import simd_width_of
 from max.algorithm import stencil, stencil_gpu
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from layout import Coord, TileTensor, coord_to_index_list
+from layout import Coord, TileTensor
 
 from std.utils.index import IndexList
 from std.utils.numerics import min_or_neg_inf
@@ -362,12 +362,8 @@ def max_pool_cpu[
     # value, so in that case we use stencil_with_padding
     if empty_padding and not ceil_mode:
         return stencil_empty_padding(
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape_coord())
-            ),
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(input.layout.shape_coord())
-            ),
+            output.layout.shape_coord(),
+            input.layout.shape_coord(),
             map_fn,
             dilation_fn,
             load_fn,
@@ -377,12 +373,8 @@ def max_pool_cpu[
         )
     else:
         return stencil_with_padding(
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape_coord()),
-            ),
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(input.layout.shape_coord()),
-            ),
+            output.layout.shape_coord(),
+            input.layout.shape_coord(),
             map_fn,
             dilation_fn,
             load_fn,
@@ -599,12 +591,8 @@ def max_pool_gpu_impl[
     ]
     return stencil_gpu_fn(
         ctx,
-        rebind[IndexList[output.rank]](
-            coord_to_index_list(output.layout.shape_coord())
-        ),
-        rebind[IndexList[output.rank]](
-            coord_to_index_list(input.layout.shape_coord())
-        ),
+        output.layout.shape_coord(),
+        input.layout.shape_coord(),
         map_fn,
         dilation_fn,
         load_fn,
@@ -858,12 +846,8 @@ def avg_pool_cpu[
 
     if empty_padding and not ceil_mode:
         return stencil_empty_padding(
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape_coord())
-            ),
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(input.layout.shape_coord())
-            ),
+            output.layout.shape_coord(),
+            input.layout.shape_coord(),
             map_fn,
             dilation_fn,
             load_fn,
@@ -874,12 +858,8 @@ def avg_pool_cpu[
     else:
         comptime if count_boundary:
             return stencil_with_padding(
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape_coord())
-                ),
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(input.layout.shape_coord())
-                ),
+                output.layout.shape_coord(),
+                input.layout.shape_coord(),
                 map_fn,
                 dilation_fn,
                 load_fn,
@@ -889,12 +869,8 @@ def avg_pool_cpu[
             )
         else:
             return stencil_with_padding_count_exclude_boundary(
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape_coord())
-                ),
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(input.layout.shape_coord())
-                ),
+                output.layout.shape_coord(),
+                input.layout.shape_coord(),
                 map_fn,
                 dilation_fn,
                 load_fn,
@@ -1211,12 +1187,8 @@ def avg_pool_gpu_impl[
     if empty_padding and not ceil_mode:
         return stencil_gpu_fn(
             ctx,
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(output.layout.shape_coord())
-            ),
-            rebind[IndexList[output.rank]](
-                coord_to_index_list(input.layout.shape_coord())
-            ),
+            output.layout.shape_coord(),
+            input.layout.shape_coord(),
             map_fn,
             dilation_fn,
             load_fn,
@@ -1228,12 +1200,8 @@ def avg_pool_gpu_impl[
         comptime if count_boundary:
             return stencil_gpu_fn(
                 ctx,
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape_coord())
-                ),
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(input.layout.shape_coord())
-                ),
+                output.layout.shape_coord(),
+                input.layout.shape_coord(),
                 map_fn,
                 dilation_fn,
                 load_fn,
@@ -1244,12 +1212,8 @@ def avg_pool_gpu_impl[
         else:
             return stencil_gpu_count_exclude_boundary(
                 ctx,
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(output.layout.shape_coord())
-                ),
-                rebind[IndexList[output.rank]](
-                    coord_to_index_list(input.layout.shape_coord())
-                ),
+                output.layout.shape_coord(),
+                input.layout.shape_coord(),
                 map_fn,
                 dilation_fn,
                 load_fn,

@@ -13,7 +13,7 @@
 
 from max.algorithm.functional import stencil, stencil_gpu
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, coord_to_index_list, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tile_tensor import stack_allocation
 from std.testing import assert_almost_equal
@@ -60,8 +60,8 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
 
     comptime output_height = input_height - pool_window_h + 1
     comptime output_width = input_width - pool_window_w + 1
-    var input_shape_dyn = (1, input_height, input_width, 1)
-    var output_shape_dyn = (1, output_height, output_width, 1)
+    var input_shape_dyn = Coord(1, input_height, input_width, 1)
+    var output_shape_dyn = Coord(1, output_height, output_width, 1)
 
     var d_input_managed = HostDeviceTileTensor[dtype](
         row_major[1, input_height, input_width, 1](), ctx
@@ -135,12 +135,8 @@ def test_stencil_avg_pool(ctx: DeviceContext) raises:
         dtype,
     ](
         ctx,
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_output.layout.shape_coord())
-        ),
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_input.layout.shape_coord())
-        ),
+        d_output.layout.shape_coord(),
+        d_input.layout.shape_coord(),
         map_fn_gpu,
         dilation_fn_gpu,
         load_fn_gpu,
@@ -236,8 +232,8 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
 
     comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
-    var input_shape_dyn = (1, input_height, input_width, 1)
-    var output_shape_dyn = (1, output_height, output_width, 1)
+    var input_shape_dyn = Coord(1, input_height, input_width, 1)
+    var output_shape_dyn = Coord(1, output_height, output_width, 1)
 
     var d_input_managed = HostDeviceTileTensor[dtype](
         row_major[1, input_height, input_width, 1](), ctx
@@ -313,12 +309,8 @@ def test_stencil_avg_pool_padded(ctx: DeviceContext) raises:
         dtype,
     ](
         ctx,
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_output.layout.shape_coord())
-        ),
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_input.layout.shape_coord())
-        ),
+        d_output.layout.shape_coord(),
+        d_input.layout.shape_coord(),
         map_fn_gpu,
         dilation_fn_gpu,
         load_fn_gpu,
@@ -415,8 +407,8 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
 
     comptime output_height = (input_height - pool_window_h) // stride + 1
     comptime output_width = (input_width - pool_window_w) // stride + 1
-    var input_shape_dyn = (1, input_height, input_width, 1)
-    var output_shape_dyn = (1, output_height, output_width, 1)
+    var input_shape_dyn = Coord(1, input_height, input_width, 1)
+    var output_shape_dyn = Coord(1, output_height, output_width, 1)
 
     var d_input_managed = HostDeviceTileTensor[dtype](
         row_major[1, input_height, input_width, 1](), ctx
@@ -493,12 +485,8 @@ def test_stencil_avg_pool_stride_2(ctx: DeviceContext) raises:
         dtype,
     ](
         ctx,
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_output.layout.shape_coord())
-        ),
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_input.layout.shape_coord())
-        ),
+        d_output.layout.shape_coord(),
+        d_input.layout.shape_coord(),
         map_fn_gpu,
         dilation_fn_gpu,
         load_fn_gpu,
@@ -594,7 +582,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
     comptime pool_window_w = 3
     comptime dilation = 1
 
-    var input_shape_dyn = (1, input_height, input_width, 1)
+    var input_shape_dyn = Coord(1, input_height, input_width, 1)
     comptime output_height = (
         input_height - pool_window_h - (pool_window_h - 1) * (dilation - 1)
     ) // stride + 1
@@ -602,7 +590,7 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         input_width - pool_window_w - (pool_window_w - 1) * (dilation - 1)
     ) // stride + 1
 
-    var output_shape_dyn = (1, output_height, output_width, 1)
+    var output_shape_dyn = Coord(1, output_height, output_width, 1)
 
     var d_input_managed = HostDeviceTileTensor[dtype](
         row_major[1, input_height, input_width, 1](), ctx
@@ -678,12 +666,8 @@ def test_stencil_gpu_max_pool(ctx: DeviceContext) raises:
         dtype,
     ](
         ctx,
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_output.layout.shape_coord())
-        ),
-        rebind[IndexList[rank]](
-            coord_to_index_list(d_input.layout.shape_coord())
-        ),
+        d_output.layout.shape_coord(),
+        d_input.layout.shape_coord(),
         map_fn_gpu,
         dilation_fn_gpu,
         load_fn_gpu,
@@ -800,11 +784,14 @@ def test_stencil_gpu_max_pool_vectorized_channels(ctx: DeviceContext) raises:
     d_output_managed.to_device()
     var d_input = d_input_managed.device_tensor()
     var d_output = d_output_managed.device_tensor()
-    var in_shape = rebind[IndexList[rank]](
-        coord_to_index_list(d_input.layout.shape_coord())
+    # The other tests pass all-static shapes. Runtime height and width
+    # between static batch and channel dims check that a shape `Coord` with
+    # several runtime leaves reaches the kernel intact.
+    var in_shape = Coord(
+        Idx[1], Int64(input_height), Int64(input_width), Idx[num_channels]
     )
-    var out_shape = rebind[IndexList[rank]](
-        coord_to_index_list(d_output.layout.shape_coord())
+    var out_shape = Coord(
+        Idx[1], Int64(output_height), Int64(output_width), Idx[num_channels]
     )
 
     def map_fn_gpu(

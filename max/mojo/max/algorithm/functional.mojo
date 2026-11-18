@@ -466,8 +466,8 @@ for regions that fail out of the input domain are handled by load_fn.
 
 
 Parameters:
-    shape_element_type: The element dtype of the shape.
-    input_shape_element_type: The element dtype of the input shape.
+    shape_types: The element types of the `shape` coordinate.
+    input_shape_types: The element types of the `input_shape` coordinate.
     rank: Input and output domain rank.
     stencil_rank: Rank of stencil subdomain slice.
     stencil_axis: Stencil subdomain axes.
@@ -495,8 +495,8 @@ comptime stencil_gpu = _stencil_impl_gpu
 """(Naive implementation) Computes stencil operation in parallel on GPU.
 
 Parameters:
-    shape_element_type: The element dtype of the shape.
-    input_shape_element_type: The element dtype of the input shape.
+    shape_types: The element types of the `shape` coordinate.
+    input_shape_types: The element types of the `input_shape` coordinate.
     rank: Input and output domain rank.
     stencil_rank: Rank of stencil subdomain slice.
     stencil_axis: Stencil subdomain axes.

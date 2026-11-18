@@ -16,7 +16,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.utils.coord import Coord
+from std.utils.coord import Coord, CoordLike
 from std.utils.index import IndexList
 
 
@@ -26,8 +26,8 @@ from std.utils.index import IndexList
 
 
 def _stencil_impl_gpu[
-    shape_element_type: DType,
-    input_shape_element_type: DType,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    input_shape_types: TypeList[Trait=CoordLike, ...],
     //,
     rank: Int,
     stencil_rank: Int,
@@ -59,8 +59,8 @@ def _stencil_impl_gpu[
     & def[simd_width: SIMDLength](Coord, SIMD[dtype, simd_width]) -> None,
 ](
     ctx: DeviceContext,
-    shape: IndexList[rank, element_type=shape_element_type],
-    input_shape: IndexList[rank, element_type=input_shape_element_type],
+    shape: Coord[*shape_types],
+    input_shape: Coord[*input_shape_types],
     map_func: MapFnType,
     map_strides_func: MapStridesType,
     load_func: LoadFnType,
@@ -71,8 +71,8 @@ def _stencil_impl_gpu[
     """(Naive implementation) Computes stencil operation in parallel on GPU.
 
     Parameters:
-        shape_element_type: The element dtype of the shape.
-        input_shape_element_type: The element dtype of the input shape.
+        shape_types: The element types of the `shape` coordinate.
+        input_shape_types: The element types of the `input_shape` coordinate.
         rank: Input and output domain rank.
         stencil_rank: Rank of stencil subdomain slice.
         stencil_axis: Stencil subdomain axes.
@@ -101,6 +101,9 @@ def _stencil_impl_gpu[
     """
     comptime assert rank == 4, "Only stencil of rank-4 supported"
     comptime assert (
+        type_of(shape).rank == rank and type_of(input_shape).rank == rank
+    ), "shape and input_shape must have rank `rank`"
+    comptime assert (
         stencil_axis[0] == 1 and stencil_axis[1] == 2
     ), "Only stencil spatial axes [1, 2] are supported"
 
@@ -119,8 +122,8 @@ def _stencil_impl_gpu[
     comptime block_x = 32
     comptime block_y = 32
     var grid_dim = (
-        ceildiv(shape[2], block_x),  # width
-        ceildiv(shape[1], block_y),  # height
+        ceildiv(Int(shape[2]), block_x),  # width
+        ceildiv(Int(shape[1]), block_y),  # height
         Int(shape[0]) * channel_blocks,  # batch_size * channel blocks
     )
 
@@ -155,26 +158,23 @@ def _stencil_impl_gpu[
         var channel = channel_block * simd_width
 
         # Early exit if outside bounds
-        if x >= shape[2] or y >= shape[1]:
+        if x >= Int(shape[2]) or y >= Int(shape[1]):
             return
 
-        # Create output point indices with computed batch and channel
-        var indices = IndexList[rank, element_type=shape_element_type](
-            batch_idx, y, x, channel
-        )
+        var indices = Coord(batch_idx, y, x, channel)
 
         # Process stencil for this point
         var stencil_indices = IndexList[
             stencil_rank, element_type=stencil_axis.element_type
-        ](indices[stencil_axis[0]], indices[stencil_axis[1]])
+        ](Int(indices[stencil_axis[0]]), Int(indices[stencil_axis[1]]))
         var bounds = map_func(stencil_indices)
         var lower_bound = bounds[0]
         var upper_bound = bounds[1]
         var step_i = map_strides_func(0)
         var step_j = map_strides_func(1)
         var result = compute_init_func[simd_width]()
-        var input_height = input_shape[1]
-        var input_width = input_shape[2]
+        var input_height = Int(input_shape[1])
+        var input_width = Int(input_shape[2])
 
         # Handle boundary conditions
         if lower_bound[0] < 0:
@@ -199,9 +199,7 @@ def _stencil_impl_gpu[
                 var val = load_func[simd_width, dtype](point_idx)
                 result = compute_func[simd_width](point_idx, result, val)
 
-        compute_finalize_func[simd_width](
-            Coord(batch_idx, y, x, channel), result
-        )
+        compute_finalize_func[simd_width](indices, result)
 
     # Compile and launch kernel
     ctx.enqueue_function(

@@ -14,12 +14,12 @@
 
 from std.math import ceildiv
 
-from std.utils.coord import Coord
+from std.utils.coord import Coord, CoordLike
 from std.utils.index import IndexList
 from std.algorithm.backend.vectorize import vectorize
 
 from .parallelize import _get_num_workers, sync_parallelize
-from max.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
 
 # ===-----------------------------------------------------------------------===#
@@ -28,8 +28,8 @@ from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 
 
 def _stencil_impl_cpu[
-    shape_element_type: DType,
-    input_shape_element_type: DType,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    input_shape_types: TypeList[Trait=CoordLike, ...],
     //,
     rank: Int,
     stencil_rank: Int,
@@ -52,8 +52,8 @@ def _stencil_impl_cpu[
         Coord, SIMD[dtype, simd_width]
     ) -> None,
 ](
-    shape: IndexList[rank, element_type=shape_element_type],
-    input_shape: IndexList[rank, element_type=input_shape_element_type],
+    shape: Coord[*shape_types],
+    input_shape: Coord[*input_shape_types],
     map_fn_closure: map_fn,
     map_strides_closure: map_strides,
     load_fn_closure: load_fn,
@@ -70,8 +70,8 @@ def _stencil_impl_cpu[
 
 
     Parameters:
-        shape_element_type: The element dtype of the shape.
-        input_shape_element_type: The element dtype of the input shape.
+        shape_types: The element types of the `shape` coordinate.
+        input_shape_types: The element types of the `input_shape` coordinate.
         rank: Input and output domain rank.
         stencil_rank: Rank of stencil subdomain slice.
         stencil_axis: Stencil subdomain axes.
@@ -98,15 +98,20 @@ def _stencil_impl_cpu[
     comptime assert (
         stencil_axis[0] == 1 and stencil_axis[1] == 2
     ), "Only stencil spatial axes [1, 2] are supported"
+    comptime assert (
+        type_of(shape).rank == rank and type_of(input_shape).rank == rank
+    ), "shape and input_shape must have rank `rank`"
+
+    var inner_size = Int(shape[rank - 1])
 
     # If we know we will have no work, return early
-    if shape[rank - 1] == 0:
+    if inner_size == 0:
         return
 
-    var total_size = shape.flattened_length()
+    var total_size = Int(shape.product())
 
     var num_workers = _get_num_workers(total_size)
-    var parallelism_size = total_size // shape[rank - 1]
+    var parallelism_size = total_size // inner_size
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
@@ -123,8 +128,8 @@ def _stencil_impl_cpu[
         for parallel_offset in range(
             start_parallel_offset, end_parallel_offset
         ):
-            var indices = _get_start_indices_of_nth_subvolume(
-                parallel_offset, shape
+            var indices = _get_nd_indices_from_flat_index(
+                parallel_offset, shape, rank - 1
             )
 
             @inline(.always)
@@ -140,18 +145,18 @@ def _stencil_impl_cpu[
                 imm compute_fn_closure,
                 imm compute_finalize_fn_closure,
             }:
-                indices[rank - 1] = idx
+                indices.replace_dynamic[rank - 1](idx)
                 var stencil_indices = IndexList[
                     stencil_rank, element_type=stencil_axis.element_type
-                ](indices[stencil_axis[0]], indices[stencil_axis[1]])
+                ](Int(indices[stencil_axis[0]]), Int(indices[stencil_axis[1]]))
                 var bounds = map_fn_closure(stencil_indices)
                 var lower_bound = bounds[0]
                 var upper_bound = bounds[1]
                 var step_i = map_strides_closure(0)
                 var step_j = map_strides_closure(1)
                 var result = compute_init_fn_closure[simd_width]()
-                var input_height = input_shape[1]
-                var input_width = input_shape[2]
+                var input_height = Int(input_shape[1])
+                var input_width = Int(input_shape[2])
 
                 # In the below loops, each part corresponds to either a padded
                 # side (A, B, C, D), or the main part of the input buffer (X)
@@ -207,12 +212,10 @@ def _stencil_impl_cpu[
                             point_idx, result, val
                         )
 
-                compute_finalize_fn_closure[simd_width](
-                    Coord(indices[0], indices[1], indices[2], idx), result
-                )
+                compute_finalize_fn_closure[simd_width](indices, result)
 
             vectorize[simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1], func_wrapper
+                inner_size, func_wrapper
             )
 
     sync_parallelize(task_func, num_workers)
