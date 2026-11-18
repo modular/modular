@@ -524,8 +524,7 @@ def _fused_load_negate[
 # real) pattern from the parameter-closure route: the closure is built on the
 # host as a first-class value, threaded down through a helper, and either
 # called directly on CPU or re-captured into the device-kernel body on GPU.
-# It proves the projection works for kernels that layer this way (e.g. the
-# CPU path of `RMSNormFusedResidualAdd`).
+# It proves the projection works for kernels that layer this way.
 @extensibility.register("trait_fused_load_host_unified_closure")
 struct TraitFusedLoadHostUnifiedClosure:
     @staticmethod

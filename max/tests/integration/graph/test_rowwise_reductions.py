@@ -23,8 +23,10 @@ across a few small column counts (even + odd), on the inner axis and -- for the
 pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
 float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
 group (see :data:`WIDE_CPU_SPECS`) for what only the widest element can reach.
-``rms_norm``, ``softmax`` and ``logsoftmax`` also run on edge-case shapes
-(:data:`RMS_NORM_SPECS`, :data:`SOFTMAX_SPECS`): no rows, odd, many and long
+``rms_norm``, ``softmax``, ``logsoftmax`` and the residual rms_norm pair
+(``rms_norm(rms_norm(x) + residual)``) also run on edge-case shapes
+(:data:`RMS_NORM_SPECS`, :data:`SOFTMAX_SPECS`,
+:data:`RESIDUAL_RMS_NORM_SPECS`): no rows, odd, many and long
 rows (the GPU split-K and CPU split-axis tiers), and ranks 1 and 5; for
 ``rms_norm``, static row widths and both ``multiply_before_cast`` orders with a
 weight offset.
@@ -59,14 +61,19 @@ from _rowwise_reduction_specs import (
     GPU_SUBWORD_SPECS,
     INNER_SPECS,
     NONINNER_SPECS,
+    RESIDUAL_RMS_NORM_EPS2,
+    RESIDUAL_RMS_NORM_SPECS,
+    RESIDUAL_RMS_NORM_WEIGHT_OFFSET2,
     RMS_NORM_SPECS,
     RMS_NORM_WEIGHT_OFFSET,
     SOFTMAX_SPECS,
     WIDE_CPU_SPECS,
+    ResidualRmsNormSpec,
     RmsNormSpec,
     RowwiseSpec,
     SoftmaxSpec,
     build_graph,
+    build_residual_rms_norm_graph,
     build_rms_norm_graph,
     build_softmax_graph,
 )
@@ -456,6 +463,73 @@ def test_rms_norm_edges(session: InferenceSession, spec: RmsNormSpec) -> None:
         scale = weight.to(torch.float32) + RMS_NORM_WEIGHT_OFFSET
         ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * scale).numpy()
         _assert_close(got, ref, "rms_norm", spec.dtype, f"shape={shape}")
+
+
+def _rms_norm_ref(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    eps: float,
+    offset: float,
+    multiply_before_cast: bool,
+) -> torch.Tensor:
+    """rms_norm in ``x``'s dtype, rounding where the kernel does."""
+    xf = x.to(torch.float32)
+    normed = xf * torch.rsqrt(xf.pow(2).mean(dim=-1, keepdim=True) + eps)
+    if multiply_before_cast:
+        return (normed * (w.to(torch.float32) + offset)).to(x.dtype)
+    return normed.to(x.dtype) * (w + torch.tensor(offset, dtype=x.dtype))
+
+
+@pytest.mark.parametrize("spec", RESIDUAL_RMS_NORM_SPECS, ids=lambda s: s.name)
+def test_residual_rms_norm_edges(
+    session: InferenceSession, spec: ResidualRmsNormSpec
+) -> None:
+    model = session.load(build_residual_rms_norm_graph(spec))
+    # One generated kernel computes both norms, as the hand-written one did.
+    rowwise = [s for s in model.kernel_summaries if "Rowwise(" in s]
+    assert len(rowwise) == 1, model.kernel_summaries
+    shapes = (
+        [(rows, spec.static_cols) for rows in (3, 513)]
+        if spec.static_cols
+        else _EDGE_SHAPES[2]
+    )
+    for shape in shapes:
+        torch.manual_seed(0)
+        dtype = _torch_dtype(spec.dtype)
+        x = torch.randn(shape).to(dtype)
+        residual = torch.randn(shape).to(dtype)
+        w1 = _make_weight(1, shape[-1], spec.dtype)
+        w2 = _make_weight(2, shape[-1], spec.dtype)
+        outs = [_read_f32(b) for b in _feed(model, [x, residual, w1, w2])]
+        h = (
+            _rms_norm_ref(
+                x,
+                w1,
+                RMS_NORM_EPS,
+                RMS_NORM_WEIGHT_OFFSET,
+                spec.multiply_before_cast,
+            )
+            + residual
+        )
+        y = _rms_norm_ref(
+            h,
+            w2,
+            RESIDUAL_RMS_NORM_EPS2,
+            RESIDUAL_RMS_NORM_WEIGHT_OFFSET2,
+            spec.multiply_before_cast,
+        )
+        label = f"shape={shape}"
+        _assert_close(
+            outs[0], y.to(torch.float32).numpy(), "rms_norm", spec.dtype, label
+        )
+        if spec.sum_output:
+            _assert_close(
+                outs[1],
+                h.to(torch.float32).numpy(),
+                "rms_norm",
+                spec.dtype,
+                label,
+            )
 
 
 @pytest.mark.parametrize("spec", SOFTMAX_SPECS, ids=lambda s: s.name)

@@ -292,6 +292,77 @@ RMS_NORM_SPECS = (
 
 
 @dataclass(frozen=True)
+class ResidualRmsNormSpec:
+    """One compiled ``rms_norm(rms_norm(x) + residual)`` graph, which the
+    graph compiler fuses into one rowwise kernel that outputs both the result
+    and the sum."""
+
+    dtype: DType
+    """Element type of the inputs and the weights."""
+
+    multiply_before_cast: bool
+    """Whether each weight multiplies before the cast back to ``dtype``."""
+
+    device: str
+    """``"cpu"`` or ``"gpu"``."""
+
+    static_cols: int | None = None
+    """The row width when the graph knows it, symbolic otherwise."""
+
+    residual_first: bool = False
+    """Whether the add is written ``residual + rms_norm(x)``, as the Gemma
+    layers write it."""
+
+    sum_output: bool = True
+    """Whether the graph also outputs the sum, or only the second norm reads
+    it."""
+
+    @property
+    def name(self) -> str:
+        order = "mul_cast" if self.multiply_before_cast else "cast_mul"
+        cols = f"_c{self.static_cols}" if self.static_cols else ""
+        add = "_residual_first" if self.residual_first else ""
+        sum_out = "" if self.sum_output else "_no_sum"
+        return (
+            f"residual_rms_norm_{_DTYPE_TAGS[self.dtype]}{cols}_{order}"
+            f"{add}{sum_out}_{self.device}"
+        )
+
+
+# The second norm's weight offset differs from the first's, so swapping the
+# two norms' parameters changes the result.
+RESIDUAL_RMS_NORM_EPS2 = 1e-5
+RESIDUAL_RMS_NORM_WEIGHT_OFFSET2 = 0.0
+
+# The residual op compiles to one generated rowwise kernel that caches the sum.
+# Rank 2 covers both `multiply_before_cast` orders in both precisions. On a
+# GPU, a static row width keeps the cache in registers when the SIMD width
+# divides it (4096) and recomputes it otherwise (557).
+RESIDUAL_RMS_NORM_SPECS = (
+    [
+        ResidualRmsNormSpec(dtype, multiply_before_cast, device)
+        for device in _BOTH_DEVICES
+        for dtype in (DType.float32, DType.bfloat16)
+        for multiply_before_cast in (False, True)
+    ]
+    + [
+        ResidualRmsNormSpec(DType.bfloat16, True, "gpu", static_cols=4096),
+        ResidualRmsNormSpec(DType.float32, False, "gpu", static_cols=557),
+    ]
+    + [
+        spec
+        for device in _BOTH_DEVICES
+        for spec in (
+            ResidualRmsNormSpec(
+                DType.bfloat16, True, device, residual_first=True
+            ),
+            ResidualRmsNormSpec(DType.bfloat16, True, device, sum_output=False),
+        )
+    ]
+)
+
+
+@dataclass(frozen=True)
 class SoftmaxSpec:
     """One compiled softmax-like graph for the edge-case shapes."""
 
@@ -424,6 +495,44 @@ def build_rms_norm_graph(spec: RmsNormSpec) -> Graph:
                 multiply_before_cast=spec.multiply_before_cast,
             )
         )
+    return graph
+
+
+def build_residual_rms_norm_graph(spec: ResidualRmsNormSpec) -> Graph:
+    """Builds ``spec``'s residual ``ops.rms_norm`` graph, rank 2 with symbolic
+    dimensions; it outputs the result, and the sum when ``spec.sum_output``.
+
+    Args:
+        spec: The parametrization to build.
+
+    Returns:
+        The constructed :class:`~max.graph.Graph`, ready to compile.
+    """
+    dims: list[str | int] = ["rows", spec.static_cols or "cols"]
+    device = _DEVICE_REFS[spec.device]
+    x_t = TensorType(spec.dtype, dims, device=device)
+    w_t = TensorType(spec.dtype, dims[-1:], device=device)
+    with Graph(spec.name, input_types=[x_t, x_t, w_t, w_t]) as graph:
+        x, residual, w1, w2 = (inp.tensor for inp in graph.inputs)
+        n1 = ops.rms_norm(
+            x,
+            w1,
+            epsilon=RMS_NORM_EPS,
+            weight_offset=RMS_NORM_WEIGHT_OFFSET,
+            multiply_before_cast=spec.multiply_before_cast,
+        )
+        h = residual + n1 if spec.residual_first else n1 + residual
+        y = ops.rms_norm(
+            h,
+            w2,
+            epsilon=RESIDUAL_RMS_NORM_EPS2,
+            weight_offset=RESIDUAL_RMS_NORM_WEIGHT_OFFSET2,
+            multiply_before_cast=spec.multiply_before_cast,
+        )
+        if spec.sum_output:
+            graph.output(y, h)
+        else:
+            graph.output(y)
     return graph
 
 
