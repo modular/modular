@@ -187,47 +187,72 @@ This first table is just a definition of the various "case styles."
 | `kebab-case`           | All lowercase with hyphens                | `project-name`   |
 | `flatcase`             | All lowercase without separators          | `basename`       |
 
-The following table shows our preferred use of different case styles.
+The following table shows our preferred case style for each kind of name. For
+a kind of name that the table doesn't list, follow the style of the surrounding
+code.
 
-| Code kind                         | Example                                                 | Case style                            |
-|-----------------------------------|---------------------------------------------------------|---------------------------------------|
-| `def`                             | `def engage_hyperdrive()`                               | `snake_case`                          |
-| `struct`                          | `struct Point`                                          | `PascalCase`                          |
-| `trait`                           | `trait Copyable`                                        | `PascalCase`                          |
-| `__enum`                          | `__enum StatusCode`                                     | `PascalCase`                          |
-| `var`                             | `var the_value = 5`                                     | `snake_case`                          |
-| `module` / `package`              | `io.mojo` / `os/__init__.mojo`                          | `flatcase` / `snake_case`             |
-| dunder                            | `__init__`                                              | `flatcase`                            |
-| decorator                         | `@inline(.never)`                                       | `snake_case`                          |
-| **Parameters — type or value**    | &nbsp;                                                  | &nbsp;                                |
-| `comptime` type                   | `comptime Int8 = Scalar[DType.int8]`                    | `PascalCase`                          |
-| `comptime` value (global / local) | `comptime CHUNK_SIZE = 32` / `comptime chunk_size = 32` | `SCREAMING_SNAKE_CASE` / `snake_case` |
-| `struct` type parameter           | `struct List[ElementType: Movable]`                     | `PascalCase`                          |
-| `struct` value parameter          | `struct Array[ElementType: Movable, length: Int]`       | `snake_case`                          |
-| `def` type parameter              | `def do_it[Action: Actionable](action: Action)`         | `PascalCase`                          |
-| `def` value parameter             | `def repeat[count: Int]()`                              | `snake_case`                          |
+| Code kind                                    | Example                                    | Case style   |
+|----------------------------------------------|--------------------------------------------|--------------|
+| `trait`                                      | `trait Copyable`                           | `PascalCase` |
+| Trait composition                            | `comptime KeyElement = Movable & Hashable` | `PascalCase` |
+| `struct` type                                | `struct Point`                             | `PascalCase` |
+| `__enum` type                                | `__enum IOErrorKind` / `__enum IpAddr`     | `PascalCase` |
+| `__enum` case                                | `case not_found`                           | `snake_case` |
+| Module-level `comptime` type alias           | `comptime Int8 = Scalar[DType.int8]`       | `PascalCase` |
+| Type parameter                               | `struct List[T: Movable]`                  | `PascalCase` |
+| Value parameter                              | `def repeat[count: Int]()`                 | `snake_case` |
+| Origin parameter                             | `struct CStringSpan[origin: ImmOrigin]`    | `snake_case` |
+| Function or method                           | `def engage_hyperdrive()`                  | `snake_case` |
+| Field                                        | `var capacity: Int`                        | `snake_case` |
+| Argument                                     | `def engage_hyperdrive(warp_factor: Int)`  | `snake_case` |
 
 Although these are our style conventions, not all code currently adheres to it.
-When preparing a new change, it is important to adhere to the style and naming
-conventions already established in that module. Therefore, if the module you
-are working on uses a different style, continue using that style to maintain
-consistency. We are not currently accepting pull requests that propose
-extensive formatting or renaming changes.
+Any newly added Mojo code, however, should adhere to the style conventions.
+
+#### Exceptions
+
+C FFI binding code can use the exact C spelling of a name instead of the case
+style in the table. Matching the C name keeps the binding easy to compare with
+the C headers and documentation. For example:
+
+- A struct: `struct sockaddr_in`
+- A `typedef`: `comptime sa_family_t = c_ushort`
+- A constant: `comptime SOCK_CLOEXEC: c_int = 0o2000000`
+- An enum value: `comptime PyGILState_LOCKED = c_int(0)`
 
 ### Naming guidelines
 
-#### ℹ️ Prefer descriptive parameter names over single-letter names
+#### ℹ️ Use conventional short type parameter names unless they hurt readability
+
+Type parameter names use `PascalCase`. When the role of a type parameter is
+clear, use a short conventional name:
+
+- `T`, `U`, `V`: general types, such as the element type of a collection.
+- `Ts`: a variadic type parameter pack.
+- `K` and `V`: the key and value types of a key-value collection.
+- `E`: an error type.
 
 ```mojo
-struct LinkedList[T: Movable]           # 🔴 Avoid
-struct LinkedList[ElementType: Movable] # 🟢 Preferred
+struct List[ElementType: Movable]                    # 🔴 Avoid
+struct List[T: Movable]                              # 🟢 Preferred
+
+struct Dict[KeyType: KeyElement, ValueType: Movable] # 🔴 Avoid
+struct Dict[K: KeyElement, V: Movable]               # 🟢 Preferred
+```
+
+When a declaration has several type parameters and short names make their roles
+hard to tell apart, use descriptive names such as `ErrorType` or `Element`.
+
+```mojo
+struct Codec[T: Movable, U: Movable, V: Writer]                # 🔴 Avoid
+struct Codec[Decoded: Movable, Encoded: Movable, Sink: Writer] # 🟢 Preferred
 ```
 
 #### ℹ️ Order type parameters ahead of value parameters
 
 ```mojo
-struct Array[length: Int, ElementType: Movable] # 🔴 Avoid
-struct Array[ElementType: Movable, length: Int] # 🟢 Preferred
+struct Array[length: Int, T: Movable] # 🔴 Avoid
+struct Array[T: Movable, length: Int] # 🟢 Preferred
 ```
 
 #### Use the `Some[]` utility instead of named type parameters when appropriate
@@ -250,29 +275,103 @@ def foo[Str: Writable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
 
 ### Container lifecycle semantics
 
-#### ℹ️ Prefer explicit copy constructors; avoid allowing implicit copies
+#### ℹ️ Copy with `copy()`; avoid allowing implicit copies
 
 ```mojo
-var copy = original                 # 🔴 Avoid
-var copy = MyStruct(copy=original)  # 🟢 Preferred
+var copy = MyStruct(copy=original)  # 🔴 Avoid
+var copy = original.copy()          # 🟢 Preferred
 ```
 
-Where you intend to make a copy, favor an explicit copy constructor to make your
-intention clear.
+When you intend to copy a value whose type doesn't conform to
+`ImplicitlyCopyable`, call its `copy()` method. The `Copyable` trait provides
+`copy()`, so the call reads the same for every type and doesn't repeat the type
+name.
 
-Copying types that conform to `RegisterPassable` like `Int`, `Bool`, `Pointer`,
-and `SIMD` is
-safe and inexpensive. However, copying types that dynamically allocate memory
-can be expensive. This includes common types like `List`, `Dict`, `Set`,
-and `String`.
+Types that conform to `TrivialRegisterPassable`, such as `Int`, `Bool`, `SIMD`,
+and `Pointer`, are implicitly copyable and inexpensive to copy. Copying a type
+that owns heap memory, such as `List`, `Dict`, or `Set`, allocates memory and
+copies every element, so these types require an explicit `.copy()`.
 
-Some standard library types allow implicit copies where they shouldn’t. We will
-resolve this shortly as new Mojo language features are shipped to help with this
-very situation.
+When designing a new type, don't allow implicit copies unless the copy is
+trivial (order `O(1)`). In other words, conform to `Copyable` but not
+`ImplicitlyCopyable`. `String` is an example of the exception: a copy only
+increments a reference count, so `String` is `ImplicitlyCopyable`.
 
-When designing a new type, don’t allow implicit copies unless
-the copy is trivial (order `O(1)`). In other words, just conform to `Copyable`
-but not `ImplicitlyCopyable`.
+### String formatting
+
+#### ℹ️ Use t-strings instead of variadic `Writable` arguments
+
+To build a message from several values, write a t-string (`t"..."`) instead of
+passing the pieces as separate arguments. A t-string reads like the message it
+produces.
+
+```mojo
+raise Error("expected ", expected, " but got ", actual) # 🔴 Avoid
+raise Error(t"expected {expected} but got {actual}")    # 🟢 Preferred
+```
+
+### Pattern matching
+
+#### ℹ️ Use `match` instead of an `if`/`elif` chain over one value
+
+When several branches test the same value, write a `match`. Each `case` names
+one alternative, and `|` combines alternatives that share a body. For a
+parameter, use `comptime match` to dispatch at compile time. Keep `if`/`elif`
+when the conditions test unrelated expressions.
+
+```mojo
+# 🔴 Avoid
+if dtype == .float32:
+    return 4
+elif dtype == .float16 or dtype == .bfloat16:
+    return 2
+else:
+    return 1
+
+# 🟢 Prefer
+match dtype:
+    case .float32:
+        return 4
+    case .float16 | .bfloat16:
+        return 2
+    case _:
+        return 1
+```
+
+#### ℹ️ Unwrap an `Optional` with a pattern instead of `value()`
+
+Don't test an `Optional` and then call `value()` or `unsafe_value()`. A pattern
+tests and binds in one step, so the payload can't be read when it's absent.
+Choose the form by what the code does when the value is absent:
+
+- It uses a default: `opt.or_else(default)`.
+- It leaves the scope with `return`, `raise`, `continue`, `break`, or
+  `abort()`: `__guard case .Some(x) = opt else:`. The binding `x` stays in
+  scope after the statement, so the main path keeps its indentation.
+- It uses the payload only when it's present: `if case .Some(x) = opt:`.
+- Both cases do work and continue: `match opt:` with `.Some(x)` and `.None`
+  cases.
+
+When the value can't be absent, write
+`__guard case .Some(x) = opt else: abort("<reason>")` so the code states the
+invariant where it relies on it.
+
+```mojo
+# 🔴 Avoid
+if not opt:
+    return -1
+use(opt.value())
+
+# 🟢 Prefer
+__guard case .Some(x) = opt else:
+    return -1
+use(x)
+```
+
+```mojo
+var n = opt.value() if opt else 0 # 🔴 Avoid
+var n = opt.or_else(0)            # 🟢 Preferred
+```
 
 ### Import statements
 

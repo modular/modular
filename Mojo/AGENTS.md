@@ -192,5 +192,7 @@ For complete Mojo docstring style guidelines, see
 - Bug fixes should include reproducing tests
 - New features should align with the roadmap
 - All code must have corresponding tests
-- Follow the coding style guide strictly
+- Follow the
+  [coding style guide](docs/contributing/stdlib/stdlib-code-style.md)
+  strictly
 - Use pre-commit hooks for automatic formatting
