@@ -86,6 +86,13 @@ def test_positive_paddings(
     assume(0 < input_type.rank)
     with graph_builder(input_types=[input_type]) as graph:
         assume(padded_size(input_type.shape, paddings) < 2**63)
+        assume(
+            all(
+                paddings[2 * i] + d.dim + paddings[2 * i + 1] < 2**63
+                for i, d in enumerate(input_type.shape)
+                if isinstance(d, StaticDim)
+            )
+        )
 
         out = ops.pad(graph.inputs[0].tensor, paddings=paddings, value=0)
         assert out.dtype == input_type.dtype
