@@ -147,12 +147,12 @@ namespace {
 // Crashpad reads annotations out of the crashed process, so the storage has to
 // outlive every thread that can reach report_fatal_error.
 crashpad::StringAnnotation<4096> llvmFatalAnnotation{"llvm_fatal_message"};
-std::mutex llvmFatalMutex;
 } // namespace
 
 // Parallel compilation threads can race here; the last writer wins.
 static void llvmFatalErrorHandler(void *, const char *reason, bool) {
   {
+    static std::mutex llvmFatalMutex;
     std::lock_guard<std::mutex> lock(llvmFatalMutex);
     llvmFatalAnnotation.Set(reason);
   }
