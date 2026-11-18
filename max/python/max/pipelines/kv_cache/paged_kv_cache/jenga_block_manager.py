@@ -1233,8 +1233,6 @@ class JengaBlockManager:
         if self._state_of(ctx).pending_lookup is not None:
             return transfer
 
-        self._metrics.input_tokens += ctx.tokens.active_length
-
         # Check if we have enough blocks available to satisfy the demand.
         pool = self.pools[replica_idx]
         num_required_blocks = self._num_required_blocks(ctx)
@@ -1256,6 +1254,9 @@ class JengaBlockManager:
                 replica_idx,
                 allocation_owner=self,
             )
+        # Counted once the request holds its pages: a failed alloc is retried,
+        # and counting it there would add the prompt again on every retry.
+        self._metrics.input_tokens += ctx.tokens.active_length
 
         # An onload that landed in place is queued as the alloc ends, or by
         # the rollback if the alloc rolls it back.
