@@ -16,6 +16,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
