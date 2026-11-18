@@ -1596,3 +1596,119 @@ kgen.func @trigger_trigger_creation(%arg0: i1, %arg1: index) {
 }
 
 }
+
+// -----
+
+// COM: Hot only coroutine that suspends twice. The hot ramp stores the state of
+// COM: the first suspension point, and the resume function must store the state
+// COM: of the second one. Otherwise every resume dispatches to the first
+// COM: suspension point again (https://github.com/modular/modular/issues/7368).
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+// CHECK-LABEL: kgen.func @two_suspends_hot_ramp
+// CHECK:       [[STATE1:%.*]] = kgen.param.constant: i32 = <1>
+// CHECK-NEXT:  [[SLOT1:%.*]] = kgen.struct.gep %{{.*}}[0]
+// CHECK-NEXT:  pop.store [[STATE1]], [[SLOT1]] : !kgen.pointer<i32>
+// CHECK-NEXT:  hlcf.return
+
+// The first suspension point was handled by the hot ramp, so it does not store
+// a state again, but it still consumes state 1.
+// CHECK-LABEL: kgen.func @two_suspends_resume
+// CHECK-NEXT:  co.suspend {
+// CHECK-NEXT:  co.suspend.end
+// CHECK-NEXT:  }
+// CHECK-NOT:   kgen.param.constant: i32 = <1>
+// CHECK:       [[STATE2:%.*]] = kgen.param.constant: i32 = <2>
+// CHECK-NEXT:  [[SLOT2:%.*]] = kgen.struct.gep %arg0[0]
+// CHECK-NEXT:  pop.store [[STATE2]], [[SLOT2]] : !kgen.pointer<i32>
+// CHECK-NEXT:  co.suspend {
+kgen.func @two_suspends(%arg0: index, %arg1: index) async -> index {
+  co.suspend (%hdl) {
+    co.suspend.end
+  }
+  %t = index.add %arg0, %arg1
+  co.suspend (%hdl2) {
+    co.suspend.end
+  }
+  %r = index.add %t, %arg1
+  hlcf.return %r : index
+}
+
+kgen.func @trigger_two_suspends(%arg0: index, %arg1: index) async {
+  %coro = co.hot_invoke[(index, index) async -> index: @two_suspends](%arg0, %arg1)
+  hlcf.return
+}
+
+kgen.func @trigger_trigger_two_suspends(%arg0: index, %arg1: index) {
+  %coro = co.invoke[(index, index) async -> ():@trigger_two_suspends](%arg0, %arg1)
+  hlcf.return
+}
+
+}
+
+// -----
+
+// COM: Hot only coroutine with more than one first-state suspension point (one
+// COM: per branch). The hot ramp stores states 1 and 2 for them. The kept
+// COM: first-state suspends in the resume function must each consume an id
+// COM: without storing a state, so the later suspends store 3 and 4. This is
+// COM: what the `firstSuspends()` check in `populateHotResumeFrom` is for.
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+// CHECK-LABEL: kgen.func @branchy_hot_ramp
+// CHECK:       hlcf.if
+// CHECK:       kgen.param.constant: i32 = <1>
+// CHECK:       } else {
+// CHECK:       kgen.param.constant: i32 = <2>
+
+// CHECK-LABEL: kgen.func @branchy_resume
+// CHECK:       hlcf.if
+// CHECK-NEXT:  co.suspend {
+// CHECK:       } else {
+// CHECK-NEXT:  co.suspend {
+// CHECK-NOT:   kgen.param.constant: i32
+// CHECK:       [[STATE3:%.*]] = kgen.param.constant: i32 = <3>
+// CHECK-NEXT:  [[SLOT3:%.*]] = kgen.struct.gep %arg0[0]
+// CHECK-NEXT:  pop.store [[STATE3]], [[SLOT3]] : !kgen.pointer<i32>
+// CHECK-NEXT:  co.suspend {
+// CHECK-NOT:   kgen.param.constant: i32
+// CHECK:       [[STATE4:%.*]] = kgen.param.constant: i32 = <4>
+// CHECK-NEXT:  [[SLOT4:%.*]] = kgen.struct.gep %arg0[0]
+// CHECK-NEXT:  pop.store [[STATE4]], [[SLOT4]] : !kgen.pointer<i32>
+// CHECK-NEXT:  co.suspend {
+kgen.func @branchy(%arg0: i1, %arg1: index) async -> index {
+  %c = pop.cast_from_builtin %arg0 : i1 to !kgen.scalar<bool>
+  hlcf.if %c {
+    co.suspend (%h1) {
+      co.suspend.end
+    }
+    hlcf.yield
+  } else {
+    co.suspend (%h2) {
+      co.suspend.end
+    }
+    hlcf.yield
+  }
+  %t = index.add %arg1, %arg1
+  co.suspend (%h3) {
+    co.suspend.end
+  }
+  %u = index.add %t, %arg1
+  co.suspend (%h4) {
+    co.suspend.end
+  }
+  %r = index.add %u, %arg1
+  hlcf.return %r : index
+}
+
+kgen.func @trigger_branchy(%arg0: i1, %arg1: index) async {
+  %coro = co.hot_invoke[(i1, index) async -> index: @branchy](%arg0, %arg1)
+  hlcf.return
+}
+
+kgen.func @trigger_trigger_branchy(%arg0: i1, %arg1: index) {
+  %coro = co.invoke[(i1, index) async -> ():@trigger_branchy](%arg0, %arg1)
+  hlcf.return
+}
+
+}
