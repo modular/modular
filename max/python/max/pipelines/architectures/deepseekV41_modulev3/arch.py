@@ -45,7 +45,6 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     # full attention heads once per rank); plain tensor parallelism
     # still hits the window-list masking placement conflict.
     multi_gpu_supported=True,
-    supports_device_graph_capture=False,
     supports_empty_batches=False,
     modules={
         GraphRole.DECODER: RegisteredDeepseekV41Decoder,
