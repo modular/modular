@@ -32,6 +32,12 @@ from max.driver import Buffer, DLPackArray
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
+from max.pipelines.lib.weight_transform import (
+    Bitcast,
+    Ignore,
+    WeightRenaming,
+    WeightRule,
+)
 
 from ..deepseekV41.weight_adapters import (
     as_uint8,
@@ -40,7 +46,12 @@ from ..deepseekV41.weight_adapters import (
     with_dtype,
 )
 from .interface import has_vision_tower
-from .model_config import DeepseekV41Config, EngramTableFormat, vision_config
+from .model_config import (
+    DeepseekV41Config,
+    EngramTableFormat,
+    num_dspark_stages,
+    vision_config,
+)
 
 # (first, second, stacked, sharded) module-path suffixes: two projections
 # that read the same activation, stacked into one leaf that runs as one
@@ -1223,4 +1234,57 @@ def convert_dspark_state_dict(
         loaded,
         last_stage=num_stages - 1,
         load_confidence_head=load_confidence_head,
+    )
+
+
+def deepseek_v41_weight_rules(
+    huggingface_config: object,
+) -> Sequence[WeightRule]:
+    """Returns name and dtype rules for raw target checkpoint tensors."""
+    del huggingface_config
+    return (
+        Ignore(
+            r"^mtp\.", reason="the DSpark stages load through the draft entry"
+        ),
+        # Relabel before the expert-scale rename: a native ``weight_scale``
+        # (NVFP4's E4M3 block scales, which an export may store as ``U8``)
+        # keeps its dtype, as in ``_rename_checkpoint``.
+        Bitcast(r"\.scale$", DType.uint8, DType.float8_e8m0fnu),
+        WeightRenaming(
+            r"(\.ffn\.experts\.\d+\.w[123])\.scale$", r"\1.weight_scale"
+        ),
+        Bitcast(
+            r"\.ffn\.experts\.\d+\.w[123]\.weight$", DType.int8, DType.uint8
+        ),
+        # The CPU initializer reads host table codes as raw bytes.
+        Bitcast(r"\.engram\.embed\.weight$", DType.float8_e4m3fn, DType.uint8),
+        Bitcast(r"\.engram\.embed\.scale$", DType.float8_e8m0fnu, DType.uint8),
+    )
+
+
+def dspark_v41_weight_rules(huggingface_config: object) -> Sequence[WeightRule]:
+    """Returns name and dtype rules for raw in-checkpoint DSpark tensors."""
+    text = DeepseekV41Config.get_text_config(huggingface_config)
+    last = num_dspark_stages(text) - 1
+    return (
+        Ignore(
+            r"^(?:layers|embed|norm|head|vision|aligner)\.",
+            reason="target and vision graph weights",
+        ),
+        Ignore(
+            r"^image_(?:start|end|newline)$",
+            reason="vision graph image delimiters",
+        ),
+        Ignore(
+            r"\.confidence_head\.",
+            reason="fixed-width DSpark does not run adaptive confidence",
+        ),
+        Ignore(r"\.ffn\.gate\.bias_vl$", reason="the drafter routes text only"),
+        WeightRenaming(r"^mtp\.0\.(main_proj|main_norm)\.", r"\1."),
+        WeightRenaming(rf"^mtp\.{last}\.(norm|markov_head)\.", r"\1."),
+        WeightRenaming(r"^mtp\.(\d+)\.", r"stages.\1."),
+        Bitcast(r"\.scale$", DType.uint8, DType.float8_e8m0fnu),
+        Bitcast(
+            r"\.ffn\.experts\.\d+\.w[123]\.weight$", DType.int8, DType.uint8
+        ),
     )
