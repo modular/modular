@@ -798,6 +798,103 @@ def test_dt_bias_reshaped_to_heads_by_head_dim(
     )
 
 
+def _a_log_converted(
+    checkpoint: dict[str, Any], a_log: np.ndarray
+) -> WeightData:
+    """Converts the fixture with ``a_log`` in place of the KDA layer's own."""
+    checkpoint[f"{_TEXT}.layers.0.self_attn.A_log"] = _weight(a_log, "A_log")
+    return convert_kimi_k3_state_dict(checkpoint, _text_config())[
+        "layers.0.attention.a_log"
+    ]
+
+
+def test_a_per_head_a_log_broadcasts_over_the_keys(
+    checkpoint: dict[str, Any],
+) -> None:
+    """The bare checkpoint form, one decay per head, becomes the
+    ``[heads, head_dim]`` weight the layer binds."""
+    per_head = np.linspace(-2.0, 1.0, _KDA_NUM_HEADS, dtype=np.float32)
+
+    actual = _to_numpy(_a_log_converted(checkpoint, per_head))
+
+    assert actual.shape == (_KDA_NUM_HEADS, _KDA_HEAD_DIM)
+    np.testing.assert_array_equal(
+        actual, np.broadcast_to(per_head[:, None], actual.shape)
+    )
+
+
+def test_a_stored_padding_tail_broadcasts_the_active_prefix(
+    checkpoint: dict[str, Any],
+) -> None:
+    """The published checkpoint stores 96 active coefficients in a 128-wide
+    vector; the tail is storage padding, not coefficients, so it is dropped
+    before the broadcast."""
+    stored = np.zeros(_A_LOG_STORED_LEN, dtype=np.float32)
+    stored[:_KDA_NUM_HEADS] = np.linspace(
+        -2.0, 1.0, _KDA_NUM_HEADS, dtype=np.float32
+    )
+
+    actual = _to_numpy(_a_log_converted(checkpoint, stored))
+
+    np.testing.assert_array_equal(
+        actual, np.broadcast_to(stored[:_KDA_NUM_HEADS, None], actual.shape)
+    )
+
+
+def test_a_nonzero_padding_tail_is_refused(
+    checkpoint: dict[str, Any],
+) -> None:
+    """A nonzero tail cannot be reinterpreted as per-key coefficients: the
+    adapter would have to guess which convention the checkpoint meant."""
+    stored = np.zeros(_A_LOG_STORED_LEN, dtype=np.float32)
+    stored[:_KDA_NUM_HEADS] = 1.0
+    stored[-1] = 0.5
+
+    with pytest.raises(ValueError, match="padding must be exactly zero"):
+        _a_log_converted(checkpoint, stored)
+
+
+def test_a_signed_zero_padding_tail_is_valid(
+    checkpoint: dict[str, Any],
+) -> None:
+    """``-0.0`` is the same stored padding as ``0.0``; refusing it would
+    reject a checkpoint over its sign bit."""
+    stored = np.zeros(_A_LOG_STORED_LEN, dtype=np.float32)
+    stored[:_KDA_NUM_HEADS] = 1.0
+    stored[_KDA_NUM_HEADS] = -0.0
+
+    actual = _to_numpy(_a_log_converted(checkpoint, stored))
+
+    assert actual.shape == (_KDA_NUM_HEADS, _KDA_HEAD_DIM)
+
+
+def test_a_short_a_log_is_refused(checkpoint: dict[str, Any]) -> None:
+    """Fewer coefficients than heads would leave a head on a stale decay."""
+    with pytest.raises(ValueError, match="at least"):
+        _a_log_converted(checkpoint, np.ones(_KDA_NUM_HEADS - 1, np.float32))
+
+
+def test_a_matrix_shaped_a_log_is_refused(checkpoint: dict[str, Any]) -> None:
+    """Already-expanded coefficients read as per-head storage under the
+    vector convention, so the shape is refused rather than guessed at."""
+    matrix = np.ones((_KDA_NUM_HEADS, _KDA_HEAD_DIM), dtype=np.float32)
+
+    with pytest.raises(ValueError, match="per-head"):
+        _a_log_converted(checkpoint, matrix)
+
+
+def test_a_nonfinite_active_a_log_is_refused(
+    checkpoint: dict[str, Any],
+) -> None:
+    """A NaN decay would make every step's state non-finite, which surfaces
+    as NaN logits long after the load."""
+    stored = np.ones(_A_LOG_STORED_LEN, dtype=np.float32)
+    stored[0] = np.nan
+
+    with pytest.raises(ValueError, match="must be finite"):
+        _a_log_converted(checkpoint, stored)
+
+
 def test_routed_experts_are_the_checkpoints_own_buffers(
     checkpoint: dict[str, Any], converted: dict[str, WeightData]
 ) -> None:

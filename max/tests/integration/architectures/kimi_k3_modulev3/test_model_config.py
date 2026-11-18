@@ -17,24 +17,41 @@ CPU-only: everything here is config resolution, not graph construction.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
-from max.driver import DeviceSpec
+from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
+    KVCacheParams,
     MHAKVCacheParams,
     MLAKVCacheParams,
     MultiKVCacheParams,
+    RecurrentStateParams,
 )
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.kimi_k3_modulev3.model_config import (
     KimiK3Config,
 )
-from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
+from max.pipelines.architectures.kimi_k3_modulev3.state_cache import (
+    CONV_LEAF_ID,
+    RECURRENT_LEAF_ID,
+    STATE_CACHE_KEY,
+    attn_cache,
+    kda_state_regions,
+)
+from max.pipelines.lib import (
+    KVCacheConfig,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
+from max.pipelines.lib.registration_runtime import ModuleRuntime
 from max.pipelines.speculative import SpeculativeConfig
+from max.tensor.sharding import DeviceMesh
 
 _HIDDEN_SIZE = 1024
 _NUM_ATTENTION_HEADS = 8
@@ -48,6 +65,9 @@ _KDA_LAYERS = [1, 2, 3, 5, 6, 7]
 _KDA_NUM_HEADS = 8
 _KDA_HEAD_DIM = 32
 _KDA_CONV_KERNEL_SIZE = 4
+_NUM_EXPERTS = 8
+_TOP_K = 2
+_RUD_EXPERT_LATENT = 512
 
 _EXPECTED_HEAD_DIM = _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM
 _EXPECTED_NUM_FULL_ATTN_LAYERS = len(_FULL_ATTN_LAYERS)
@@ -235,9 +255,24 @@ def test_stored_kv_params_match_construct_kv_params(
     )
 
 
+def _state_leaf(config: KimiK3Config) -> RecurrentStateParams:
+    """The KDA state child of the ``{attn, state}`` cache tree."""
+    assert isinstance(config.kv_params, MultiKVCacheParams)
+    state = config.kv_params.children[STATE_CACHE_KEY]
+    assert isinstance(state, RecurrentStateParams)
+    return state
+
+
 def test_state_bytes_match_the_declared_pool_shapes(
     configs: tuple[Any, Any, Any],
 ) -> None:
+    """The declared leaf and the priced figure are the same number.
+
+    ``kda_state_regions`` sizes the pool the cache manager allocates while
+    ``per_request_state_bytes`` is what memory planning charges, and nothing
+    else reads both -- a dtype or head-split change applied to one of them
+    alone would otherwise pass every test here.
+    """
     _, pipeline_config, _ = configs
 
     config = KimiK3Config.initialize(
@@ -248,6 +283,164 @@ def test_state_bytes_match_the_declared_pool_shapes(
     assert config.recurrent_state_dtype == DType.float32
     assert config.per_request_state_bytes() == _STATE_BYTES_PER_REQUEST
     assert config.per_request_state_bytes() > 0
+    assert _state_leaf(config).bytes_per_state == _STATE_BYTES_PER_REQUEST
+    assert _state_leaf(config).bytes_per_state == (
+        config.per_request_state_bytes()
+    )
+
+
+def test_state_bytes_follow_the_head_split_across_devices(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """Each device's share of the state is ``1 / n_devices`` of the whole.
+
+    ``per_request_state_bytes`` is per device, while the cache's declared
+    state sums over the devices, so the total is unchanged by the split -- a
+    figure that did not follow the head split would under-report the pool by
+    the device count.
+    """
+    _huggingface_config, pipeline_config, model_config = configs
+    model_config.device_specs = [
+        DeviceSpec(id=i, device_type="gpu") for i in range(2)
+    ]
+
+    config = KimiK3Config.initialize(
+        pipeline_config, model_config, max_seq_len=_MAX_LENGTH
+    )
+
+    assert config.tensor_parallel_degree == 2
+    assert config.per_request_state_bytes() == _STATE_BYTES_PER_REQUEST // 2
+    assert (
+        len(config.devices) * config.per_request_state_bytes()
+        == _STATE_BYTES_PER_REQUEST
+    )
+    # The declared leaf is the per-device shard too, not the whole state.
+    assert _state_leaf(config).bytes_per_state == (
+        config.per_request_state_bytes()
+    )
+    assert (
+        config.tensor_parallel_degree * _state_leaf(config).bytes_per_state
+        == _STATE_BYTES_PER_REQUEST
+    )
+
+
+def test_declared_state_regions_are_one_device_shard(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """Each region's row is a device's slice of the channels and heads.
+
+    The conv window splits on its fused q/k/v width and the recurrent state
+    on its head count, both by the TP degree -- a region declared at full
+    width would allocate the whole pool on every device.
+    """
+    _, pipeline_config, model_config = configs
+    model_config.device_specs = [
+        DeviceSpec(id=i, device_type="gpu") for i in range(2)
+    ]
+
+    config = KimiK3Config.initialize(
+        pipeline_config, model_config, max_seq_len=_MAX_LENGTH
+    )
+    regions = _state_leaf(config).regions
+
+    assert [region.leaf_id for region in regions] == [
+        CONV_LEAF_ID,
+        RECURRENT_LEAF_ID,
+    ]
+    conv, recurrent = regions
+    assert conv.num_layers == len(_KDA_LAYERS)
+    assert conv.row_shape == (
+        3 * _KDA_NUM_HEADS * _KDA_HEAD_DIM // 2,
+        _KDA_CONV_KERNEL_SIZE - 1,
+    )
+    assert conv.dtype == DType.bfloat16
+    assert recurrent.num_layers == len(_KDA_LAYERS)
+    assert recurrent.row_shape == (
+        _KDA_NUM_HEADS // 2,
+        _KDA_HEAD_DIM,
+        _KDA_HEAD_DIM,
+    )
+    assert recurrent.dtype == DType.float32
+
+
+def test_a_tp_degree_the_state_cannot_split_by_is_refused() -> None:
+    """A degree that leaves a rank a fraction of a head is refused here.
+
+    ``initialize`` reaches it only through the attention leaf's own split
+    check, so the state's refusal is pinned against ``kda_state_regions``
+    directly -- otherwise nothing observes it.
+    """
+    with pytest.raises(ValueError, match="divide by the tensor-parallel"):
+        kda_state_regions(
+            num_kda_layers=len(_KDA_LAYERS),
+            conv_dim=3 * _KDA_NUM_HEADS * _KDA_HEAD_DIM,
+            conv_kernel_size=_KDA_CONV_KERNEL_SIZE,
+            num_heads=_KDA_NUM_HEADS,
+            head_dim=_KDA_HEAD_DIM,
+            conv_dtype=DType.bfloat16,
+            recurrent_dtype=DType.float32,
+            num_devices=3,
+        )
+
+
+def _state_dtypes(
+    configs: tuple[Any, Any, Any],
+    *,
+    encoding: str = "bfloat16",
+    state_pool_dtype: str | None = None,
+) -> tuple[DType, DType]:
+    """Resolves ``(conv, recurrent)`` for one checkpoint and pool setting."""
+    _, pipeline_config, model_config = configs
+    model_config.quantization_encoding = encoding
+    model_config.weight_path = [Path(f"model-{encoding}.safetensors")]
+    return KimiK3Config.declared_state_dtypes(
+        pipeline_config,
+        KVCacheConfig(state_pool_dtype=state_pool_dtype),
+    )
+
+
+def test_the_conv_leaf_follows_the_resolved_encoding(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """The conv history is kept at the model's own precision.
+
+    The leaf is declared before a config exists and the budget is priced from
+    the resolved dtype, so reading the two off different encodings makes
+    ``check_state_budget`` fail at load on a float32 checkpoint.
+    """
+    assert _state_dtypes(configs)[0] == DType.bfloat16
+    assert _state_dtypes(configs, encoding="float32")[0] == DType.float32
+
+
+def test_a_pool_override_moves_the_recurrent_dtype_alone(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """``--state-pool-dtype`` is the recurrent pool's knob only.
+
+    The conv leaf follows the model dtype either way; moving it with the
+    override would round the conv history differently from the graph the
+    checkpoint was trained against.
+    """
+    assert _state_dtypes(configs, state_pool_dtype="bfloat16") == (
+        DType.bfloat16,
+        DType.bfloat16,
+    )
+    assert _state_dtypes(
+        configs, encoding="float32", state_pool_dtype="bfloat16"
+    ) == (DType.float32, DType.bfloat16)
+    assert _state_dtypes(configs, state_pool_dtype="float32") == (
+        DType.bfloat16,
+        DType.float32,
+    )
+
+
+def test_an_unsupported_pool_dtype_is_rejected(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """A pool dtype the kernels cannot bind is refused here rather than at
+    the first launch."""
+    with pytest.raises(ValueError, match="state_pool_dtype"):
+        _state_dtypes(configs, state_pool_dtype="float8_e4m3fn")
 
 
 def test_latent_cache_reachable_at_real_k3_shape_and_tp(
@@ -273,6 +466,45 @@ def test_latent_cache_reachable_at_real_k3_shape_and_tp(
         config.attn_kv_params.head_dim
         == _REAL_KV_LORA_RANK + _REAL_QK_ROPE_HEAD_DIM
     )
+
+
+def test_fp8_kv_cache_format_keeps_the_latent_path(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """``--kv-cache-format float8_e4m3fn`` must halve the latent, not drop it.
+
+    ``supports_mla_latent_cache`` admits exactly two cache dtypes, so an
+    unrecognised one silently falls back to the decompressed cache at 64x the
+    bytes -- a memory regression wearing the costume of a memory saving. The
+    fp8 latent is also SCALE-FREE: ``construct_kv_params`` passes no
+    ``kvcache_quant_config``, and the MLA kernels' fp8 arms are gated on
+    ``not CacheType.quantization_enabled``, so a scale config here would route
+    to a quantized cache those arms do not serve.
+    """
+    huggingface_config, pipeline_config, model_config = configs
+    text_config = huggingface_config.text_config
+    text_config.kv_lora_rank = _REAL_KV_LORA_RANK
+    text_config.qk_rope_head_dim = _REAL_QK_ROPE_HEAD_DIM
+    text_config.num_attention_heads = _REAL_NUM_ATTENTION_HEADS
+    devices = [DeviceRef.GPU(i) for i in range(_TP_DEGREE)]
+
+    def _params(cache_dtype: DType) -> KVCacheParams:
+        return attn_cache(
+            KimiK3Config.construct_kv_params(
+                huggingface_config=huggingface_config,
+                pipeline_config=pipeline_config,
+                devices=devices,
+                kv_cache_config=model_config.kv_cache,
+                cache_dtype=cache_dtype,
+            )
+        )
+
+    fp8 = _params(DType.float8_e4m3fn)
+    assert isinstance(fp8, MLAKVCacheParams)
+    assert fp8.head_dim == _REAL_KV_LORA_RANK + _REAL_QK_ROPE_HEAD_DIM
+    assert fp8.is_fp8_kv_dtype
+    assert not fp8.quantized_kv_cache
+    assert fp8.row_bytes * 2 == _params(DType.bfloat16).row_bytes
 
 
 def test_a_non_dspark_speculative_config_sizes_the_plain_leaf(
@@ -353,3 +585,268 @@ def test_data_parallelism_is_rejected(configs: tuple[Any, Any, Any]) -> None:
         KimiK3Config.initialize(
             pipeline_config, model_config, max_seq_len=_MAX_LENGTH
         )
+
+
+def _row_bound(
+    config: KimiK3Config,
+    *,
+    speculative: Any = None,
+    max_batch_size: int | None = _MAX_BATCH_SIZE,
+    enable_chunked_prefill: bool = True,
+    max_batch_total_tokens: int | None = None,
+) -> int:
+    """Runs the bound over a stand-in carrying only the fields it reads."""
+    pipeline_config = SimpleNamespace(
+        speculative=speculative,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=max_batch_size,
+            max_batch_input_tokens=_MAX_BATCH_INPUT_TOKENS,
+            max_batch_total_tokens=max_batch_total_tokens,
+            enable_chunked_prefill=enable_chunked_prefill,
+        ),
+    )
+    return config.routed_expert_row_bound(cast(PipelineConfig, pipeline_config))
+
+
+def _bound_config(configs: tuple[Any, Any, Any]) -> KimiK3Config:
+    _, pipeline_config, _ = configs
+    return KimiK3Config.initialize(
+        pipeline_config, pipeline_config.model, max_seq_len=_MAX_LENGTH
+    )
+
+
+def test_the_default_row_bound_is_the_input_budget(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """Chunked prefill makes the input budget a hard cap."""
+    assert _row_bound(_bound_config(configs)) == _MAX_BATCH_INPUT_TOKENS
+
+
+def test_a_verify_step_adds_its_draft_rows(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """Each request can carry ``num_speculative_tokens`` rows the budget never
+    charged, on top of a full prefill chunk in a mixed batch."""
+    bound = _row_bound(
+        _bound_config(configs),
+        speculative=SimpleNamespace(num_speculative_tokens=8),
+    )
+
+    assert bound == _MAX_BATCH_INPUT_TOKENS + 8 * _MAX_BATCH_SIZE
+
+
+def test_an_unset_batch_size_falls_back_to_the_token_budget(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """The scheduler holds ``max_batch_size`` at or below the input budget."""
+    bound = _row_bound(
+        _bound_config(configs),
+        speculative=SimpleNamespace(num_speculative_tokens=2),
+        max_batch_size=None,
+    )
+
+    assert bound == 3 * _MAX_BATCH_INPUT_TOKENS
+
+
+def test_speculation_disabled_or_unresolved_adds_nothing(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """Both read as zero, which is how the scheduler reads them too."""
+    config = _bound_config(configs)
+
+    assert (
+        _row_bound(
+            config, speculative=SimpleNamespace(num_speculative_tokens=0)
+        )
+        == _MAX_BATCH_INPUT_TOKENS
+    )
+    assert (
+        _row_bound(
+            config, speculative=SimpleNamespace(num_speculative_tokens=None)
+        )
+        == _MAX_BATCH_INPUT_TOKENS
+    )
+
+
+def test_without_chunking_the_total_context_budget_bounds(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """An unchunked batch is admitted whole, so the context budget is what it
+    can hold."""
+    config = _bound_config(configs)
+    total = 4 * _MAX_BATCH_INPUT_TOKENS
+
+    assert (
+        _row_bound(
+            config,
+            enable_chunked_prefill=False,
+            max_batch_total_tokens=total,
+        )
+        == total
+    )
+    assert (
+        _row_bound(
+            config,
+            speculative=SimpleNamespace(num_speculative_tokens=8),
+            enable_chunked_prefill=False,
+            max_batch_total_tokens=total,
+        )
+        == total + 8 * _MAX_BATCH_SIZE
+    )
+
+
+def test_without_chunking_or_a_total_budget_the_batch_size_bounds(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """No context budget leaves a full batch's worth of sequences: here
+    ``max_seq_len * max_batch_size`` is past the input budget, so it is what
+    binds."""
+    batch_size = 32
+    assert batch_size * _MAX_LENGTH > _MAX_BATCH_INPUT_TOKENS
+
+    assert _row_bound(
+        _bound_config(configs),
+        enable_chunked_prefill=False,
+        max_batch_size=batch_size,
+    ) == (_MAX_LENGTH * batch_size)
+
+
+def test_nothing_bounding_a_prefill_batch_is_refused(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """A bound the routed matmul sizes itself from must never be a guess."""
+    with pytest.raises(ValueError, match="nothing bounds a context-encoding"):
+        _row_bound(
+            _bound_config(configs),
+            enable_chunked_prefill=False,
+            max_batch_size=None,
+        )
+
+
+def _ep_runtime(
+    *,
+    ep_size: int,
+    n_devices: int,
+    use_allreduce: bool = False,
+    max_batch_input_tokens: int = _MAX_BATCH_INPUT_TOKENS,
+) -> ModuleRuntime:
+    """A deployment over a simulated mesh.
+
+    The exchange's sizing reads the mesh's device count alone, so the mesh is
+    host devices: this target touches no accelerator.
+    """
+    return ModuleRuntime(
+        mesh=DeviceMesh(
+            tuple(CPU() for _ in range(n_devices)),
+            (n_devices,),
+            ("ep",),
+        ),
+        data_parallel_degree=1,
+        max_batch_input_tokens=max_batch_input_tokens,
+        max_batch_total_tokens=None,
+        ep_size=ep_size,
+        ep_use_allreduce=use_allreduce,
+        max_batch_size=_MAX_BATCH_SIZE,
+    )
+
+
+def test_ep_buffers_hold_one_device_shard(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """The dispatch sends one device's shard of the batch.
+
+    ``grouped_matmul_bounds`` multiplies this back out by the rank count, so
+    the grouped matmul's M grid still covers the whole batch: the exchange
+    shards the tokens, and what one device receives is bounded by the batch.
+    """
+    config = _bound_config(configs)
+
+    for ep_size in (2, 4, 8):
+        ep = config.expert_parallel_config(
+            _ep_runtime(ep_size=ep_size, n_devices=ep_size)
+        )
+        assert ep.max_tokens_per_rank == _MAX_BATCH_INPUT_TOKENS // ep_size
+        assert ep.n_gpus_per_node == ep_size
+        assert ep.n_nodes == 1
+
+
+def test_ep_buffers_follow_a_raised_token_budget(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """A configured budget above the default has to reach the buffers."""
+    config = _bound_config(configs)
+    raised = 4 * _MAX_BATCH_INPUT_TOKENS
+
+    ep = config.expert_parallel_config(
+        _ep_runtime(
+            ep_size=2,
+            n_devices=2,
+            max_batch_input_tokens=raised,
+        )
+    )
+
+    assert ep.max_tokens_per_rank == raised // 2
+
+
+def test_the_allreduce_variant_holds_the_whole_batch(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """An allreduce combine crosses no reduce-scatter, so no rank holds a
+    shard and the buffer has to take the whole batch."""
+    ep = _bound_config(configs).expert_parallel_config(
+        _ep_runtime(ep_size=2, n_devices=2, use_allreduce=True)
+    )
+
+    assert ep.use_allreduce
+    assert ep.max_tokens_per_rank == _MAX_BATCH_INPUT_TOKENS
+
+
+def test_dispatch_width_is_the_latent(configs: tuple[Any, Any, Any]) -> None:
+    """K3's experts read the latent, so dispatching at model width would hand
+    the grouped matmuls the wrong width."""
+    ep = _bound_config(configs).expert_parallel_config(
+        _ep_runtime(ep_size=2, n_devices=2)
+    )
+
+    assert ep.hidden_size == _RUD_EXPERT_LATENT
+    assert ep.n_experts == _NUM_EXPERTS
+    assert ep.top_k == _TOP_K
+    assert ep.dispatch_dtype == DType.bfloat16
+    assert ep.combine_dtype == DType.bfloat16
+
+
+def test_a_multi_node_deployment_is_refused_without_an_mpi_environment(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """``ep_size`` is the whole deployment, so a mesh smaller than it implies
+    several nodes -- which the exchange cannot start without NVSHMEM."""
+    with pytest.raises(ValueError, match="multi-node EP"):
+        _bound_config(configs).expert_parallel_config(
+            _ep_runtime(ep_size=8, n_devices=4)
+        )
+
+
+def test_mxfp4_experts_are_refused_under_expert_parallelism(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """The quantized dispatch has no expert-parallel transport yet, and a
+    silently bf16-dispatching MXFP4 expert set would hand the grouped matmul
+    packed weights."""
+    config = replace(
+        _bound_config(configs),
+        quant_config=QuantConfig.mxfp4(mlp_quantized_layers=[0]),
+    )
+
+    with pytest.raises(NotImplementedError, match="MXFP4"):
+        config.expert_parallel_config(_ep_runtime(ep_size=2, n_devices=2))
+
+
+def test_a_speculative_pairing_is_refused_under_expert_parallelism(
+    configs: tuple[Any, Any, Any],
+) -> None:
+    """The DSpark draft pairs with the TP trunk, and the fused graph takes no
+    exchange buffers."""
+    config = replace(_bound_config(configs), spec_num_draft_tokens=8)
+
+    with pytest.raises(NotImplementedError, match="tensor parallelism"):
+        config.expert_parallel_config(_ep_runtime(ep_size=2, n_devices=2))

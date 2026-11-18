@@ -140,13 +140,36 @@ modular_py_test(
     name = "model_config_tests_cpu",
     srcs = ["test_model_config.py"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn:core",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_py_test(
+    name = "resolution_tests_cpu",
+    srcs = ["test_resolution.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# The selection is arithmetic over the config and the host's architecture
+# name; the kernels it selects are graded by the GPU tests beside this one.
+modular_py_test(
+    name = "amd_w4a8_validation_tests_cpu",
+    srcs = ["test_amd_w4a8_validation.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
 
@@ -935,6 +958,55 @@ modular_eager_py_test(
 # docstring: running both gate arms in one pytest process produced a
 # spurious failure in whichever ran second, traced to the experimental
 # Tensor runtime's compiled-graph caching, not a real divergence.
+# One KDA row against itself, packed alone and packed beside another row:
+# the recurrence must not see a batch neighbour. Runs on any accelerator.
+modular_eager_py_test(
+    name = "kda_batch_invariance_tests_gpu",
+    size = "large",
+    srcs = ["test_kda_batch_invariance.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+# The published checkpoint's own KDA width: 96 heads of 128, bf16 q/k/v with
+# an fp32 recurrent pool, which makes the weights an order of magnitude larger
+# than the fixture-geometry KDA tests beside it.
+modular_eager_py_test(
+    name = "kda_finiteness_tests_gpu",
+    size = "enormous",
+    srcs = ["test_kda_finiteness.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "6",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
 modular_eager_py_test(
     name = "kda_attention_parity_original_gate_tests_gpu",
     size = "enormous",
