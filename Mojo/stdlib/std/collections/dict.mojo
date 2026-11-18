@@ -1071,6 +1071,7 @@ struct Dict[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @inline(.always)
     def __len__(self) -> Int:
         """The number of elements currently stored in the dictionary.
 
@@ -1079,6 +1080,7 @@ struct Dict[
         """
         return self._table._len
 
+    @inline(.always)
     def __bool__(self) -> Bool:
         """Check if the dictionary is empty or not.
 

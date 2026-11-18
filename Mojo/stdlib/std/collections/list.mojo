@@ -816,6 +816,7 @@ struct List[T: AnyType, /](
         """
         return self._len
 
+    @inline(.always)
     def __bool__(self) -> Bool:
         """Checks whether the list has any elements or not.
 
