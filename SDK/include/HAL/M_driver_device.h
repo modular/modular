@@ -72,6 +72,9 @@ typedef M_driver_status_t (*M_driver_device_get_func_ptr_t)(
  * - "max_queues_per_context": write an `int64_t`, the most queues one context
  *   can hold at once; `M_driver_queue_create` fails past it. Optional; without
  *   it, callers assume no fixed limit.
+ * - "max_contexts_per_device": write an `int64_t`, the most contexts the device
+ *   can hold at once; `M_driver_context_create` fails past it. Optional;
+ *   without it, callers assume no fixed limit.
  */
 #define M_DRIVER_DEVICE_PROPERTY_MAX_LEN 256
 #define M_DRIVER_DEVICE_PROPERTY_DLPACK_DEVICE "dlpack_device"
@@ -81,6 +84,8 @@ typedef M_driver_status_t (*M_driver_device_get_func_ptr_t)(
 #define M_DRIVER_DEVICE_PROPERTY_HOST_UNIFIED "host_unified"
 #define M_DRIVER_DEVICE_PROPERTY_MAX_ALLOCATION_SIZE "max_allocation_size"
 #define M_DRIVER_DEVICE_PROPERTY_MAX_QUEUES_PER_CONTEXT "max_queues_per_context"
+#define M_DRIVER_DEVICE_PROPERTY_MAX_CONTEXTS_PER_DEVICE                       \
+  "max_contexts_per_device"
 
 /**
  * Retrieve an integer-valued property of a device, as 64-bit integer.

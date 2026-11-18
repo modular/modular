@@ -218,6 +218,16 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
             return None
         return Int(limit)
 
+    def max_contexts_per_device(self) raises HALError -> Optional[Int]:
+        """Returns the most contexts this device can hold at once, or `None`
+        when the plugin sets no limit."""
+        var maybe_limit = self._raw[].get_optional_device_property[
+            "max_contexts_per_device", Int64
+        ](self._handle)
+        __guard case .Some(limit) = maybe_limit else:
+            return None
+        return Int(limit)
+
     def name(self) raises HALError -> String:
         """Queries the device's human-readable name."""
         var buf = Array[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)

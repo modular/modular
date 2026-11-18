@@ -97,6 +97,9 @@ bool MojoHAL_DeviceContext_canAccess(MojoHALContextBox *ctx,
                                      MojoHALContextBox *peer);
 const char *MojoHAL_DeviceContext_enablePeerAccess(MojoHALContextBox *ctx,
                                                    MojoHALContextBox *peer);
+const char *MojoHAL_DeviceContext_maxContextsPerDevice(bool *out_has_limit,
+                                                       int64_t *out_limit,
+                                                       MojoHALContextBox *ctx);
 bool MojoHAL_DeviceContext_isCompatible(MojoHALContextBox *ctx);
 const char *MojoHAL_DeviceContext_isHostUnified(bool *out_unified,
                                                 MojoHALContextBox *ctx);
@@ -323,13 +326,19 @@ ErrorOr<DeviceContextRef> Device::createContext() {
   if (isVirtual())
     return DeviceContextRef::take(
         new DeviceContext(/*mojoCtx=*/nullptr, DeviceRef::copy(this)));
+  bool hasLimit = false;
+  int64_t limit = 0;
+  if (const char *err = MojoHAL_DeviceContext_maxContextsPerDevice(
+          &hasLimit, &limit, mojoCtx_))
+    return takeError(err);
   MojoHALContextBox *ctx = nullptr;
-  if (const char *err =
-          MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_)) {
-    // Some plugins allow one context per device, and this Device already
-    // holds it, so share that one (and its stream) instead.
-    MojoHAL_strfree(err);
+  if (hasLimit && limit == 1) {
+    // This Device holds the device's only context, so share it (and its
+    // stream).
     MojoHAL_DeviceContext_copy(&ctx, mojoCtx_);
+  } else if (const char *err =
+                 MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_)) {
+    return takeError(err);
   }
   return DeviceContextRef::take(new DeviceContext(ctx, DeviceRef::copy(this)));
 }

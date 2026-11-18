@@ -178,7 +178,9 @@ public:
   /// report false.
   ErrorOr<bool> isHostUnified() const;
 
-  /// Creates a new context (with its own stream) on this device.
+  /// Creates a new context (with its own stream) on this device. A device
+  /// whose plugin reports `max_contexts_per_device` of 1 shares this Device's
+  /// own context instead.
   ErrorOr<DeviceContextRef> createContext();
 
   /// DLPack device descriptor for this device. Mirrors the legacy

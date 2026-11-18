@@ -34,6 +34,7 @@ using M::ErrorOrSuccess;
 using M::Driver::Device;
 using M::Driver::DeviceBufferRef;
 using M::Driver::DeviceContextRef;
+using M::Driver::DeviceRef;
 
 namespace {
 
@@ -126,4 +127,24 @@ TEST(HALBridgeErrorTest, RefusedReleaseKeepsOwnership) {
   MockRefusal refusal("M_driver_memory_unwrap");
   EXPECT_EQ((*buffer)->releasePtr(), nullptr);
   EXPECT_EQ((*buffer)->ptr(), ptr);
+}
+
+TEST(HALBridgeErrorTest, RefusedContextIsAnError) {
+  ErrorOr<DeviceRef> device = Device::create(Device::gpuAPI, 0);
+  ASSERT_FALSE(device.isError()) << device.getError();
+
+  MockRefusal refusal("M_driver_context_create");
+  EXPECT_TRUE((*device)->createContext().isError());
+}
+
+// Device 1, so that contexts the other tests hold on device 0 don't count
+// against the limit.
+TEST(HALBridgeErrorTest, OneContextPerDeviceIsShared) {
+  ScopedEnvVar limit("MOCK_MAX_CONTEXTS_PER_DEVICE", "1");
+  ErrorOr<DeviceRef> device = Device::create(Device::gpuAPI, 1);
+  ASSERT_FALSE(device.isError()) << device.getError();
+  ErrorOr<DeviceContextRef> first = (*device)->createContext();
+  ASSERT_FALSE(first.isError()) << first.getError();
+  ErrorOr<DeviceContextRef> second = (*device)->createContext();
+  ASSERT_FALSE(second.isError()) << second.getError();
 }

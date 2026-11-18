@@ -505,6 +505,21 @@ def MojoHAL_DeviceContext_maxAllocationSize(
 
 
 @export
+def MojoHAL_DeviceContext_maxContextsPerDevice(
+    out_has_limit: _OutPtr[Bool],
+    out_limit: _OutPtr[Int64],
+    ctx: _DeviceContextBoxPtr,
+) abi("C") -> _CString[]:
+    try:
+        var limit = ctx[].unwrap_hal()._device[].max_contexts_per_device()
+        out_has_limit[] = Bool(limit)
+        out_limit[] = Int64(limit.or_else(0))
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
 def MojoHAL_DeviceContext_isCompatible(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> Bool:
