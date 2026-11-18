@@ -670,12 +670,18 @@ struct MergeParallelMatmulPattern
     });
 
     auto oldMatmulType = cast<TensorType>(matmulUsers.front().getType());
+    auto weightDtype = matmulUsers.front().getInputB().getType().getDtype();
     TypedAttr expectedNumberOfRows =
         oldMatmulType.getDim(oldMatmulType.getRank() - 2);
     if (!llvm::all_of(matmulUsers, [&](MatmulOpType matmulOp) {
           auto resultType = matmulOp.getType();
 
           if (!resultType.hasRank())
+            return false;
+
+          // One merged matmul has one weight and one result dtype.
+          if (resultType.getDtype() != oldMatmulType.getDtype() ||
+              matmulOp.getInputB().getType().getDtype() != weightDtype)
             return false;
 
           if (resultType.getRank() != oldMatmulType.getRank())
@@ -701,8 +707,8 @@ struct MergeParallelMatmulPattern
           return true;
         })) {
       return rewriter.notifyMatchFailure(
-          op, "Parallel matmuls must have the same number of rows, a static "
-              "number of columns and constant weights");
+          op, "Parallel matmuls must have the same dtypes and number of rows, "
+              "a static number of columns and constant weights");
     }
 
     int64_t innerDimIndex = oldMatmulType.getRank() - 1;
