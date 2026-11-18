@@ -441,9 +441,6 @@ struct _HALDeviceContext[target: CompilationTarget = default_accelerator()](
     var _device: ArcPointer[_HALDevice[Self.device_spec]]
     var _context: ArcPointer[Context[Self.device_spec]]
     var _stream: ArcPointer[Stream[Self.device_spec]]
-    # Null until the C++ runtime shim provides it; read by the CUDA/HIP
-    # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
-    var _handle: _DeviceContextPtr[mut=True]
 
 
 struct DeviceContext[target: CompilationTarget = default_accelerator()](
@@ -746,7 +743,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             var hal_context = hal_device[].get_context()
             var hal_stream = hal_context[].create_stream()
             self._impl = Self._HAL(
-                hal_driver^, hal_device^, hal_context^, hal_stream^, None
+                hal_driver^, hal_device^, hal_context^, hal_stream^
             )
 
     # ===-------------------------------------------------------------------===#
@@ -928,12 +925,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         make on the context directly.
 
         Returns:
-            The handle of the backend context this wrapper holds.
+            The handle of the backend context this wrapper holds, or null for
+            the HAL backend, which has no native context handle.
         """
         comptime if use_legacy_backend():
             return self._impl._handle
         else:
-            return self._impl._handle
+            return None
 
     # ===-------------------------------------------------------------------===#
     # Function enqueuer

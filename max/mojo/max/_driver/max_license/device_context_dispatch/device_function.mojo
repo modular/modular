@@ -47,7 +47,6 @@ from max.gpu.host import (
     _launch_args,
 )
 from max.gpu.host._driver_common import _check_dim_in_range
-from max.gpu.host._driver_handles import _DeviceFunctionPtr
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from max._driver.max_license.hal import (
@@ -178,9 +177,6 @@ struct _HALDeviceFunction[
 
     var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_DeviceFunctionInner]
-    # Null until the C++ runtime shim provides it; read by the CUDA/HIP
-    # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
-    var _handle: _DeviceFunctionPtr[mut=True]
     # The compilation result for `Self._wrapped_func`: its assembly and
     # linkage name.
     var _func_info: CompiledFunctionInfo[
@@ -319,7 +315,6 @@ struct DeviceFunction[
         self._impl = Self._HAL(
             ctx.into_unknown_target(),
             ArcPointer(_DeviceFunctionInner(func_handle, ctx._impl._context)),
-            None,
             info,
         )
 

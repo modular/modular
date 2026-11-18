@@ -820,13 +820,6 @@ public:
     return mojoCtx_;
   }
 
-  /// Adopts a heap-boxed Mojo `DeviceContext` produced by the Mojo
-  /// a boxed Mojo `DeviceContext` (the reverse of `mojoHandle()`): the returned
-  /// C++ context takes ownership of `mojoBox` and releases it when its
-  /// refcount reaches zero. Used by the graph runtime to materialize a C++
-  /// `DeviceContext` from the opaque handle a kernel hands back.
-  static ErrorOr<DeviceContextRef> adoptMojoBox(void *mojoBox);
-
 private:
   friend class Device;
   friend class DeviceBuffer;

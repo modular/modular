@@ -100,7 +100,7 @@ comptime _RawMemoryPtr = Pointer[Byte, MutUntrackedOrigin]
 comptime _OutPtr = Pointer[mut=True, _, MutUntrackedOrigin]
 
 
-def _err_cstr(msg: String) -> _CString[]:
+def _alloc_cstr(msg: String) -> Pointer[c_char, MutUntrackedOrigin]:
     """Copies `msg` into a heap-allocated null-terminated C string.
 
     Freed by the C++ caller via `MojoHAL_strfree`.
@@ -109,13 +109,17 @@ def _err_cstr(msg: String) -> _CString[]:
     var p = alloc[UInt8]({length = n + 1}).unsafe_leak()
     unsafe_memcpy(dest=p, src=msg.unsafe_ptr(), count=n)
     p[unsafe_offset=n] = 0
-    return CStringSpan(unsafe_from_ptr=p.unsafe_bitcast[c_char]().as_imm())
+    return p.unsafe_bitcast[c_char]()
+
+
+def _err_cstr(msg: String) -> _CString[]:
+    return CStringSpan(unsafe_from_ptr=_alloc_cstr(msg).as_imm())
 
 
 @export
 def MojoHAL_strfree(s: _CString[]) abi("C"):
     if case .Some(s) = s:
-        # `_err_cstr` allocated this via `alloc[UInt8]`. `CStringSpan` hands
+        # `_alloc_cstr` allocated this via `alloc[UInt8]`. `CStringSpan` hands
         # back a safe immutable pointer, so rebuild the matching mutable,
         # untracked `UInt8` allocation pointer from its address and free that.
         var addr = Int(s.ptr())
@@ -240,14 +244,6 @@ def MojoHAL_DeviceContext_synchronize(
         return None
     except e:
         return _err_cstr(String(e))
-
-
-def _alloc_cstr(msg: String) -> Pointer[c_char, MutUntrackedOrigin]:
-    var n = msg.byte_length()
-    var p = alloc[UInt8]({length = n + 1}).unsafe_leak()
-    unsafe_memcpy(dest=p, src=msg.unsafe_ptr(), count=n)
-    p[unsafe_offset=n] = 0
-    return p.unsafe_bitcast[c_char]()
 
 
 # ===---------------------------------------------------------------------=== #
@@ -586,7 +582,7 @@ def MojoHAL_DeviceContext_getAttribute(
 
 
 # ===---------------------------------------------------------------------=== #
-# Sub-buffers / ownership / memmap (phase 2)
+# Sub-buffers / ownership / memmap
 # ===---------------------------------------------------------------------=== #
 
 
@@ -746,7 +742,7 @@ def MojoHAL_MmapBuffer_release(buf: _DeviceBufferBoxPtr) abi("C"):
 
 
 # ===---------------------------------------------------------------------=== #
-# Streams / events / thread binding (phase 3)
+# Streams / events / thread binding
 # ===---------------------------------------------------------------------=== #
 
 

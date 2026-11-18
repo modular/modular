@@ -229,12 +229,11 @@ Device::API mapAPI(StringRef api) {
     if (api == known)
       return known;
   // Plugins are few and loaded once, so the set stays small, and every call
-  // after a plugin's first device takes only the shared lock: `adoptMojoBox`
-  // calls this on the kernel-execution hot path. Both are leaked so that a
-  // driver call during static destruction still finds them alive, and so that
-  // a leaked `Device`'s `api_` never dangles. Each shared library that links
-  // this file gets its own copy, which is harmless: callers compare names by
-  // content, never by pointer.
+  // after a plugin's first device takes only the shared lock. Both are leaked
+  // so that a driver call during static destruction still finds them alive,
+  // and so that a leaked `Device`'s `api_` never dangles. Each shared library
+  // that links this file gets its own copy, which is harmless: callers compare
+  // names by content, never by pointer.
   static auto &mutex = *new std::shared_mutex;
   static auto &names = *new llvm::StringSet<>;
   {
@@ -326,10 +325,6 @@ ErrorOr<DeviceContextRef> Device::createContext() {
   MojoHALContextBox *ctx = nullptr;
   if (const char *err =
           MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_)) {
-    // Metadata-only Devices (see adoptMojoBox) have no context to fall back
-    // on.
-    if (!mojoCtx_)
-      return takeError(err);
     // Some plugins allow one context per device, and this Device already
     // holds it, so share that one (and its stream) instead.
     MojoHAL_strfree(err);
@@ -339,7 +334,7 @@ ErrorOr<DeviceContextRef> Device::createContext() {
 }
 
 Device::~Device() {
-  // Metadata-only Devices (see adoptMojoBox) own no context.
+  // A virtual Device owns no context.
   if (mojoCtx_)
     MojoHAL_DeviceContext_release(mojoCtx_);
 }
@@ -643,39 +638,6 @@ ErrorOr<DeviceContextRef> DeviceContext::getOrCreate(StringRef api, int id) {
   }
   contextMap.insert({requestedKey, iter->second});
   return DeviceContextRef::copy(iter->second);
-}
-
-ErrorOr<DeviceContextRef> DeviceContext::adoptMojoBox(void *mojoBox) {
-  auto *box = static_cast<MojoHALContextBox *>(mojoBox);
-  // The box is an owned copy of a Mojo DeviceContext (from the Mojo
-  // `mojoHandle()` exchange); this is on the kernel-execution hot path. Build a
-  // METADATA-ONLY Device by cheaply querying the existing box (api/id/name) —
-  // do NOT call Device::create, which reloads the plugin (dlopen/dlsym) and
-  // crashes when run mid-execution. The Device carries no box of its own
-  // (mojoCtx_ == null) and is used only for cached `device().api()`/`id()`
-  // (e.g. the copyTo direction dispatch); box-backed device queries are not
-  // reachable on this path. The new DeviceContext takes ownership of the box
-  // and releases it when its refcount drops to zero.
-  char *apiName = nullptr;
-  if (const char *err = MojoHAL_DeviceContext_getApi(&apiName, box)) {
-    MojoHAL_DeviceContext_release(box);
-    return takeError(err);
-  }
-  std::string apiStr = apiName;
-  MojoHAL_strfree(apiName);
-
-  char *name = nullptr;
-  if (const char *err = MojoHAL_DeviceContext_getName(&name, box)) {
-    MojoHAL_DeviceContext_release(box);
-    return takeError(err);
-  }
-  std::string nameStr = name;
-  MojoHAL_strfree(name);
-
-  DeviceRef device = DeviceRef::take(new Device(
-      /*mojoCtx=*/nullptr, mapAPI(apiStr), apiStr,
-      static_cast<int>(MojoHAL_DeviceContext_id(box)), std::move(nameStr)));
-  return DeviceContextRef::take(new DeviceContext(box, std::move(device)));
 }
 
 DeviceContext::DeviceContext(MojoHALContextBox *mojoCtx, DeviceRef device)
