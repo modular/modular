@@ -40,6 +40,9 @@ from max.nn.sequential import ModuleList
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     read_engram_lookback,
 )
+from max.pipelines.architectures.deepseekV41.layers.csa2 import (
+    kept_rows_split_record,
+)
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import VisionInputs
 from max.pipelines.lib.utils import split_replicated_batch
@@ -277,6 +280,7 @@ def _host_plan_rows(
 
 
 _host_plan_rows_op = F.functional(_host_plan_rows)
+_kept_rows_split_record_op = F.functional(kept_rows_split_record)
 
 
 @dataclass(frozen=True)
@@ -1025,7 +1029,8 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         absolute slots the full graph would. ``max_prompt_length`` must be
         the exact longest kept count, as a host value: the select ops bound
         their score rows off it, and under device-graph capture only a staged
-        host input reads through a CPU address.
+        host input reads through a CPU address. Each leaf's mixed-step split
+        record is recut to the kept rows (:func:`kept_rows_split_record`).
         """
         replay = b.replay
         assert replay is not None
@@ -1043,11 +1048,26 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                         replay.starts, leaf.cache_lengths.dtype
                     ),
                     max_prompt_length=replay.longest,
+                    mixed_step_split=self._kept_record(leaf, b, replay),
                 )
                 for name, leaf in b.kv.items()
             },
             replay=None,
         )
+
+    @staticmethod
+    def _kept_record(
+        leaf: PagedCacheValues, b: Batch, replay: ReplayRows
+    ) -> Tensor | None:
+        """``leaf``'s mixed-step split record recut to the replay's kept rows."""
+        if leaf.mixed_step_split is None:
+            return None
+        return _kept_rows_split_record_op(
+            leaf.mixed_step_split,
+            b.rows.positions,
+            replay.rows.positions,
+            replay.longest,
+        ).rebind_mapping(leaf.mixed_step_split.mapping)
 
     def _gather_rows(self, t: Tensor, src: Tensor) -> Tensor:
         """``t``'s rows at ``src``, per rank under data parallelism.

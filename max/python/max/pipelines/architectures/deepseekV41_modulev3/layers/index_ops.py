@@ -40,6 +40,7 @@ from typing import Any
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, Value, ops
+from max.nn._graph_ops import _mixed_step_split_value
 from max.nn.kv_cache import PagedCacheValues
 from max.tensor import Tensor
 
@@ -205,6 +206,7 @@ def _select(
             offsets,
             *_cache_values(leaf),
             layer_idx,
+            _mixed_step_split_value(leaf.mixed_step_split),
         ],
         out_types=[
             TensorType(DType.int32, [t, top_k], packed.device),
@@ -263,7 +265,8 @@ def indexer_select_block_topk_rows(
     unspecified.
 
     Args:
-        leaf: The index-key leaf.
+        leaf: The index-key leaf. Its mixed-step split record splits a
+            mixed step's decode rows from its prefill rows.
         q: :func:`quantize_queries`'s output.
         offsets: ``[B + 1]`` uint32 ragged row offsets.
         positions: ``[T]`` token positions.
@@ -312,7 +315,8 @@ def indexer_select_masked_rows(
     kept blocks restrict only longer rows.
 
     Args:
-        leaf: The index-key leaf.
+        leaf: The index-key leaf. Its mixed-step split record splits a
+            mixed step's decode rows from its prefill rows.
         q: :func:`quantize_queries`'s output.
         offsets: ``[B + 1]`` uint32 ragged row offsets.
         kept: ``[T, kept]`` int32 kept block ids, ``-1`` for none; block
