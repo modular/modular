@@ -32,6 +32,17 @@ verifyTensorCreateInterfaceMutability(::mlir::Operation *op);
 
 // What `RowwisePhaseOpInterface::getReadCache` returns.
 class RowwiseCacheOp;
+
+/// Where a graph blob launch can build a value, as `LaunchOperandInterface`
+/// reports it.
+enum class LaunchPlacement {
+  /// The kernel rebuilds the value from the op's operands.
+  Kernel,
+  /// The host builds the value, and it crosses the launch as its device type.
+  Argument,
+  /// The host builds the value, and it can't cross the launch.
+  HostOnly,
+};
 } // namespace M::MOGG
 
 //===----------------------------------------------------------------------===//

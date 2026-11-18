@@ -260,3 +260,64 @@ bool TryOp::isThrows() {
   };
   return regionThrows(getTryRegion()) && regionThrows(getExceptRegion());
 }
+
+//===----------------------------------------------------------------------===//
+// LaunchOperandInterface
+//===----------------------------------------------------------------------===//
+
+LaunchPlacement ShapeCreateOp::getLaunchPlacement() {
+  return LaunchPlacement::Kernel;
+}
+
+LaunchPlacement TensorCreateOp::getLaunchPlacement() {
+  return LaunchPlacement::Kernel;
+}
+
+LaunchPlacement TraitCreateOp::getLaunchPlacement() {
+  return LaunchPlacement::Kernel;
+}
+
+LaunchPlacement TensorCreateReshapeOp::getLaunchPlacement() {
+  return LaunchPlacement::Kernel;
+}
+
+LaunchPlacement TensorCreateBroadcastOp::getLaunchPlacement() {
+  return LaunchPlacement::Kernel;
+}
+
+// A run-time permutation is read from `$permutations` on the host.
+LaunchPlacement TensorCreateTransposeOp::getLaunchPlacement() {
+  return llvm::none_of(getStaticPermutations(), ShapedType::isDynamic)
+             ? LaunchPlacement::Kernel
+             : LaunchPlacement::HostOnly;
+}
+
+// The starts, stops and steps are read on the host.
+LaunchPlacement TensorCreateSliceOp::getLaunchPlacement() {
+  return LaunchPlacement::HostOnly;
+}
+
+LaunchPlacement TensorGetPtrOp::getLaunchPlacement() {
+  return LaunchPlacement::Kernel;
+}
+
+// The element is read on the host, and the scalar crosses by value.
+LaunchPlacement ScalarCreateOp::getLaunchPlacement() {
+  return LaunchPlacement::Argument;
+}
+
+// A fused operand crosses as its access-enabled view, which only a contract
+// gives it.
+LaunchPlacement TensorCreateEpilogueOp::getLaunchPlacement() {
+  return getContract() ? LaunchPlacement::Argument : LaunchPlacement::HostOnly;
+}
+
+LaunchPlacement TensorCreatePrologueOp::getLaunchPlacement() {
+  return getContract() ? LaunchPlacement::Argument : LaunchPlacement::HostOnly;
+}
+
+// `MOGGToMGP` lifts a constant out of the routine body, so it stays on the
+// host and its pointer crosses.
+LaunchPlacement BufferConstantOp::getLaunchPlacement() {
+  return LaunchPlacement::Argument;
+}

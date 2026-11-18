@@ -1108,6 +1108,7 @@ def MOGG_RoutineOp : MOGG_LowerableOp<"routine", [
 def MOGG_ShapeCreateOp : MOGG_Op<"shape.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "Build a codegen shape from a static shape attr + dynamic dims.";
   let description = [{
@@ -1125,6 +1126,7 @@ def MOGG_ShapeCreateOp : MOGG_Op<"shape.create", [
 def MOGG_TensorCreateOp : MOGG_Op<"tensor.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor from a pointer, shape and static metadata.";
@@ -1158,6 +1160,7 @@ def MOGG_TensorCreateEpilogueOp : MOGG_Op<"tensor.create.epilogue", [
   AttrSizedOperandSegments,
   NoTerminator,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_FusedEpilogueInterface>,
 ]> {
   let summary = "A fused-output tensor bound to its own epilogue body.";
@@ -1255,6 +1258,7 @@ def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
 def MOGG_TensorGetPtrOp : MOGG_Op<"tensor.get_ptr", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "Extract the raw `!mogg.pointer` backing a codegen tensor.";
   let description = [{
@@ -1276,6 +1280,7 @@ def MOGG_TensorCreatePrologueOp : MOGG_Op<"tensor.create.prologue", [
   AttrSizedOperandSegments,
   SingleBlock,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "A fused-input tensor bound to its own prologue body.";
   let description = [{
@@ -1565,6 +1570,7 @@ def MOGG_GraphBlobBarrierOp : MOGG_Op<"graph_blob.barrier", [
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "Pack a single-element tensor operand into a scalar operand.";
   let description = [{
@@ -1581,6 +1587,7 @@ def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
 def MOGG_TraitCreateOp : MOGG_Op<"trait.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
 ]> {
   let summary = "Re-present a codegen tensor as its conforming trait argument.";
   let description = [{
@@ -1647,7 +1654,10 @@ def MOGG_RebindOp : MOGG_Op<"rebind", [Pure,
   }];
 }
 
-def MOGG_BufferConstantOp : MOGG_Op<"buffer.constant", [Pure]> {
+def MOGG_BufferConstantOp : MOGG_Op<"buffer.constant", [
+  Pure,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
+]> {
   let summary = "A constant buffer, as a raw codegen pointer.";
   let description = [{
     A `mo.constant` that `FuseConstantIterOpaqueInputs` folded into a
@@ -2188,6 +2198,7 @@ def MOGG_CallElementwiseOp : MOGG_Op<"call.elementwise", [
 def MOGG_TensorCreateSliceOp : MOGG_Op<"tensor.create.slice", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor that is a strided slice view of another codegen tensor.";
@@ -2221,6 +2232,7 @@ def MOGG_TensorCreateSliceOp : MOGG_Op<"tensor.create.slice", [
 def MOGG_TensorCreateBroadcastOp : MOGG_Op<"tensor.create.broadcast", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor that is a broadcast view of another codegen tensor.";
@@ -2251,6 +2263,7 @@ def MOGG_TensorCreateBroadcastOp : MOGG_Op<"tensor.create.broadcast", [
 def MOGG_TensorCreateTransposeOp : MOGG_Op<"tensor.create.transpose", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor that is a transpose view of another codegen tensor.";
@@ -2281,6 +2294,7 @@ def MOGG_TensorCreateTransposeOp : MOGG_Op<"tensor.create.transpose", [
 def MOGG_TensorCreateReshapeOp : MOGG_Op<"tensor.create.reshape", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_LaunchOperandInterface>,
   DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
 ]> {
   let summary = "Build a codegen tensor that is a reshape view of another codegen tensor.";

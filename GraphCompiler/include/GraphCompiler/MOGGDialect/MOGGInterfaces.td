@@ -136,6 +136,24 @@ def MOGG_FusedEpilogueInterface : OpInterface<"FusedEpilogueInterface"> {
   ];
 }
 
+def MOGG_LaunchOperandInterface : OpInterface<"LaunchOperandInterface"> {
+  let description = [{
+    Says where a graph blob launch can build this op's results: inside the
+    kernel, from the values the launch passes in, or on the host, passed to
+    the kernel as their device type. An op without the interface can't feed
+    a graph blob launch.
+  }];
+
+  let cppNamespace = "::M::MOGG";
+
+  let methods = [
+    InterfaceMethod<
+      "Returns where a graph blob launch can build the results.",
+      "::M::MOGG::LaunchPlacement", "getLaunchPlacement", (ins)
+    >,
+  ];
+}
+
 def MOGG_RowwisePhaseOpInterface : OpInterface<"RowwisePhaseOpInterface"> {
   let description = [{
     A phase of a `mogg.call.rowwise` row: a fold (`mogg.rowwise.reduce`), a
