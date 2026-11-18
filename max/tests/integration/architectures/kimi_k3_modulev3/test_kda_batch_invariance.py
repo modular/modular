@@ -41,9 +41,6 @@ from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    interleave_for_tp,
-)
 from max.tensor import Tensor, default_device
 
 # Same geometry as the parity tests: the kernel is compiled for
@@ -91,12 +88,12 @@ def _weights() -> dict[str, np.ndarray]:
         )
         for name, shape in _WEIGHT_SHAPES.items()
     }
-    # Published K3's `A_log` is per-head, broadcast over keys. Varying it along
-    # both axes exercises the bounded operator's per-key generality, which a
-    # per-head fixture would leave untested.
-    weights["a_log"] = np.linspace(
-        -1.0, 0.5, NUM_HEADS * HEAD_DIM, dtype=np.float32
-    ).reshape(NUM_HEADS, HEAD_DIM)
+    # Published K3's `A_log` is per-head, and the layer broadcasts it over
+    # keys.
+    weights["a_log"] = np.broadcast_to(
+        np.linspace(-1.0, 0.5, NUM_HEADS, dtype=np.float32)[:, None],
+        (NUM_HEADS, HEAD_DIM),
+    ).copy()
     weights["o_norm_weight"] = (
         1.0 + 0.1 * weights["o_norm_weight"] * np.sqrt(HEAD_DIM)
     ).astype(np.float32)
@@ -106,9 +103,8 @@ def _weights() -> dict[str, np.ndarray]:
 def _layer(weights: dict[str, np.ndarray]) -> KimiK3KDAAttention:
     """The ModuleV3 KDA layer with ``weights`` on its parameters.
 
-    The tuples assigned below are the checkpoint's own blocks, so the fused
-    q/k/v/g/beta weight carries five of them and the layer keeps its separate
-    ``f_a_proj`` (see ``_fuses_gate_down``).
+    The parameters are the checkpoint's own tensors, which the layer fuses
+    into its input GEMM and packed conv.
     """
     layer = KimiK3KDAAttention(
         hidden_size=HIDDEN,
@@ -117,30 +113,26 @@ def _layer(weights: dict[str, np.ndarray]) -> KimiK3KDAAttention:
         conv_kernel_size=CONV_KERNEL,
         gate_lower_bound=-5.0,
     )
-    layer.qkvg_proj.weight = Tensor(
-        interleave_for_tp(
-            [
-                weights["q_proj_weight"],
-                weights["k_proj_weight"],
-                weights["v_proj_weight"],
-                weights["g_proj_weight"],
-                weights["b_proj_weight"],
-            ],
-            1,
-        ),
-        dtype=DType.float32,
+    for name in (
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "g_proj",
+        "b_proj",
+        "f_a_proj",
+        "f_b_proj",
+        "o_proj",
+    ):
+        getattr(layer, name).weight = Tensor(
+            weights[f"{name}_weight"], dtype=DType.float32
+        )
+    layer.q_conv1d, layer.k_conv1d, layer.v_conv1d = (
+        Tensor(conv.reshape(INNER, 1, CONV_KERNEL), dtype=DType.float32)
+        for conv in np.split(weights["conv_weight"], 3)
     )
-    layer.conv_weight = Tensor(weights["conv_weight"], dtype=DType.float32)
-    layer.f_a_proj.weight = Tensor(
-        weights["f_a_proj_weight"], dtype=DType.float32
-    )
-    layer.f_b_proj.weight = Tensor(
-        weights["f_b_proj_weight"], dtype=DType.float32
-    )
-    layer.a_log = Tensor(weights["a_log"], dtype=DType.float32)
-    layer.dt_bias = Tensor(weights["dt_bias"], dtype=DType.float32)
+    layer.a_log = Tensor(weights["a_log"][:, 0], dtype=DType.float32)
+    layer.dt_bias = Tensor(weights["dt_bias"].reshape(-1), dtype=DType.float32)
     layer.o_norm.weight = Tensor(weights["o_norm_weight"], dtype=DType.float32)
-    layer.o_proj.weight = Tensor(weights["o_proj_weight"], dtype=DType.float32)
     return layer
 
 

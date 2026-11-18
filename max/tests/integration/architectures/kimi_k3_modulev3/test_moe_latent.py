@@ -203,8 +203,12 @@ def test_matches_independent_reference() -> None:
             weights["experts_down_proj"],
             lambda a, device: Tensor(a, device=device),
         )
-        layer.shared_experts.gate_up_proj.weight = Tensor(
-            weights["shared_gate_up_weight"], dtype=DType.float32
+        shared_gate, shared_up = np.split(weights["shared_gate_up_weight"], 2)
+        layer.shared_experts.gate_proj.weight = Tensor(
+            shared_gate, dtype=DType.float32
+        )
+        layer.shared_experts.up_proj.weight = Tensor(
+            shared_up, dtype=DType.float32
         )
         layer.shared_experts.down_proj.weight = Tensor(
             weights["shared_down_weight"], dtype=DType.float32

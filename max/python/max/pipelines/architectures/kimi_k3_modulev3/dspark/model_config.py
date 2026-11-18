@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The ``K3DSparkModel`` draft's config, which builds its module.
+"""The ``K3DSparkModel`` draft's config and registration.
 
 A DSpark checkpoint is only ever served as ``--draft-model`` beside a Kimi
 K3 (ModuleV3) target, inside the fused speculative-decoding graph, so this
-builds the draft's module and KV leaf for that graph. The leaf is the same
+sizes the draft's module and KV leaf for that graph. The leaf is the same
 compressed MLA latent the target's own layers cache, at the target's own
 cache dtype, so both arms of the fused MLA kernels serve the draft's block
 call; the draft reads the checkpoint's own ``max_position_embeddings`` for
@@ -24,9 +24,9 @@ past it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, fields
 
-from max import functional as F
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -34,16 +34,21 @@ from max.graph.weights import WeightData
 from max.nn.kv_cache import MLAKVCacheParams
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.tensor import default_device, default_dtype
-from max.tensor.sharding import DeviceMesh
+from max.pipelines.lib.registration_draft import DraftRegistration
+from max.tensor import default_dtype, defaults
 from transformers import AutoConfig
 
 from ..spec_mla import kimi_k3_mla_buffer_size
 from .config import K3DSparkDraftConfig, parse_k3_dspark_config
 from .dspark import K3DSpark, tensor_parallel_k3_dspark
-from .weight_adapters import convert_k3_dspark_state_dict
 
-__all__ = ["K3DSparkDraftArchConfig"]
+__all__ = [
+    "K3DSparkDraft",
+    "K3DSparkDraftArchConfig",
+    "K3DSparkModuleConfig",
+    "configure_k3_dspark_draft",
+    "k3_dspark_draft_registration",
+]
 
 # The fused MLA kernels' fixed rotary latent width: `flareMLA_decoding`
 # asserts 576 (rotary) or 512 (NoPE), and the drafter's yarn rope slice makes
@@ -137,7 +142,7 @@ def _mla_buffer_size(
 
 @dataclass
 class K3DSparkDraftArchConfig:
-    """The config of the ``K3DSparkModel`` draft, which builds its module."""
+    """The config of the ``K3DSparkModel`` draft, which sizes its KV leaf."""
 
     max_position_embeddings: int = 1 << 20
 
@@ -169,58 +174,6 @@ class K3DSparkDraftArchConfig:
         """Returns the checkpoint's ``max_position_embeddings``."""
         del model_config
         return int(huggingface_config.max_position_embeddings)
-
-    @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[K3DSpark, K3DSparkDraftConfig]:
-        """Builds the DSpark draft for the draft checkpoint ``context`` names.
-
-        The module holds no weights: it compiles with those
-        :meth:`checkpoint_weights` returns. The draft is sharded over the
-        same devices as its target, with the same ``tp`` mesh axis.
-
-        Raises:
-            ValueError: If the method isn't ``dspark``.
-        """
-        pipeline_config = context.pipeline_config
-        speculative = pipeline_config.speculative
-        draft_model = pipeline_config.draft_model
-        assert speculative is not None and draft_model is not None
-        if not speculative.is_dspark():
-            raise ValueError(
-                "The K3DSparkModel draft is a DSpark draft and requires"
-                " --speculative-method dspark, got"
-                f" {speculative.speculative_method!r}."
-            )
-        config = parse_k3_dspark_config(draft_model.huggingface_config)
-        kv_params = context.kv_params
-        assert isinstance(kv_params, MLAKVCacheParams)
-        devices = [ref.to_device() for ref in kv_params.devices]
-        mesh = DeviceMesh(tuple(devices), (len(devices),), ("tp",))
-        with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
-            draft = K3DSpark(
-                config,
-                kv_params,
-                max_seq_len=context.max_seq_len,
-                mla_buffer_size=_mla_buffer_size(context, config, kv_params),
-            )
-            tensor_parallel_k3_dspark(draft, mesh)
-        return draft, config
-
-    @classmethod
-    def checkpoint_weights(
-        cls, context: ModelLoadContext, config: K3DSparkDraftConfig
-    ) -> dict[str, WeightData]:
-        """Returns the draft tensors the built module compiles with.
-
-        The module tree mirrors the checkpoint's names, so the conversion
-        drops nothing but the unconsumed confidence head.
-        """
-        return convert_k3_dspark_state_dict(
-            {name: weight.data() for name, weight in context.weights.items()},
-            config,
-        )
 
     @classmethod
     def construct_kv_params(
@@ -281,3 +234,55 @@ class K3DSparkDraftArchConfig:
         # kernels' dispatch metadata depends on.
         assert isinstance(params, MLAKVCacheParams)
         return params
+
+
+@dataclass(frozen=True, kw_only=True)
+class K3DSparkModuleConfig(K3DSparkDraftConfig):
+    """The checkpoint's config, with the leaf and bounds the module needs."""
+
+    kv_params: MLAKVCacheParams
+    """The drafter's own MLA latent cache leaf."""
+    max_seq_len: int
+    mla_buffer_size: int
+    """The cap the block call's one-shot prefill plan clamps its window to."""
+
+
+class K3DSparkDraft(K3DSpark):
+    """The drafter on the framework's mesh, split over its ``tp`` axis."""
+
+    def __init__(self, config: K3DSparkModuleConfig) -> None:
+        with default_dtype(DType.bfloat16):
+            super().__init__(
+                config,
+                config.kv_params,
+                max_seq_len=config.max_seq_len,
+                mla_buffer_size=config.mla_buffer_size,
+            )
+        tensor_parallel_k3_dspark(self, defaults()[1])
+
+
+def configure_k3_dspark_draft(
+    context: ModelLoadContext, state_dict: Mapping[str, WeightData]
+) -> K3DSparkModuleConfig:
+    """Returns the config the draft's module is built from.
+
+    It is the checkpoint's config, with the KV leaf ``context`` carries and
+    the plan cap it sizes.
+    """
+    del state_dict
+    draft_model = context.pipeline_config.draft_model
+    assert draft_model is not None
+    config = parse_k3_dspark_config(draft_model.huggingface_config)
+    kv_params = context.kv_params
+    assert isinstance(kv_params, MLAKVCacheParams)
+    return K3DSparkModuleConfig(
+        **{f.name: getattr(config, f.name) for f in fields(config)},
+        kv_params=kv_params,
+        max_seq_len=context.max_seq_len,
+        mla_buffer_size=_mla_buffer_size(context, config, kv_params),
+    )
+
+
+k3_dspark_draft_registration = DraftRegistration[
+    K3DSparkDraft, K3DSparkModuleConfig
+](method="dspark", configure=configure_k3_dspark_draft)

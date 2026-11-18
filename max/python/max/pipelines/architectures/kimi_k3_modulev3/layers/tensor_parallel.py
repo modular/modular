@@ -14,9 +14,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from max import functional as F
+from max.graph import ops
 from max.nn.common_layers.mesh_axis import TP
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMesh, NamedMapping
+from max.tensor.sharding import NamedMapping
 
 
 def check_divisible(what: str, size: int, tp_size: int) -> None:
@@ -27,21 +31,20 @@ def check_divisible(what: str, size: int, tp_size: int) -> None:
         )
 
 
-def shard_interleaved_blocks(
-    weight: Tensor, mesh: DeviceMesh, num_blocks: int, axis: int
-) -> Tensor:
-    """Shards a weight that fuses ``num_blocks`` equal blocks along ``axis``.
+def fuse_rows(parts: Sequence[Tensor]) -> Tensor:
+    """Concatenates weights along their first axis, device by device.
 
-    A contiguous shard of a block-major fused axis would give one device
-    whole blocks and another none, so the weight must already be interleaved
-    per TP rank -- each rank's contiguous slice holding its slice of every
-    block -- as the weight adapter's ``interleave_for_tp`` writes it. This
-    only checks the block width splits evenly and shards contiguously: a
-    reorder here would act on the lazily built placeholder, not on the
-    checkpoint arrays the loader splits on the host.
+    Under tensor parallelism each device stacks its own shard of every
+    row-sharded part and the whole of every replicated one, so one GEMM over
+    the result hands each rank its own slice of every part. The parts are
+    weights, so the graph compiler hoists the concat into initialization.
     """
-    tp_size = mesh.axis_size(TP)
-    shape = [int(dim) for dim in weight.shape]
-    check_divisible("Fused block width", shape[axis] // num_blocks, tp_size)
-    spec = tuple(TP if dim == axis else None for dim in range(len(shape)))
-    return weight.to(NamedMapping(mesh, spec))
+    mesh = parts[0].mesh
+    if TP not in mesh.axis_names or mesh.axis_size(TP) == 1:
+        return F.concat(parts, axis=0)
+    spec = (TP, *(None,) * (parts[0].rank - 1))
+    return F.call_on_mesh(
+        lambda *shards: ops.concat(shards, axis=0),
+        mesh,
+        out_specs=NamedMapping(mesh, spec),
+    )(*parts)

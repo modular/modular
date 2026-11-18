@@ -30,11 +30,10 @@ Two model-level pieces sit outside the per-layer modules:
 * ``lm_head`` is never tied to ``embed_tokens`` on this checkpoint
   (``tie_word_embeddings`` is false), so it gets its own weight.
 
-Weight loading maps the checkpoint onto this module tree, reading a plain
-``dict[str, np.ndarray]`` (e.g. from ``safetensors.numpy.load_file``) instead
-of MAX's ``Weights``/``WeightData`` plumbing. It applies four checkpoint-shape
-transforms: fused qkv projection, fused qkv conv, fused gate/up, and the
-de-padded ``A_log``.
+The module tree declares every tensor as the checkpoint stores it, and the
+graph fuses and reshapes them. :func:`load_kimi_k3_weights` assigns a plain
+``dict[str, np.ndarray]`` (e.g. from ``safetensors.numpy.load_file``) onto
+it without MAX's ``Weights``/``WeightData`` plumbing.
 """
 
 from __future__ import annotations
@@ -154,6 +153,10 @@ class KimiK3ModelConfig:
     routed_scaling_factor: float = 1.0
     num_expert_group: int = 1
     topk_group: int = 1
+    kda_a_log_size: int | None = None
+    """The length a checkpoint stores each KDA layer's ``A_log`` at, past
+    ``kda_num_heads`` when it pads the coefficients with zeros; ``None`` is
+    ``kda_num_heads``."""
 
     @classmethod
     def from_huggingface_config(
@@ -404,7 +407,6 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         quant_config: QuantConfig | None = None,
         ep_config: EPConfig | None = None,
         max_tokens_per_expert: int = 8192,
-        tp_size: int = 1,
     ) -> None:
         """Builds the model's layers and weights.
 
@@ -452,10 +454,6 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             max_tokens_per_expert: Rows one forward can route to an expert
             (``KimiK3Config.max_tokens_per_expert``), a serving-time bound
             like ``mla_buffer_size``.
-            tp_size: The TP degree ``tensor_parallel_kimi_k3_model`` shards
-            the model over, 1 when it runs on one device or expert-parallel.
-            It sizes each MLA layer's fused input projection; see
-            :class:`KimiK3MLAAttention`.
         """
         super().__init__()
         self.config = config
@@ -493,7 +491,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     conv_kernel_size=config.kda_conv_kernel_size,
                     gate_lower_bound=config.kda_gate_lower_bound,
                     pin_fma=self._pin_kda_fma,
-                    tp_size=tp_size,
+                    a_log_size=config.kda_a_log_size,
                 )
             else:
                 attention = KimiK3MLAAttention(
@@ -506,7 +504,6 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     kv_lora_rank=config.kv_lora_rank,
                     kv_params=attn_params,
                     layer_idx=full_attn_idx,
-                    tp_size=tp_size,
                 )
                 full_attn_idx += 1
 
@@ -857,81 +854,6 @@ def expert_parallel_kimi_k3_model(
     return model
 
 
-def _fuse_gate_up(gate: np.ndarray, up: np.ndarray) -> np.ndarray:
-    """Gate-first concatenation; mirrors ``weight_adapters.py``'s ``_fuse_gate_up``."""
-    return np.ascontiguousarray(np.concatenate([gate, up], axis=0))
-
-
-def _fuse_qkvgb_proj(
-    q: np.ndarray,
-    k: np.ndarray,
-    v: np.ndarray,
-    g: np.ndarray,
-    b: np.ndarray,
-    f_a: np.ndarray | None = None,
-) -> np.ndarray:
-    """Merges q, k, v, g and beta into one ``[4 * inner + heads, hidden]`` weight.
-
-    ``KimiK3KDAAttention.qkvg_proj`` takes the merged weight. This eager
-    loader is single-device, so a plain row concat is the TP-degree-1 case
-    of the weight adapter's per-rank interleave.
-
-    ``f_a`` -- the gate's down projection -- is appended the same way when
-    the checkpoint fuses it, so the eager loader produces the weight shape
-    the layer detects the fusion from (``_fuses_gate_down``).
-    """
-    parts = [q, k, v, g, b] if f_a is None else [q, k, v, g, b, f_a]
-    return np.ascontiguousarray(np.concatenate(parts, axis=0))
-
-
-def _fuse_qkv_a_g_proj(
-    q_a: np.ndarray, kv_a: np.ndarray, g: np.ndarray
-) -> np.ndarray:
-    """Merges an MLA layer's q_a, kv_a and gate projections into one weight.
-
-    ``KimiK3MLAAttention.qkv_a_g_proj`` takes the merged weight. This eager
-    loader is single-device, so a plain row concat is the TP-degree-1 case
-    of the weight adapter's per-rank ``[q_a | kv_a | g_r]`` blocks.
-    """
-    return np.ascontiguousarray(np.concatenate([q_a, kv_a, g], axis=0))
-
-
-def _fuse_qkv_conv_weight(
-    q: np.ndarray, k: np.ndarray, v: np.ndarray
-) -> np.ndarray:
-    """Packs three ``[C, 1, K]`` depthwise convs into one ``[3C, K]`` weight.
-
-    ``KimiK3KDAAttention.conv_weight`` takes the packed weight. Mirrors
-    ``weight_adapters.py``'s ``_fuse_qkv_conv_weight``.
-    """
-    return np.ascontiguousarray(
-        np.concatenate([w.reshape(w.shape[0], -1) for w in (q, k, v)], axis=0)
-    )
-
-
-def _canonical_a_log(
-    values: np.ndarray, num_heads: int, head_dim: int
-) -> np.ndarray:
-    """Broadcasts per-head gate coefficients.
-
-    Exact-zero storage padding is dropped, mirroring
-    ``weight_adapters.py``'s ``_canonical_a_log``. That version handles a
-    bf16-as-uint16 checkpoint; this fixture stores A_log as fp32.
-    """
-    if values.ndim != 1 or values.size < num_heads:
-        raise ValueError(
-            f"Kimi K3: A_log has shape {values.shape}; expected a per-head"
-            f" vector with at least {num_heads} coefficients."
-        )
-    if not np.all(np.isfinite(values[:num_heads])):
-        raise ValueError(
-            "Kimi K3: active A_log head coefficients must be finite."
-        )
-    if np.any(values[num_heads:] != 0):
-        raise ValueError("Kimi K3: A_log storage padding must be exactly zero.")
-    return np.broadcast_to(values[:num_heads, None], (num_heads, head_dim))
-
-
 def load_kimi_k3_weights(
     model: KimiK3Model, raw: Mapping[str, np.ndarray]
 ) -> None:
@@ -943,7 +865,6 @@ def load_kimi_k3_weights(
         raw: Checkpoint tensors keyed by their original (``language_model.``-
             prefixed) checkpoint names, e.g. from ``safetensors.numpy.load_file``.
     """
-    config = model.config
 
     def get(key: str) -> np.ndarray:
         return raw[key]
@@ -989,86 +910,56 @@ def load_kimi_k3_weights(
         attn = layer.attention
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            gate_down = get(f"{attn_src}.f_a_proj.weight")
-            attn.qkvg_proj.weight = Tensor(
-                _fuse_qkvgb_proj(
-                    get(f"{attn_src}.q_proj.weight"),
-                    get(f"{attn_src}.k_proj.weight"),
-                    get(f"{attn_src}.v_proj.weight"),
-                    get(f"{attn_src}.g_proj.weight"),
-                    get(f"{attn_src}.b_proj.weight"),
-                    gate_down,
-                ),
-                dtype=DType.float32,
+            for name in (
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "g_proj",
+                "b_proj",
+                "f_a_proj",
+                "f_b_proj",
+                "o_proj",
+                "o_norm",
+            ):
+                getattr(attn, name).weight = Tensor(
+                    get(f"{attn_src}.{name}.weight"), dtype=DType.float32
+                )
+            attn.q_conv1d = Tensor(
+                get(f"{attn_src}.q_conv1d.weight"), dtype=DType.float32
             )
-            attn.f_a_proj.weight = Tensor(gate_down, dtype=DType.float32)
-            attn.f_b_proj.weight = Tensor(
-                get(f"{attn_src}.f_b_proj.weight"), dtype=DType.float32
+            attn.k_conv1d = Tensor(
+                get(f"{attn_src}.k_conv1d.weight"), dtype=DType.float32
             )
-            attn.o_proj.weight = Tensor(
-                get(f"{attn_src}.o_proj.weight"), dtype=DType.float32
+            attn.v_conv1d = Tensor(
+                get(f"{attn_src}.v_conv1d.weight"), dtype=DType.float32
             )
-            attn.o_norm.weight = Tensor(
-                get(f"{attn_src}.o_norm.weight"), dtype=DType.float32
-            )
-            conv = [
-                get(f"{attn_src}.{axis}_conv1d.weight")
-                for axis in ("q", "k", "v")
-            ]
-            attn.conv_weight = Tensor(
-                _fuse_qkv_conv_weight(*conv), dtype=DType.float32
-            )
-            attn.a_log = Tensor(
-                _canonical_a_log(
-                    get(f"{attn_src}.A_log"),
-                    config.kda_num_heads,
-                    config.kda_head_dim,
-                ),
-                dtype=DType.float32,
-            )
+            attn.a_log = Tensor(get(f"{attn_src}.A_log"), dtype=DType.float32)
             attn.dt_bias = Tensor(
-                get(f"{attn_src}.dt_bias").reshape(
-                    config.kda_num_heads, config.kda_head_dim
-                ),
-                dtype=DType.float32,
+                get(f"{attn_src}.dt_bias"), dtype=DType.float32
             )
         else:
             assert isinstance(attn, KimiK3MLAAttention)
-            attn.qkv_a_g_proj.weight = Tensor(
-                _fuse_qkv_a_g_proj(
-                    get(f"{attn_src}.q_a_proj.weight"),
-                    get(f"{attn_src}.kv_a_proj_with_mqa.weight"),
-                    get(f"{attn_src}.g_proj.weight"),
-                ),
-                dtype=DType.float32,
-            )
-            attn.q_a_layernorm.weight = Tensor(
-                get(f"{attn_src}.q_a_layernorm.weight"), dtype=DType.float32
-            )
-            attn.q_b_proj.weight = Tensor(
-                get(f"{attn_src}.q_b_proj.weight"), dtype=DType.float32
-            )
-            attn.kv_a_layernorm.weight = Tensor(
-                get(f"{attn_src}.kv_a_layernorm.weight"), dtype=DType.float32
-            )
-            attn.kv_b_proj.weight = Tensor(
-                get(f"{attn_src}.kv_b_proj.weight"), dtype=DType.float32
-            )
-            attn.o_proj.weight = Tensor(
-                get(f"{attn_src}.o_proj.weight"), dtype=DType.float32
-            )
+            for name in (
+                "q_a_proj",
+                "kv_a_proj_with_mqa",
+                "g_proj",
+                "q_a_layernorm",
+                "q_b_proj",
+                "kv_a_layernorm",
+                "kv_b_proj",
+                "o_proj",
+            ):
+                getattr(attn, name).weight = Tensor(
+                    get(f"{attn_src}.{name}.weight"), dtype=DType.float32
+                )
 
         ffn = layer.ffn
         if layer.is_dense:
             assert isinstance(ffn, KimiK3DenseMLP)
-            gate = get(f"{src}.mlp.gate_proj.weight")
-            up = get(f"{src}.mlp.up_proj.weight")
-            ffn.gate_up_proj.weight = Tensor(
-                _fuse_gate_up(gate, up), dtype=DType.float32
-            )
-            ffn.down_proj.weight = Tensor(
-                get(f"{src}.mlp.down_proj.weight"), dtype=DType.float32
-            )
+            for name in ("gate_proj", "up_proj", "down_proj"):
+                getattr(ffn, name).weight = Tensor(
+                    get(f"{src}.mlp.{name}.weight"), dtype=DType.float32
+                )
         else:
             assert isinstance(ffn, KimiK3LatentMoE)
             moe = f"{src}.block_sparse_moe"
@@ -1094,12 +985,8 @@ def load_kimi_k3_weights(
                         get(f"{moe}.experts.{e}.{w}.weight"),
                         dtype=DType.float32,
                     )
-            shared_gate = get(f"{moe}.shared_experts.gate_proj.weight")
-            shared_up = get(f"{moe}.shared_experts.up_proj.weight")
-            ffn.shared_experts.gate_up_proj.weight = Tensor(
-                _fuse_gate_up(shared_gate, shared_up), dtype=DType.float32
-            )
-            ffn.shared_experts.down_proj.weight = Tensor(
-                get(f"{moe}.shared_experts.down_proj.weight"),
-                dtype=DType.float32,
-            )
+            for name in ("gate_proj", "up_proj", "down_proj"):
+                getattr(ffn.shared_experts, name).weight = Tensor(
+                    get(f"{moe}.shared_experts.{name}.weight"),
+                    dtype=DType.float32,
+                )

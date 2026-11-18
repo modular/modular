@@ -18,7 +18,7 @@ import itertools
 import json
 from collections import OrderedDict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -38,6 +38,7 @@ from max._artifact.engine_config import (
 )
 from max._artifact.export import (
     SupportsCompiledModules,
+    _check_batch_context_window,
     _takes_mrope_positions,
     _verify_facts,
     batch_processor_dims,
@@ -712,6 +713,20 @@ def _pipeline_config(
         sampling=sampling,
         speculative=speculative,
     )
+
+
+def test_export_refuses_a_window_that_holds_no_max_length_request() -> None:
+    """The window's page-aligned floor must hold one request at max length."""
+    plan = replace(_PLAN, planned_max_length=4100)
+    for short in (0, 4096, 4100):
+        with pytest.raises(ArtifactError, match="at least 4224"):
+            _check_batch_context_window(
+                replace(plan, planned_max_batch_total_tokens=short), 128
+            )
+    for fits in (None, 4224):
+        _check_batch_context_window(
+            replace(plan, planned_max_batch_total_tokens=fits), 128
+        )
 
 
 def test_engine_config_copies_the_planned_settings() -> None:

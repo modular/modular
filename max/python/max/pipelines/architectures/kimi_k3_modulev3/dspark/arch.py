@@ -14,11 +14,16 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from .config import k3_dspark_draft_width
-from .model_config import K3DSparkDraftArchConfig
+from .model_config import (
+    K3DSparkDraft,
+    K3DSparkDraftArchConfig,
+    k3_dspark_draft_registration,
+)
+from .weight_adapters import k3_dspark_weight_rules
 
 __all__ = ["k3_dspark_draft_arch"]
 
@@ -37,6 +42,10 @@ k3_dspark_draft_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     task=PipelineTask.TEXT_GENERATION,
     config=K3DSparkDraftArchConfig,
+    modules={GraphRole.DRAFT: K3DSparkDraft},
+    draft=k3_dspark_draft_registration,
+    weight_rules=k3_dspark_weight_rules,
+    use_weight_rules=True,
     checkpoint_draft_width=k3_dspark_draft_width,
     # The spec graph's MLA prefill plans size their extents in-graph from
     # the batch's host context lengths (dspark/mla_extent.py), so no

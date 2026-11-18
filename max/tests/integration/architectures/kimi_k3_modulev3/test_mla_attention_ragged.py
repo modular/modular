@@ -31,9 +31,6 @@ from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    fuse_qkv_a_g_for_tp,
-)
 from max.tensor import Tensor, default_device
 
 _HIDDEN = 64
@@ -95,11 +92,14 @@ def test_forward_ragged_matches_forward() -> None:
             arr(_NUM_HEADS * (_QK_NOPE_HEAD_DIM + _V_HEAD_DIM), _KV_LORA_RANK),
             dtype=DType.float32,
         ).cast(DType.bfloat16)
-        layer.qkv_a_g_proj.weight = Tensor(
-            fuse_qkv_a_g_for_tp(
-                q_a, kv_a, arr(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), 1
-            ),
-            dtype=DType.float32,
+        layer.q_a_proj.weight = Tensor(q_a, dtype=DType.float32).cast(
+            DType.bfloat16
+        )
+        layer.kv_a_proj_with_mqa.weight = Tensor(
+            kv_a, dtype=DType.float32
+        ).cast(DType.bfloat16)
+        layer.g_proj.weight = Tensor(
+            arr(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), dtype=DType.float32
         ).cast(DType.bfloat16)
         layer.o_proj.weight = Tensor(
             arr(_HIDDEN, _NUM_HEADS * _V_HEAD_DIM), dtype=DType.float32

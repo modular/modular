@@ -56,9 +56,6 @@ from max.nn._graph_ops.state_space import kda_chunk, kda_decode
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    interleave_for_tp,
-)
 from max.tensor import Tensor, default_device
 
 HEADS = 12
@@ -901,30 +898,22 @@ def _layer(weights: dict[str, np.ndarray]) -> KimiK3KDAAttention:
         conv_kernel_size=CONV_KERNEL,
         gate_lower_bound=GATE_LOWER_BOUND,
     )
-    # The merged q/k/v/g projection holds bf16 weights, as production's
-    # does, so it emits the bf16 q/k/v the op's chunk contract takes.
-    layer.qkvg_proj.weight = Tensor(
-        interleave_for_tp(
-            [
-                weights["q_proj"],
-                weights["k_proj"],
-                weights["v_proj"],
-                weights["g_proj"],
-                weights["b_proj"],
-            ],
-            1,
-        ),
-        dtype=DType.float32,
-    ).cast(DType.bfloat16)
-    for name in (
-        "f_a_proj",
-        "f_b_proj",
-        "o_proj",
-        "o_norm",
-    ):
+    # The projections the fused input GEMM reads hold bf16 weights, as
+    # production's do, so it emits the bf16 q/k/v the op's chunk contract
+    # takes.
+    for name in ("q_proj", "k_proj", "v_proj", "g_proj", "b_proj", "f_a_proj"):
+        getattr(layer, name).weight = Tensor(
+            weights[name], dtype=DType.float32
+        ).cast(DType.bfloat16)
+    for name in ("f_b_proj", "o_proj", "o_norm"):
         getattr(layer, name).weight = Tensor(weights[name], dtype=DType.float32)
-    for name in ("conv_weight", "a_log", "dt_bias"):
-        setattr(layer, name, Tensor(weights[name], dtype=DType.float32))
+    layer.q_conv1d, layer.k_conv1d, layer.v_conv1d = (
+        Tensor(conv.reshape(INNER, 1, CONV_KERNEL), dtype=DType.float32)
+        for conv in np.split(weights["conv_weight"], 3)
+    )
+    # The layer stores one coefficient per head.
+    layer.a_log = Tensor(weights["a_log"][:, 0], dtype=DType.float32)
+    layer.dt_bias = Tensor(weights["dt_bias"].reshape(-1), dtype=DType.float32)
     return layer
 
 

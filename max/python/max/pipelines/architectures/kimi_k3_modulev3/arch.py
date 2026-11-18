@@ -15,8 +15,8 @@
 The only Kimi K3 architecture: a checkpoint that names
 ``KimiK3ForConditionalGeneration`` resolves to it.
 
-TP, EP and MXFP4 are all wired (see ``layers/ep.py``, ``layers/moe_latent.py``
-and ``weight_adapters.py``); EP and MXFP4 are mutually exclusive, matching
+TP, EP and MXFP4 are all wired (see ``layers/ep.py`` and
+``layers/moe_latent.py``); EP and MXFP4 are mutually exclusive, matching
 ``moonshotai/Kimi-K3`` (MXFP4) vs ``moonshotai/Kimi-K3-ep`` (EP, bf16).
 The tower builds for a speculative pairing through the framework's
 registered builder, on a config the pairing stamped with the draft's
@@ -35,7 +35,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from .kimi_k3 import KimiK3Decoder
 from .model_config import KimiK3Config
-from .weight_adapters import convert_kimi_k3_state_dict
+from .weight_adapters import kimi_k3_weight_rules
 
 __all__ = ["kimi_k3_modulev3_arch"]
 
@@ -49,9 +49,8 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
     modules={GraphRole.DECODER: KimiK3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_kimi_k3_state_dict,
-    },
+    weight_rules=kimi_k3_weight_rules,
+    use_weight_rules=True,
     required_arguments={
         # The KDA recurrent state is not reconstructible from a page table,
         # so a prefix hit would resume from the wrong state.

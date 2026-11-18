@@ -65,9 +65,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.state_cache import (
     kda_state_regions,
     verify_ring_leaf,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    interleave_for_tp,
-)
 from max.pipelines.speculative.gated_delta_rollback import accepted_lengths
 from max.pipelines.speculative.ragged_token_merger import shape_to_scalar
 from max.tensor import Tensor, default_device
@@ -140,9 +137,8 @@ def _build_layers(
     mesh: DeviceMesh, dtype: DType = DType.float32
 ) -> list[KimiK3KDAAttention]:
     """Two KDA layers with distinct dyadic weights in ``dtype``, sharded over
-    the mesh; ``a_log``, ``dt_bias`` and ``conv_weight`` stay float32, as the
-    weight adapter loads them."""
-    num_devices = mesh.num_devices
+    the mesh; ``a_log``, ``dt_bias`` and the conv weights stay float32, as
+    the checkpoint stores them."""
     rng = np.random.default_rng(20261103)
     qkv = [_sparse(rng, _INNER, _HIDDEN, 0.5) for _ in range(3)]
     conv_weight = (
@@ -162,53 +158,37 @@ def _build_layers(
             gate_lower_bound=-5.0,
             pin_fma=True,
         )
-        # The merged projection is laid down as [q ; k ; v ; g] rows at a
-        # tensor-parallel degree of one, and interleaved per rank the way
-        # the weight adapter writes them at a degree of two, so the TP pass
-        # below can split each rank's slice of every q/k/v/g block.
-        g_proj = _sparse(rng, _INNER, _HIDDEN, 0.5)
-        b_proj = _sparse(rng, _HEADS, _HIDDEN, 0.5)
-        layer.qkvg_proj.weight = Tensor(
-            (
-                np.concatenate([*qkv, g_proj, b_proj], axis=0)
-                if num_devices == 1
-                else interleave_for_tp([*qkv, g_proj, b_proj], num_devices)
-            ),
-            dtype=DType.float32,
-        ).cast(dtype)
-        layer.conv_weight = Tensor(
-            (
-                conv_weight
-                if num_devices == 1
-                else interleave_for_tp(np.split(conv_weight, 3), num_devices)
-            ),
-            dtype=DType.float32,
+        projections = {
+            "q_proj": qkv[0],
+            "k_proj": qkv[1],
+            "v_proj": qkv[2],
+            "g_proj": _sparse(rng, _INNER, _HIDDEN, 0.5),
+            "b_proj": _sparse(rng, _HEADS, _HIDDEN, 0.5),
+            "f_a_proj": _sparse(rng, _HEAD_DIM, _HIDDEN, 0.25),
+            "f_b_proj": _sparse(rng, _INNER, _HEAD_DIM, 0.25),
+            "o_proj": _sparse(rng, _HIDDEN, _INNER, 0.5),
+        }
+        for name, weight in projections.items():
+            getattr(layer, name).weight = Tensor(
+                weight, dtype=DType.float32
+            ).cast(dtype)
+        layer.q_conv1d, layer.k_conv1d, layer.v_conv1d = (
+            Tensor(conv.reshape(_INNER, 1, _CONV_KERNEL), dtype=DType.float32)
+            for conv in np.split(conv_weight, 3)
         )
-        layer.f_a_proj.weight = Tensor(
-            _sparse(rng, _HEAD_DIM, _HIDDEN, 0.25), dtype=DType.float32
-        ).cast(dtype)
-        layer.f_b_proj.weight = Tensor(
-            _sparse(rng, _INNER, _HEAD_DIM, 0.25), dtype=DType.float32
-        ).cast(dtype)
-        layer.o_proj.weight = Tensor(
-            _sparse(rng, _HIDDEN, _INNER, 0.5), dtype=DType.float32
-        ).cast(dtype)
         layer.o_norm.weight = Tensor(
             np.ones(_HEAD_DIM, dtype=np.float32), dtype=DType.float32
         ).cast(dtype)
+        # One coefficient per head.
         layer.a_log = Tensor(
-            (rng.integers(-4, 5, size=(_HEADS, _HEAD_DIM)) / 8).astype(
-                np.float32
-            ),
+            (rng.integers(-4, 5, size=_HEADS) / 8).astype(np.float32),
             dtype=DType.float32,
         )
         layer.dt_bias = Tensor(
-            (rng.integers(-8, 9, size=(_HEADS, _HEAD_DIM)) / 16).astype(
-                np.float32
-            ),
+            (rng.integers(-8, 9, size=_INNER) / 16).astype(np.float32),
             dtype=DType.float32,
         )
-        if num_devices > 1:
+        if mesh.num_devices > 1:
             layer = tensor_parallel_kda_attention(layer, mesh)
         layers.append(layer)
     return layers

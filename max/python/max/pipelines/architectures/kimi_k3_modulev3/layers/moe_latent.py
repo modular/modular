@@ -627,10 +627,9 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         """Stacks every expert's ``leaf`` and places it on the layer's mesh.
 
         Under tensor parallelism each device's gate/up holds, per expert, its
-        slice of the gate rows followed by its slice of the up rows (the
-        weight adapter's ``interleave_for_tp`` layout), and its down holds a
-        slice of the FFN (K) axis, so both split along the FFN width. Under
-        expert parallelism each device holds whole experts.
+        slice of the gate rows followed by its slice of the up rows, and its
+        down holds a slice of the FFN (K) axis, so both split along the FFN
+        width. Under expert parallelism each device holds whole experts.
 
         The MegaFFN's weights land in its preshuffled layout, each device's
         stack written from the host's per-expert buffers with no temporary
@@ -1019,8 +1018,8 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         (the W4A8 quantize does that itself, inside its gather kernel).
 
         Returns:
-            The one GEMM's output, the shared expert's ``gate_up_proj``
-            output, sharded as ``gate_up_proj`` itself returns it, the
+            The one GEMM's output, the shared expert's gate/up output,
+            sharded as its own GEMM returns it, the
             replicated latent in the GEMM's output dtype (the leading
             slice of that output), and the replicated fp32 router logits,
             or ``None`` when the router did not join. The shared gate/up
@@ -1032,12 +1031,17 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         mesh = entry.mesh
         dtype = entry.dtype
         tp_size = mesh.axis_size(TP)
-        weights = [entry, self.shared_experts.gate_up_proj.weight]
+        weights = [
+            entry,
+            self.shared_experts.gate_proj.weight,
+            self.shared_experts.up_proj.weight,
+        ]
         widths = [
             tp_size * self.latent_size,
             2 * self.shared_experts.intermediate_size,
         ]
-        if router.dtype == dtype:
+        router_joins = router.dtype == dtype
+        if router_joins:
             weights.append(router)
             widths.append(tp_size * self.num_experts)
         weight = F.call_on_mesh(
@@ -1048,7 +1052,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         out = F.matmul(
             hidden_states.cast(dtype),
             weight.T,
-            out_dtype=DType.float32 if len(weights) == 3 else dtype,
+            out_dtype=DType.float32 if router_joins else dtype,
         )
         latent, shared_gate_up, *logits = out.split(widths, axis=-1)
         replicated = NamedMapping(mesh, (None, None))
@@ -1157,9 +1161,10 @@ def tensor_parallel_latent_moe(
     # layer widths.
     merged = (
         (
-            layer.shared_experts.gate_up_proj,
-            2 * layer.shared_experts.intermediate_size,
+            layer.shared_experts.gate_proj,
+            layer.shared_experts.intermediate_size,
         ),
+        (layer.shared_experts.up_proj, layer.shared_experts.intermediate_size),
         (layer.routed_expert_down_proj, layer.latent_size),
         (layer.gate.gate_score, layer.num_experts),
     )
@@ -1172,7 +1177,8 @@ def tensor_parallel_latent_moe(
         int(linear.weight.shape[0]) == rows for linear, rows in merged
     ), "the merged entry GEMM's N must be the shared gate/up, latent and router"
     assert (
-        layer.shared_experts.gate_up_proj.weight.dtype
+        layer.shared_experts.gate_proj.weight.dtype
+        == layer.shared_experts.up_proj.weight.dtype
         == layer.routed_expert_down_proj.weight.dtype
     ), "the merged entry GEMM needs one dtype for the gate/up and the entry"
     layer.routed_expert_up_proj.weight = layer.routed_expert_up_proj.weight.to(

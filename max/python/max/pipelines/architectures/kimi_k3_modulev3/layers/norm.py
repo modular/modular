@@ -95,7 +95,8 @@ class KimiRMSNormGated(Module[[Tensor, Tensor], Tensor]):
     eps: float
 
     def __init__(self, dim: int, eps: float) -> None:
-        self.weight = Tensor.ones([dim])
+        # Float32, as checkpoints store it.
+        self.weight = Tensor.ones([dim], dtype=DType.float32)
         self.eps = eps
 
     def forward(self, x: Tensor, gate: Tensor) -> Tensor:

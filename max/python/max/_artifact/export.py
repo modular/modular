@@ -766,6 +766,33 @@ def checkpoint_tokenizer(
     )
 
 
+def _check_batch_context_window(
+    memory_plan: MemoryPlan, page_size: int
+) -> None:
+    """Raises unless the batch context window holds a request at max length.
+
+    A serving engine charges each request's context against
+    ``max_batch_total_tokens`` in whole KV pages, so a window whose
+    page-aligned floor is below ``max_length`` never admits a request that
+    long.
+
+    Raises:
+        ArtifactError: If the window cannot hold one request at the planned
+            maximum length.
+    """
+    window = memory_plan.planned_max_batch_total_tokens
+    max_length = memory_plan.planned_max_length
+    if window is None or max_length is None:
+        return
+    if window // page_size * page_size < max_length:
+        needed = (max_length + page_size - 1) // page_size * page_size
+        raise ArtifactError(
+            f"max_batch_total_tokens {window} cannot hold one request at"
+            f" max_length {max_length} in whole {page_size}-token KV pages;"
+            f" set it to at least {needed}"
+        )
+
+
 def export_pipeline(
     pipeline_config: PipelineConfig,
     path: str | os.PathLike[str],
@@ -805,6 +832,10 @@ def export_pipeline(
     with compile_roles_separately(), memory_ledger.measuring_off():
         retrieved = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config, task=task
+        )
+        _check_batch_context_window(
+            retrieved.memory_plan,
+            pipeline_config.model.kv_cache.kv_cache_page_size,
         )
         pipeline = retrieved.factory()
     if not isinstance(pipeline, SupportsCompiledModules):

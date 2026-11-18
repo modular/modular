@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """TP=1 vs TP=2 parity for ``KimiK3Model`` loaded the way serving loads it.
 
-A safetensors checkpoint goes through the weight adapter into a module built
+A safetensors checkpoint goes through the weight rules into a module built
 under ``F.lazy()`` and compiled through ``compile_and_init_graphs``, so the
 loader, not the module, splits the real arrays across devices. The eager TP
-tests assign weights to the module directly and cannot catch a fused weight
-that is only laid out right on the module's own parameter.
+tests assign weights to the module directly and cannot catch a weight that
+is only laid out right on the module's own parameter.
 
 Both graphs compile before either executes, so the target records under
 ``precompile_mefs`` and the GPU worker initializes the recorded artifacts
@@ -51,8 +51,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.model import (
     tensor_parallel_kimi_k3_model,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    convert_kimi_k3_state_dict,
+    kimi_k3_weight_rules,
 )
+from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.graph_specs import (
     GraphRole,
     GraphSpec,
@@ -115,42 +116,15 @@ def _text_config(config: KimiK3ModelConfig) -> _FakeTextConfig:
 
 def _write_checkpoint(raw: dict[str, np.ndarray], path: Path) -> None:
     """Writes ``random_weights``' arrays under their checkpoint names."""
-    checkpoint: dict[str, np.ndarray] = {}
-    for name, array in raw.items():
-        if name == "lm_head.weight":
-            checkpoint["language_model.lm_head.weight"] = array
-        elif name.endswith(".conv_weight"):
-            # Unfused into the checkpoint's three `[C, 1, K]` depthwise convs.
-            attn = name.removesuffix(".conv_weight")
-            for axis, conv in zip("qkv", np.split(array, 3), strict=True):
-                checkpoint[f"{_TEXT}.{attn}.{axis}_conv1d.weight"] = conv[
-                    :, None, :
-                ]
-        elif name.endswith(".a_log"):
-            # Per-head in the checkpoint; the adapter broadcasts it.
-            attn = name.removesuffix(".a_log")
-            checkpoint[f"{_TEXT}.{attn}.A_log"] = np.ascontiguousarray(
-                array[:, 0]
-            )
-        elif name.endswith(".dt_bias"):
-            checkpoint[f"{_TEXT}.{name}"] = array.reshape(-1)
-        else:
-            checkpoint[f"{_TEXT}.{name}"] = array
+    checkpoint = {
+        (
+            "language_model.lm_head.weight"
+            if name == "lm_head.weight"
+            else f"{_TEXT}.{name}"
+        ): array
+        for name, array in raw.items()
+    }
     save_file(checkpoint, str(path))
-
-
-def _pipeline_config(num_devices: int) -> SimpleNamespace:
-    """The fields of a float32, ``num_devices``-GPU TP ``PipelineConfig``
-    the weight adapter reads."""
-    return SimpleNamespace(
-        model=SimpleNamespace(
-            quantization_encoding="float32",
-            _resolved_dtype_cast=(None, None),
-            data_parallel_degree=1,
-            device_specs=[None] * num_devices,
-        ),
-        runtime=SimpleNamespace(ep_size=1),
-    )
 
 
 def _compile_serve(
@@ -167,19 +141,15 @@ def _compile_serve(
     rather than before them.
     """
     weights = load_weights([checkpoint])
-    state_dict = convert_kimi_k3_state_dict(
-        dict(weights.items()),
-        _text_config(config),
-        pipeline_config=_pipeline_config(len(devices)),
+    state_dict = WeightTransform(kimi_k3_weight_rules(_text_config(config)))(
+        dict(weights.items())
     )
     mesh = DeviceMesh(tuple(devices), (len(devices),), ("tp",))
     device_refs = [DeviceRef.from_device(d) for d in devices]
     with default_device(mesh):
         kv_params = kv_params_only(config, devices)
         with F.lazy(), default_dtype(DType.float32):
-            module = KimiK3Model(
-                config, kv_params=kv_params, tp_size=len(devices)
-            )
+            module = KimiK3Model(config, kv_params=kv_params)
             if len(devices) > 1:
                 tensor_parallel_kimi_k3_model(module, mesh)
     spec = GraphSpec(

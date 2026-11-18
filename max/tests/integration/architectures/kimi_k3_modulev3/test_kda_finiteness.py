@@ -51,9 +51,6 @@ from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    interleave_for_tp,
-)
 from max.tensor import Tensor, default_device
 
 # `moonshotai/Kimi-K3`'s own `linear_attn_config` and `hidden_size`. The hidden
@@ -105,7 +102,7 @@ def _weights() -> dict[str, np.ndarray]:
         ).astype(np.float32)
         for name, shape in _WEIGHT_SHAPES.items()
     }
-    # Published K3's `A_log` is per-head, and the adapter broadcasts it over
+    # Published K3's `A_log` is per-head, and the layer broadcasts it over
     # keys. The spread across heads covers both ends of the decay the bounded
     # arm can reach.
     weights["a_log"] = np.broadcast_to(
@@ -145,8 +142,8 @@ def _layer(
 ) -> KimiK3KDAAttention:
     """The ModuleV3 KDA layer at the published geometry.
 
-    bf16 for everything the model dtype covers and fp32 for the pinned
-    tensors, as the checkpoint adapter emits them.
+    bf16 for every projection the layer fuses into its input GEMM, and fp32
+    for the convs, the gate parameters and ``o_norm``.
     """
     dtype = DType.bfloat16
     layer = KimiK3KDAAttention(
@@ -156,29 +153,30 @@ def _layer(
         conv_kernel_size=CONV_KERNEL,
         gate_lower_bound=GATE_LOWER_BOUND,
     )
-    layer.qkvg_proj.weight = _staged(
-        interleave_for_tp(
-            [
-                weights["q_proj_weight"],
-                weights["k_proj_weight"],
-                weights["v_proj_weight"],
-                weights["g_proj_weight"],
-                weights["b_proj_weight"],
-            ],
-            1,
-        ),
-        dtype,
-        device,
+    for name in (
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "g_proj",
+        "b_proj",
+        "f_a_proj",
+        "f_b_proj",
+        "o_proj",
+    ):
+        getattr(layer, name).weight = _staged(
+            weights[f"{name}_weight"], dtype, device
+        )
+    layer.q_conv1d, layer.k_conv1d, layer.v_conv1d = (
+        _staged(conv.reshape(INNER, 1, CONV_KERNEL), DType.float32, device)
+        for conv in np.split(weights["conv_weight"], 3)
     )
-    layer.conv_weight = _staged(weights["conv_weight"], DType.float32, device)
-    layer.f_a_proj.weight = _staged(weights["f_a_proj_weight"], dtype, device)
-    layer.f_b_proj.weight = _staged(weights["f_b_proj_weight"], dtype, device)
-    layer.a_log = _staged(weights["a_log"], DType.float32, device)
-    layer.dt_bias = _staged(weights["dt_bias"], DType.float32, device)
+    layer.a_log = _staged(weights["a_log"][:, 0], DType.float32, device)
+    layer.dt_bias = _staged(
+        weights["dt_bias"].reshape(-1), DType.float32, device
+    )
     layer.o_norm.weight = _staged(
         weights["o_norm_weight"], DType.float32, device
     )
-    layer.o_proj.weight = _staged(weights["o_proj_weight"], dtype, device)
     return layer
 
 

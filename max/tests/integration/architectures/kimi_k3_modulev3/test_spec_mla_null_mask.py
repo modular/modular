@@ -130,9 +130,6 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
 from max.pipelines.architectures.kimi_k3_modulev3.spec_mla import (
     kimi_k3_mla_buffer_size,
 )
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    fuse_qkv_a_g_for_tp,
-)
 from max.support.math import ceildiv
 from max.tensor import Tensor, default_device
 
@@ -494,20 +491,23 @@ def _draw_bf16(rng: np.random.Generator, shape: tuple[int, ...]) -> np.ndarray:
 def _set_latent_projections(
     layer: KimiK3MLAAttention, weights: dict[str, np.ndarray]
 ) -> None:
-    """Loads the drawn q_a and kv_a into the layer's fused input projection.
+    """Loads the drawn q_a and kv_a into the layer's input projections.
 
-    The gate rows stay zero: the comparison stops at the attention output,
-    so the gate never runs.
+    The gate stays zero: the comparison stops at the attention output, so
+    the gate never runs.
     """
     gate = np.zeros(
         (layer.num_heads * layer.v_head_dim, _HIDDEN), dtype=np.float32
     )
-    fused = fuse_qkv_a_g_for_tp(
-        weights["q_a_proj"], weights["kv_a_proj_with_mqa"], gate, 1
-    )
-    layer.qkv_a_g_proj.weight = Tensor(fused, dtype=DType.float32).cast(
-        layer.qkv_a_g_proj.weight.dtype
-    )
+    for name, value in (
+        ("q_a_proj", weights["q_a_proj"]),
+        ("kv_a_proj_with_mqa", weights["kv_a_proj_with_mqa"]),
+        ("g_proj", gate),
+    ):
+        weight = getattr(layer, name).weight
+        getattr(layer, name).weight = Tensor(value, dtype=DType.float32).cast(
+            weight.dtype
+        )
 
 
 def _make_layer(

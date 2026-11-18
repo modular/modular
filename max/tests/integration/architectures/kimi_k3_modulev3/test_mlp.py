@@ -180,7 +180,7 @@ def test_kimi_situ_and_mul_quantize_mxfp8_matches_chain_bytes() -> None:
 
 
 def test_dense_mlp_matches_independent_reference() -> None:
-    """``down_proj(situ_and_mul(gate_up_proj(x)))`` end to end, real weights."""
+    """``down_proj(situ_and_mul(gate | up))`` end to end, real weights."""
     rng = np.random.default_rng(2)
     hidden, intermediate = 16, 20
     beta, linear_beta = 1.2, 0.8
@@ -205,8 +205,11 @@ def test_dense_mlp_matches_independent_reference() -> None:
             beta=beta,
             linear_beta=linear_beta,
         )
-        layer.gate_up_proj.weight = Tensor(
-            gate_up_weight_np, dtype=DType.float32
+        layer.gate_proj.weight = Tensor(
+            gate_up_weight_np[:intermediate], dtype=DType.float32
+        )
+        layer.up_proj.weight = Tensor(
+            gate_up_weight_np[intermediate:], dtype=DType.float32
         )
         layer.down_proj.weight = Tensor(down_weight_np, dtype=DType.float32)
 

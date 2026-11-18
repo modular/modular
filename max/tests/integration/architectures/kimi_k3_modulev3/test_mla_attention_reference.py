@@ -13,8 +13,8 @@
 """Checks :class:`KimiK3MLAAttention` against a float64 numpy reference.
 
 Tagged ``manual``: it gates on a numerical tolerance. The padded forward,
-run on a q_a/kv_a/gate weight fused by the adapter, must match the
-checkpoint's unfused math, which pins the fused input GEMM's split.
+which runs the q_a, kv_a and gate projections as one GEMM, must match the
+checkpoint's unfused math, which pins that GEMM's split.
 """
 
 from __future__ import annotations
@@ -25,9 +25,6 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
-)
-from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
-    fuse_qkv_a_g_for_tp,
 )
 from max.tensor import Tensor, default_device
 
@@ -62,12 +59,11 @@ def _rms_norm(x: np.ndarray, gamma: np.ndarray) -> np.ndarray:
 def test_forward_matches_unfused_float64_reference() -> None:
     """The fused q_a/kv_a/gate GEMM reproduces the three separate ones.
 
-    The layer runs in float32 on a weight fused by the adapter's
-    :func:`fuse_qkv_a_g_for_tp`. The reference is the checkpoint's unfused
-    math in float64: its own q_a, kv_a and gate projections of the layer
-    input, the sigmoid gate on the attention output before ``o_proj``. A
-    split that handed any block the wrong rows would miss by O(1), far
-    above float32 rounding.
+    The layer runs in float32 and fuses the three weights in its graph.
+    The reference is the checkpoint's unfused math in float64: its own
+    q_a, kv_a and gate projections of the layer input, the sigmoid gate on
+    the attention output before ``o_proj``. A split that handed any block
+    the wrong rows would miss by O(1), far above float32 rounding.
     """
     rng = np.random.default_rng(3)
     batch, seq_len = 2, 7
@@ -92,14 +88,8 @@ def test_forward_matches_unfused_float64_reference() -> None:
 
     with default_device(Accelerator()):
         layer = _make_layer()
-        layer.qkv_a_g_proj.weight = Tensor(
-            fuse_qkv_a_g_for_tp(
-                w["q_a_proj"], w["kv_a_proj_with_mqa"], w["g_proj"], 1
-            ),
-            dtype=DType.float32,
-        )
-        for name in ("q_b_proj", "kv_b_proj", "o_proj"):
-            getattr(layer, name).weight = Tensor(w[name], dtype=DType.float32)
+        for name, weight in w.items():
+            getattr(layer, name).weight = Tensor(weight, dtype=DType.float32)
         layer.q_a_layernorm.weight = Tensor(q_gamma, dtype=DType.float32)
         layer.kv_a_layernorm.weight = Tensor(kv_gamma, dtype=DType.float32)
         got = layer(Tensor(x, dtype=DType.float32)).to_numpy()

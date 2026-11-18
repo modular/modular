@@ -515,11 +515,12 @@ _MAX_SLOTS = 4
 def _make_layer(rng: np.random.Generator) -> KimiK3KDAAttention:
     """Builds a KDA layer whose fused-mode parameters are all nonzero.
 
-    The module's defaults leave ``conv_weight``, ``a_log`` and ``dt_bias`` at
-    zero, which makes every operand the fused prologue is responsible for
+    The module's defaults leave the conv weights, ``a_log`` and ``dt_bias``
+    at zero, which makes every operand the fused prologue is responsible for
     constant: SiLU(0) is 0 whatever the fold does, and any ``a_log``
-    packing reads the same zeros. Distinct per-channel values make those
-    defects observable, so the equality test seeds them here.
+    packing reads the same zeros. Distinct values (``a_log`` per head, the
+    rest per channel) make those defects observable, so the equality test
+    seeds them here.
     """
     layer = KimiK3KDAAttention(
         hidden_size=_HIDDEN,
@@ -528,20 +529,20 @@ def _make_layer(rng: np.random.Generator) -> KimiK3KDAAttention:
         conv_kernel_size=_CONV_KERNEL,
         gate_lower_bound=GATE_LOWER_BOUND,
     )
-    layer.conv_weight = Tensor(
-        rng.standard_normal([3 * _NUM_HEADS * _HEAD_DIM, _CONV_KERNEL]).astype(
-            np.float32
-        ),
-        dtype=DType.float32,
+    inner = _NUM_HEADS * _HEAD_DIM
+    conv = rng.standard_normal([3 * inner, _CONV_KERNEL]).astype(np.float32)
+    layer.q_conv1d, layer.k_conv1d, layer.v_conv1d = (
+        Tensor(part.reshape(inner, 1, _CONV_KERNEL), dtype=DType.float32)
+        for part in np.split(conv, 3)
     )
     # `a_log` in [-2, 1] and `dt_bias` in [-5, 5] drive the folded
     # pre-activation across both sigmoid rails, as the op-level arms do.
     layer.a_log = Tensor(
-        rng.uniform(-2, 1, (_NUM_HEADS, _HEAD_DIM)).astype(np.float32),
+        rng.uniform(-2, 1, _NUM_HEADS).astype(np.float32),
         dtype=DType.float32,
     )
     layer.dt_bias = Tensor(
-        rng.uniform(-5, 5, (_NUM_HEADS, _HEAD_DIM)).astype(np.float32),
+        rng.uniform(-5, 5, inner).astype(np.float32),
         dtype=DType.float32,
     )
     return layer
@@ -713,19 +714,20 @@ def test_fused_decode_layer_output_matches_activated_layer(
     convention the fold stands in for -- SiLU plus the model-dtype rounding
     over q/k/v, the fp32 gate pre-activation, zeroed ``a_log`` and
     ``dt_bias``. The replayed pre-activation is derived from the layer's
-    raw ``[H, K]`` ``a_log`` parameter, not from the flat operand the op
-    call carries, so a wrong packing in the layer disagrees here instead
-    of cancelling against itself. The operands must survive that swap
+    per-head ``a_log`` parameter, not from the flat operand the op call
+    carries, so a wrong packing in the layer disagrees here instead of
+    cancelling against itself. The operands must survive that swap
     within one bf16 quantum, on both the output and the state pool: the
     fused and replayed SiLU are separately compiled, so a last-ulp fp32
     difference can flip a bf16 tie, but nothing further.
 
     The inputs are chosen so the comparison can bite: the module defaults
-    zero ``conv_weight``, ``a_log``, ``dt_bias`` and both pools, which
+    zero the conv weights, ``a_log``, ``dt_bias`` and both pools, which
     makes q/k/v and the recurrence constants and lets a dropped SiLU or a
     mis-packed ``a_log`` survive any comparison. Here the conv weights are
-    nonzero, the gate parameters are distinct per channel, and the carried
-    conv and state pools are nonzero.
+    nonzero, the gate parameters are distinct per head (``a_log``) and per
+    channel (``dt_bias``), and the carried conv and state pools are
+    nonzero.
     """
     real = kda_attention.kda_decode
     raw_a_log: Tensor | None = None
@@ -737,7 +739,9 @@ def test_fused_decode_layer_output_matches_activated_layer(
         q, k, v, raw_gate, beta_logits, _packed_a_log, dt_bias = args[:7]
         model_dtype = kwargs["activation_dtype"]
         activated = [F.silu(t).cast(model_dtype) for t in (q, k, v)]
-        pre_gate = (raw_gate + dt_bias) * F.exp(raw_a_log)
+        pre_gate = (raw_gate + dt_bias) * F.exp(
+            F.reshape(raw_a_log, [_NUM_HEADS, 1])
+        )
         rest = {
             key: value
             for key, value in kwargs.items()
@@ -747,7 +751,7 @@ def test_fused_decode_layer_output_matches_activated_layer(
             *activated,
             pre_gate,
             beta_logits,
-            F.zeros_like(raw_a_log[:, 0]),
+            F.zeros_like(raw_a_log),
             F.zeros_like(dt_bias),
             *args[7:],
             **rest,

@@ -91,8 +91,11 @@ def _build(mega: bool) -> KimiK3LatentMoE:
     layer.routed_expert_norm.weight = Tensor(
         np.ones(_LATENT, dtype=np.float32)
     ).cast(DType.bfloat16)
-    layer.shared_experts.gate_up_proj.weight = normal(
-        4 * _MOE_INTERMEDIATE, _HIDDEN, scale=_HIDDEN**-0.5
+    layer.shared_experts.gate_proj.weight = normal(
+        2 * _MOE_INTERMEDIATE, _HIDDEN, scale=_HIDDEN**-0.5
+    ).cast(DType.bfloat16)
+    layer.shared_experts.up_proj.weight = normal(
+        2 * _MOE_INTERMEDIATE, _HIDDEN, scale=_HIDDEN**-0.5
     ).cast(DType.bfloat16)
     layer.shared_experts.down_proj.weight = normal(
         _HIDDEN, 2 * _MOE_INTERMEDIATE, scale=(2 * _MOE_INTERMEDIATE) ** -0.5
