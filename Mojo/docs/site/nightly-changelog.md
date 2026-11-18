@@ -204,6 +204,10 @@ This version is still a work in progress.
 
   - `Ordering`: `not_atomic`, `unordered`, `relaxed`, `acquire`, `release`,
     `acquire_release`, and `sequential`.
+  - `FastMathFlag`: `none`, `nnan`, `ninf`, `nsz`, `arcp`, `contract`,
+    `afn`, `reassoc`, and `fast`. Match patterns, `String()`, and `repr()`
+    use the new names too, so a pattern such as `case .CONTRACT:` must
+    become `case .contract:`.
 
 - An optional mutable pointer now implicitly converts to an optional
   immutable pointer, as `Pointer` does.

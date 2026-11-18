@@ -388,43 +388,54 @@ struct FastMathFlag(
     comptime fast = Self(8)
     """Enable all fast-math optimizations."""
 
+    # TODO: Use `@deprecated(use=...)` once it can name a sibling `comptime`
+    # member. Today it only resolves methods and module-level declarations.
+    @deprecated("Use `FastMathFlag.none` instead.")
     comptime NONE = Self.none
-    """Alias for `none`."""
+    """Deprecated: The former name of `none`."""
 
+    @deprecated("Use `FastMathFlag.nnan` instead.")
     comptime NNAN = Self.nnan
-    """Alias for `nnan`."""
+    """Deprecated: The former name of `nnan`."""
 
+    @deprecated("Use `FastMathFlag.ninf` instead.")
     comptime NINF = Self.ninf
-    """Alias for `ninf`."""
+    """Deprecated: The former name of `ninf`."""
 
+    @deprecated("Use `FastMathFlag.nsz` instead.")
     comptime NSZ = Self.nsz
-    """Alias for `nsz`."""
+    """Deprecated: The former name of `nsz`."""
 
+    @deprecated("Use `FastMathFlag.arcp` instead.")
     comptime ARCP = Self.arcp
-    """Alias for `arcp`."""
+    """Deprecated: The former name of `arcp`."""
 
+    @deprecated("Use `FastMathFlag.contract` instead.")
     comptime CONTRACT = Self.contract
-    """Alias for `contract`."""
+    """Deprecated: The former name of `contract`."""
 
+    @deprecated("Use `FastMathFlag.afn` instead.")
     comptime AFN = Self.afn
-    """Alias for `afn`."""
+    """Deprecated: The former name of `afn`."""
 
+    @deprecated("Use `FastMathFlag.reassoc` instead.")
     comptime REASSOC = Self.reassoc
-    """Alias for `reassoc`."""
+    """Deprecated: The former name of `reassoc`."""
 
+    @deprecated("Use `FastMathFlag.fast` instead.")
     comptime FAST = Self.fast
-    """Alias for `fast`."""
+    """Deprecated: The former name of `fast`."""
 
     comptime _enum_case_names = ParameterList.of[
-        "NONE".value,
-        "NNAN".value,
-        "NINF".value,
-        "NSZ".value,
-        "ARCP".value,
-        "CONTRACT".value,
-        "AFN".value,
-        "REASSOC".value,
-        "FAST".value,
+        "none".value,
+        "nnan".value,
+        "ninf".value,
+        "nsz".value,
+        "arcp".value,
+        "contract".value,
+        "afn".value,
+        "reassoc".value,
+        "fast".value,
     ].values
 
     comptime _enum_case_types = TypeList.splat[
@@ -460,24 +471,24 @@ struct FastMathFlag(
         Args:
             writer: The object to write to.
         """
-        if self == FastMathFlag.NONE:
-            writer.write_string("NONE")
-        elif self == FastMathFlag.NNAN:
-            writer.write_string("NNAN")
-        elif self == FastMathFlag.NINF:
-            writer.write_string("NINF")
-        elif self == FastMathFlag.NSZ:
-            writer.write_string("NSZ")
-        elif self == FastMathFlag.ARCP:
-            writer.write_string("ARCP")
-        elif self == FastMathFlag.CONTRACT:
-            writer.write_string("CONTRACT")
-        elif self == FastMathFlag.AFN:
-            writer.write_string("AFN")
-        elif self == FastMathFlag.REASSOC:
-            writer.write_string("REASSOC")
-        elif self == FastMathFlag.FAST:
-            writer.write_string("FAST")
+        if self == .none:
+            writer.write_string("none")
+        elif self == .nnan:
+            writer.write_string("nnan")
+        elif self == .ninf:
+            writer.write_string("ninf")
+        elif self == .nsz:
+            writer.write_string("nsz")
+        elif self == .arcp:
+            writer.write_string("arcp")
+        elif self == .contract:
+            writer.write_string("contract")
+        elif self == .afn:
+            writer.write_string("afn")
+        elif self == .reassoc:
+            writer.write_string("reassoc")
+        elif self == .fast:
+            writer.write_string("fast")
         else:
             writer.write_string("<<unknown>>")
 
@@ -490,23 +501,23 @@ struct FastMathFlag(
         writer.write("FastMathFlag.", self)
 
     def _mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
-        if self == FastMathFlag.NONE:
+        if self == .none:
             return __mlir_attr.`#pop.fmf<none>`
-        if self == FastMathFlag.NNAN:
+        if self == .nnan:
             return __mlir_attr.`#pop.fmf<nnan>`
-        if self == FastMathFlag.NINF:
+        if self == .ninf:
             return __mlir_attr.`#pop.fmf<ninf>`
-        if self == FastMathFlag.NSZ:
+        if self == .nsz:
             return __mlir_attr.`#pop.fmf<nsz>`
-        if self == FastMathFlag.ARCP:
+        if self == .arcp:
             return __mlir_attr.`#pop.fmf<arcp>`
-        if self == FastMathFlag.CONTRACT:
+        if self == .contract:
             return __mlir_attr.`#pop.fmf<contract>`
-        if self == FastMathFlag.AFN:
+        if self == .afn:
             return __mlir_attr.`#pop.fmf<afn>`
-        if self == FastMathFlag.REASSOC:
+        if self == .reassoc:
             return __mlir_attr.`#pop.fmf<reassoc>`
-        if self == FastMathFlag.FAST:
+        if self == .fast:
             return __mlir_attr.`#pop.fmf<fast>`
 
         return __mlir_attr.`#pop.fmf<none>`
@@ -2903,7 +2914,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
     # TODO: Move to global function.
     @inline(.nodebug)
     def fma[
-        flag: FastMathFlag = FastMathFlag.CONTRACT
+        flag: FastMathFlag = .contract
     ](self, multiplier: Self, accumulator: Self) -> Self:
         """Performs a fused multiply-add operation, i.e.
         `self*multiplier + accumulator`.

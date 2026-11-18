@@ -31,23 +31,23 @@ from std.testing.suite import TestResult
 
 def _fast_math_rank(flag: FastMathFlag) -> Int:
     match flag:
-        case .NONE:
+        case .none:
             return 0
-        case .NNAN:
+        case .nnan:
             return 1
-        case .NINF:
+        case .ninf:
             return 2
-        case .NSZ:
+        case .nsz:
             return 3
-        case .ARCP:
+        case .arcp:
             return 4
-        case .CONTRACT:
+        case .contract:
             return 5
-        case .AFN:
+        case .afn:
             return 6
-        case .REASSOC:
+        case .reassoc:
             return 7
-        case .FAST:
+        case .fast:
             return 8
 
 
@@ -63,15 +63,15 @@ def _test_result_rank(result: TestResult) -> Int:
 
 def test_fast_math_match() raises:
     var flags = List[FastMathFlag]()
-    flags.append(FastMathFlag.NONE)
-    flags.append(FastMathFlag.NNAN)
-    flags.append(FastMathFlag.NINF)
-    flags.append(FastMathFlag.NSZ)
-    flags.append(FastMathFlag.ARCP)
-    flags.append(FastMathFlag.CONTRACT)
-    flags.append(FastMathFlag.AFN)
-    flags.append(FastMathFlag.REASSOC)
-    flags.append(FastMathFlag.FAST)
+    flags.append(.none)
+    flags.append(.nnan)
+    flags.append(.ninf)
+    flags.append(.nsz)
+    flags.append(.arcp)
+    flags.append(.contract)
+    flags.append(.afn)
+    flags.append(.reassoc)
+    flags.append(.fast)
 
     for i in range(len(flags)):
         assert_equal(
