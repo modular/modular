@@ -19,12 +19,12 @@ Additional SMEM allocations:
 - 5 TMA descriptors (A, B, SFA, SFB, C) at 128 bytes each = 640 bytes total
 - Aligned to 128 bytes for TMA descriptor requirements
 
-Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
+Tile storage is shared via BlockScaledTileCore from block_scaled_tile_core.mojo.
 """
 
 from max.gpu.host.nvidia.tma import TMADescriptor
 
-from ..block_scaled.block_scaled_smem import BlockScaledTileCore
+from ..structured_kernels.block_scaled_tile_core import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from structured_kernels.pipeline_storage import SmemPipelineBundle
 

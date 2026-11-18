@@ -13,10 +13,10 @@
 #
 # Test: block-scaled FP4 matmul (sm100, 2SM) with weight prefetching.
 #
-# Mirrors test_matmul_sm100_block_scaled_fp4_2sm.mojo with prefetch_tiles_n=2
-# added to BlockScaledMatmulConfig.  All tile shapes (bn in [64, 128]), both
-# swapAB variants, and all 8 cluster shapes from the reference test are
-# exercised.  NVFP4 scaling only (2SM MXFP4 is not exercised here).
+# Exercises the 2SM FP4 config with prefetch_tiles_n=2 added to
+# BlockScaledMatmulConfig.  All tile shapes (bn in [64, 128]), both
+# swapAB variants, and all 8 cluster shapes are exercised.  NVFP4 scaling
+# only (2SM MXFP4 is not exercised here).
 # ===----------------------------------------------------------------------=== #
 from std.math import align_up, ceildiv
 from std.sys import size_of

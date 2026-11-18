@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Shared memory layout for block-scaled SM100 matmul.
 
-Provides A/B/C tile storage plus scaling factor tile storage (SFA, SFB)
-following MXFP8 layout conventions. Also includes pipeline barriers and TMEM
-state.
+"""Shared tile storage, constants, and accessors for block-scaled SMEM structs.
 
-The tile storage, derived constants, layouts, and accessors are factored into
-BlockScaledTileCore and shared with GroupedBlockScaledSmem and Grouped1D1DSmem.
-Each SMEM struct is a thin wrapper that adds the appropriate pipeline bundle.
+`BlockScaledTileCore` holds the A/B/C tile storage plus scaling factor tile
+storage (SFA, SFB) following MXFP8 layout conventions, the derived tile
+constants, and size utilities. Grouped block-scaled kernels wrap it in their
+own SMEM struct to add pipeline bundles and TMA descriptor storage.
 """
 
 from std.math import align_up
@@ -32,10 +30,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
 )
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from structured_kernels.pipeline_storage import (
-    BlockScaledTileStorage,
-    SmemPipelineBundle,
-)
+from structured_kernels.pipeline_storage import BlockScaledTileStorage
 from ..structured_kernels.tile_pipeline import BlockScaledTilePayload
 
 
@@ -59,8 +54,8 @@ struct BlockScaledTileCore[
     """Core tile storage for block-scaled matmul SMEM structs.
 
     Contains derived constants, layouts, tile storage, tile accessors, and
-    size utilities. Shared between BlockScaledSmem (CLC),
-    GroupedBlockScaledSmem (CLC + TMA descriptors), and Grouped1D1DSmem (no CLC).
+    size utilities. Shared by the grouped block-scaled SMEM structs
+    (GroupedBlockScaledSmem and Grouped1D1DSmem).
 
     Parameters:
         a_type: Element type of the A operand matrix.
@@ -209,113 +204,6 @@ struct BlockScaledTileCore[
             + Self.sf_pipeline_size()
             + Self.c_output_size()
         )
-
-
-# =============================================================================
-# BlockScaledSmem - SMEM wrapper with CLC pipeline
-# =============================================================================
-
-
-struct BlockScaledSmem[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    sfa_dtype: DType,
-    sfb_dtype: DType,
-    transpose_b: Bool,
-    *,
-    config: BlockScaledMatmulConfig[
-        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
-    ],
-]:
-    """SMEM struct for block-scaled matmul with CLC scheduler pipeline.
-
-    Thin wrapper over BlockScaledTileCore + SmemPipelineBundle.
-
-    Parameters:
-        a_type: Element type of the A operand matrix.
-        b_type: Element type of the B operand matrix.
-        c_type: Element type of the C output matrix.
-        sfa_dtype: Element type of the A operand scaling factors.
-        sfb_dtype: Element type of the B operand scaling factors.
-        transpose_b: Whether the B operand is stored in transposed layout.
-        config: Block-scaled matmul configuration providing tile shapes,
-            pipeline stage counts, and scaling factor layout parameters.
-    """
-
-    # ========== Core (tile storage + constants) ==========
-    comptime Core = BlockScaledTileCore[
-        Self.a_type,
-        Self.b_type,
-        Self.c_type,
-        Self.sfa_dtype,
-        Self.sfb_dtype,
-        Self.transpose_b,
-        config=Self.config,
-    ]
-
-    # ========== Storage Fields ==========
-    var core: Self.Core
-
-    # ========== Pipeline Storage ==========
-    comptime Pipelines = SmemPipelineBundle[
-        Self.Core.num_group_pipeline_stages,
-        Self.Core.num_accum_pipeline_stages,
-        Self.config.num_clc_pipeline_stages,
-        Self.Core.Payload,
-    ]
-    var pipelines: Self.Pipelines
-
-    # ========== Tile Accessors (forwarding) ==========
-    @inline(.always)
-    def a_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.ATileArray:
-        """Get A tile array accessor."""
-        return self.core.a_tiles()
-
-    @inline(.always)
-    def b_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.BTileArray:
-        """Get B tile array accessor."""
-        return self.core.b_tiles()
-
-    @inline(.always)
-    def c_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.CTileArray:
-        """Get C tile array accessor."""
-        return self.core.c_tiles()
-
-    @inline(.always)
-    def sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.SFATileArray:
-        """Get SFA tile array accessor."""
-        return self.core.sfa_tiles()
-
-    @inline(.always)
-    def sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.SFBTileArray:
-        """Get SFB tile array accessor."""
-        return self.core.sfb_tiles()
-
-    # ========== Size Utilities (forwarding) ==========
-    @staticmethod
-    @inline(.always)
-    def ab_pipeline_size() -> Int:
-        """Total size of A+B tiles for all pipeline stages (in elements)."""
-        return Self.Core.ab_pipeline_size()
-
-    @staticmethod
-    @inline(.always)
-    def sf_pipeline_size() -> Int:
-        """Total size of SFA+SFB tiles for all pipeline stages (in elements)."""
-        return Self.Core.sf_pipeline_size()
-
-    @staticmethod
-    @inline(.always)
-    def c_output_size() -> Int:
-        """Size of C tiles for all output stages (in elements)."""
-        return Self.Core.c_output_size()
-
-    @staticmethod
-    @inline(.always)
-    def total_tile_size() -> Int:
-        """Total tile storage size (A+B+SFA+SFB+C) in elements."""
-        return Self.Core.total_tile_size()
 
 
 # =============================================================================

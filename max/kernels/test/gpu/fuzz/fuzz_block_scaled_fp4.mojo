@@ -83,7 +83,6 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         b_swizzle=swizzle,
         block_swizzle_size=8,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        is_small_bn=True,
     ](ctx, spec.m, Idx[N], Idx[K])
 
 

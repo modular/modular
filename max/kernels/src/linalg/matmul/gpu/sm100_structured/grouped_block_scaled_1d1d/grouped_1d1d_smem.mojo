@@ -20,10 +20,10 @@ the standard GroupedBlockScaledSmem:
 2. No CLC pipeline storage - uses 3-warp specialization (no scheduler warp)
 3. Simpler barrier structure optimized for the 1D-1D workload
 
-Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
+Tile storage is shared via BlockScaledTileCore from block_scaled_tile_core.mojo.
 """
 
-from ..block_scaled.block_scaled_smem import BlockScaledTileCore
+from ..structured_kernels.block_scaled_tile_core import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from structured_kernels.pipeline_storage import (
     BarrierPair,

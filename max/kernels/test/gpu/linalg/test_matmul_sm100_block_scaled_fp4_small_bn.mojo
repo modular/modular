@@ -52,7 +52,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(8),
@@ -73,7 +72,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(1000),
@@ -94,7 +92,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 block_swizzle_size=4,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(512),
@@ -116,7 +113,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 block_swizzle_size=0,
                 k_group_size=1,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(500),
@@ -137,7 +133,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 block_swizzle_size=2,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(999),
@@ -158,7 +153,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 block_swizzle_size=1,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(777),
@@ -180,7 +174,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 block_swizzle_size=1,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(1),
@@ -203,7 +196,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 swapAB=True,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(16),
@@ -224,7 +216,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 swapAB=True,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(100),
@@ -253,7 +244,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 k_group_size=2,
                 num_clc_pipeline_stages=0,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
             ](
                 ctx,
                 Int(1),
@@ -286,7 +276,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                is_small_bn=True,
                 value_epilogue=True,
             ](
                 ctx,
@@ -311,7 +300,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                     b_swizzle=swizzle,
                     swapAB=swap,
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    is_small_bn=True,
                     value_epilogue=not use_compute,
                     value_compute=use_compute,
                 ](
@@ -337,7 +325,6 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
             b_swizzle=swizzle,
             swapAB=True,
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-            is_small_bn=True,
             value_epilogue=True,
         ](
             ctx,

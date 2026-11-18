@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Shared test harness for SM100 block-scaled FP4 matmul tests.
 
-Supports both small_bn (1SM / 2SM cooperative) and structured 2SM kernels
-via the `is_small_bn` compile-time parameter, and both NVFP4 and MXFP4
-scaling formats via the `scales_dtype` parameter.
+Supports the small_bn (1SM / 2SM cooperative) kernel and both NVFP4 and
+MXFP4 scaling formats via the `scales_dtype` parameter.
 """
 from std.math import align_up, ceildiv
 from std.sys import argv
@@ -37,9 +36,6 @@ from .block_scaled_matmul import (
 )
 from .block_scaled_matmul_small_bn import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized as _small_bn_kernel,
-)
-from ..sm100_structured.block_scaled.block_scaled_matmul import (
-    blackwell_block_scaled_matmul_tma_umma_warp_specialized as _structured_kernel,
 )
 from .config import BlockScaledMatmulConfig
 from std.sys import size_of
@@ -105,7 +101,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     k_group_size: Int = 1,
     num_clc_pipeline_stages: Int = 2,
     SF_VECTOR_SIZE: Int = NVFP4_SF_VECTOR_SIZE,
-    is_small_bn: Bool = False,
     value_epilogue: Bool = False,
     value_compute: Bool = False,
 ](
@@ -118,8 +113,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     """Runs a block-scaled FP4 matmul on SM100 and checks it against a reference.
 
     Allocates and initializes the FP4 operands and their scale-factor tensors,
-    dispatches either the small-BN or structured 2SM kernel based on
-    `is_small_bn`, computes a reference output via `naive_block_scaled_matmul`
+    dispatches the small-BN kernel, computes a reference output via
+    `naive_block_scaled_matmul`
     (MXFP4) or a vendor BLAS matmul (NVFP4), and asserts the kernel output
     matches the reference within tolerance.
 
@@ -145,7 +140,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         k_group_size: Number of K tiles grouped together for accumulation.
         num_clc_pipeline_stages: Number of CLC pipeline stages to use.
         SF_VECTOR_SIZE: Number of FP4 elements covered by one scale factor.
-        is_small_bn: Selects the small-BN (1SM/2SM cooperative) kernel variant.
         value_epilogue: Applies the 2x epilogue as an epilogue closure.
         value_compute: Applies the 2x epilogue as a compute closure.
 
@@ -164,7 +158,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
         t" {cluster_shape[1]}, {cluster_shape[2]})"
         t" swapAB={swapAB} k_group_size={k_group_size}"
-        t" SF_VECTOR_SIZE={SF_VECTOR_SIZE} is_small_bn={is_small_bn}"
+        t" SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
         t" alpha={alpha}"
     )
 
@@ -326,7 +320,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
         num_accum_pipeline_stages=1 if mma_shape[1] in (192, 256) else 2,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
-        is_small_bn=is_small_bn,
+        is_small_bn=True,
     )
 
     def store_doubled[
@@ -371,7 +365,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             ctx,
             alpha,
         )
-    elif is_small_bn:
+    else:
         _small_bn_kernel[
             transpose_b=transpose_b,
             config=matmul_config,
@@ -384,19 +378,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             b_scales_tensor,
             ctx,
             alpha,
-        )
-    else:
-        _structured_kernel[
-            transpose_b=transpose_b,
-            config=matmul_config,
-        ](
-            c_tensor,
-            a_tensor,
-            b_tensor,
-            a_scales_tensor,
-            b_scales_tensor,
-            ctx,
-            alpha=alpha,
         )
 
     comptime if scales_dtype == MXFP4_SF_DTYPE:
