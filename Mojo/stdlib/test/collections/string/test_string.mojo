@@ -765,6 +765,11 @@ def test_find() raises:
 
     assert_false(String("abc").find("abcd"))
 
+    # An empty substring matches at `start`, if `start` is in bounds.
+    assert_equal(String("abc").find("", 2), 2)
+    assert_equal(String("abc").find("", 3), 3)
+    assert_false(String("abc").find("", 9))
+
 
 def test_replace() raises:
     # Replace empty

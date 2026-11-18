@@ -485,6 +485,15 @@ def test_find() raises:
 
     assert_false(StringSpan(String()).find(StringSpan("abc")))
 
+    # An empty substring matches at `start`, if `start` is in bounds.
+    var abc = StringSpan("abc")
+    assert_equal(abc.find(StringSpan("")), 0)
+    assert_equal(abc.find(StringSpan(""), start=2), 2)
+    assert_equal(abc.find(StringSpan(""), start=3), 3)
+    assert_false(abc.find(StringSpan(""), start=9))
+    assert_equal(abc.find(StringSpan(""), start=-1), 2)
+    assert_equal(abc.find(StringSpan(""), start=-9), 0)
+
 
 def test_find_compile_time() raises:
     comptime haystack = StringSpan("abcdefg")

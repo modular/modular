@@ -1863,17 +1863,21 @@ struct StringSpan[origin: ImmOrigin](
             print(text[byte=:index])  # héllo
         ```
         """
-        if not substr:
-            return 0
-
-        if self.byte_length() < substr.byte_length() + start:
-            return None
-
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
         var start_byte = start if start >= 0 else max(
             start + self.byte_length(), 0
         )
+
+        if not substr:
+            # An empty substring matches at `start_byte`, if it is in bounds.
+            if start_byte > self.byte_length():
+                return None
+            return start_byte
+
+        if self.byte_length() < substr.byte_length() + start:
+            return None
+
         var haystack = self.as_bytes()[start_byte:]
 
         __guard case .Some(loc) = _memmem(
