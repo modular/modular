@@ -617,6 +617,7 @@ ENGINE_CONFIG = EngineConfig(
         verify_commits_long_rows=False,
         successor_replay=True,
     ),
+    device_graph_capture=True,
 )
 
 
@@ -647,9 +648,22 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
                 "verify_commits_long_rows": False,
                 "successor_replay": True,
             },
+            "device_graph_capture": True,
         }
     }
     assert deserialize(dest).engine_config == ENGINE_CONFIG
+
+
+def test_an_artifact_before_device_graph_capture_reads_false(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    del sections["engine_config"]["device_graph_capture"]
+    _rewrite_sections(dest, sections)
+    engine_config = deserialize(dest).engine_config
+    assert engine_config is not None
+    assert not engine_config.device_graph_capture
 
 
 def test_an_artifact_before_the_verify_facts_reads_all_false(
@@ -703,6 +717,7 @@ def test_engine_config_reads_an_artifact_exported_before_the_mode(
             acceptance_mode="sampled"
         ),
         lambda section: section["speculative"].update(draft_proposal="greedy"),
+        lambda section: section.update(device_graph_capture=1),
     ],
 )
 def test_malformed_engine_config_rejected(
@@ -760,6 +775,7 @@ KV_CACHE = KVCacheLayout(
             **_attention_fields("latent", "full_group"),
             num_q_heads=16,
             sparse_indices_stride=2048,
+            sparse_kv_form="plain",
         ),
         RecurrentStateCache(
             name="state",
@@ -842,6 +858,7 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
         lambda section: section["caches"][1].update(dtype="bfloat17"),
         lambda section: section["caches"][1].update(bogus=1),
         lambda section: section["caches"][2]["leaves"][0].update(group="lru"),
+        lambda section: section["caches"][2].update(sparse_kv_form="fp4"),
         lambda section: section["caches"][3]["regions"][0].pop("row_shape"),
     ],
 )
@@ -854,6 +871,22 @@ def test_malformed_kv_cache_rejected(
     _rewrite_sections(dest, sections)
     with pytest.raises(ArtifactError, match="component 'kv_cache'"):
         deserialize(dest)
+
+
+def test_an_mla_cache_before_its_sparse_form_reads_none(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(kv_cache=KV_CACHE), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    latent = sections["kv_cache"]["caches"][2]
+    assert latent["sparse_kv_form"] == "plain"
+    del latent["sparse_kv_form"]
+    _rewrite_sections(dest, sections)
+    kv_cache = deserialize(dest).kv_cache
+    assert kv_cache is not None
+    mla = kv_cache.caches[2]
+    assert isinstance(mla, MLAKVCache)
+    assert mla.sparse_kv_form is None
 
 
 def test_format_spec_stored_unchanged(tmp_path: Path) -> None:

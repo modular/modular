@@ -29,18 +29,30 @@ one replica is cheap.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from collections import OrderedDict
+from typing import TYPE_CHECKING, ClassVar
 
 from max import functional as F
+from max._artifact.vision import VisionMetadata
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn import LayerNorm, Linear, Module, ModuleList, RMSNorm, as_subgraph
+from max.nn.legacy.graph_groups import VisionHostMax, VisionRows, VisionSegments
 from max.nn.norm.rms_norm import rms_norm
+from max.pipelines.lib.graph_specs import GraphSpec
 from max.tensor import Tensor, default_dtype
 
 from ..model_config import Glm5NextConfig
 from .attention import Glm5NextVisionAttention
 from .config import Glm5NextVisionConfig
+from .preprocess import (
+    glm5_next_vision_metadata,
+    image_preprocess_spec,
+    processor_for,
+)
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.config import PipelineConfig
 
 __all__ = [
     "Glm5NextVisionBlock",
@@ -403,16 +415,60 @@ class Glm5NextVisionEncoder(Glm5NextVisionTransformer):
         self.embedding_dtype = vision_config.dtype
         self.embedding_dim = config.hidden_size
 
-    def input_types(self) -> tuple[TensorType, ...]:
-        """Returns the vision graph's inputs, in :meth:`forward`'s order."""
+    def input_types(self) -> OrderedDict[str, object]:
+        """Returns the vision graph's inputs, grouped as a serving engine packs them.
+
+        The fields are :meth:`forward`'s arguments, in its graph's order:
+        a row per patch, one attention segment per frame, and the host bound
+        on a segment.
+        """
         device = self.device_ref
-        return (
-            TensorType(
-                DType.float32,
-                ["vision_patches", patch_dim(self.vision_config)],
-                device,
+        return OrderedDict(
+            patches=VisionRows(
+                pixel_values=TensorType(
+                    DType.float32,
+                    ["vision_patches", patch_dim(self.vision_config)],
+                    device,
+                ),
+                rot_pos_ids=TensorType(
+                    DType.int32, ["vision_patches", 2], device
+                ),
             ),
-            TensorType(DType.int32, ["vision_patches", 2], device),
-            TensorType(DType.uint32, ["vision_segments"], device),
-            TensorType(DType.uint32, [1], DeviceRef.CPU()),
+            segments=VisionSegments(
+                input_row_offsets=TensorType(
+                    DType.uint32, ["vision_segments"], device
+                )
+            ),
+            segment_bound=VisionHostMax(
+                max_seqlen=TensorType(DType.uint32, [1], DeviceRef.CPU())
+            ),
         )
+
+    @classmethod
+    def vision_metadata(
+        cls, pipeline_config: PipelineConfig, config: Glm5NextConfig
+    ) -> VisionMetadata | None:
+        """Returns the media layout the checkpoint is served with."""
+        del config
+        huggingface_config = pipeline_config.model.huggingface_config
+        assert huggingface_config is not None
+        return glm5_next_vision_metadata(
+            huggingface_config, processor_for(pipeline_config)
+        )
+
+    @classmethod
+    def vision_preprocess_spec(
+        cls, pipeline_config: PipelineConfig, config: Glm5NextConfig
+    ) -> GraphSpec | None:
+        """Returns the graph that preprocesses one image for the tower."""
+        if config.vision_config is None:
+            return None
+        return image_preprocess_spec(processor_for(pipeline_config))
+
+    @classmethod
+    def vision_preprocess_video_spec(
+        cls, pipeline_config: PipelineConfig, config: Glm5NextConfig
+    ) -> GraphSpec | None:
+        """Returns no clip graph: an artifact serves images only for now."""
+        del pipeline_config, config
+        return None

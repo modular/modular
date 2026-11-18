@@ -26,6 +26,7 @@ modular_py_test(
         requirement("numpy"),
         requirement("transformers"),
         "//max/python/max:tensor",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
@@ -162,5 +163,23 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)
+
+modular_py_test(
+    name = "test_preprocess_graph",
+    srcs = ["test_preprocess_graph.py"],
+    deps = [
+        requirement("numpy"),
+        requirement("pillow"),
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:vision_preprocess_parity",
     ],
 )

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import ClassVar, TypeVar
+from typing import ClassVar, Literal, TypeAlias, TypeVar
 
 from max.dtype import DType
 from typing_extensions import Self
@@ -35,6 +35,9 @@ from .value_types import (
 )
 
 _T = TypeVar("_T")
+
+SparseKVForm: TypeAlias = Literal["plain", "scaled_fp8", "nvfp4"]
+"""A sparse MLA cache's form, as MAX's ``MLASparseKVForm`` names it."""
 
 POOL_GROUPS = ("full", "sliding_window", "recurrent", "scratch")
 """How the pool reuses and evicts a leaf's pages, as MAX's
@@ -189,6 +192,9 @@ class MLAKVCache:
         num_draft_tokens: The draft width the cache is sized for, ``0``
             without speculative decoding.
         leaves: The pool leaves the cache occupies.
+        sparse_kv_form: The form sparse MLA decode dispatches on, or ``None``
+            for dense MLA. An indexer cache records its MLA cache's form,
+            whose capture key it follows.
     """
 
     kind: ClassVar[str] = "mla"
@@ -209,6 +215,7 @@ class MLAKVCache:
     speculative_method: str | None
     num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
+    sparse_kv_form: SparseKVForm | None = None
 
 
 @dataclass(frozen=True)
@@ -342,6 +349,7 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
             | {
                 "num_q_heads": cache.num_q_heads,
                 "sparse_indices_stride": cache.sparse_indices_stride,
+                "sparse_kv_form": cache.sparse_kv_form,
             }
         )
     return (
@@ -469,7 +477,23 @@ def _mla(value: dict[str, ArtifactType]) -> MLAKVCache:
         speculative_method=decode_optional(_str)(obj["speculative_method"]),
         num_draft_tokens=_int(obj["num_draft_tokens"]),
         leaves=_tuple(_leaf)(obj["leaves"]),
+        # An artifact written before the field existed reads as dense.
+        sparse_kv_form=decode_optional(_sparse_kv_form)(
+            obj.get("sparse_kv_form")
+        ),
     )
+
+
+def _sparse_kv_form(value: ArtifactType) -> SparseKVForm:
+    match _str(value):
+        case "plain":
+            return "plain"
+        case "scaled_fp8":
+            return "scaled_fp8"
+        case "nvfp4":
+            return "nvfp4"
+        case other:
+            raise ValueError(f"unknown sparse kv form {other!r}")
 
 
 def _region(value: ArtifactType) -> StateRegion:

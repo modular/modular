@@ -130,6 +130,58 @@ class MuseSmartResize:
 
 
 @dataclass(frozen=True)
+class Glm5NextSmartResize:
+    """Aligns the canvas up to the merged patch within a decoder-token budget.
+
+    GLM-5.3-Flash's ``smart_resize``: both raw sides align up to
+    ``patch_size * merge_size``, a canvas under ``min_tokens`` scales up, and
+    one over ``max_tokens`` takes the tallest content height whose aligned
+    canvas fits. The budget counts a still image as ``temporal_patch_size``
+    frames, each token covering ``temporal_patch_size * (patch * merge)**2``
+    pixels. The content is resized to fit inside the canvas, never upscaled
+    once it is over the token floor, and the rest of the canvas is zero
+    padding.
+
+    Args:
+        temporal_patch_size: The frames one temporal patch spans; a still
+            image is replicated to fill it.
+        min_tokens: The fewest decoder tokens an item may produce.
+        max_tokens: The most decoder tokens an item may produce.
+        max_entry_tokens: Video only, ``0`` for none: the most decoder tokens
+            one temporal patch may span.
+
+    Raises:
+        ValueError: If a field is not an integer Mach reads as ``u32``, or
+            ``min_tokens`` is over ``max_tokens``.
+    """
+
+    rule: ClassVar[str] = "glm5_next_smart_resize"
+    temporal_patch_size: int
+    min_tokens: int
+    max_tokens: int
+    max_entry_tokens: int = 0
+
+    def __post_init__(self) -> None:
+        for name in (
+            "temporal_patch_size",
+            "min_tokens",
+            "max_tokens",
+            "max_entry_tokens",
+        ):
+            value = getattr(self, name)
+            low = 0 if name == "max_entry_tokens" else 1
+            if not _is_int_in(value, low, 2**32 - 1):
+                raise ValueError(
+                    f"{name} {value!r} is not an integer from {low} to 2**32 - 1"
+                )
+        if self.min_tokens > self.max_tokens:
+            raise ValueError(
+                f"min_tokens {self.min_tokens} is over max_tokens "
+                f"{self.max_tokens}"
+            )
+
+
+@dataclass(frozen=True)
 class DeepseekV41Letterbox:
     """Grows small images, then letterboxes them into a span budget.
 
@@ -201,6 +253,7 @@ ResizeStrategy: TypeAlias = (
     | VideoSmartResize
     | InklingPatchRows
     | MuseSmartResize
+    | Glm5NextSmartResize
     | DeepseekV41Letterbox
     | Inkling2Blocks
 )

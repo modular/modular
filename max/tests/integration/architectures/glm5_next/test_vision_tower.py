@@ -24,6 +24,7 @@ from typing import cast
 
 import numpy as np
 from max import functional as F
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
@@ -145,12 +146,13 @@ def test_the_rules_name_every_tower_weight_in_its_shape() -> None:
 def test_the_tower_traces_to_one_row_per_merged_patch() -> None:
     encoder = _encoder()
     weights = _tower_weights(encoder)
+    # The tower names its inputs in vision groups; the graph takes their
+    # leaves in order.
+    input_types = tree.leaves(encoder.input_types())
     with F.lazy(), default_device(CPU()):
-        staged, _ = encoder.stage(*encoder.input_types(), weights=weights)
+        staged, _ = encoder.stage(*input_types, weights=weights)
     (output,) = staged.graph.output_types
     assert isinstance(output, TensorType)
     assert output.dtype == DType.bfloat16
     assert int(output.shape[1]) == _HIDDEN_SIZE
-    assert [value.type for value in staged.graph.inputs] == list(
-        encoder.input_types()
-    )
+    assert [value.type for value in staged.graph.inputs] == input_types

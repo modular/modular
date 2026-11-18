@@ -737,6 +737,14 @@ def test_engine_config_copies_the_planned_settings() -> None:
     )
 
 
+def test_engine_config_records_device_graph_capture() -> None:
+    config = _pipeline_config(sampling=SamplingConfig.model_construct())
+    assert not pipeline_engine_config(config, _PLAN).device_graph_capture
+    assert pipeline_engine_config(
+        config, _PLAN, device_graph_capture=True
+    ).device_graph_capture
+
+
 @pytest.mark.parametrize("greedy", [False, True])
 def test_engine_config_copies_the_speculative_settings(greedy: bool) -> None:
     config = _pipeline_config(
@@ -1056,6 +1064,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         speculative_method=None,
         num_draft_tokens=0,
         leaves=(full_leaf("latent"),),
+        # An unscaled BF16 latent.
+        sparse_kv_form="plain",
     )
     assert layout.caches[5] == RecurrentStateCache(
         name="state",

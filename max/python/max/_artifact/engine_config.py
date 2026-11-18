@@ -134,6 +134,9 @@ class EngineConfig:
         sampling: The sampling graphs' optional inputs.
         speculative: The speculative-decoding settings, or ``None`` for a
             pipeline that doesn't decode speculatively.
+        device_graph_capture: Whether the architecture supports device graph
+            capture of its decode steps: the graph makes no host call inside
+            a step, its expert-parallel arm included.
     """
 
     max_batch_size: int
@@ -145,6 +148,7 @@ class EngineConfig:
     ep_size: int
     sampling: EngineSamplingConfig
     speculative: EngineSpeculativeConfig | None
+    device_graph_capture: bool = False
 
     def __serialize__(self) -> Mapping[str, ArtifactType]:
         """Returns the settings as a JSON object."""
@@ -183,6 +187,7 @@ class EngineConfig:
                 ),
                 "successor_replay": speculative.successor_replay,
             },
+            "device_graph_capture": self.device_graph_capture,
         }
 
     @classmethod
@@ -211,6 +216,11 @@ class EngineConfig:
             sampling=decode_field(value, "sampling", _sampling),
             speculative=decode_field(
                 value, "speculative", decode_optional(_speculative)
+            ),
+            # An artifact written before the field existed reads as one
+            # whose decode MAX does not capture.
+            device_graph_capture=expect(
+                value.get("device_graph_capture", False), bool
             ),
         )
 

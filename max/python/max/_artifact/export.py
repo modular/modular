@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import huggingface_hub
+from max._kv_cache_ops import MLASparseKVForm
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -82,6 +83,7 @@ from .kv_cache import (
     MSAIndexKVCache,
     MSAKVCache,
     RecurrentStateCache,
+    SparseKVForm,
     StateRegion,
 )
 from .model_artifact import ModelArtifact
@@ -426,6 +428,7 @@ def pipeline_engine_config(
     memory_plan: MemoryPlan,
     *,
     verify_facts: SpecGraphFacts | None = None,
+    device_graph_capture: bool = False,
 ) -> EngineConfig:
     """Returns the settings a pipeline is built with, for its artifact.
 
@@ -438,6 +441,8 @@ def pipeline_engine_config(
         memory_plan: The memory plan the pipeline is built with.
         verify_facts: The fused graph's verify facts, read off the built
             spec-decode pipeline model; ``None`` for a pipeline without one.
+        device_graph_capture: Whether the architecture supports device graph
+            capture of its decode steps.
 
     Returns:
         The artifact's ``engine_config`` component.
@@ -487,7 +492,15 @@ def pipeline_engine_config(
             enable_penalties=sampling.enable_penalties,
         ),
         speculative=spec_config,
+        device_graph_capture=device_graph_capture,
     )
+
+
+_SPARSE_KV_FORMS: dict[MLASparseKVForm, SparseKVForm] = {
+    MLASparseKVForm.PLAIN: "plain",
+    MLASparseKVForm.SCALED_FP8: "scaled_fp8",
+    MLASparseKVForm.NVFP4: "nvfp4",
+}
 
 
 def pipeline_kv_cache(params: CacheLeafParamInterface) -> KVCacheLayout:
@@ -571,6 +584,9 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             speculative_method=params.speculative_method,
             num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
+            sparse_kv_form=None
+            if params.sparse_indices_stride is None
+            else _SPARSE_KV_FORMS[params.resolved_sparse_kv_form],
         )
     elif type(params) is RecurrentStateParams:
         assert isinstance(params, RecurrentStateParams)
@@ -863,6 +879,8 @@ def export_pipeline(
             pipeline_config,
             retrieved.memory_plan,
             verify_facts=_verify_facts(pipeline),
+            device_graph_capture=arch is not None
+            and arch.supports_device_graph_capture,
         ),
         kv_cache=pipeline_kv_cache(kv_params)
         if kv_params is not None

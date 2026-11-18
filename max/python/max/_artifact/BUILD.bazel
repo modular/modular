@@ -75,6 +75,7 @@ modular_py_library(
         ":model_artifact",
         ":overlap_helpers",
         "//max/python/max:tensor",
+        "//max/python/max/_kv_cache_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
