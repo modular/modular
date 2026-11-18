@@ -920,7 +920,7 @@ def _topp_minp_sampling_gpu[
         row_major(batch_size, vocab_size),
     )
 
-    _softmax_gpu[dtype, 1, input_logits.rank](
+    _softmax_gpu[dtype, 1](
         apply_temperature,
         input_shape,
         input_probs,

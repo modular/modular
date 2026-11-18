@@ -186,7 +186,7 @@ def _topp_minp_sampling[
         var val = input_logits.load[width=_simd_width](coords)
         return val / temperature
 
-    softmax_inline[simd_width=1, rank=input_logits.rank](
+    softmax_inline[simd_width=1](
         apply_temperature,
         input_logits.layout.shape_coord(),
         sorted_probs,

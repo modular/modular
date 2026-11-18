@@ -151,7 +151,7 @@ def run_one_case(
     ](coords: Coord) {var in_tt} -> SIMD[sm_type, _simd_width]:
         return in_tt.load[width=_simd_width](coords)
 
-    _softmax_gpu[sm_type, 1, sm_rank](
+    _softmax_gpu[sm_type, 1](
         input_fn_device,
         Coord(shape),
         TileTensor(out_dev, row_major(Coord(shape))),

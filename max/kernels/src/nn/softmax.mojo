@@ -473,7 +473,6 @@ def softmax_3_pass[
 def _softmax_cpu[
     dtype: DType,
     simd_width: Int,
-    rank: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[_simd_width: Int](Coord) -> SIMD[dtype, _simd_width],
@@ -485,12 +484,11 @@ def _softmax_cpu[
     axis: Int,
     ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
+    comptime rank = type_of(shape).rank
     # TODO: Add rowwise generator to de-duplicate partitioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")
-
-    comptime assert type_of(shape).rank == rank, "shape must have rank `rank`"
 
     var num_elements = Int(shape.product())
     if num_elements == 0:
@@ -795,7 +793,6 @@ def _softmax_warp_kernel[
 def _softmax_gpu[
     dtype: DType,
     simd_width: Int,
-    rank: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[_simd_width: Int](Coord) -> SIMD[dtype, _simd_width],
@@ -814,6 +811,7 @@ def _softmax_gpu[
         TileTensor[sink_type, _SinkWeightsTTLayout, ImmutAnyOrigin]
     ] = None,
 ) raises:
+    comptime rank = type_of(shape).rank
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")
 
@@ -823,7 +821,6 @@ def _softmax_gpu[
     ](idx: Coord) {var input_fn} -> SIMD[_dtype, width]:
         return rebind[SIMD[_dtype, width]](input_fn[width](idx))
 
-    comptime assert type_of(shape).rank == rank, "shape must have rank `rank`"
     var row_size = Int(shape[rank - 1])
     var num_rows = Int(shape.product()) // row_size
     var sm_count = ctx.device().multiprocessor_count()
@@ -1044,7 +1041,6 @@ def _softmax_gpu[
 def softmax_inline[
     dtype: DType,
     simd_width: Int,
-    rank: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[_simd_width: Int](Coord) -> SIMD[dtype, _simd_width],
@@ -1065,7 +1061,6 @@ def softmax_inline[
     Parameters:
         dtype: The dtype of the input and output buffers.
         simd_width: The simd_width to use in vectorization.
-        rank: The rank of the input and output tensors.
         InputFnType: The type of `input_fn` (inferred).
         logsoftmax: Enable to apply elementwise log() to outputs after softmax.
         has_prologue_fusion: Whether the input lambda supports prologue fusion.
@@ -1091,14 +1086,13 @@ def softmax_inline[
             return
         comptime if context.T.target.is_cpu():
             var cpu_ctx = DeviceContext._map_assert_cpu_target(context)
-            _softmax_cpu[dtype, simd_width, rank, logsoftmax=logsoftmax](
+            _softmax_cpu[dtype, simd_width, logsoftmax=logsoftmax](
                 input_fn, shape, output, axis, cpu_ctx
             )
         elif context.T.target.is_gpu():
             _softmax_gpu[
                 dtype,
                 simd_width,
-                rank,
                 logsoftmax=logsoftmax,
                 has_prologue_fusion=has_prologue_fusion,
             ](

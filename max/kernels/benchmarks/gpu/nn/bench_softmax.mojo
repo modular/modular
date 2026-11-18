@@ -53,7 +53,6 @@ def bench_softmax_gpu[
         softmax_inline[
             dtype,
             simd_width_of[dtype, target=ctx.target](),
-            rank,
         ](
             input_fn,
             Coord(shape),
