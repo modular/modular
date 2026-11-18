@@ -93,7 +93,9 @@ def pin_worker_to_cpus(
     cpus_per_worker: int,
     num_workers: int,
 ) -> None:
-    """Pin this worker process to a dedicated CPU slice."""
+    """Pin this worker process to a dedicated CPU slice on Linux."""
+    if sys.platform != "linux":
+        return
     with counter.get_lock():
         wid = counter.value
         counter.value += 1
