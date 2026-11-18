@@ -105,3 +105,56 @@ mo.graph @concat_over_its_sum(%a: !mo.tensor<[4, 6], f32>, %b: !mo.tensor<[4, 10
   %y = mo.div(%c, %sb) : !mo.tensor<[4, 16], f32>
   mo.output %y : !mo.tensor<[4, 16], f32>
 }
+
+// A consumer of a per-row result that also reads a concat: the select can't
+// run at the row index, so the consumer stays a kernel of its own.
+// CHECK-LABEL: mo.graph @per_row_sum_plus_concat
+// CHECK:       map.iter.rowwise<[4, 16], axis = 1>
+// CHECK-NOT:   map.index.concat.select
+// CHECK:       map.iter.elementwise<[4, 1]>
+// CHECK:       map.index.concat.select<#map.index.concat.spec<[1, 1], [3, 1] -> [4, 1], axis = 0>>
+// CHECK:       mo.output
+mo.graph @per_row_sum_plus_concat(%x: !mo.tensor<[4, 16], f32>, %a: !mo.tensor<[1, 1], f32>, %b: !mo.tensor<[3, 1], f32>) -> !mo.tensor<[4, 1], f32> {
+  %s = mo.reduce.add(%x) : (!mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 1], f32>
+  %c = mo.concat[0] (%a, %b) : (!mo.tensor<[1, 1], f32>, !mo.tensor<[3, 1], f32>) -> !mo.tensor<[4, 1], f32>
+  %y = mo.add(%s, %c) : !mo.tensor<[4, 1], f32>
+  mo.output %y : !mo.tensor<[4, 1], f32>
+}
+
+// The same with a consumer over the rowwise shape, which would join a map
+// phase: the consumer stays a kernel of its own.
+// CHECK-LABEL: mo.graph @concat_times_broadcast_sum
+// CHECK:       map.iter.rowwise<[4, 16], axis = 1>
+// CHECK-NOT:   map.index.concat.select
+// CHECK:       map.iter.elementwise<[4, 16]>
+// CHECK:       map.index.concat.select<#map.index.concat.spec<[4, 6], [4, 10] -> [4, 16], axis = 1>>
+// CHECK:       mo.output
+mo.graph @concat_times_broadcast_sum(%x: !mo.tensor<[4, 16], f32>, %a: !mo.tensor<[4, 6], f32>, %b: !mo.tensor<[4, 10], f32>) -> !mo.tensor<[4, 16], f32> {
+  %s = mo.reduce.add(%x) : (!mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 1], f32>
+  %sb = mo.static.broadcast_to(%s) : !mo.tensor<[4, 1], f32> -> !mo.tensor<[4, 16], f32>
+  %c = mo.concat[1] (%a, %b) : (!mo.tensor<[4, 6], f32>, !mo.tensor<[4, 10], f32>) -> !mo.tensor<[4, 16], f32>
+  %y = mo.mul(%c, %sb) : !mo.tensor<[4, 16], f32>
+  mo.output %y : !mo.tensor<[4, 16], f32>
+}
+
+// RMS norm of a concat: view fusion gives the square and the scale each a
+// copy of the select. The square fuses into the fold; the scale would join a
+// map phase, which has no lowering for a select, so it stays a kernel of its
+// own.
+// CHECK-LABEL: mo.graph @rms_norm_of_concat
+// CHECK:       map.iter.rowwise<[4, 16], axis = 1>
+// CHECK:       map.iter.reduce
+// CHECK:       map.index.concat.select
+// CHECK-NOT:   map.iter.map
+// CHECK:       map.iter.elementwise<[4, 16]>
+// CHECK:       map.index.concat.select<#map.index.concat.spec<[4, 6], [4, 10] -> [4, 16], axis = 1>>
+// CHECK:       mo.output
+mo.graph @rms_norm_of_concat(%a: !mo.tensor<[4, 6], f32>, %b: !mo.tensor<[4, 10], f32>) -> !mo.tensor<[4, 16], f32> {
+  %c = mo.concat[1] (%a, %b) : (!mo.tensor<[4, 6], f32>, !mo.tensor<[4, 10], f32>) -> !mo.tensor<[4, 16], f32>
+  %sq = mo.mul(%c, %c) : !mo.tensor<[4, 16], f32>
+  %s = mo.reduce.add(%sq) : (!mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 1], f32>
+  %r = mo.rsqrt(%s) : !mo.tensor<[4, 1], f32>
+  %rb = mo.static.broadcast_to(%r) : !mo.tensor<[4, 1], f32> -> !mo.tensor<[4, 16], f32>
+  %y = mo.mul(%c, %rb) : !mo.tensor<[4, 16], f32>
+  mo.output %y : !mo.tensor<[4, 16], f32>
+}

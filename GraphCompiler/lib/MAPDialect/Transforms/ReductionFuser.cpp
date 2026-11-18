@@ -251,9 +251,10 @@ bool needsSink(IterRowwiseOp dst, IterElementwiseOp consumer) {
 
 bool canFuseConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
   // The Row API can't write per-row stores after a map phase: `Row.emit`
-  // isn't phase-aware.
+  // isn't phase-aware. A concat select runs only in a fold, never at the row
+  // index.
   if (!(isPlainForeach(consumer) || isFusibleMutableStore(consumer, dst)) ||
-      lastMapPhase(dst) || dst.getInputChain() ||
+      holdsConcatSelect(consumer) || lastMapPhase(dst) || dst.getInputChain() ||
       consumer->getBlock() != dst->getBlock() || !sameDevice(consumer, dst) ||
       !isPerRowShape(dst, consumer.getShape()))
     return false;
@@ -509,9 +510,10 @@ bool laterReductionTakes(IterElementwiseOp consumer) {
 }
 
 bool canFuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
-  if (!isPlainForeach(consumer) || dst.getInputChain() ||
-      consumer->getBlock() != dst->getBlock() || !sameDevice(consumer, dst) ||
-      consumer.getShape() != dst.getShape())
+  // A map phase has no lowering for a concat select.
+  if (!isPlainForeach(consumer) || holdsConcatSelect(consumer) ||
+      dst.getInputChain() || consumer->getBlock() != dst->getBlock() ||
+      !sameDevice(consumer, dst) || consumer.getShape() != dst.getShape())
     return false;
 
   int64_t rank = dst.getShape().getRank(), axis = dst.getAxis();
