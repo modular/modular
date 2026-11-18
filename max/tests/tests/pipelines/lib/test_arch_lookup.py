@@ -137,3 +137,48 @@ def test_materialize_registers_lazy_arch_with_different_task(
         lookup.resolve("LlamaForCausalLM", PipelineTask.TEXT_GENERATION)
         is custom
     )
+
+
+def test_resolve_does_not_return_arch_for_another_task() -> None:
+    lookup = ArchLookup()
+    embedding = make_arch(
+        "Qwen3ForCausalLM", PipelineTask.EMBEDDINGS_GENERATION
+    )
+    lookup.register(embedding)
+
+    assert (
+        lookup.resolve("Qwen3ForCausalLM", PipelineTask.TEXT_GENERATION) is None
+    )
+    assert (
+        lookup.resolve("Qwen3ForCausalLM", PipelineTask.EMBEDDINGS_GENERATION)
+        is embedding
+    )
+    assert lookup.resolve("Qwen3ForCausalLM") is embedding
+
+
+def test_find_falls_back_when_module_v3_serves_another_task() -> None:
+    """A ModuleV3 variant registered only for embeddings must not be picked
+    for text generation; the graph API variant serves it."""
+    lookup = ArchLookup()
+    text = make_arch("Qwen3ForCausalLM", PipelineTask.TEXT_GENERATION)
+    v3_embedding = make_arch(
+        "Qwen3ForCausalLM_ModuleV3", PipelineTask.EMBEDDINGS_GENERATION
+    )
+    lookup.register(text)
+    lookup.register(v3_embedding)
+
+    found = lookup.find(
+        "Qwen3ForCausalLM",
+        prefer_module_v3=True,
+        task=PipelineTask.TEXT_GENERATION,
+    )
+
+    assert found is text
+    assert (
+        lookup.find(
+            "Qwen3ForCausalLM",
+            prefer_module_v3=True,
+            task=PipelineTask.EMBEDDINGS_GENERATION,
+        )
+        is v3_embedding
+    )
