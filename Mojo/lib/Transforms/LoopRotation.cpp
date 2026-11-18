@@ -85,13 +85,26 @@ namespace M::KGEN {
 
 /// Return whether an op ahead of the exiting test must not be duplicated.
 static bool blocksRotation(Operation *op) {
-  // A region may carry a jump out of the loop.
-  if (op->getNumRegions() != 0)
-    return true;
-
   // An allocation names one object, and its lifetime markers require an
   // operand that it defines, which a loop-carried copy is not.
-  return isa<POP::StackAllocationOp>(op);
+  if (isa<POP::StackAllocationOp>(op))
+    return true;
+
+  // A jump to a loop outside `op` would run from the copy ahead of the loop,
+  // leaving that outer loop before this one has started. A nested loop whose
+  // own jumps stay inside it copies fine.
+  bool escapes = false;
+  op->walk([&](Operation *nested) {
+    StringAttr label;
+    if (auto breakOp = dyn_cast<BreakOp>(nested))
+      label = breakOp.getLabelAttr();
+    else if (auto continueOp = dyn_cast<ContinueOp>(nested))
+      label = continueOp.getLabelAttr();
+    else
+      return;
+    escapes |= !op->isAncestor(getParentLoop(nested, label));
+  });
+  return escapes;
 }
 
 /// Move the exiting test to the top of the body, as the file comment describes.
@@ -131,8 +144,12 @@ static LogicalResult rotate(LoopOp loop, IfOp ifOp,
   }
   if (rotated.empty())
     return success();
-  // Duplicating is the cost, so it is bounded, as LLVM bounds its own.
-  if (rotated.size() > *KGENPassCLOptions::rotateLoopsMaxOps())
+  // Duplicating is the cost, so it is bounded, as LLVM bounds its own. A
+  // nested loop costs what it holds, not one.
+  unsigned opCount = 0;
+  for (Operation *op : rotated)
+    op->walk([&](Operation *) { ++opCount; });
+  if (opCount > *KGENPassCLOptions::rotateLoopsMaxOps())
     return failure();
 
   // The rest moves past the test, which must not observe it doing so.
@@ -152,10 +169,15 @@ static LogicalResult rotate(LoopOp loop, IfOp ifOp,
   for (Operation *op : llvm::reverse(leading)) {
     if (!copied.contains(op))
       continue;
-    for (Value operand : op->getOperands()) {
-      if (Operation *def = operand.getDefiningOp())
-        copied.insert(def);
-    }
+    // A region reads through its own ops, so the walk goes inside: what one of
+    // them names has to be copied too, or the copy ahead of the loop would
+    // name a value the loop defines.
+    op->walk([&](Operation *nested) {
+      for (Value operand : nested->getOperands()) {
+        if (Operation *def = operand.getDefiningOp())
+          copied.insert(def);
+      }
+    });
   }
 
   auto copyLeadingOps = [&](IRMapping &map) {
@@ -217,6 +239,14 @@ static LogicalResult rotate(LoopOp loop, IfOp ifOp,
 
   for (Operation *op : llvm::reverse(rotated))
     rewriter.eraseOp(op);
+
+  // An op that stayed only to feed a mover has no reader left, and the copies
+  // compute it for the iterations that need it.
+  for (Operation *op : llvm::reverse(leading)) {
+    if (!rotatedSet.contains(op) && op->use_empty() &&
+        mlir::isMemoryEffectFree(op))
+      rewriter.eraseOp(op);
+  }
   return success();
 }
 

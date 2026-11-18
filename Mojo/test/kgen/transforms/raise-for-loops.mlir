@@ -1169,38 +1169,6 @@ kgen.func @convergent_not_rotated(%p: !kgen.pointer<index>, %n: index) {
 
 // -----
 
-// The same contract for a region ahead of the test, which may carry a jump out
-// of the loop and so is not duplicated.
-// CHECK-LABEL: @region_before_test_not_rotated
-// CHECK: hlcf.loop
-// CHECK-NOT: hlcf.for
-kgen.func @region_before_test_not_rotated(%p: !kgen.pointer<index>, %n: index,
-                                          %c: !kgen.scalar<bool>) {
-  %idx0 = index.constant 0
-  %idx1 = index.constant 1
-
-  hlcf.loop (%arg0 = %n : index) {
-    hlcf.if %c {
-      pop.store %arg0, %p : !kgen.pointer<index>
-      hlcf.yield
-    } else {
-      hlcf.yield
-    }
-    %0 = index.cmp eq(%arg0, %idx0)
-    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
-    hlcf.if %c0 {
-      hlcf.break
-    } else {
-      hlcf.yield
-    }
-    %1 = index.sub %arg0, %idx1
-    hlcf.continue %1 : index
-  }
-  hlcf.return
-}
-
-// -----
-
 // An `eq` test fires only when the induction variable lands exactly on the
 // bound, which a stride wider than one steps over.
 // CHECK-LABEL: @exiting_test_wide_stride
@@ -1382,4 +1350,76 @@ kgen.func @nested_loops_both_raise(%p: !kgen.pointer<index>, %n: index) {
     hlcf.continue "outer" %1 : index
   }
   hlcf.return
+}
+
+// -----
+
+// Rotating a loop nest leaves every loop raisable: the copy of the inner loop
+// ahead of the outer one, the outer loop itself, and the copy left in its
+// body.
+// CHECK-LABEL: @rotated_loop_nest_raises
+// CHECK: pop.store %arg1, %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index) {
+// CHECK: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index) {
+// CHECK: hlcf.for [{{%.*}} to %idx0 step %idx1 sgt sub] (%arg3 = {{%.*}} : index) {
+// CHECK-NOT: hlcf.loop
+kgen.func @rotated_loop_nest_raises(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop "outer" (%arg0 = %n : index) {
+    hlcf.loop "inner" (%arg1 = %arg0 : index) {
+      pop.store %arg1, %p : !kgen.pointer<index>
+      %2 = index.cmp eq(%arg1, %idx0)
+      %c1 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
+      hlcf.if %c1 {
+        hlcf.break "inner"
+      } else {
+        hlcf.yield
+      }
+      %3 = index.sub %arg1, %idx1
+      hlcf.continue "inner" %3 : index
+    }
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break "outer"
+    } else {
+      hlcf.yield
+    }
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue "outer" %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The break carries a value rotation moved, so it takes the carried copy and
+// the raise yields the next iteration's, which is what the iteration that
+// exits would have held.
+// CHECK-LABEL: @break_carries_a_rotated_value
+// CHECK: [[INIT:%.*]] = pop.load %arg0
+// CHECK-NEXT: hlcf.for [%arg1 to %idx0 step %idx1 sgt sub] (%arg2 = %arg1 : index, %arg3 = [[INIT]] : index) -> index {
+// CHECK: [[NEXT:%.*]] = pop.load %arg0
+// CHECK-NEXT: hlcf.for.yield [induction_var ({{.*}})] [retvals ([[NEXT]] : index)] [iterargs ()]
+kgen.func @break_carries_a_rotated_value(%p: !kgen.pointer<index>,
+                                         %n: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  %r = hlcf.loop (%arg0 = %n : index) -> index {
+    %0 = pop.load %p : !kgen.pointer<index>
+    %1 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break %0 : index
+    } else {
+      hlcf.yield
+    }
+    pop.store %0, %p : !kgen.pointer<index>
+    %2 = index.sub %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  hlcf.return %r : index
 }

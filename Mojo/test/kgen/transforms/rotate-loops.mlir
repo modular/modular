@@ -247,18 +247,17 @@ kgen.func @convergent_not_rotated(%p: !kgen.pointer<index>, %n: index) {
 
 // -----
 
-// A region ahead of the test may carry a jump out of the loop, so it is not
-// duplicated.
-// CHECK-LABEL: kgen.func @region_before_test_not_rotated(%arg0: !kgen.pointer<index>, %arg1: index, %arg2: !kgen.scalar<bool>) {
+// A region ahead of the test is duplicated when its jumps stay inside it.
+// CHECK-LABEL: kgen.func @region_before_test(%arg0: !kgen.pointer<index>, %arg1: index, %arg2: !kgen.scalar<bool>) {
 // CHECK-NEXT:   %idx0 = index.constant 0
 // CHECK-NEXT:   %idx1 = index.constant 1
+// CHECK-NEXT:   hlcf.if %arg2 {
+// CHECK-NEXT:     pop.store   %arg1, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:     hlcf.yield
+// CHECK-NEXT:   } else {
+// CHECK-NEXT:     hlcf.yield
+// CHECK-NEXT:   }
 // CHECK-NEXT:   hlcf.loop (%arg3 = %arg1 : index) {
-// CHECK-NEXT:     hlcf.if %arg2 {
-// CHECK-NEXT:       pop.store   %arg3, %arg0 : !kgen.pointer<index>
-// CHECK-NEXT:       hlcf.yield
-// CHECK-NEXT:     } else {
-// CHECK-NEXT:       hlcf.yield
-// CHECK-NEXT:     }
 // CHECK-NEXT:     %0 = index.cmp eq(%arg3, %idx0)
 // CHECK-NEXT:     %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
 // CHECK-NEXT:     hlcf.if %1 {
@@ -267,11 +266,17 @@ kgen.func @convergent_not_rotated(%p: !kgen.pointer<index>, %n: index) {
 // CHECK-NEXT:       hlcf.yield
 // CHECK-NEXT:     }
 // CHECK-NEXT:     %2 = index.sub %arg3, %idx1
+// CHECK-NEXT:     hlcf.if %arg2 {
+// CHECK-NEXT:       pop.store   %2, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     }
 // CHECK-NEXT:     hlcf.continue %2 : index
 // CHECK-NEXT:   }
 // CHECK-NEXT:   hlcf.return
 // CHECK-NEXT: }
-kgen.func @region_before_test_not_rotated(%p: !kgen.pointer<index>, %n: index,
+kgen.func @region_before_test(%p: !kgen.pointer<index>, %n: index,
                                           %c: !kgen.scalar<bool>) {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
@@ -656,6 +661,327 @@ kgen.func @inner_loop_breaks_outer(%p: !kgen.pointer<index>, %n: index,
     }
     %1 = index.sub %arg0, %idx1
     hlcf.continue "outer" %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// A nested loop ahead of the test is duplicated like anything else, since its
+// jumps stay inside it.
+// CHECK-LABEL: kgen.func @inner_loop_before_test(%arg0: !kgen.pointer<index>, %arg1: index) {
+// CHECK-NEXT:   %idx0 = index.constant 0
+// CHECK-NEXT:   %idx1 = index.constant 1
+// CHECK-NEXT:   pop.store   %arg1, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:   hlcf.loop "inner" (%arg2 = %arg1 : index) {
+// CHECK-NEXT:     %0 = index.cmp eq(%arg2, %idx0)
+// CHECK-NEXT:     %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+// CHECK-NEXT:     hlcf.if %1 {
+// CHECK-NEXT:       hlcf.break "inner"
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     }
+// CHECK-NEXT:     %2 = index.sub %arg2, %idx1
+// CHECK-NEXT:     pop.store   %2, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:     hlcf.continue "inner" %2 : index
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.loop "outer" (%arg2 = %arg1 : index) {
+// CHECK-NEXT:     %0 = index.cmp eq(%arg2, %idx0)
+// CHECK-NEXT:     %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+// CHECK-NEXT:     hlcf.if %1 {
+// CHECK-NEXT:       hlcf.break "outer"
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     }
+// CHECK-NEXT:     %2 = index.sub %arg2, %idx1
+// CHECK-NEXT:     pop.store   %2, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:     hlcf.loop "inner" (%arg3 = %2 : index) {
+// CHECK-NEXT:       %3 = index.cmp eq(%arg3, %idx0)
+// CHECK-NEXT:       %4 = pop.cast_from_builtin %3 : i1 to !kgen.scalar<bool>
+// CHECK-NEXT:       hlcf.if %4 {
+// CHECK-NEXT:         hlcf.break "inner"
+// CHECK-NEXT:       } else {
+// CHECK-NEXT:         hlcf.yield
+// CHECK-NEXT:       }
+// CHECK-NEXT:       %5 = index.sub %arg3, %idx1
+// CHECK-NEXT:       pop.store   %5, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:       hlcf.continue "inner" %5 : index
+// CHECK-NEXT:     }
+// CHECK-NEXT:     hlcf.continue "outer" %2 : index
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.return
+// CHECK-NEXT: }
+kgen.func @inner_loop_before_test(%p: !kgen.pointer<index>, %n: index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop "outer" (%arg0 = %n : index) {
+    hlcf.loop "inner" (%arg1 = %arg0 : index) {
+      pop.store %arg1, %p : !kgen.pointer<index>
+      %2 = index.cmp eq(%arg1, %idx0)
+      %c1 = pop.cast_from_builtin %2 : i1 to !kgen.scalar<bool>
+      hlcf.if %c1 {
+        hlcf.break "inner"
+      } else {
+        hlcf.yield
+      }
+      %3 = index.sub %arg1, %idx1
+      hlcf.continue "inner" %3 : index
+    }
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break "outer"
+    } else {
+      hlcf.yield
+    }
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue "outer" %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The copy ahead of the loop has no loop to leave, so a nested region whose
+// jump reaches out of it is still not duplicated.
+// CHECK-LABEL: kgen.func @inner_loop_before_test_breaks_outer(%arg0: !kgen.pointer<index>, %arg1: index, %arg2: !kgen.scalar<bool>) {
+// CHECK-NEXT:   %idx0 = index.constant 0
+// CHECK-NEXT:   %idx1 = index.constant 1
+// CHECK-NEXT:   hlcf.loop "outer" (%arg3 = %arg1 : index) {
+// CHECK-NEXT:     hlcf.loop "inner" (%arg4 = %arg3 : index) {
+// CHECK-NEXT:       pop.store   %arg4, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:       hlcf.if %arg2 {
+// CHECK-NEXT:         hlcf.break "outer"
+// CHECK-NEXT:       } else {
+// CHECK-NEXT:         hlcf.yield
+// CHECK-NEXT:       }
+// CHECK-NEXT:       %3 = index.sub %arg4, %idx1
+// CHECK-NEXT:       hlcf.continue "inner" %3 : index
+// CHECK-NEXT:     }
+// CHECK-NEXT:     %0 = index.cmp eq(%arg3, %idx0)
+// CHECK-NEXT:     %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+// CHECK-NEXT:     hlcf.if %1 {
+// CHECK-NEXT:       hlcf.break "outer"
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     }
+// CHECK-NEXT:     %2 = index.sub %arg3, %idx1
+// CHECK-NEXT:     hlcf.continue "outer" %2 : index
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.return
+// CHECK-NEXT: }
+kgen.func @inner_loop_before_test_breaks_outer(%p: !kgen.pointer<index>,
+                                               %n: index,
+                                               %c: !kgen.scalar<bool>) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop "outer" (%arg0 = %n : index) {
+    hlcf.loop "inner" (%arg1 = %arg0 : index) {
+      pop.store %arg1, %p : !kgen.pointer<index>
+      hlcf.if %c {
+        hlcf.break "outer"
+      } else {
+        hlcf.yield
+      }
+      %3 = index.sub %arg1, %idx1
+      hlcf.continue "inner" %3 : index
+    }
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break "outer"
+    } else {
+      hlcf.yield
+    }
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue "outer" %1 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The region ahead of the test reads another op ahead of it. Both are copied,
+// or the copy ahead of the loop would name a value the loop defines.
+// CHECK-LABEL: kgen.func @region_reads_another_leading_op(%arg0: !kgen.pointer<index>, %arg1: index, %arg2: !kgen.scalar<bool>) {
+// CHECK-NEXT:   %idx0 = index.constant 0
+// CHECK-NEXT:   %idx1 = index.constant 1
+// CHECK-NEXT:   %simd = kgen.param.constant: scalar<index> = <1>
+// CHECK-NEXT:   %0 = pop.offset %arg0[%simd] : !kgen.pointer<index>
+// CHECK-NEXT:   hlcf.if %arg2 {
+// CHECK-NEXT:     %1 = pop.load    %0 : !kgen.pointer<index>
+// CHECK-NEXT:     pop.store   %1, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:     hlcf.yield
+// CHECK-NEXT:   } else {
+// CHECK-NEXT:     hlcf.yield
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.loop (%arg3 = %arg1 : index) {
+// CHECK-NEXT:     %1 = index.cmp eq(%arg3, %idx0)
+// CHECK-NEXT:     %2 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+// CHECK-NEXT:     hlcf.if %2 {
+// CHECK-NEXT:       hlcf.break
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     }
+// CHECK-NEXT:     %3 = index.sub %arg3, %idx1
+// CHECK-NEXT:     %4 = pop.offset %arg0[%simd] : !kgen.pointer<index>
+// CHECK-NEXT:     hlcf.if %arg2 {
+// CHECK-NEXT:       %5 = pop.load    %4 : !kgen.pointer<index>
+// CHECK-NEXT:       pop.store   %5, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     }
+// CHECK-NEXT:     hlcf.continue %3 : index
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.return
+// CHECK-NEXT: }
+kgen.func @region_reads_another_leading_op(%p: !kgen.pointer<index>, %n: index,
+                                           %c: !kgen.scalar<bool>) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  %simd = kgen.param.constant: scalar<index> = <1>
+
+  hlcf.loop (%arg0 = %n : index) {
+    %0 = pop.offset %p[%simd] : !kgen.pointer<index>
+    hlcf.if %c {
+      %4 = pop.load %0 : !kgen.pointer<index>
+      pop.store %4, %p : !kgen.pointer<index>
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    %1 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    %2 = index.sub %arg0, %idx1
+    hlcf.continue %2 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// The jump leaves a loop outside the one being rotated, so this loop still has
+// a single exit and only the duplication rule refuses it.
+// CHECK-LABEL: kgen.func @leading_region_jumps_to_outer_loop(%arg0: !kgen.pointer<index>, %arg1: index, %arg2: !kgen.scalar<bool>) {
+// CHECK-NEXT:   %idx0 = index.constant 0
+// CHECK-NEXT:   %idx1 = index.constant 1
+// CHECK-NEXT:   hlcf.loop "outer" (%arg3 = %arg1 : index) {
+// CHECK-NEXT:     hlcf.loop "middle" (%arg4 = %arg3 : index) {
+// CHECK-NEXT:       hlcf.if %arg2 {
+// CHECK-NEXT:         hlcf.break "outer"
+// CHECK-NEXT:       } else {
+// CHECK-NEXT:         hlcf.yield
+// CHECK-NEXT:       }
+// CHECK-NEXT:       pop.store   %arg4, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:       %1 = index.cmp eq(%arg4, %idx0)
+// CHECK-NEXT:       %2 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+// CHECK-NEXT:       hlcf.if %2 {
+// CHECK-NEXT:         hlcf.break "middle"
+// CHECK-NEXT:       } else {
+// CHECK-NEXT:         hlcf.yield
+// CHECK-NEXT:       }
+// CHECK-NEXT:       %3 = index.sub %arg4, %idx1
+// CHECK-NEXT:       hlcf.continue "middle" %3 : index
+// CHECK-NEXT:     }
+// CHECK-NEXT:     %0 = index.sub %arg3, %idx1
+// CHECK-NEXT:     hlcf.continue "outer" %0 : index
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.return
+// CHECK-NEXT: }
+kgen.func @leading_region_jumps_to_outer_loop(%p: !kgen.pointer<index>,
+                                              %n: index,
+                                              %c: !kgen.scalar<bool>) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop "outer" (%arg0 = %n : index) {
+    hlcf.loop "middle" (%arg1 = %arg0 : index) {
+      hlcf.if %c {
+        hlcf.break "outer"
+      } else {
+        hlcf.yield
+      }
+      pop.store %arg1, %p : !kgen.pointer<index>
+      %0 = index.cmp eq(%arg1, %idx0)
+      %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+      hlcf.if %c0 {
+        hlcf.break "middle"
+      } else {
+        hlcf.yield
+      }
+      %1 = index.sub %arg1, %idx1
+      hlcf.continue "middle" %1 : index
+    }
+    %2 = index.sub %arg0, %idx1
+    hlcf.continue "outer" %2 : index
+  }
+  hlcf.return
+}
+
+// -----
+
+// A region ahead of the test yields a value the body behind it reads, so the
+// region's result is what becomes loop-carried.
+// CHECK-LABEL: kgen.func @region_result_carried(%arg0: !kgen.pointer<index>, %arg1: index, %arg2: !kgen.scalar<bool>) {
+// CHECK-NEXT:   %idx0 = index.constant 0
+// CHECK-NEXT:   %idx1 = index.constant 1
+// CHECK-NEXT:   %0 = hlcf.if %arg2 -> index {
+// CHECK-NEXT:     pop.store   %arg1, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:     hlcf.yield %arg1 : index
+// CHECK-NEXT:   } else {
+// CHECK-NEXT:     hlcf.yield %idx1 : index
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.loop (%arg3 = %arg1 : index, %arg4 = %0 : index) {
+// CHECK-NEXT:     %1 = index.cmp eq(%arg3, %idx0)
+// CHECK-NEXT:     %2 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+// CHECK-NEXT:     hlcf.if %2 {
+// CHECK-NEXT:       hlcf.break
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield
+// CHECK-NEXT:     }
+// CHECK-NEXT:     pop.store   %arg4, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:     %3 = index.sub %arg3, %idx1
+// CHECK-NEXT:     %4 = hlcf.if %arg2 -> index {
+// CHECK-NEXT:       pop.store   %3, %arg0 : !kgen.pointer<index>
+// CHECK-NEXT:       hlcf.yield %3 : index
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield %idx1 : index
+// CHECK-NEXT:     }
+// CHECK-NEXT:     hlcf.continue %3, %4 : index, index
+// CHECK-NEXT:   }
+// CHECK-NEXT:   hlcf.return
+// CHECK-NEXT: }
+kgen.func @region_result_carried(%p: !kgen.pointer<index>, %n: index,
+                                 %c: !kgen.scalar<bool>) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  hlcf.loop (%arg0 = %n : index) {
+    %r = hlcf.if %c -> index {
+      pop.store %arg0, %p : !kgen.pointer<index>
+      hlcf.yield %arg0 : index
+    } else {
+      hlcf.yield %idx1 : index
+    }
+    %0 = index.cmp eq(%arg0, %idx0)
+    %c0 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
+    hlcf.if %c0 {
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    pop.store %r, %p : !kgen.pointer<index>
+    %1 = index.sub %arg0, %idx1
+    hlcf.continue %1 : index
   }
   hlcf.return
 }
