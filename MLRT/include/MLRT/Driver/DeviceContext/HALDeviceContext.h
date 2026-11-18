@@ -57,8 +57,8 @@
 #include <vector>
 
 // Opaque handles to the heap allocated wrapped Mojo values the MojoHAL_*
-// exports create and release. The Mojo side types the same handles as
-// `_DeviceContextBoxPtr` etc. in hal_device_context_exports.mojo.
+// exports create and release; the exports are declared in
+// MLRT/lib/Driver/DeviceContext/HAL/MojoHALExports.h.
 struct MojoHALContextBox;
 struct MojoHALBufferBox;
 struct MojoHALScopeBox;

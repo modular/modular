@@ -1017,23 +1017,15 @@ def MojoHAL_DeviceContextScope_pop(scope: _DeviceContextScopeBoxPtr) abi("C"):
 
 @export
 def MojoHAL_DeviceContext_getDLPackStream(
-    out_stream: _OutPtr[_RawMemoryPtr],
+    out_stream: _OutPtr[Int],
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> Bool:
     # Returns False when the backend exposes no native stream handle (the C++
     # shim maps that to std::nullopt).
     try:
-        # The handle's tied origin (and its immutability, from the borrow of
-        # the temporary `DeviceStream`) ends at the C ABI: the C++ caller's
-        # wrapper keeps the stream alive.
-        out_stream[] = (
-            ctx[]
-            .stream()
-            ._native_stream()
-            .unsafe_bitcast[Byte]()
-            .unsafe_mut_cast[True]()
-            .unsafe_origin_cast[MutUntrackedOrigin]()
-        )
+        # DLPack takes the stream as an integer. The context keeps the stream
+        # alive, so the address outlives the temporary `DeviceStream`.
+        out_stream[] = Int(ctx[].stream()._native_stream())
         return True
     except:
         return False
