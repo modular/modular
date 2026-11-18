@@ -75,19 +75,32 @@ def _situ_and_mul(gate_up: TensorValue) -> TensorValue:
 
 
 @pytest.mark.parametrize(
-    "dtype, gamma_dtype",
+    "dtype, gamma_dtype, rows",
     [
-        (DType.float32, DType.float32),
-        # Kimi K3's production form: a bfloat16 norm weight on the float32
-        # latent, widened in the kernel.
-        (DType.float32, DType.bfloat16),
-        (DType.bfloat16, DType.bfloat16),
+        # The production pair carries the row sweep: 1 is the degenerate batch,
+        # 32 K3's decode step, 37 an odd batch past a tile, and 1024 a prefill
+        # chunk above the fuse gate, where the op's launcher runs its chain arm
+        # instead (a plain allreduce, then the norm on this device's local sum).
+        # The rows only choose an arm and hit a tile edge, so they do not need
+        # crossing with every dtype pair.
+        (DType.float32, DType.bfloat16, 1),
+        (DType.float32, DType.bfloat16, 32),
+        (DType.float32, DType.bfloat16, 37),
+        (DType.float32, DType.bfloat16, 1024),
+        # The other two pairs pin their own dispatch at one batch each, plus the
+        # arm their dtypes have to keep: bfloat16 at the prefill width that runs
+        # the chain arm, float32 in the 20000-row signal-buffer case below.
+        (DType.float32, DType.float32, 32),
+        (DType.bfloat16, DType.bfloat16, 32),
+        (DType.bfloat16, DType.bfloat16, 1024),
     ],
+    # Each case is its own static-shape graph, recorded once per flavor by the
+    # package's `precompile_mefs`, so the matrix is that recording's cost. What
+    # the cross product used to add over this -- rows 7, and the float32 and
+    # bfloat16 pairs at the other rows -- is swept at the same widths by
+    # `//max/kernels/test/gpu/comm:test_allreduce_rmsnorm_exit_concat.mojo.test`
+    # at 2, 4 and 8 GPUs.
 )
-# 32 rows is K3's decode step and stays on the fused arm; 1024 rows is a
-# prefill chunk above the fuse gate, where the op's launcher runs its chain
-# arm instead (a plain allreduce, then the norm on this device's local sum).
-@pytest.mark.parametrize("rows", [1, 7, 32, 37, 1024])
 def test_exit_concat_matches_unfused_chain(
     dtype: DType, gamma_dtype: DType, rows: int
 ) -> None:

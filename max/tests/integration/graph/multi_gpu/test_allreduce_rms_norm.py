@@ -629,7 +629,6 @@ FP32_FUSE_MAX_ROWS = FUSE_THRESHOLD_BYTES // (COLS * 4)
 FP32_RTOL = 1e-5
 
 
-@pytest.mark.parametrize("multiply_before_cast", [False, True])
 @pytest.mark.parametrize(
     "rows",
     # 1 and 3 take the fused 1-stage kernel at two ranks, 32 (K3's decode
@@ -638,17 +637,15 @@ FP32_RTOL = 1e-5
     [1, 3, 32, 37, FP32_FUSE_MAX_ROWS, FP32_FUSE_MAX_ROWS + 1],
 )
 @pytest.mark.parametrize("gamma_dtype", [DType.float32, DType.bfloat16])
-def test_allreduce_rms_norm_float32(
-    rows: int, multiply_before_cast: bool, gamma_dtype: DType
-) -> None:
+def test_allreduce_rms_norm_float32(rows: int, gamma_dtype: DType) -> None:
     """Float32 in/out, K3's routed-expert latent, against an fp64 reference.
 
-    With float32 data the cast order selects nothing, so both settings must
-    match the same reference; the outputs must also be identical on both
-    devices on every arm. A bfloat16 gamma is K3's production form (its
-    routed-expert norm weight is bfloat16 on a float32 latent): every arm
-    widens it exactly, so it must match the reference built from the same
-    rounded weight.
+    With float32 data the cast order selects nothing, so the graph is built
+    with one setting of it and only the gamma's dtype doubles the arms. The
+    rows stay symbolic, so they share one compiled graph. A bfloat16 gamma is
+    K3's production form (its routed-expert norm weight is bfloat16 on a
+    float32 latent): every arm widens it exactly, so it must match the
+    reference built from the same rounded weight.
     """
     _skip_unless_two_gpus()
 
@@ -658,7 +655,7 @@ def test_allreduce_rms_norm_float32(
         _ar_rms_norm_graph(
             signals,
             COLS,
-            multiply_before_cast,
+            False,
             dtype=DType.float32,
             gamma_dtype=gamma_dtype,
         )

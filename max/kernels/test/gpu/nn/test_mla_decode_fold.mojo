@@ -715,24 +715,17 @@ def run_short_chunk_group(ctx: DeviceContext[]) raises:
     # -----------------------------------------------------------
     print("--- Group 6: H=12 short prompt chunks (S in 9..128) ---")
 
+    # The bucket-ceiling widths, one case each. The launch pads S up to 16,
+    # 32, 64 or 128, so those four widths are the four kernels; a width below
+    # its ceiling reuses the same kernel but exercises different runtime
+    # lengths, which drive the SRD row clamp, the causal offset, the stat
+    # writer and the ragged reducer. The padded widths below cover that:
+    # mixed_b2_s9 and the np1 cases pad to 16, mixed_b2_s23 pads to 32, and
+    # b4_ragged_cache and mixed_b2_deadtiles pad to 128.
     run_fold_case[12](
         "h12_chunk_s9_b1_causal_nk32768",
         [32768],
         [9],
-        CausalMask(),
-        ctx,
-    )
-    run_fold_case[12](
-        "h12_chunk_s16_b1_causal_nk32768",
-        [32768],
-        [16],
-        CausalMask(),
-        ctx,
-    )
-    run_fold_case[12](
-        "h12_chunk_s23_b1_causal_nk32768",
-        [32768],
-        [23],
         CausalMask(),
         ctx,
     )
@@ -747,13 +740,6 @@ def run_short_chunk_group(ctx: DeviceContext[]) raises:
         "h12_chunk_s64_b1_causal_nk32768",
         [32768],
         [64],
-        CausalMask(),
-        ctx,
-    )
-    run_fold_case[12](
-        "h12_chunk_s100_b1_causal_nk32768",
-        [32768],
-        [100],
         CausalMask(),
         ctx,
     )
@@ -773,13 +759,6 @@ def run_short_chunk_group(ctx: DeviceContext[]) raises:
         CausalMask(),
         ctx,
     )
-    run_fold_case[12](
-        "h12_chunk_mixed_b2_s128",
-        [32768, 32768],
-        [128, 125],
-        CausalMask(),
-        ctx,
-    )
     # 9 live tokens of 16 slots: tiles 1..3 straddle / follow the live
     # row count (H*9 = 108 rows over 48-row tiles).
     run_fold_case[12](
@@ -790,32 +769,12 @@ def run_short_chunk_group(ctx: DeviceContext[]) raises:
         ctx,
     )
     # Mid-size caches (heuristic np, the reducer's ragged remap over
-    # several M-tiles) and deep ones (np across many partitions).
+    # several M-tiles) and deep ones (np across many partitions, at the
+    # widest bucket and on a mixed batch).
     run_fold_case[12](
         "h12_chunk_s16_b1_causal_nk4096",
         [4096],
         [16],
-        CausalMask(),
-        ctx,
-    )
-    run_fold_case[12](
-        "h12_chunk_s16_b1_causal_nk131072",
-        [131072],
-        [16],
-        CausalMask(),
-        ctx,
-    )
-    run_fold_case[12](
-        "h12_chunk_s128_b1_causal_nk4096",
-        [4096],
-        [128],
-        CausalMask(),
-        ctx,
-    )
-    run_fold_case[12](
-        "h12_chunk_s128_b1_causal_nk131072",
-        [131072],
-        [128],
         CausalMask(),
         ctx,
     )

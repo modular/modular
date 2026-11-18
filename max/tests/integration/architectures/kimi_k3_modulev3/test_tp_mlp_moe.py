@@ -58,6 +58,15 @@ def _tp2_mesh() -> DeviceMesh:
 
 HIDDEN = 32
 SEQ_LEN = 6
+# The agreement this test's fixed shapes can hold, not a precision claim about
+# the merge. `_latent_moe_layer` builds float32 weights for both
+# parametrizations (its dtype argument only reaches the input), so every exit
+# GEMM here runs in float32, and a float32 matmul at these widths is not exact
+# on SM100: a probe measured 8e-8 relative error for K in {4, 8, 12, 16} and
+# 2.4e-4..3.5e-4 from K=20 to K=1216, and the exit's merged GEMM is K=20 where
+# the two GEMMs it replaced are K=12 and K=8. Measured against TP=1, that shows
+# up as 2.9e-4 (fp32) and 3.5e-4 (bf16 input, float32 weights).
+TP_RTOL = 1e-3
 
 
 def _latent_moe_layer(
@@ -221,7 +230,7 @@ def test_latent_moe_tp2_matches_tp1(dtype: DType, hidden: int) -> None:
         out2 = y2.to_numpy()
 
     err = _rel_error(out2, out1)
-    assert err < 1e-4, f"latent MoE TP=2 vs TP=1 diverges: rel_error={err}"
+    assert err < TP_RTOL, f"latent MoE TP=2 vs TP=1 diverges: rel_error={err}"
 
 
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])

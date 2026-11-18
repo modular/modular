@@ -43,7 +43,7 @@ import numpy.typing as npt
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn._graph_ops.sampling import (
     AcceptanceSampler,
@@ -66,41 +66,55 @@ def _device(session: InferenceSession) -> DeviceRef:
     return DeviceRef.from_device(session.devices[0])
 
 
-def _build_and_run(
+_LOADED: dict[str, tuple[Model, Model]] = {}
+"""The loaded folded and chain models, one pair per distinct graph.
+
+A load costs seconds and an execute costs microseconds, so a case that
+rebuilds the graph every shape it tries pays the load again each time. Every
+graph here declares its shapes symbolically, so one loaded pair serves every
+shape in the case: the key names the graph, and the shapes are inputs. Eight
+keys cover the suite, sixteen loads in place of forty-four.
+"""
+
+
+def _models_for(
     session: InferenceSession,
-    name: str,
+    key: str,
     input_types: list[TensorType],
     build: Build,
-    inputs: list[npt.NDArray[np.generic]],
-    fold_index_glue: bool,
-) -> list[npt.NDArray[np.generic]]:
-    """Builds one graph from ``build`` and runs it on ``inputs``."""
-    device = _device(session)
-    with Graph(name, input_types=input_types) as graph:
-        graph.output(
-            *build([v.tensor for v in graph.inputs], device, fold_index_glue)
-        )
-    model = session.load(graph)
-    device_buffer = session.devices[0]
-    return [
-        out.to_numpy()
-        for out in model.execute(
-            *[Buffer.from_numpy(i).to(device_buffer) for i in inputs]
-        )
-    ]
+) -> tuple[Model, Model]:
+    """Returns the folded and the chain model for ``key``, loading them once."""
+    models = _LOADED.get(key)
+    if models is None:
+        device = _device(session)
+        loaded: list[Model] = []
+        for folded in (True, False):
+            with Graph(f"{key}_{folded}", input_types=input_types) as graph:
+                graph.output(
+                    *build([v.tensor for v in graph.inputs], device, folded)
+                )
+            loaded.append(session.load(graph))
+        models = (loaded[0], loaded[1])
+        _LOADED[key] = models
+    return models
 
 
 def _run_both(
     session: InferenceSession,
-    name: str,
+    key: str,
     input_types: list[TensorType],
     build: Build,
     inputs: list[npt.NDArray[np.generic]],
 ) -> tuple[list[npt.NDArray[np.generic]], list[npt.NDArray[np.generic]]]:
-    """Runs ``build`` with the opt-in and without it."""
-    folded = _build_and_run(session, name, input_types, build, inputs, True)
-    chain = _build_and_run(session, name, input_types, build, inputs, False)
-    return folded, chain
+    """Runs the graph ``key`` names with the opt-in and without it."""
+    folded, chain = _models_for(session, key, input_types, build)
+    device_buffer = session.devices[0]
+    buffers = [Buffer.from_numpy(i).to(device_buffer) for i in inputs]
+    results: list[list[npt.NDArray[np.generic]]] = []
+    for model in (folded, chain):
+        outputs = model.execute(*buffers)
+        results.append([out.to_numpy() for out in outputs])
+    return results[0], results[1]
 
 
 def _assert_identical(
@@ -112,8 +126,20 @@ def _assert_identical(
     for index, (got, want) in enumerate(zip(folded, chain, strict=True)):
         assert got.dtype == want.dtype, f"{label}: output {index} dtype moved"
         assert got.shape == want.shape, f"{label}: output {index} shape moved"
-        np.testing.assert_array_equal(
-            got, want, err_msg=f"{label}: output {index}"
+        if np.array_equal(got, want):
+            continue
+        # Name the cells that moved. Two parametrizations failed together in
+        # one CI attempt and passed on the retry, and the bare array
+        # comparison left nothing to go on: the indices are what say whether
+        # the fold or the draw moved.
+        moved = np.flatnonzero(np.asarray(got) != np.asarray(want))
+        got_values = np.asarray(got).ravel()[moved[:8]].tolist()
+        want_values = np.asarray(want).ravel()[moved[:8]].tolist()
+        raise AssertionError(
+            f"{label}: output {index} moved in {moved.size} of"
+            f" {np.asarray(got).size} elements, at flat indices"
+            f" {moved[:16].tolist()}; folded {got_values}"
+            f" vs chain {want_values}"
         )
 
 
@@ -176,7 +202,7 @@ def test_first_rejected_matches_the_chain(
     device = _device(session)
     folded, chain = _run_both(
         session,
-        "first_rejected",
+        f"first_rejected_{steps}",
         # The chain rebinds its leading dim to the graph's ``batch_size``, so
         # the mask has to carry that name; production declares it the same way.
         [TensorType(DType.bool, ["batch_size", steps], device=device)],
@@ -353,7 +379,7 @@ def test_accept_verdict_is_bit_identical(
     def run(batch: int, steps: int) -> None:
         folded, chain = _run_both(
             session,
-            f"verdict_{batch}_{steps}_{sampled}_{seed_rows}",
+            f"verdict_{sampled}_{seed_rows}_{VOCAB}",
             _verdict_input_types(
                 batch, steps, VOCAB, seed_rows=seed_rows, sampled=sampled
             )(_device(session)),
@@ -379,7 +405,7 @@ def test_accept_verdict_prefill_shape_is_bit_identical(
     steps = 0
     folded, chain = _run_both(
         session,
-        "verdict_prefill",
+        f"verdict_{False}_{K3_BATCH}_{VOCAB}",
         _verdict_input_types(
             K3_BATCH, steps, VOCAB, seed_rows=K3_BATCH, sampled=False
         )(_device(session)),
@@ -648,7 +674,7 @@ def test_sampled_verdict_arms_are_bit_identical(
     """
     folded, chain = _run_both(
         session,
-        "verdict_arms",
+        f"verdict_{True}_{1}_{VOCAB}",
         _verdict_input_types(
             K3_BATCH, K3_STEPS, VOCAB, seed_rows=1, sampled=True
         )(_device(session)),
@@ -690,7 +716,7 @@ def test_sampled_verdict_prefill_is_bit_identical(
     """
     folded, chain = _run_both(
         session,
-        f"verdict_prefill_sampled_{seed_rows}",
+        f"verdict_{True}_{seed_rows}_{VOCAB}",
         _verdict_input_types(
             K3_BATCH, 0, VOCAB, seed_rows=seed_rows, sampled=True
         )(_device(session)),
@@ -712,7 +738,7 @@ def test_sampled_verdict_production_vocab_is_bit_identical(
     vocab = 163840
     folded, chain = _run_both(
         session,
-        "verdict_production_vocab",
+        f"verdict_{True}_{1}_{vocab}",
         _verdict_input_types(
             K3_BATCH, K3_STEPS, vocab, seed_rows=1, sampled=True
         )(_device(session)),
