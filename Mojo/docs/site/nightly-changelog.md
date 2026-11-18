@@ -353,48 +353,6 @@ This version is still a work in progress.
 
 - `Span` now conforms to `Equatable` when its element type does.
 
-- `Optional.value()`, `Optional.unsafe_value()`, and `Optional.__getitem__()`
-  now return a reference with an interior origin of the `Optional`.
-  Reassigning the `Optional`, or calling a `mut self` method on it
-  invalidates outstanding references to its value. Reading through
-  such a reference afterward used to compile and read a destroyed value; it is
-  now a compile error:
-
-  ```mojo
-  var opt = Optional(5)
-  ref i = opt.value()
-  opt = None
-  print(i)  # error: use of invalidated interior reference 'opt["value"]'
-  ```
-
-- `String`'s iterators, `split_at_grapheme()`, and `as_c_string_span()` now
-  carry the string's interior origin, as `as_bytes()` and slicing already did.
-  Mutating or reassigning a string while an iterator from one of these is still
-  in use is now a compile-time error instead of a read of freed memory.
-
-- `OwnedPointer.ptr()` and `Variant.unsafe_get()` now carry an interior
-  origin. Using the result after reassignment or mutation is now a
-  compile-time error.
-
-- The pointers and spans that `Allocation`, `ManagedAllocation`, and
-  `ThinAllocation` return now carry an interior origin of the allocation.
-
-  ```mojo
-  var a = alloc(Layout[Int].single())
-  ref first = a.storage()[0]
-  first.write(42)
-  dealloc(a^)
-  a = alloc(Layout[Int].single())
-  # error: use of invalidated interior reference 'a["element"]'
-  print(first.unsafe_assume_init())
-  ```
-
-- `List.unsafe_ptr()` now returns a pointer with the list's interior origin.
-
-- `String.unsafe_ptr()` and `String.unsafe_ptr_mut()` now carry an interior
-  origin. Using the pointer after the string is mutated or reassigned is now a
-  compile-time error instead of a read of freed memory.
-
 - `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
   and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
   instead of a `RawFileDescriptor`. You can pass a `FileHandle` or
@@ -436,6 +394,50 @@ This version is still a work in progress.
     applies when you store the result in a variable and compare it later.
   - `if s.find(x):` is now `True` only when `x` is found. Before, it was
     `True` when `x` was missing and `False` when `x` was at offset 0.
+
+### Interior origins
+
+More standard library APIs now return references, pointers, spans, and
+iterators that carry an *interior origin* of the value they point into,
+instead of the value's own origin. Reassigning the value, or calling a
+`mut self` method on it, invalidates them. Code that uses one afterward is now
+a compile-time error; before, it compiled and read freed or destroyed memory.
+These APIs now return interior origins:
+
+- `List.unsafe_ptr()`.
+- `String.unsafe_ptr()`, `String.unsafe_ptr_mut()`, `as_c_string_span()`,
+  `split_at_grapheme()`, and the `String` iterators, such as `codepoints()`
+  and `bytes()`.
+- `Optional.value()`, `Optional.unsafe_value()`, and `Optional.__getitem__()`.
+- `OwnedPointer.ptr()` and `Variant.unsafe_get()`.
+- The pointers and spans that `Allocation`, `ManagedAllocation`, and
+  `ThinAllocation` return.
+
+Most code that no longer compiles matches one of these patterns:
+
+- A pointer held across a mutation, such as `append()`, that can reallocate.
+
+  ```mojo
+  var p = list.unsafe_ptr()
+  list.append(4)
+  print(p[])  # error: use of invalidated interior reference 'list["element"]'
+  ```
+
+- A reference used after its owner is reassigned.
+
+  ```mojo
+  ref i = opt.value()
+  opt = None
+  print(i)  # error: use of invalidated interior reference 'opt["value"]'
+  ```
+
+- A string mutated while one of its iterators is in use.
+
+  ```mojo
+  # error: use of invalidated interior reference 's["bytes"]'
+  for c in s.codepoints():
+      s += String(c)
+  ```
 
 ## GPU programming
 
