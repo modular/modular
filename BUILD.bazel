@@ -313,6 +313,26 @@ string_flag(
     for config in MODULAR_CONFIGS
 ]
 
+# CI passes `--run-parameter-verifier=false` to precompiles outside `Mojo/`.
+# The nightly parameter verifier job sets this to false to check everything.
+bool_flag(
+    name = "skip_parameter_verifier_in_ci",
+    build_setting_default = True,
+)
+
+config_setting(
+    name = "skip_parameter_verifier_in_ci_set",
+    flag_values = {"//:skip_parameter_verifier_in_ci": "true"},
+)
+
+selects.config_setting_group(
+    name = "ci_skips_parameter_verifier",
+    match_all = [
+        ":modular_config_ci_build",
+        ":skip_parameter_verifier_in_ci_set",
+    ],
+)
+
 alias(
     name = "asan",
     actual = ":modular_config_asan",

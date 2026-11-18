@@ -34,9 +34,10 @@ _transitioned_mojo_library = rule(
 
 # CI skips the parameter verifier when it precompiles a package outside
 # `Mojo/`. The checks find compiler bugs rather than errors in the package, and
-# the compiler's own tree keeps them.
+# the compiler's own tree keeps them. `--config=parameter-verifier` keeps them
+# everywhere, for the nightly job that still runs them.
 _CI_PRECOMPILE_COPTS = select({
-    "//:modular_config_ci_build": ["--run-parameter-verifier=false"],
+    "//:ci_skips_parameter_verifier": ["--run-parameter-verifier=false"],
     "//conditions:default": [],
 })
 
