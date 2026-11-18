@@ -33,8 +33,6 @@ from max.algorithm.functional import _index_coord, _start_indices_of_nth_element
 def _elementwise_impl_cpu[
     simd_width: Int,
     FuncType: def[width: Int, alignment: Int = 1](Coord) -> None,
-    *,
-    trace_description: StaticString,
 ](func: FuncType, *, shape: Coord, ctx: Optional[DeviceContext.CPU] = None,):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
@@ -42,7 +40,6 @@ def _elementwise_impl_cpu[
     Parameters:
         simd_width: The SIMD vector width to use.
         FuncType: The body function type.
-        trace_description: Description of the trace.
 
     Args:
         func: The closure carrying the captured state of the body function.

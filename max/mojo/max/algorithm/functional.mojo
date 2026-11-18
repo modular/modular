@@ -319,10 +319,7 @@ def _elementwise_impl[
             ](coords: Coord) {imm}:
                 func[width, alignment](coords)
 
-            _elementwise_impl_cpu[
-                simd_width=simd_width,
-                trace_description=trace_description,
-            ](
+            _elementwise_impl_cpu[simd_width](
                 func_wrap_cpu,
                 shape=shape,
                 ctx=Optional(context.assert_cpu_target()),

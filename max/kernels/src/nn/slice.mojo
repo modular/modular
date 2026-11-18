@@ -413,14 +413,11 @@ def sliced_add[
 
     comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
-    comptime if ctx.target.is_gpu():
-        elementwise[
-            simd_width,
-            _trace_description="slice_add",
-        ](
-            _sliced_add,
-            c.layout.shape_coord(),
-            ctx,
-        )
-    else:
-        elementwise[simd_width](_sliced_add, c.layout.shape_coord(), ctx)
+    elementwise[
+        simd_width,
+        _trace_description="slice_add",
+    ](
+        _sliced_add,
+        c.layout.shape_coord(),
+        ctx,
+    )
