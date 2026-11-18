@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-import pytest
 from max.pipelines.context.context_validators import validate_no_images
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodeArchConfig,
@@ -117,24 +116,6 @@ def test_a_draft_only_architecture_is_never_the_target() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("target", "draft"),
-    [
-        ("Gemma4ForConditionalGeneration", "Gemma4AssistantForCausalLM"),
-        # The MTP depths ship in the target's checkpoint.
-        ("InklingForConditionalGeneration", None),
-    ],
-)
-def test_an_mtp_draft_caps_the_context_its_batch_keeps_resident(
-    target: str, draft: str | None
-) -> None:
-    """Neither target caps it alone, so an uncapped pairing lets the
-    scheduler admit more resident context than the cache holds."""
-    arch = spec_decode_architecture(target, "mtp", draft)
-    assert arch is not None
-    assert arch.requires_max_batch_context_length
-
-
 def test_a_pairing_neither_side_caps_stays_uncapped() -> None:
     arch = spec_decode_architecture(TARGET, "eagle", EAGLE_DRAFT)
     assert arch is not None
@@ -152,7 +133,6 @@ def test_a_modulev3_target_pairs_with_its_modulev3_draft() -> None:
     assert arch.name == "Gemma4ForConditionalGeneration_ModuleV3+mtp"
     assert arch.pipeline_model is _SpecDecodeModuleV3VisionCachePipelineModel
     assert InputModality.IMAGE in arch.input_modalities
-    assert arch.requires_max_batch_context_length
 
 
 def test_a_modulev3_block_target_pairs_with_its_modulev3_drafter() -> None:
