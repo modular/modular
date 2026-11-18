@@ -395,6 +395,11 @@ TypedAttr buildAssumptions(ArrayRef<ConstraintAttr> constraints,
 /// Returns the assumption set holding the facts of both `lhs` and `rhs`.
 TypedAttr conjoinAssumptions(TypedAttr lhs, TypedAttr rhs);
 
+/// Returns the assumption set holding the facts of `assumptions` and the
+/// propositions of `constraints`.
+TypedAttr conjoinAssumptions(TypedAttr assumptions,
+                             ArrayRef<ConstraintAttr> constraints);
+
 /// Returns true if `assumptions` prove that `proposition` cannot hold.
 bool isPropositionPrecluded(TypedAttr proposition, TypedAttr assumptions);
 

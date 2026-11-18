@@ -1044,6 +1044,18 @@ TypedAttr LIT::conjoinAssumptions(TypedAttr lhs, TypedAttr rhs) {
   return ParamOperatorAttr::get(POC::And, {lhs, rhs});
 }
 
+TypedAttr LIT::conjoinAssumptions(TypedAttr assumptions,
+                                  ArrayRef<ConstraintAttr> constraints) {
+  if (constraints.empty())
+    return assumptions;
+  if (hasNoAssumptions(assumptions))
+    return buildAssumptions(constraints, constraints.front().getContext());
+  SmallVector<TypedAttr> operands{assumptions};
+  for (ConstraintAttr constraint : constraints)
+    operands.push_back(constraint.getProposition());
+  return ParamOperatorAttr::get(POC::And, operands);
+}
+
 bool LIT::isPropositionPrecluded(TypedAttr proposition, TypedAttr assumptions) {
   TypedAttr negated = ParamOperatorAttr::getNot(proposition);
   return isPropositionImplied(negated, assumptions).isTrue();

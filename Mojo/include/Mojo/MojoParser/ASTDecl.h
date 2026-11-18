@@ -534,10 +534,9 @@ private:
   /// @__doc_inline.
   std::unique_ptr<llvm::DenseSet<mlir::StringAttr>> docInlineNames;
 
-  /// This is the set of constraints that can be assumed to be true inside
-  /// this declaration. It may reference parameter declarations from this
-  /// ASTDecl or its parent ASTDecls.
-  std::unique_ptr<llvm::SetVector<ConstraintAttr>> knownAssumptions;
+  /// The conjunction of facts assumed inside this decl, including those of
+  /// all parent decls. Null means the same as the parent's.
+  TypedAttr scopeAssumptions;
 };
 
 /// An AST declaration backed by an MLIR operation through shared storage.
