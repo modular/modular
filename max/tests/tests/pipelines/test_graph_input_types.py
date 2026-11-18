@@ -45,6 +45,7 @@ from max import tree
 from max._artifact.export import per_step_dims
 from max._artifact.value_types import treedef_from_json, treedef_to_json
 from max.driver import (
+    Accelerator,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
@@ -82,6 +83,17 @@ from max.pipelines.architectures.inkling.state_cache import (
 from max.pipelines.architectures.inkling_modulev3.modules import (
     InklingVision as InklingVisionV3,
 )
+from max.pipelines.architectures.lfm2_vl.model_config import (
+    ATTN_CACHE_KEY as LFM2_VL_ATTN_CACHE_KEY,
+)
+from max.pipelines.architectures.lfm2_vl.model_config import (
+    CONV_LEAF_ID as LFM2_VL_CONV_LEAF_ID,
+)
+from max.pipelines.architectures.lfm2_vl.model_config import (
+    STATE_CACHE_KEY as LFM2_VL_STATE_CACHE_KEY,
+)
+from max.pipelines.architectures.lfm2_vl.network import Lfm2VlDecoder
+from max.pipelines.architectures.lfm2_vl.vision.tower import Lfm2VlVision
 from max.pipelines.architectures.lfm3.model_config import Lfm3Config
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
@@ -126,7 +138,11 @@ from max.pipelines.lib.interfaces import (
     PipelineModel,
     modulev3_ragged_kv_symbolic_input_tree,
 )
-from max.pipelines.lib.module_registration import decoder_input_types
+from max.pipelines.lib.module_registration import (
+    decoder_input_types,
+    decoder_vision_input_types,
+    device_mesh,
+)
 from max.pipelines.lib.registration_runtime import batch_context_length_types
 from max.tensor.tensor_spec_serialization import (
     layout_to_json,
@@ -549,6 +565,42 @@ def _inkling(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
     return Inkling.input_tree(model), Inkling.input_types(model)
 
 
+def _lfm2_vl() -> tuple[_InputTree, _InputTypes]:
+    """LFM2-VL's registered decoder: paged attention, the conv state pool
+    and the vision merge, in the input order its MEFs took before the
+    registration."""
+    devices = _gpus(1)
+    state = RecurrentStateParams(
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=LFM2_VL_CONV_LEAF_ID,
+                num_layers=2,
+                # causal_conv1d_varlen_fwd's pool contract:
+                # [slots, dim, kernel - 1], mutated in place.
+                row_shape=(_HIDDEN, 2),
+                dtype=DType.bfloat16,
+            ),
+        ),
+        devices=devices,
+    )
+    kv_params = MultiKVCacheParams.from_params(
+        {
+            LFM2_VL_ATTN_CACHE_KEY: _kv_params(devices),
+            LFM2_VL_STATE_CACHE_KEY: state,
+        }
+    )
+    vision = decoder_vision_input_types(
+        device_mesh([Accelerator(0)], 1), DType.bfloat16, _HIDDEN
+    )
+    types = decoder_input_types(
+        kv_params,
+        devices[0],
+        vision=vision,
+        input_layout=Lfm2VlDecoder.input_layout,
+    )
+    return types, tuple(tree.leaves(types))
+
+
 _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "inkling_single_device": lambda: _inkling(_gpus(1)),
     "inkling_multi_device": lambda: _inkling(_gpus(2)),
@@ -575,6 +627,7 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "registered_decoder_total_context": _registered_decoder_total_context,
     "nemotron_h_single_device": lambda: _nemotron_h(_gpus(1)),
     "nemotron_h_multi_device": lambda: _nemotron_h(_gpus(2)),
+    "lfm2_vl_single_device": _lfm2_vl,
     "mimo_v2": _mimo_v2,
     "flint": _flint,
     "lfm3": _lfm3,
@@ -604,6 +657,11 @@ def _inkling_vision() -> _InputTree:
         device=DeviceRef.GPU(0),
     )
     return InklingVisionModel.input_tree(model)
+
+
+def _lfm2_vl_vision() -> _InputTree:
+    config = _fake(devices=[DeviceRef.GPU(0)], vision_patch_dim=768)
+    return Lfm2VlVision.input_types(_bare(Lfm2VlVision, config=config))
 
 
 def _inkling_modulev3_vision() -> _InputTree:
@@ -642,6 +700,7 @@ _VISION_CASES: dict[str, Callable[[], _InputTree]] = {
     "muse_glimmer": _muse_glimmer_vision,
     "qwen3_5": lambda: _qwen_vl_vision(Qwen3_5VisionTransformer, 1536),
     "qwen2_5vl": lambda: _qwen_vl_vision(Qwen2_5VLVisionTransformer, 1176),
+    "lfm2_vl": _lfm2_vl_vision,
 }
 
 

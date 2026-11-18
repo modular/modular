@@ -56,6 +56,7 @@ family.
    pipelines.architectures.kimik2_5
    pipelines.architectures.laguna
    pipelines.architectures.lfm2
+   pipelines.architectures.lfm2_vl
    pipelines.architectures.lfm3
    pipelines.architectures.lfm3_audio
    pipelines.architectures.lfm3_omni
@@ -132,6 +133,7 @@ Text generation
    ~max.pipelines.architectures.kimik2_5
    ~max.pipelines.architectures.laguna
    ~max.pipelines.architectures.lfm2
+   ~max.pipelines.architectures.lfm2_vl
    ~max.pipelines.architectures.lfm3
    ~max.pipelines.architectures.lfm3_audio
    ~max.pipelines.architectures.lfm3_omni

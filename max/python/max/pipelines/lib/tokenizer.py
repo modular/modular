@@ -1336,6 +1336,10 @@ class TextAndVisionTokenizer(
                 extra_model_args["aspect_ratio_mask"] = (
                     processed_inputs.aspect_ratio_mask
                 )
+            if "spatial_shapes" in processed_inputs:
+                extra_model_args["spatial_shapes"] = processed_inputs[
+                    "spatial_shapes"
+                ]
         else:
             pixel_values = tuple()
 

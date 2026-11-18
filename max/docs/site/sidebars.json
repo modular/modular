@@ -505,6 +505,7 @@
                 "api/python/pipelines.architectures.kimik2_5",
                 "api/python/pipelines.architectures.laguna",
                 "api/python/pipelines.architectures.lfm2",
+                "api/python/pipelines.architectures.lfm2_vl",
                 "api/python/pipelines.architectures.lfm3",
                 "api/python/pipelines.architectures.lfm3_audio",
                 "api/python/pipelines.architectures.lfm3_omni",

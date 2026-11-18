@@ -10,6 +10,9 @@ This version is still a work in progress.
 
 ## Models
 
+- LiquidAI LFM2-VL checkpoints now serve through the new
+  `Lfm2VlForConditionalGeneration` architecture.
+
 - Qwen 3.5 models served with MTP or DFlash2 speculative decoding now read the
   images and videos in a request. They used to answer without them.
 

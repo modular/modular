@@ -332,6 +332,11 @@ def register_all_models() -> None:
             "laguna_modulev3_arch",
         ),
         _LazyArch("Lfm2ForCausalLM", ".lfm2", "lfm2_arch"),
+        _LazyArch(
+            "Lfm2VlForConditionalGeneration",
+            ".lfm2_vl",
+            "lfm2_vl_arch",
+        ),
         _LazyArch("Lfm3ForCausalLM", ".lfm3", "lfm3_arch"),
         _LazyArch(
             "Lfm3AudioForConditionalGeneration",
