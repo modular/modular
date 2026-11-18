@@ -8,6 +8,16 @@ package(
     ],
 )
 
+# Plugin packages run these suites against their own HAL plugins.
+exports_files(
+    [
+        "test_hal_driver.mojo",
+        "test_hal_ops.mojo",
+        "test_python_hal.py",
+    ],
+    visibility = ["//plugins:__subpackages__"],
+)
+
 # ---------------------------------------------------------------------------
 # Mock plugin — lightweight C implementation of M_driver_* for testing the
 # Mojo HAL bindings without GPU hardware.

@@ -13,10 +13,9 @@
 """Mojo HAL operations."""
 
 from std.memory import alloc, Pointer
-from std.os import getenv
 from std.testing import assert_equal, assert_raises, assert_true
 
-from max._driver import Driver, Context
+from max._driver import Context, Driver, Host
 from max._driver.max_license.hal.device import DeviceSpec
 from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
 
@@ -152,11 +151,8 @@ def do_invalid_device_test(driver: Driver) raises:
 
 
 def main() raises:
-    var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
-    if not plugin_spec:
-        raise Error("MODULAR_DRIVER_PLUGINS not set")
-
-    var driver = Driver.create(plugin_spec)
+    var host = Host()
+    var driver = host.driver(0)
     print("Driver:", driver[].name())
     print("Devices:", driver[].device_count())
 
