@@ -73,11 +73,24 @@ public:
   /// `isSliceLocalGlobal` names the globals that each slice can hold its own
   /// copy of, such as one in the shared memory of a GPU block. Such a global
   /// neither roots a slice nor ties its users together.
+  ///
+  /// A nonzero `outlineThreads` lets an internal function that several
+  /// exported symbols reach get a slice of its own, by the rule of
+  /// `KGEN::splitPerExported` with `outlineSharedSubtrees` and `threads`.
+  /// Its linkage becomes weak_odr, and the slices that call it declare it.
+  /// Such slices are not self-contained, so only a target that links them
+  /// back into one object can use this.
   LogicalResult
-  plan(function_ref<bool(mlir::LLVM::GlobalOp)> isSliceLocalGlobal);
+  plan(function_ref<bool(mlir::LLVM::GlobalOp)> isSliceLocalGlobal,
+       unsigned outlineThreads = 0);
 
   size_t getNumSlices() const { return slices.size(); }
   size_t getNumSymbols(size_t idx) const { return slices[idx].members.size(); }
+
+  /// The internal functions that `plan` gave a slice of their own.
+  ArrayRef<StringAttr> getOutlinedFunctions() const {
+    return outlinedFunctions;
+  }
 
   /// Returns slice `idx`. Call once per slice. Calls for different slices may
   /// run on different threads.
@@ -88,12 +101,20 @@ private:
     OwningOpRef<ModuleOp> module;
     /// Indices into `symbols`, in module order.
     std::vector<unsigned> members;
+    /// The symbols that members reference but the slice does not hold, in
+    /// module order.
+    std::vector<unsigned> declared;
   };
 
   LogicalResult collectSymbols();
-  LogicalResult collectDependencies();
+  LogicalResult collectDependencies(bool countInstructions);
   void
   classifySymbols(function_ref<bool(mlir::LLVM::GlobalOp)> isSliceLocalGlobal);
+  /// The symbols reachable from `root`, without walking past another outline
+  /// root when `stopAtOutlineRoots` is set.
+  SmallVector<unsigned> collectReachable(unsigned root,
+                                         bool stopAtOutlineRoots) const;
+  void pickOutlineRoots(unsigned threads);
   std::vector<std::vector<unsigned>> partition();
 
   OwningOpRef<ModuleOp> module;
@@ -106,14 +127,25 @@ private:
   /// Module-level ops that are not symbols. Every slice gets a copy.
   SmallVector<Operation *> moduleOps;
 
+  /// The number of instructions in each function, an estimate of the cost of
+  /// optimizing it. Counted only for outlining.
+  std::vector<uint64_t> instructionCounts;
+
   /// A symbol that roots a slice.
   std::vector<bool> isAnchor;
   std::vector<bool> isMutableGlobal;
+  std::vector<bool> isOutlineRoot;
+  SmallVector<StringAttr> outlinedFunctions;
 
   /// The number of slices that hold each symbol. A symbol in one slice moves
   /// there; a symbol in several stays in the module and each slice clones it.
   std::vector<unsigned> numSlicesUsing;
   std::vector<Slice> slices;
+
+  /// One declaration of each symbol in a `Slice::declared`, for the slices to
+  /// clone. The definition may already be in another slice's module.
+  OwningOpRef<ModuleOp> declarations;
+  DenseMap<unsigned, Operation *> declarationOf;
 };
 } // namespace M
 

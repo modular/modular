@@ -1473,6 +1473,7 @@ modular_cc_library(
         "//Support:CacheLog",
         "//Support:Context",
         "@llvm-project//mlir:BytecodeWriter",
+        "@llvm-project//mlir:LLVMConversionIncGen",
         "@llvm-project//mlir:ROCDLTarget",
     ],
     # TargetBackend implementations self-register via a

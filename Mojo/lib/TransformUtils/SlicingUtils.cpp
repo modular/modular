@@ -215,10 +215,74 @@ LogicalResult LLVMDialectModuleSplitter::collectSymbols() {
   return success();
 }
 
-LogicalResult LLVMDialectModuleSplitter::collectDependencies() {
+/// Whether `op` translates to an LLVM IR instruction for any operands.
+/// Constants are not instructions, and debug records are not since LLVM 19.
+static bool isInstruction(Operation *op) {
+  return !isa<mlir::LLVM::ConstantOp, mlir::LLVM::ZeroOp, mlir::LLVM::UndefOp,
+              mlir::LLVM::PoisonOp, mlir::LLVM::AddressOfOp,
+              mlir::LLVM::DSOLocalEquivalentOp, mlir::LLVM::BlockAddressOp,
+              mlir::LLVM::BlockTagOp, mlir::LLVM::NoneTokenOp,
+              mlir::LLVM::MetadataAsValueOp, mlir::LLVM::DbgDeclareOp,
+              mlir::LLVM::DbgValueOp, mlir::LLVM::DbgLabelOp>(op);
+}
+
+/// Whether translation folds `op` into a constant when its operands are
+/// constants. The `IRBuilder` it uses folds these instructions.
+static bool isFoldable(Operation *op) {
+  namespace LLVM = mlir::LLVM;
+  return isa<
+      LLVM::AddOp, LLVM::SubOp, LLVM::MulOp, LLVM::UDivOp, LLVM::SDivOp,
+      LLVM::URemOp, LLVM::SRemOp, LLVM::AndOp, LLVM::OrOp, LLVM::XOrOp,
+      LLVM::ShlOp, LLVM::LShrOp, LLVM::AShrOp, LLVM::ICmpOp, LLVM::FCmpOp,
+      LLVM::FAddOp, LLVM::FSubOp, LLVM::FMulOp, LLVM::FDivOp, LLVM::FRemOp,
+      LLVM::FNegOp, LLVM::GEPOp, LLVM::BitcastOp, LLVM::AddrSpaceCastOp,
+      LLVM::IntToPtrOp, LLVM::PtrToIntOp, LLVM::PtrToAddrOp, LLVM::SExtOp,
+      LLVM::ZExtOp, LLVM::TruncOp, LLVM::SIToFPOp, LLVM::UIToFPOp,
+      LLVM::FPToSIOp, LLVM::FPToUIOp, LLVM::FPExtOp, LLVM::FPTruncOp,
+      LLVM::ExtractElementOp, LLVM::ExtractValueOp, LLVM::InsertElementOp,
+      LLVM::InsertValueOp, LLVM::ShuffleVectorOp, LLVM::SelectOp>(op);
+}
+
+/// Counts what `llvm::Function::getInstructionCount` will count after
+/// translation. The arguments of a non-entry block become phis.
+static uint64_t countInstructions(mlir::LLVM::LLVMFuncOp func) {
+  // Translation visits blocks in dominance order, which can differ from
+  // region order. Iterate until no new constant appears.
+  DenseSet<Value> constants;
+  auto isConstant = [&](Value value) { return constants.contains(value); };
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    func.walk([&](Operation *op) {
+      if (op == func || op->getNumResults() == 0 ||
+          isConstant(op->getResult(0)))
+        return;
+      if (isInstruction(op) &&
+          !(isFoldable(op) && llvm::all_of(op->getOperands(), isConstant)))
+        return;
+      constants.insert(op->result_begin(), op->result_end());
+      changed = true;
+    });
+  }
+
+  uint64_t count = 0;
+  for (Block &block : func.getBody()) {
+    if (!block.isEntryBlock())
+      count += block.getNumArguments();
+    for (Operation &op : block)
+      count += isInstruction(&op) &&
+               (op.getNumResults() == 0 || !isConstant(op.getResult(0)));
+  }
+  return count;
+}
+
+LogicalResult
+LLVMDialectModuleSplitter::collectDependencies(bool countInstructions) {
   MLIRContext *ctx = module->getContext();
   Dialect *llvmDialect = ctx->getLoadedDialect<mlir::LLVM::LLVMDialect>();
   dependencies.resize(symbols.size());
+  if (countInstructions)
+    instructionCounts.assign(symbols.size(), 0);
 
   // The first LLVM dialect op in each symbol that names an undefined symbol.
   // Diagnostics are emitted after the parallel walk, in module order.
@@ -243,10 +307,13 @@ LogicalResult LLVMDialectModuleSplitter::collectDependencies() {
 
     Operation *symbol = symbols[idx];
     addSymbolsIn(symbol->getAttrDictionary());
-    if (auto func = dyn_cast<mlir::LLVM::LLVMFuncOp>(symbol))
+    if (auto func = dyn_cast<mlir::LLVM::LLVMFuncOp>(symbol)) {
       addRequiredSymbol(func, func.getPersonalityAttr());
-    else if (auto global = dyn_cast<mlir::LLVM::GlobalOp>(symbol))
+      if (countInstructions)
+        instructionCounts[idx] = ::countInstructions(func);
+    } else if (auto global = dyn_cast<mlir::LLVM::GlobalOp>(symbol)) {
       addRequiredSymbol(global, global.getAssociatedAttr());
+    }
 
     // `getAttrDictionary` builds a dictionary from the op properties, which is
     // too slow to do for every op of a function. The LLVM dialect ops below
@@ -315,6 +382,159 @@ void LLVMDialectModuleSplitter::classifySymbols(
   }
 }
 
+SmallVector<unsigned>
+LLVMDialectModuleSplitter::collectReachable(unsigned root,
+                                            bool stopAtOutlineRoots) const {
+  SmallVector<unsigned> members;
+  DenseSet<unsigned> seen;
+  SmallVector<unsigned> worklist{root};
+  while (!worklist.empty()) {
+    unsigned idx = worklist.pop_back_val();
+    if (idx != root && stopAtOutlineRoots && isOutlineRoot[idx])
+      continue;
+    if (!seen.insert(idx).second)
+      continue;
+    members.push_back(idx);
+    llvm::append_range(worklist, dependencies[idx]);
+  }
+  return members;
+}
+
+/// Longest-processing-time makespan, as `KGEN::splitPerExported` estimates it.
+static uint64_t estimateMakespan(ArrayRef<uint64_t> sizes, unsigned threads) {
+  SmallVector<uint64_t> load(threads, 0);
+  SmallVector<uint64_t> sorted(sizes);
+  llvm::sort(sorted, std::greater<uint64_t>());
+  for (uint64_t size : sorted)
+    *llvm::min_element(load) += size;
+  return *llvm::max_element(load);
+}
+
+/// Mirrors `pickOutlineRoots` in `KGEN::splitPerExported`, which documents
+/// the rule. Matching it keeps the partition and the LLVM work per slice the
+/// same in either IR.
+void LLVMDialectModuleSplitter::pickOutlineRoots(unsigned threads) {
+  constexpr unsigned kNone = ~0u;
+  size_t numSymbols = symbols.size();
+  std::vector<SmallVector<unsigned, 4>> users(numSymbols);
+  for (unsigned idx = 0; idx != numSymbols; ++idx)
+    for (unsigned dep : dependencies[idx])
+      users[dep].push_back(idx);
+
+  // Which anchors reach each symbol, as positions in `partitionSize`, and how
+  // big each anchor's closure is.
+  std::vector<SmallVector<unsigned, 2>> reachedBy(numSymbols);
+  SmallVector<uint64_t> partitionSize;
+  std::vector<unsigned> seenBy(numSymbols, kNone);
+  SmallVector<unsigned> worklist;
+  for (unsigned anchor = 0; anchor != numSymbols; ++anchor) {
+    if (!isAnchor[anchor])
+      continue;
+    unsigned position = partitionSize.size();
+    uint64_t size = 0;
+    worklist.assign(1, anchor);
+    while (!worklist.empty()) {
+      unsigned idx = worklist.pop_back_val();
+      if (seenBy[idx] == position)
+        continue;
+      seenBy[idx] = position;
+      size += instructionCounts[idx];
+      if (idx != anchor)
+        reachedBy[idx].push_back(position);
+      llvm::append_range(worklist, dependencies[idx]);
+    }
+    partitionSize.push_back(size);
+  }
+
+  struct Candidate {
+    unsigned root;
+    uint64_t size;
+    uint64_t exclusive;
+    uint64_t saving;
+  };
+  SmallVector<Candidate> candidates;
+  std::vector<bool> dominated(numSymbols, false);
+  for (unsigned root = 0; root != numSymbols; ++root) {
+    if (reachedBy[root].size() < 2)
+      continue;
+    auto func = dyn_cast<mlir::LLVM::LLVMFuncOp>(symbols[root]);
+    if (!func || func.isExternal() ||
+        func.getLinkage() != mlir::LLVM::Linkage::Internal)
+      continue;
+    bool alwaysInline = func.isAlwaysInline();
+    if (ArrayAttr passthrough = func.getPassthroughAttr())
+      alwaysInline |= llvm::any_of(passthrough, [](Attribute attr) {
+        auto name = dyn_cast<StringAttr>(attr);
+        return name && name.getValue() == "alwaysinline";
+      });
+    if (alwaysInline)
+      continue;
+
+    // The part of the subtree that only the root reaches leaves the anchors'
+    // slices. The rest stays there and gains a copy in the root's slice.
+    SmallVector<unsigned> members = collectReachable(root, false);
+    dominated[root] = true;
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      for (unsigned member : members) {
+        if (dominated[member] || users[member].empty())
+          continue;
+        if (llvm::all_of(users[member],
+                         [&](unsigned user) { return dominated[user]; })) {
+          dominated[member] = true;
+          changed = true;
+        }
+      }
+    }
+
+    uint64_t size = 0, exclusive = 0;
+    for (unsigned member : members) {
+      size += instructionCounts[member];
+      if (dominated[member])
+        exclusive += instructionCounts[member];
+      dominated[member] = false;
+    }
+    uint64_t shared = size - exclusive;
+    uint64_t gained = exclusive * (reachedBy[root].size() - 1);
+    if (gained <= shared)
+      continue;
+    candidates.push_back({root, size, exclusive, gained - shared});
+  }
+
+  auto nameOf = [&](unsigned idx) {
+    return cast<mlir::SymbolOpInterface>(symbols[idx]).getName();
+  };
+  llvm::sort(candidates, [&](const Candidate &lhs, const Candidate &rhs) {
+    if (lhs.saving != rhs.saving)
+      return lhs.saving > rhs.saving;
+    return nameOf(lhs.root) < nameOf(rhs.root);
+  });
+
+  uint64_t makespan = estimateMakespan(partitionSize, threads);
+  std::vector<bool> covered(numSymbols, false);
+  SmallVector<uint64_t> trial;
+  for (const Candidate &candidate : candidates) {
+    if (covered[candidate.root])
+      continue;
+
+    trial.assign(partitionSize.begin(), partitionSize.end());
+    for (unsigned position : reachedBy[candidate.root])
+      trial[position] -= std::min(trial[position], candidate.exclusive);
+    trial.push_back(candidate.size);
+    uint64_t trialMakespan = estimateMakespan(trial, threads);
+    if (trialMakespan > makespan)
+      continue;
+
+    isOutlineRoot[candidate.root] = true;
+    makespan = trialMakespan;
+    std::swap(partitionSize, trial);
+    for (unsigned member : collectReachable(candidate.root, false))
+      if (member != candidate.root)
+        covered[member] = true;
+  }
+}
+
 std::vector<std::vector<unsigned>> LLVMDialectModuleSplitter::partition() {
   constexpr unsigned kNone = ~0u;
 
@@ -344,7 +564,9 @@ std::vector<std::vector<unsigned>> LLVMDialectModuleSplitter::partition() {
     worklist.assign(1, closure.root);
     while (!worklist.empty()) {
       unsigned idx = worklist.pop_back_val();
-      if (visitedBy[idx] == closureIdx)
+      // An outline root has a slice of its own. It does not tie the closures
+      // that reach it, which would undo the parallelism the split creates.
+      if (isOutlineRoot[idx] || visitedBy[idx] == closureIdx)
         continue;
       visitedBy[idx] = closureIdx;
       closure.members.push_back(idx);
@@ -402,6 +624,13 @@ std::vector<std::vector<unsigned>> LLVMDialectModuleSplitter::partition() {
   for (Closure &closure : closures)
     if (!closure.group)
       sets.emplace_back(closure.members.begin(), closure.members.end());
+  for (unsigned idx = 0, e = symbols.size(); idx != e; ++idx) {
+    if (!isOutlineRoot[idx])
+      continue;
+    SmallVector<unsigned> members =
+        collectReachable(idx, /*stopAtOutlineRoots=*/true);
+    sets.emplace_back(members.begin(), members.end());
+  }
 
   // Module order within a slice, and the larger slices first so that they
   // start first. Both orders are fixed, which keeps the output reproducible.
@@ -415,12 +644,41 @@ std::vector<std::vector<unsigned>> LLVMDialectModuleSplitter::partition() {
   return sets;
 }
 
+/// Builds the declaration that a slice holds of a symbol that another slice
+/// defines. `KGEN::splitPerExported` leaves the same in its partitions.
+static Operation *createDeclaration(Operation *symbol) {
+  Operation *declaration = symbol->cloneWithoutRegions();
+  if (auto func = dyn_cast<mlir::LLVM::LLVMFuncOp>(declaration)) {
+    func.setLinkage(mlir::LLVM::Linkage::External);
+    func.setDsoLocal(false);
+    func.removeComdatAttr();
+    func.removePersonalityAttr();
+    // The LLVM verifier rejects a declaration that carries the subprogram of
+    // a definition.
+    if (auto loc = dyn_cast<mlir::FusedLocWith<mlir::LLVM::DISubprogramAttr>>(
+            func.getLoc()))
+      func->setLoc(mlir::FusedLoc::get(func.getContext(), loc.getLocations()));
+    return declaration;
+  }
+  auto global = cast<mlir::LLVM::GlobalOp>(declaration);
+  global.removeValueAttr();
+  global.setLinkage(mlir::LLVM::Linkage::External);
+  global.setDsoLocal(false);
+  global.removeComdatAttr();
+  return declaration;
+}
+
 LogicalResult LLVMDialectModuleSplitter::plan(
-    function_ref<bool(mlir::LLVM::GlobalOp)> isSliceLocalGlobal) {
+    function_ref<bool(mlir::LLVM::GlobalOp)> isSliceLocalGlobal,
+    unsigned outlineThreads) {
   CompilerTimeTraceScope traceScope("splitLLVMDialectModule");
-  if (failed(collectSymbols()) || failed(collectDependencies()))
+  if (failed(collectSymbols()) ||
+      failed(collectDependencies(/*countInstructions=*/outlineThreads != 0)))
     return failure();
   classifySymbols(isSliceLocalGlobal);
+  isOutlineRoot.assign(symbols.size(), false);
+  if (outlineThreads != 0 && llvm::count(isAnchor, true) > 1)
+    pickOutlineRoots(std::max(2u, outlineThreads));
 
   std::vector<std::vector<unsigned>> sets = partition();
 
@@ -431,14 +689,49 @@ LogicalResult LLVMDialectModuleSplitter::plan(
     return success();
   }
 
+  // An outlined function needs a definition that the other slices resolve
+  // to. weak_odr, unlike weak, still lets its own slice inline it. It stays
+  // dso_local, as an internal function is.
+  for (auto [idx, symbol] : llvm::enumerate(symbols)) {
+    if (!isOutlineRoot[idx])
+      continue;
+    auto func = cast<mlir::LLVM::LLVMFuncOp>(symbol);
+    func.setLinkage(mlir::LLVM::Linkage::WeakODR);
+    func.setDsoLocal(true);
+    outlinedFunctions.push_back(func.getSymNameAttr());
+  }
+
   numSlicesUsing.assign(symbols.size(), 0);
   for (const std::vector<unsigned> &set : sets)
     for (unsigned member : set)
       ++numSlicesUsing[member];
 
+  constexpr unsigned kNone = ~0u;
+  std::vector<unsigned> heldBy(symbols.size(), kNone);
+  std::vector<unsigned> declaredBy(symbols.size(), kNone);
   slices.reserve(sets.size());
   for (std::vector<unsigned> &set : sets) {
+    unsigned sliceIdx = slices.size();
     Slice &slice = slices.emplace_back();
+    for (unsigned member : set)
+      heldBy[member] = sliceIdx;
+    for (unsigned member : set) {
+      for (unsigned dep : dependencies[member]) {
+        if (heldBy[dep] == sliceIdx || declaredBy[dep] == sliceIdx)
+          continue;
+        declaredBy[dep] = sliceIdx;
+        slice.declared.push_back(dep);
+        if (declarationOf.count(dep))
+          continue;
+        if (!declarations)
+          declarations = ModuleOp::create(module.get()->getLoc());
+        Operation *declaration = createDeclaration(symbols[dep]);
+        declarations->getBody()->push_back(declaration);
+        declarationOf[dep] = declaration;
+      }
+    }
+    llvm::sort(slice.declared);
+
     slice.module = ModuleOp::create(module.get()->getLoc());
     slice.module.get()->setAttrs(module.get()->getAttrDictionary());
     Block *body = slice.module->getBody();
@@ -462,12 +755,19 @@ OwningOpRef<ModuleOp> LLVMDialectModuleSplitter::takeSlice(size_t idx) {
     return std::move(slice.module);
 
   // The symbols of this slice alone are already in its module. Clone the
-  // shared ones in between, to keep module order.
+  // shared ones and the declarations in between, to keep module order.
   Block *body = slice.module->getBody();
   Block::iterator next = body->begin();
   for (Operation *op : moduleOps)
     body->getOperations().insert(next, op->clone());
+  auto declared = slice.declared.begin();
+  auto declareBefore = [&](unsigned limit) {
+    for (; declared != slice.declared.end() && *declared < limit; ++declared)
+      body->getOperations().insert(
+          next, declarationOf.find(*declared)->second->clone());
+  };
   for (unsigned member : slice.members) {
+    declareBefore(member);
     if (numSlicesUsing[member] == 1) {
       assert(&*next == symbols[member] && "slice is not in module order");
       ++next;
@@ -475,5 +775,6 @@ OwningOpRef<ModuleOp> LLVMDialectModuleSplitter::takeSlice(size_t idx) {
       body->getOperations().insert(next, symbols[member]->clone());
     }
   }
+  declareBefore(~0u);
   return std::move(slice.module);
 }
