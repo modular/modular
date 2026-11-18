@@ -68,6 +68,18 @@ OpFoldResult POP::foldCast(TypedAttr operand, SIMDType resultType,
         },
         [&](APFloat in) {
           bool ignored;
+          // `float8_e8m0fnu` is a signless, exponent-only scale: the cast
+          // takes the magnitude, rounds it up to a power of two, and saturates
+          // the top binade because the all-ones encoding is NaN. Must match
+          // the snippet that lowers the op.
+          if (*dtype == DType::f8e8m0fnu) {
+            bool wasFinite = in.isFinite();
+            in.clearSign();
+            in.convert(*sem, APFloat::rmTowardPositive, &ignored);
+            if (wasFinite && in.isNaN())
+              in = APFloat::getLargest(*sem);
+            return in;
+          }
           in.convert(*sem, APFloat::rmNearestTiesToEven, &ignored);
           return in;
         },

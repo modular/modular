@@ -399,6 +399,12 @@ struct LowerToLLVMOptions
       *this, "global-dtor-fn-name",
       llvm::cl::desc("The name of the global deinit function in JIT mode"),
       llvm::cl::init("kgenGlobalDtor")};
+
+  Option<bool> inlinePrecompiledMLIR{
+      *this, "inline-precompiled-mlir",
+      llvm::cl::desc("Inline precompiled MLIR conversion snippets in place "
+                     "instead of emitting a call to them."),
+      llvm::cl::init(true)};
 };
 
 /// Register the lower to LLVM pipeline.

@@ -13,6 +13,7 @@
 
 #include "Mojo/Support/PrecompiledMLIR.h"
 
+#include "Support/ML/DType.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -22,24 +23,35 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
+#include <cassert>
+#include <optional>
+#include <utility>
+
 using namespace M;
 using namespace M::KGEN;
 using namespace mlir;
 
-PrecompiledMLIRRegistry::~PrecompiledMLIRRegistry() = default;
-
-void PrecompiledMLIRRegistry::registerKind(Kind kind, StringRef symbolName,
-                                           StringRef mlirText) {
-  std::lock_guard<std::mutex> lock(mutex);
-  Entry &entry = table[kind];
-  entry.symbolName = symbolName.str();
-  entry.mlirText = mlirText.str();
+DenseMap<PrecompiledMLIRRegistry::Kind, PrecompiledMLIRRegistry::Entry>
+PrecompiledMLIRRegistry::buildTable(ArrayRef<Snippet> snippets) {
+  DenseMap<Kind, Entry> table;
+  table.reserve(snippets.size());
+  for (const Snippet &snippet : snippets) {
+    Entry entry{snippet.symbolName.str(), snippet.mlirText.str()};
+    bool inserted = table.try_emplace(snippet.kind, std::move(entry)).second;
+    (void)inserted;
+    assert(inserted && "duplicate snippet kind");
+  }
+  return table;
 }
+
+PrecompiledMLIRRegistry::PrecompiledMLIRRegistry(ArrayRef<Snippet> snippets)
+    : table(buildTable(snippets)) {}
+
+PrecompiledMLIRRegistry::~PrecompiledMLIRRegistry() = default;
 
 Operation *
 PrecompiledMLIRRegistry::getFunction(Kind kind, MLIRContext *ctx,
-                                     OwningOpRef<Operation *> &storage) {
-  std::lock_guard<std::mutex> lock(mutex);
+                                     OwningOpRef<Operation *> &storage) const {
   auto it = table.find(kind);
   if (it == table.end())
     return nullptr;
@@ -54,7 +66,7 @@ PrecompiledMLIRRegistry::getFunction(Kind kind, MLIRContext *ctx,
 PrecompiledMLIRCache::~PrecompiledMLIRCache() = default;
 
 Operation *
-PrecompiledMLIRCache::getFunction(PrecompiledMLIRRegistry &registry,
+PrecompiledMLIRCache::getFunction(const PrecompiledMLIRRegistry &registry,
                                   PrecompiledMLIRRegistry::Kind kind) {
   std::lock_guard<std::mutex> lock(mutex);
   auto [it, inserted] = parsed.try_emplace({&registry, kind});
@@ -64,7 +76,7 @@ PrecompiledMLIRCache::getFunction(PrecompiledMLIRRegistry &registry,
 }
 
 FailureOr<Operation *>
-PrecompiledMLIRRegistry::insertIntoModule(Kind kind, ModuleOp module) {
+PrecompiledMLIRRegistry::insertIntoModule(Kind kind, ModuleOp module) const {
   OwningOpRef<Operation *> storage;
   Operation *fn = getFunction(kind, module.getContext(), storage);
   if (!fn)
@@ -102,9 +114,8 @@ PrecompiledMLIRRegistry::insertIntoModule(Kind kind, ModuleOp module) {
   return result;
 }
 
-LogicalResult PrecompiledMLIRRegistry::inlineInPlace(Kind kind, Operation *op,
-                                                     ValueRange inputs,
-                                                     RewriterBase &rewriter) {
+LogicalResult PrecompiledMLIRRegistry::inlineInPlace(
+    Kind kind, Operation *op, ValueRange inputs, RewriterBase &rewriter) const {
   OwningOpRef<Operation *> storage;
   Operation *fn = getFunction(kind, op->getContext(), storage);
   if (!fn || fn->getNumRegions() != 1)
@@ -134,4 +145,107 @@ LogicalResult PrecompiledMLIRRegistry::inlineInPlace(Kind kind, Operation *op,
     results.push_back(map.lookupOrDefault(operand));
   rewriter.replaceOp(op, results);
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// Float conversions
+//===----------------------------------------------------------------------===//
+
+// Regenerating the embedded snippets (manual; no generator script is
+// committed):
+//
+//  1. In oss/modular/mojo/stdlib/std/builtin/simd.mojo, temporarily change
+//     the conversion's `@always_inline` to `@no_inline` so each instantiation
+//     survives as a distinct symbol (`_convert_float8_to_f32_scalar` for
+//     fp8 -> f32; `_convert_f32_to_float8_scalar` and
+//     `_convert_f32_to_float8_ue8m0_scalar` for f32 -> fp8), and restore the
+//     pre-snippet software body from git history. Capture the two directions
+//     in separate runs: `f32 -> fp8` compares against a widened `max_finite`,
+//     so with the widening uninlined that constant becomes a call.
+//  2. Build the stdlib: ./bazelw build //oss/modular/mojo/stdlib/std
+//  3. Write a capture.mojo that casts every variant (forcing the software
+//     path), then dump the LLVM-dialect MLIR:
+//       kgen --elaborate -I <built-std> capture.mojo -o elab.mlirbc
+//       kgen-opt elab.mlirbc -lower-to-llvm -o llvmdialect.mlir
+//  4. For each captured function: rename it to its synthetic
+//     `__kgen_pop_cast_*` symbol (distinct from the stdlib shim, to avoid a
+//     self-recursive call), strip the host-specific `attributes {...}` block
+//     and argument attributes, and set `internal` linkage (the snippet must
+//     inherit the target of the module it is inserted into).
+//
+//     The capture yields the `Branching` form: `-lower-to-llvm` keeps the
+//     conversion's control flow, and so does `kgen-opt`. Nothing here
+//     reproduces the `Flat` entries -- neither pass flattens, and neither
+//     does simplifycfg or `-O3` over the result -- so carry those entries
+//     over unchanged.
+//
+//  5. Canonicalize and embed: paste the `kgen-opt snippet.mlir` output into
+//     the .inc as the snippet's raw string literal.
+//  6. Revert the stdlib changes from step 1.
+//
+#include "ConversionSnippets.inc"
+
+// The two tables hold the same conversions in the same order, so a `Kind` is
+// an index into either one.
+static ArrayRef<ConversionSnippet>
+snippetTable(PrecompiledMLIRRegistry::FloatConversionForm form) {
+  using Form = PrecompiledMLIRRegistry::FloatConversionForm;
+  return form == Form::Flat ? ArrayRef(kFloatConversionSnippets)
+                            : ArrayRef(kBranchingFloatConversionSnippets);
+}
+
+static const PrecompiledMLIRRegistry *
+buildRegistry(ArrayRef<ConversionSnippet> table) {
+  SmallVector<PrecompiledMLIRRegistry::Snippet> snippets;
+  for (auto [kind, snippet] : llvm::enumerate(table))
+    snippets.push_back({static_cast<PrecompiledMLIRRegistry::Kind>(kind),
+                        snippet.symbolName, snippet.mlirText});
+  return new PrecompiledMLIRRegistry(snippets);
+}
+
+const PrecompiledMLIRRegistry &
+PrecompiledMLIRRegistry::getFloatConversions(FloatConversionForm form) {
+  // Leaked, process-lifetime singletons.
+  static const PrecompiledMLIRRegistry *flat =
+      buildRegistry(snippetTable(FloatConversionForm::Flat));
+  static const PrecompiledMLIRRegistry *branching =
+      buildRegistry(snippetTable(FloatConversionForm::Branching));
+  return form == FloatConversionForm::Flat ? *flat : *branching;
+}
+
+std::optional<PrecompiledMLIRRegistry::Kind>
+PrecompiledMLIRRegistry::getFloatConversionKind(DType from, DType to,
+                                                FloatConversionForm form) {
+  for (auto [kind, snippet] : llvm::enumerate(snippetTable(form)))
+    if (snippet.from == from.getValue() && snippet.to == to.getValue())
+      return kind;
+  return std::nullopt;
+}
+
+StringRef PrecompiledMLIRRegistry::getFloatConversionSymbolName(
+    DType from, DType to, FloatConversionForm form) {
+  std::optional<Kind> kind = getFloatConversionKind(from, to, form);
+  if (!kind)
+    return {};
+  return snippetTable(form)[*kind].symbolName;
+}
+
+FailureOr<Operation *> PrecompiledMLIRRegistry::insertFloatConversion(
+    DType from, DType to, FloatConversionForm form, ModuleOp module) {
+  std::optional<Kind> kind = getFloatConversionKind(from, to, form);
+  if (!kind)
+    return failure();
+  return getFloatConversions(form).insertIntoModule(*kind, module);
+}
+
+Operation *PrecompiledMLIRRegistry::getFloatConversionFunction(
+    DType from, DType to, FloatConversionForm form, MLIRContext *ctx,
+    OwningOpRef<Operation *> &storage, PrecompiledMLIRCache *cache) {
+  std::optional<Kind> kind = getFloatConversionKind(from, to, form);
+  if (!kind)
+    return nullptr;
+  const PrecompiledMLIRRegistry &registry = getFloatConversions(form);
+  if (cache)
+    return cache->getFunction(registry, *kind);
+  return registry.getFunction(*kind, ctx, storage);
 }

@@ -334,6 +334,14 @@ def LowerPOPToLLVM : Pass<"lower-pop-to-llvm"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    Option<"inlinePrecompiledMLIR", "inline-precompiled-mlir", "bool",
+           /*default=*/"true",
+           "Mark the precompiled conversion snippets (e.g. fp8 -> f32) "
+           "`always_inline`, so LLVM folds them into the caller instead of "
+           "leaving an out-of-line call.">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -408,6 +416,14 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "ModuleOp"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    Option<"inlinePrecompiledMLIR", "inline-precompiled-mlir", "bool",
+           /*default=*/"true",
+           "Mark the precompiled conversion snippets `always_inline`, so "
+           "LLVM folds them into the caller instead of leaving an "
+           "out-of-line call.">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//

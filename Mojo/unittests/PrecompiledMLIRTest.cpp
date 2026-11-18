@@ -21,6 +21,9 @@
 #include "mlir/Parser/Parser.h"
 #include "gtest/gtest.h"
 
+#include <optional>
+#include <string>
+
 using namespace mlir;
 using M::KGEN::PrecompiledMLIRCache;
 using M::KGEN::PrecompiledMLIRRegistry;
@@ -61,8 +64,7 @@ unsigned countSymbol(ModuleOp module, StringRef name) {
 TEST(PrecompiledMLIRTest, getFunctionParsesIntoCallerStorage) {
   TestContext tc;
 
-  PrecompiledMLIRRegistry registry;
-  registry.registerKind(kAddI8I8, "add_i8", kAddI8Source);
+  PrecompiledMLIRRegistry registry({{kAddI8I8, "add_i8", kAddI8Source}});
 
   OwningOpRef<Operation *> storage;
   Operation *fn = registry.getFunction(kAddI8I8, &tc.ctx, storage);
@@ -80,8 +82,7 @@ TEST(PrecompiledMLIRTest, getFunctionParsesIntoCallerStorage) {
 TEST(PrecompiledMLIRTest, insertIntoModuleAddsSymbolOnceThenDedups) {
   TestContext tc;
 
-  PrecompiledMLIRRegistry registry;
-  registry.registerKind(kAddI8I8, "add_i8", kAddI8Source);
+  PrecompiledMLIRRegistry registry({{kAddI8I8, "add_i8", kAddI8Source}});
 
   OwningOpRef<ModuleOp> target(ModuleOp::create(UnknownLoc::get(&tc.ctx)));
 
@@ -103,8 +104,7 @@ TEST(PrecompiledMLIRTest, insertIntoModuleAddsSymbolOnceThenDedups) {
 TEST(PrecompiledMLIRTest, inlineInPlaceReplacesOpWithBody) {
   TestContext tc;
 
-  PrecompiledMLIRRegistry registry;
-  registry.registerKind(kAddI8I8, "add_i8", kAddI8Source);
+  PrecompiledMLIRRegistry registry({{kAddI8I8, "add_i8", kAddI8Source}});
 
   // A caller whose `test.placeholder` should be replaced by the snippet body.
   constexpr llvm::StringLiteral kCaller = R"mlir(
@@ -154,10 +154,8 @@ TEST(PrecompiledMLIRTest, inlineInPlaceReplacesOpWithBody) {
 TEST(PrecompiledMLIRTest, cacheParsesOncePerKindAndRegistry) {
   TestContext tc;
 
-  PrecompiledMLIRRegistry first;
-  PrecompiledMLIRRegistry second;
-  first.registerKind(kAddI8I8, "add_i8", kAddI8Source);
-  second.registerKind(kAddI8I8, "add_i8", kAddI8Source);
+  PrecompiledMLIRRegistry first({{kAddI8I8, "add_i8", kAddI8Source}});
+  PrecompiledMLIRRegistry second({{kAddI8I8, "add_i8", kAddI8Source}});
 
   PrecompiledMLIRCache cache(&tc.ctx);
   Operation *fn = cache.getFunction(first, kAddI8I8);
@@ -173,6 +171,25 @@ TEST(PrecompiledMLIRTest, cacheParsesOncePerKindAndRegistry) {
   // Unknown kinds resolve to null, and stay null on the second lookup.
   EXPECT_EQ(cache.getFunction(first, /*kind=*/42), nullptr);
   EXPECT_EQ(cache.getFunction(first, /*kind=*/42), nullptr);
+}
+
+TEST(PrecompiledMLIRTest, registryCopiesSnippetStrings) {
+  TestContext tc;
+
+  // The registry owns its copies, so snippets assembled from temporaries stay
+  // usable once those are gone.
+  std::optional<PrecompiledMLIRRegistry> registry;
+  {
+    std::string symbolName = "add_i8";
+    std::string mlirText = kAddI8Source.str();
+    registry.emplace(
+        PrecompiledMLIRRegistry::Snippet{kAddI8I8, symbolName, mlirText});
+  }
+
+  OwningOpRef<Operation *> storage;
+  Operation *fn = registry->getFunction(kAddI8I8, &tc.ctx, storage);
+  ASSERT_NE(fn, nullptr);
+  EXPECT_EQ(SymbolTable::getSymbolName(fn).getValue(), "add_i8");
 }
 
 } // namespace

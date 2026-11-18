@@ -186,6 +186,40 @@ void LegalizePOPOperations::initializeTargetLegalConversions() {
   if (lowering)
     lowering->populateLegalConversions(target, addConversion);
 
+  // fp8 -> f32 has no native LLVM instruction. When the target provides no way
+  // to widen an fp8 type (neither a direct fp8->f32 nor an fp8->f16/bf16 hop
+  // that reaches f32), fall back to a precompiled software snippet emitted by
+  // `PrecompiledMLIRRegistry`. This leaves targets with native fp8 widening
+  // unchanged.
+  for (KGENDType fp8 :
+       {KGENDType(KGENDType::f8e4m3fn), KGENDType(KGENDType::f8e5m2),
+        KGENDType(KGENDType::f8e4m3fnuz), KGENDType(KGENDType::f8e5m2fnuz)}) {
+    auto it = legalConversions.find(fp8);
+    bool widenable =
+        it != legalConversions.end() && (it->second.contains(KGENDType::f32) ||
+                                         it->second.contains(KGENDType::f16) ||
+                                         it->second.contains(KGENDType::bf16));
+    if (!widenable)
+      addConversion(fp8, KGENDType::f32);
+  }
+
+  // f32 -> fp8 (narrowing) likewise has no native LLVM instruction. When the
+  // target provides no direct f32->fp8 narrowing, fall back to a precompiled
+  // software snippet from `PrecompiledMLIRRegistry`. This leaves targets with
+  // native fp8 narrowing unchanged. Snapshot f32's target set first, since
+  // `addConversion` mutates `legalConversions` and would invalidate the lookup.
+  llvm::SetVector<KGENDType> f32Targets;
+  if (auto it = legalConversions.find(KGENDType(KGENDType::f32));
+      it != legalConversions.end())
+    f32Targets = it->second;
+  for (KGENDType fp8 :
+       {KGENDType(KGENDType::f8e4m3fn), KGENDType(KGENDType::f8e5m2),
+        KGENDType(KGENDType::f8e4m3fnuz), KGENDType(KGENDType::f8e5m2fnuz),
+        KGENDType(KGENDType::f8e8m0fnu)}) {
+    if (!f32Targets.contains(fp8))
+      addConversion(KGENDType::f32, fp8);
+  }
+
   // TODO: This list has to be complete for all supported types, but ideally it
   // should be taken from lowering of the POP::CastOp.
 }

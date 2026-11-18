@@ -835,6 +835,7 @@ ObjectCompiler::lowerAllFuncsToLLVMDialect(ModuleOp module,
       static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage));
   llvmOptions.globalCtorFnName = ExecutionEngine::getGlobalCtorFnName();
   llvmOptions.globalDtorFnName = ExecutionEngine::getGlobalDtorFnName();
+  llvmOptions.inlinePrecompiledMLIR = true;
 
   buildLowerToLLVMPipeline(mgr, llvmOptions);
 

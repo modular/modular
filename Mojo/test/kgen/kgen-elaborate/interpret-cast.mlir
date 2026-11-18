@@ -60,6 +60,20 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK-NEXT: kgen.param.constant: scalar<si128> = <-2147483648>
     %17 = kgen.param.constant : !kgen.scalar<si128> = <#pop.cast<#kgen<simd -2147483648> : !kgen.scalar<index>> : !kgen.scalar<si128>>
 
+    // Casting to `f8e8m0fnu` takes the magnitude, rounds it up to a power of
+    // two, and saturates the top binade rather than reaching the NaN encoding.
+    // In order: NaN, 2**12, 2**1, 2**-127, 2**127.
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"NaN">
+    %18 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "-Inf"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"4.1E+3">
+    %19 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "-4096.0"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"2">
+    %20 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "1.1"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"5.9E-39">
+    %21 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "0.0"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"1.7E+38">
+    %22 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "2.55E+38"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+
     hlcf.return
   }
 }

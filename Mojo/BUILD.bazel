@@ -1109,6 +1109,7 @@ modular_cc_library(
         "MODULAR_KGEN_PROFILING_ENABLED=1",
     ],
     tags = ["no-clang-tidy-headers"],
+    textual_hdrs = glob(["lib/Support/*.inc"]),
     visibility = [
         "//Mojo:consumers",
         "//Mojo:plugin_consumers",
@@ -1247,6 +1248,7 @@ modular_cc_library(
         ":HLCFDialectAnalysis",
         ":KGENDialect",
         ":ObjectCompiler.headers",  # For MetalAddressSpace.h
+        ":Support",
         ":TargetLowering",
         ":ToolCommon",
         "//Support:Compiler",
