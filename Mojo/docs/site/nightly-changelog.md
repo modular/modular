@@ -662,6 +662,11 @@ Most code that no longer compiles matches one of these patterns:
 - `FileHandle` can now read and write more than 2 GiB at once on macOS,
   instead of raising `Invalid argument` or aborting.
 
+- [#7669](https://github.com/modular/modular/issues/7669) - At compile time,
+  `unsafe_memmove()` is fixed. `List.insert()` evaluated at compile time no
+  longer repeats the element at the insertion point, and `List.insert()` and
+  `List.pop(i)` now work on lists such as `List[String]`.
+
 - A NUL byte (`\0`) in the literal text of a t-string is now kept as text.
   Previously it ended the literal segment early, so `t"a\0b{x}"` with
   `x = "ls"` produced `alsb` instead of `a\0bls`.

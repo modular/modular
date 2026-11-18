@@ -304,11 +304,29 @@ def unsafe_memmove[
         count: The number of elements to copy.
     """
     var n = count * size_of[T]()
+    # The interpreter does not support `llvm.memmove`
     if __is_run_in_comptime_interpreter:
-        for i in range(n):
-            dest.unsafe_bitcast[Byte]().unsafe_offset(i).unsafe_store(
-                src.unsafe_bitcast[Byte]().unsafe_offset(i).unsafe_load()
-            )
+        var distance = Int(dest) - Int(src)
+        if distance == 0:
+            return
+        var chunk = abs(distance)
+        var dest_bytes = dest.unsafe_bitcast[Byte]()
+        var src_bytes = src.unsafe_bitcast[Byte]()
+        if distance > 0:
+            for end in range(n, 0, -chunk):
+                var start = max(end - chunk, 0)
+                unsafe_memcpy(
+                    dest=dest_bytes.unsafe_offset(start),
+                    src=src_bytes.unsafe_offset(start),
+                    count=end - start,
+                )
+        else:
+            for start in range(0, n, chunk):
+                unsafe_memcpy(
+                    dest=dest_bytes.unsafe_offset(start),
+                    src=src_bytes.unsafe_offset(start),
+                    count=min(chunk, n - start),
+                )
     else:
         llvm_intrinsic["llvm.memmove", NoneType](
             # <dest>, <src>, <len>, <isvolatile>
