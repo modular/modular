@@ -618,9 +618,8 @@ def _mla_attention(
         kv_collection=kv_collection,
         input_row_offsets=input_row_offsets,
         buffer_size=buffer_size,
-        # The host plan extent that production threads through the proposer:
-        # each request's window page-aligned and summed, the value
-        # ``spec_block_extent_bound`` bounds for a real batch.
+        # The host plan extent: each request's window page-aligned and
+        # summed, which the proposer's prompt-step extent bounds.
         # The kernel reads the extent as a host scalar, so the tensor must
         # not ride the caller's default device.
         buffer_length=Tensor(

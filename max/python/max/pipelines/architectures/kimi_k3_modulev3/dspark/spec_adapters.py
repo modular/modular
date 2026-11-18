@@ -30,11 +30,10 @@ graph values, so the verify converts at its own boundary:
 ``Tensor.from_graph_value`` on the way in, one fused tap tensor per device
 on the way out -- the drafter reads those through its ``context_proj``.
 
-The pairing also threads each step's MLA prefill-plan extents through the
-graph as one host trailing input, declared here and handed to both calls
-in :attr:`~.mla_extent.MLA_SPEC_EXTENTS`; :mod:`.mla_extent` selects the
-capture-safe value each call reads, so neither plan reads a device extent
-back and the fused graph stays capturable.
+Both calls size their MLA prefill plans from the batch's host context
+lengths, which the verify's distributed inputs bring; :mod:`.mla_extent`
+selects the capture-safe value each call reads, so neither plan reads a
+device extent back and the fused graph stays capturable.
 
 The KDA state rides the driver batch's ``passthrough_kv`` under the cache
 tree's ``state`` child, per device: the conv and recurrent leaves the model
@@ -51,18 +50,13 @@ from collections.abc import Sequence
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 from max import tree
-from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
-    DeviceRef,
     TensorType,
     TensorValue,
-    Value,
-    ops,
 )
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
@@ -73,7 +67,6 @@ from max.nn.kv_cache import (
 )
 from max.nn.legacy.comm import Signals
 from max.nn.outputs import ReturnHiddenStates
-from max.pipelines.context import TextContext
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_target import Verified
@@ -91,12 +84,7 @@ from ..state_cache import (
     attn_cache,
     has_verify_ring,
 )
-from .mla_extent import (
-    MLA_SPEC_EXTENTS,
-    k3_spec_mla_extent,
-    spec_block_extent_bound,
-    spec_verify_extent,
-)
+from .mla_extent import k3_spec_mla_extent
 from .proposer import K3DSparkProposer, k3_dspark_block_proposer
 
 if TYPE_CHECKING:
@@ -106,7 +94,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ADAPTER",
-    "MLA_SPEC_EXTENTS",
     "KimiK3BlockTarget",
     "target_kv_inputs",
 ]
@@ -192,6 +179,9 @@ class KimiK3BlockTarget:
     ring.
     """
 
+    # Brings the batch's host context lengths, which size the MLA plans.
+    takes_distributed_inputs = True
+
     def __init__(self, target: KimiK3Model) -> None:
         self.target = target
         self.state = KimiK3RecurrentState.from_model(target)
@@ -244,16 +234,16 @@ class KimiK3BlockTarget:
     def _mla_extent(self, batch: BlockBatch) -> TensorValue:
         """The selected host extent the verify's MLA prefill plan reads.
 
-        The pairing declares the batch's exact extent as a trailing graph
-        input; the select keeps the captured graphs on the batch-size-keyed
-        bound instead, so no plan reads a device-computed extent back.
+        A prompt step's extent is the batch's context length plus an
+        allowance per request; the select keeps the captured graphs on the
+        batch-size-keyed bound instead, so no plan reads a device-computed
+        extent back.
         """
         params = self._mla_params
         assert params is not None, "an extent needs the target's MLA cache"
         return k3_spec_mla_extent(
-            exact=ops.slice_tensor(
-                batch.extra[MLA_SPEC_EXTENTS], [slice(0, 1)]
-            ),
+            context_length=batch.batch_context_lengths[0],
+            reach=0,
             kv=batch.kv_collections[0],
             input_row_offsets=batch.input_row_offsets,
             num_draft_tokens=params.num_draft_tokens,
@@ -337,56 +327,6 @@ def block_proposer(
     return k3_dspark_block_proposer(verify, draft, draft_config, speculative)
 
 
-def trailing_input_types(target_config: Any) -> list[TensorType]:
-    """Returns the host extent pair both prefill plans read.
-
-    One host ``int32[2]`` for the whole graph: the values are summed over
-    the batch and every device holds the same batch.
-    """
-    del target_config
-    return [TensorType(DType.int32, [2], device=DeviceRef.CPU())]
-
-
-def trailing_buffers(
-    target_config: Any,
-    contexts: Sequence[TextContext],
-    devices: Sequence[Device],
-) -> list[Buffer]:
-    """Returns the batch's extent pair: verify exact, drafter block bound.
-
-    Computed from the same context terms the cache manager accounts with,
-    so the pair can never fall below a step's real extents while the
-    terms agree; see :mod:`.mla_extent` for how each call site selects
-    between its value and a capture-safe bound.
-    """
-    del devices
-    params = target_config.attn_kv_params
-    return [
-        Buffer.from_numpy(
-            np.array(
-                [
-                    spec_verify_extent(contexts, params.page_size),
-                    spec_block_extent_bound(
-                        contexts, params.page_size, params.num_draft_tokens
-                    ),
-                ],
-                dtype=np.int32,
-            )
-        )
-    ]
-
-
-def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
-    """Returns the extent pair for the verify and the proposer.
-
-    The pair is the first trailing input, ahead of any the graph's other
-    groups declare; a block draft takes no logit penalties, so nothing
-    else follows it.
-    """
-    del target_config
-    return {MLA_SPEC_EXTENTS: trailing[0].tensor}
-
-
 def export_contract(
     speculative: SpeculativeConfig,
     draft_config: Any,
@@ -407,14 +347,12 @@ def export_contract(
     target cache, a target with no KDA state, or no verify ring) records
     nothing: MAX keeps serving, and Mach's exporter fails its own
     "records no export contract" refusal rather than shipping a half-frozen
-    record. The declared signature ends with the extent pair -- the traced
-    signal buffers the compile appends past it are recorded by the exporter,
-    which splices their types back in.
+    record. The traced signal buffers the compile appends past the declared
+    inputs are recorded by the exporter, which splices their types back in.
 
     Raises:
-        ValueError: Only on states MAX cannot build: a drafter whose block
-            is not its draft width, or a trailing input that is not the host
-            extent pair. Both are refused earlier in ``_driver_call``.
+        ValueError: Only on a state MAX cannot build: a drafter whose block
+            is not its draft width, which ``_driver_call`` refuses earlier.
     """
     del target_config
     devices = [device.id for device in kv_params.devices]
@@ -461,17 +399,6 @@ def export_contract(
         raise ValueError(
             "The Inferact K3 drafter drafts its whole block, anchor included:"
             f" block_size {block} must equal the draft width {width}"
-        )
-    extent = input_types[-1]
-    if not (
-        isinstance(extent, TensorType)
-        and extent.dtype == DType.int32
-        and list(extent.shape) == [2]
-        and extent.device == DeviceRef.CPU()
-    ):
-        raise ValueError(
-            f"The Inferact K3 signature must end with the host extent pair,"
-            f" got {extent}"
         )
     draft_proposal = speculative.draft_proposal
     return {
@@ -538,9 +465,6 @@ ADAPTER = TargetAdapter(
     primary_kv=ATTN_CACHE_KEY,
     verify=verify,
     block_proposer=block_proposer,
-    trailing_input_types=trailing_input_types,
-    trailing_buffers=trailing_buffers,
-    extra=extra,
     export_contract=export_contract,
     # The pairing this fold was written for: K3's accept graph answers its
     # per-step index glue in one launch. Every other target keeps the chain.

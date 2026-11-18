@@ -19,16 +19,16 @@ scalar host-side, to size the allocation and launch the copy. Reading the
 plan's own extent back from the device answers that, but the read is a
 D2H sync, so a graph holding it cannot be captured as a device graph.
 
-Instead the batch carries the extent as a host graph input, and this
-module owns both halves: it computes the pair on the host --
-:func:`spec_verify_extent`, :func:`spec_block_extent_bound` -- and
-selects a capture-safe value for it in-graph, on the host:
+Instead :func:`k3_spec_mla_extent` selects a host value in-graph:
 
-* the batched extent -- the exact value for a prompt/mixed step, an upper
-  bound for the drafter's block, whose commit count is decided on the
-  device -- whenever the batch schedules more than ``K + 1`` rows for some
-  request, which only a prompt or mixed step does; those steps are never
-  captured, so the frozen value never outlives its batch;
+* the batch's page-aligned context length plus an allowance per request,
+  whenever the batch schedules more than ``K + 1`` rows for some request,
+  which only a prompt or mixed step does. The context length counts each
+  request's processed and scheduled tokens, so the allowance covers the
+  rest: the drafts a decode row riding the step carries, including the
+  previous step's accepted drafts that MAX commits lazily, and the
+  drafter's block, whose commit count is decided on the device. Those steps
+  are never captured, so the frozen value never outlives its batch;
 * otherwise -- every decode step, the only kind capture records -- the
   ``min(batch_size * align_up(max_cache_length, page), mla_buffer_size)``
   bound, which reads
@@ -41,10 +41,10 @@ selects a capture-safe value for it in-graph, on the host:
   maps to it and every replay's smaller bucket stays covered; a capture
   order that recorded a smaller length first would strand it.
 
-The pair itself is a trailing host input whose value changes every step,
-so the capture host-input guard reports it on every replay as
-changed-since-capture even though a captured (decode) step never reads
-it -- known-benign, and capture tests should treat it as such.
+The context length changes every step, so the capture host-input guard
+reports it on every replay as changed-since-capture even though a captured
+(decode) step never reads it -- known-benign, and capture tests should
+treat it as such.
 
 An oversized extent is safe -- the cache-to-buffer copy zero-writes
 past the plan's own rows -- while an undersized one silently corrupts,
@@ -54,75 +54,30 @@ the bound whenever it cannot prove a step uncaptured.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.paged_kv_cache._common import (
-    cache_valid_length_for_context,
-)
+from max.support.math import ceildiv
 
-__all__ = [
-    "MLA_SPEC_EXTENTS",
-    "k3_spec_mla_extent",
-    "spec_block_extent_bound",
-    "spec_verify_extent",
-]
-
-MLA_SPEC_EXTENTS = "mla_spec_extents"
-"""Key in :attr:`~max.pipelines.speculative.block_driver.BlockBatch.extra`
-for the host ``int32[2]`` pair a batch's extents ride: the verify plan's
-exact extent, then the drafter block's upper bound."""
+__all__ = ["k3_spec_draft_allowance", "k3_spec_mla_extent"]
 
 
-def _page_aligned(length: int, page_size: int) -> int:
-    """Rounds ``length`` up to a multiple of ``page_size``."""
-    return (length + page_size - 1) // page_size * page_size
-
-
-def spec_verify_extent(contexts: Sequence[TextContext], page_size: int) -> int:
-    """Returns the plan extent a verify step's merged window needs.
-
-    The one-shot decompression plan's total row count, computed on the host
-    from the same terms ``cache_valid_length_for_context(ctx, 0)`` sums --
-    cached tokens, the step's scheduled rows and the drafts it verifies --
-    each request rounded up to a page, as the plan kernel rounds it. An
-    undersized extent silently corrupts (the copy launches only ``length``
-    rows), so every consumer must pass this or something larger, never a
-    plain decode-step budget.
-    """
-    return sum(
-        _page_aligned(cache_valid_length_for_context(ctx, 0), page_size)
-        for ctx in contexts
-    )
-
-
-def spec_block_extent_bound(
-    contexts: Sequence[TextContext], page_size: int, num_draft_tokens: int
+def k3_spec_draft_allowance(
+    *, num_draft_tokens: int, reach: int, page_size: int
 ) -> int:
-    """Returns an upper bound on the drafter block's plan extent.
+    """Returns the rows the exact arm adds per request past the context length.
 
-    The block runs after the verify commits: its cache holds the
-    pre-verify length plus the committed rows -- at most the whole merged
-    window -- and it queries ``num_draft_tokens`` block rows on top, so
-    each request needs at most its ``cache_valid_length_for_context`` at
-    the pairing's full draft width. Device-side acceptance decides the
-    commit, so the exact value is only knowable on the device; this bound
-    is the host's stand-in, and the block's real extent never exceeds it.
+    A request reads past its page-aligned context length by at most the
+    drafts it carries -- lazily committed and under verification -- plus
+    ``reach``, so a page-aligned allowance of that many rows covers it.
     """
-    return sum(
-        _page_aligned(
-            cache_valid_length_for_context(ctx, num_draft_tokens), page_size
-        )
-        for ctx in contexts
-    )
+    return ceildiv(2 * num_draft_tokens + reach, page_size) * page_size
 
 
 def k3_spec_mla_extent(
     *,
-    exact: TensorValue,
+    context_length: TensorValue,
+    reach: int,
     kv: KVCacheInputsPerDevice[TensorValue, BufferValue],
     input_row_offsets: TensorValue,
     num_draft_tokens: int,
@@ -132,9 +87,10 @@ def k3_spec_mla_extent(
     """Selects this call's MLA prefill-plan extent on the host, in-graph.
 
     Returns the host ``[1]`` int32 to pass as the plan's ``buffer_length``.
-    ``exact`` is the batched value this call wants -- the verify's
-    :func:`spec_verify_extent`, the drafter block's
-    :func:`spec_block_extent_bound` -- and ``kv`` is
+    ``context_length`` is the batch's page-aligned context length, its
+    ``batch_context_lengths`` input, and ``reach`` the rows this call reads
+    past each request's window: none for the verify, the drafter's block
+    width for the drafter. ``kv`` is
     either cache leaf: its ``max_prompt_length`` names the widest merged
     window any request schedules, and its ``max_cache_length`` the bound
     arm keys on; the target's and the drafter's leaves carry the same
@@ -142,8 +98,8 @@ def k3_spec_mla_extent(
     offsets, whose length names the batch size the bound charges.
     ``mla_buffer_size`` is the one-shot plan's row cap.
 
-    ``kv`` is one replica's leaf, so the bound sizes from that replica's
-    ``max_cache_length`` alone; Kimi K3 refuses data parallelism
+    ``kv`` and ``context_length`` are one replica's, so both arms size from
+    that replica's lengths alone; Kimi K3 refuses data parallelism
     (``KimiK3Config._attn_kv_params``), which keeps every replica at the
     same length -- a future DP enablement must re-derive this select per
     replica or it undersizes every replica past the first.
@@ -164,8 +120,11 @@ def k3_spec_mla_extent(
         (cache + (page - 1)) // page * page * rows,
         ops.constant(mla_buffer_size, DType.int32, device=cpu),
     )
-    return ops.where(
-        decode,
-        bound,
-        ops.cast(exact, DType.int32),
+    allowance = k3_spec_draft_allowance(
+        num_draft_tokens=num_draft_tokens, reach=reach, page_size=page_size
     )
+    exact = ops.cast(context_length, DType.int32) + rows * ops.constant(
+        allowance, DType.int32, device=cpu
+    )
+    # The bound covers every step's plan too, so it caps the exact arm.
+    return ops.where(decode, bound, ops.min(exact, bound))

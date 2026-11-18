@@ -38,11 +38,10 @@ k3_dspark_draft_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=K3DSparkDraftArchConfig,
     checkpoint_draft_width=k3_dspark_draft_width,
-    # The spec graph's MLA prefill plan takes its extent from the host
-    # pair the spec adapter threads as a trailing input (dspark/
-    # mla_extent.py), so no captured step syncs the host; the fused
-    # pipeline replays bit-exact against eager execution at the same
-    # aligned characteristics, per step and end to end at TP1 and TP2
-    # (spec/test_spec_capture.py).
+    # The spec graph's MLA prefill plans size their extents in-graph from
+    # the batch's host context lengths (dspark/mla_extent.py), so no
+    # captured step syncs the host; the fused pipeline replays bit-exact
+    # against eager execution at the same aligned characteristics, per
+    # step and end to end at TP1 and TP2 (spec/test_spec_capture.py).
     supports_device_graph_capture=True,
 )

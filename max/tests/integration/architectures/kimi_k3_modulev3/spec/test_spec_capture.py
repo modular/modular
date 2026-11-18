@@ -14,13 +14,13 @@
 
 The spec pipeline is parity-tested EAGER; this is the one check its
 captured form must satisfy. The MLA prefill plans take their extent from
-the host pair the K3 spec adapter threads as a trailing input
-(``dspark/mla_extent.py``) instead of reading the device plan back -- a
-D2H sync no captured graph can hold. The pair selects in-graph between
-the batch's exact extent (eager prompt/mixed steps, never captured) and
-a capture-safe bound keyed on host inputs that follow the capture key
-(captured decode steps), so the check grades the bound arm replaying
-bit-for-bit what eager execution computes.
+the batch's host context length instead of reading the device plan back --
+a D2H sync no captured graph can hold. ``k3_spec_mla_extent``
+(``dspark/mla_extent.py``) selects in-graph between the context length
+plus a per-request draft allowance (eager prompt/mixed steps, never
+captured) and a capture-safe bound keyed on host inputs that follow the
+capture key (captured decode steps), so the check grades the bound arm
+replaying bit-for-bit what eager execution computes.
 
 ``test_replay_matches_eager_bit_exact_per_step`` -- replay == eager per
 step, bit-exact, at the same ALIGNED batch characteristics: the spec
