@@ -130,14 +130,6 @@ def targets():
     )
 
     native.alias(
-        name = "multidict@multiple",
-        actual = select({{
-            "@@//:use_vllm_setting": ":multidict@6.9.1",
-            "//conditions:default": ":multidict@6.7.1",
-        }}),
-    )
-
-    native.alias(
         name = "requests@multiple",
         actual = select({{
             "@@//:use_vllm_setting": ":requests@2.34.2",

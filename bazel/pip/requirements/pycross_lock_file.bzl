@@ -87,7 +87,7 @@ PINS = {
     "ml-dtypes": "ml-dtypes@0.5.4",
     "msgspec": "msgspec@0.20.0",
     "mteb": "mteb@multiple",
-    "multidict": "multidict@multiple",
+    "multidict": "multidict@6.9.1",
     "munch": "munch@4.0.0",
     "mypy": "mypy@2.3.1",
     "mypy-extensions": "mypy-extensions@1.0.0",
@@ -270,14 +270,6 @@ def targets():
         actual = select({
             "@@//:use_vllm_setting": ":filelock@4.2.9",
             "//conditions:default": ":filelock@3.16.1",
-        }),
-    )
-
-    native.alias(
-        name = "multidict@multiple",
-        actual = select({
-            "@@//:use_vllm_setting": ":multidict@6.9.1",
-            "//conditions:default": ":multidict@6.7.1",
         }),
     )
 
@@ -950,7 +942,7 @@ def targets():
         ":boto3@1.40.61",
         ":botocore@1.40.61",
         ":jmespath@1.0.1",
-        ":multidict@multiple",
+        ":multidict@6.9.1",
         ":python-dateutil@2.9.0.post0",
         ":wrapt@1.17.3",
     ]
@@ -994,7 +986,7 @@ def targets():
         ":aiosignal@1.4.0",
         ":attrs@24.2.0",
         ":frozenlist@1.8.0",
-        ":multidict@multiple",
+        ":multidict@6.9.1",
         ":propcache@0.4.1",
         ":yarl@1.22.0",
     ] + select({
@@ -1915,7 +1907,7 @@ def targets():
     )
 
     _async_asgi_testclient_1_4_11_deps = [
-        ":multidict@multiple",
+        ":multidict@6.9.1",
         ":requests@multiple",
     ]
 
@@ -9221,72 +9213,9 @@ def targets():
         testonly = "mteb" in _TESTONLY_DEPS,
     )
 
-    _multidict_6_7_1_deps = [
+    _multidict_6_9_1_deps = [
         ":typing-extensions@4.16.0",
     ]
-
-    native.alias(
-        name = "_wheel_multidict@6.7.1",
-        actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_multidict_6.7.1_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_multidict_6.7.1_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_multidict_6.7.1_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_multidict_6.7.1_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314t_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.15_aarch64-apple-darwin": "@pycross_lock_file_wheel_multidict_6.7.1_py3_none_any//file",
-            ":_env_python_3.15_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_multidict_6.7.1_py3_none_any//file",
-            ":_env_python_3.15_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_py3_none_any//file",
-            ":_env_python_3.15_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_multidict_6.7.1_py3_none_any//file",
-            ":_env_python_3.15_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_multidict_6.7.1_py3_none_any//file",
-            ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_multidict_6.7.1_py3_none_any//file",
-        }),
-    )
-
-    pycross_wheel_library(
-        name = "multidict@6.7.1",
-        deps = _multidict_6_7_1_deps,
-        wheel = ":_wheel_multidict@6.7.1",
-        testonly = "multidict" in _TESTONLY_DEPS,
-    )
-
-    _multidict_6_9_1_deps = [
-    ] + select({
-        ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.15_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":typing-extensions@4.16.0",
-        ],
-        "//conditions:default": [],
-    })
 
     native.alias(
         name = "_wheel_multidict@6.9.1",
@@ -19964,7 +19893,6 @@ def targets():
         ":flashinfer-python@multiple",
         ":llguidance@multiple",
         ":mcp@multiple",
-        ":multidict@multiple",
         ":numpy@multiple",
         ":nvidia-cudnn-frontend@multiple",
         ":nvidia-cutlass-dsl@multiple",
@@ -20005,6 +19933,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20055,6 +19984,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20105,6 +20035,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20157,6 +20088,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20209,6 +20141,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20261,6 +20194,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20313,6 +20247,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20365,6 +20300,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20417,6 +20353,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20469,6 +20406,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20521,6 +20459,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20573,6 +20512,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20625,6 +20565,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -20677,6 +20618,7 @@ def targets():
             ":mistral-common@1.11.6",
             ":model-hosting-container-standards@0.1.16",
             ":msgspec@0.20.0",
+            ":multidict@6.9.1",
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
@@ -21214,7 +21156,7 @@ def targets():
 
     _yarl_1_22_0_deps = [
         ":idna@multiple",
-        ":multidict@multiple",
+        ":multidict@6.9.1",
         ":propcache@0.4.1",
     ]
 
@@ -29754,196 +29696,6 @@ def repositories():
         ],
         sha256 = "d6a7a831993be63cbe741486ec4822c3a7f9518ab5e395e1ec62f790d9f0e8c4",
         downloaded_file_path = "mteb-2.24.3-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp310_cp310_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/31/5c/08c7f7fe311f32e83f7621cd3f99d805f45519cd06fafb247628b861da7d/multidict-6.7.1-cp310-cp310-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "cdea2e7b2456cfb6694fb113066fd0ec7ea4d67e3a35e1f4cbeea0b448bf5872",
-        downloaded_file_path = "multidict-6.7.1-cp310-cp310-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp310_cp310_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/dd/f4/8719f4f167586af317b69dd3e90f913416c91ca610cac79a45c53f590312/multidict-6.7.1-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "d4f49cb5661344764e4c7c7973e92a47a59b8fc19b6523649ec9dc4960e58a03",
-        downloaded_file_path = "multidict-6.7.1-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp310_cp310_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/4b/ac/b605473de2bb404e742f2cc3583d12aedb2352a70e49ae8fce455b50c5aa/multidict-6.7.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "9b0d9b91d1aa44db9c1f1ecd0d9d2ae610b2f4f856448664e01a3b35899f3f92",
-        downloaded_file_path = "multidict-6.7.1-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp311_cp311_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/dd/a4/d45caf2b97b035c57267791ecfaafbd59c68212004b3842830954bb4b02e/multidict-6.7.1-cp311-cp311-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "f2a0a924d4c2e9afcd7ec64f9de35fcd96915149b2216e1cb2c10a56df483855",
-        downloaded_file_path = "multidict-6.7.1-cp311-cp311-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp311_cp311_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/5d/16/8c65be997fd7dd311b7d39c7b6e71a0cb449bad093761481eccbbe4b42a2/multidict-6.7.1-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "2e2d2ed645ea29f31c4c7ea1552fcfd7cb7ba656e1eafd4134a6620c9f5fdd9e",
-        downloaded_file_path = "multidict-6.7.1-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp311_cp311_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/5a/56/21b27c560c13822ed93133f08aa6372c53a8e067f11fbed37b4adcdac922/multidict-6.7.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "439cbebd499f92e9aa6793016a8acaa161dfa749ae86d20960189f5398a19144",
-        downloaded_file_path = "multidict-6.7.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp312_cp312_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/a9/65/1caac9d4cd32e8433908683446eebc953e82d22b03d10d41a5f0fefe991b/multidict-6.7.1-cp312-cp312-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "b0fa96985700739c4c7853a43c0b3e169360d6855780021bfc6d0f1ce7c123e7",
-        downloaded_file_path = "multidict-6.7.1-cp312-cp312-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp312_cp312_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/fd/80/c959c5933adedb9ac15152e4067c702a808ea183a8b64cf8f31af8ad3155/multidict-6.7.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "eb0ce7b2a32d09892b3dd6cc44877a0d02a33241fafca5f25c8b6b62374f8b75",
-        downloaded_file_path = "multidict-6.7.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp312_cp312_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/f3/8d/5e5be3ced1d12966fefb5c4ea3b2a5b480afcea36406559442c6e31d4a48/multidict-6.7.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "bfde23ef6ed9db7eaee6c37dcec08524cb43903c60b285b172b6c094711b3961",
-        downloaded_file_path = "multidict-6.7.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp313_cp313_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/79/76/55cd7186f498ed080a18440c9013011eb548f77ae1b297206d030eb1180a/multidict-6.7.1-cp313-cp313-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "935434b9853c7c112eee7ac891bc4cb86455aa631269ae35442cb316790c1445",
-        downloaded_file_path = "multidict-6.7.1-cp313-cp313-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp313_cp313_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/f6/32/befed7f74c458b4a525e60519fe8d87eef72bb1e99924fa2b0f9d97a221e/multidict-6.7.1-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "e82d14e3c948952a1a85503817e038cba5905a3352de76b9a465075d072fba23",
-        downloaded_file_path = "multidict-6.7.1-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp313_cp313_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/b0/73/6e1b01cbeb458807aa0831742232dbdd1fa92bfa33f52a3f176b4ff3dc11/multidict-6.7.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "9d624335fd4fa1c08a53f8b4be7676ebde19cd092b3895c421045ca87895b429",
-        downloaded_file_path = "multidict-6.7.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/f1/4f/733c48f270565d78b4544f2baddc2fb2a245e5a8640254b12c36ac7ac68e/multidict-6.7.1-cp314-cp314-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "0e161ddf326db5577c3a4cc2d8648f81456e8a20d40415541587a71620d7a7d1",
-        downloaded_file_path = "multidict-6.7.1-cp314-cp314-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/a7/f9/44d4b3064c65079d2467888794dea218d1601898ac50222ab8a9a8094460/multidict-6.7.1-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "97231140a50f5d447d3164f994b86a0bed7cd016e2682f8650d6a9158e14fd31",
-        downloaded_file_path = "multidict-6.7.1-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/fe/3b/8ec5074bcfc450fe84273713b4b0a0dd47c0249358f5d82eb8104ffe2520/multidict-6.7.1-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "7eee46ccb30ff48a1e35bb818cc90846c6be2b68240e42a78599166722cea709",
-        downloaded_file_path = "multidict-6.7.1-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314t_macosx_11_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/37/e8/5284c53310dcdc99ce5d66563f6e5773531a9b9fe9ec7a615e9bc306b05f/multidict-6.7.1-cp314-cp314t-macosx_11_0_arm64.whl",
-        ],
-        sha256 = "14525a5f61d7d0c94b368a42cff4c9a4e7ba2d52e2672a7b23d84dc86fb02b0c",
-        downloaded_file_path = "multidict-6.7.1-cp314-cp314t-macosx_11_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314t_manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/41/75/4ad0973179361cdf3a113905e6e088173198349131be2b390f9fa4da5fc6/multidict-6.7.1-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-        ],
-        sha256 = "7a7e590ff876a3eaf1c02a4dfe0724b6e69a9e9de6d8f556816f29c496046e59",
-        downloaded_file_path = "multidict-6.7.1-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_cp314_cp314t_manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/a2/76/b9669547afa5a1a25cd93eaca91c0da1c095b06b6d2d8ec25b713588d3a1/multidict-6.7.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "9004d8386d133b7e6135679424c91b0b854d2d164af6ea3f289f8f2761064609",
-        downloaded_file_path = "multidict-6.7.1-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_multidict_6.7.1_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/81/08/7036c080d7117f28a4af526d794aab6a84463126db031b007717c1a6676e/multidict-6.7.1-py3-none-any.whl",
-        ],
-        sha256 = "55d97cc6dae627efa6a6e548885712d4864b81110ac76fa4e534c03819fa4a56",
-        downloaded_file_path = "multidict-6.7.1-py3-none-any.whl",
     )
 
     maybe(

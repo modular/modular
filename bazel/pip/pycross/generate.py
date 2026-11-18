@@ -90,7 +90,6 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "idna",  # Follows mcp's split
         "llguidance",  # Not used by MAX directly; vllm pulls 1.7.5, sglang pins 0.7.30
         "mcp",  # vllm 0.30.0 needs mcp 2.x; MAX and sglang use 1.30.0
-        "multidict",  # vllm 0.33.0 needs >=6.9.1; the other groups stay on 6.7.1
         "nvidia-cudnn-frontend",  # flashinfer 0.7 needs >=1.29 (bench, vllm); MAX and sglang use 1.26.0
         "nvidia-cublas",  # Differs between vllm's and sglang's torch versions
         "nvidia-cudnn-cu13",  # Differs between vllm's and sglang's torch versions
