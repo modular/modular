@@ -75,6 +75,13 @@ def MOGG_Context : MOGG_Type<"Context", "context"> {
   }];
 }
 
+def MOGG_LaunchConfig : MOGG_Type<"LaunchConfig", "launch_config"> {
+  let summary = "The configuration a kernel launches with.";
+  let description = [{
+    Says which part of the device a launch runs on, in the target's own terms.
+  }];
+}
+
 def MOGG_TaskHandle : MOGG_Type<"TaskHandle", "task_handle"> {
   let summary = "Handle to an asynchronously dispatched task";
   let description = [{

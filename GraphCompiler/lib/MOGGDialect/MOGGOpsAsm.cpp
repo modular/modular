@@ -798,6 +798,44 @@ void CallForeachOp::getAsmBlockArgumentNames(Region &region,
   nameLeadingArgs(args.drop_front(numCaptures), {"idx"}, setNameFn);
 }
 
+// `context(%ctx) config(%launch) args {%a = %v : type, ...} {...}`, where
+// each launch operand is written next to the block argument that stands for
+// it in the kernel.
+ParseResult GraphBlobLaunchOp::parse(OpAsmParser &parser,
+                                     OperationState &result) {
+  MLIRContext *ctx = parser.getContext();
+  OpAsmParser::UnresolvedOperand context, config;
+  SmallVector<OpAsmParser::Argument> entryArgs;
+  SmallVector<OpAsmParser::UnresolvedOperand> args;
+  SmallVector<Type> argTypes;
+  if (parser.parseKeyword("context") || parser.parseLParen() ||
+      parser.parseOperand(context) || parser.parseRParen() ||
+      parser.parseKeyword("config") || parser.parseLParen() ||
+      parser.parseOperand(config) || parser.parseRParen() ||
+      parseBindings(parser, "args", entryArgs, args, argTypes,
+                    /*impliedType=*/Type(), /*required=*/false) ||
+      parser.parseOptionalAttrDictWithKeyword(result.attributes) ||
+      parser.resolveOperand(context, ContextType::get(ctx), result.operands) ||
+      parser.resolveOperand(config, LaunchConfigType::get(ctx),
+                            result.operands) ||
+      parser.resolveOperands(args, argTypes, parser.getNameLoc(),
+                             result.operands))
+    return failure();
+  return parser.parseRegion(*result.addRegion(), entryArgs);
+}
+
+void GraphBlobLaunchOp::print(OpAsmPrinter &p) {
+  p << " context(" << getDeviceContext() << ") config(" << getConfig() << ")";
+  if (!getArgs().empty()) {
+    p << " ";
+    printBindings(p, "args", getArgs(), getBody().front().getArguments(),
+                  /*impliedType=*/Type(), /*required=*/false);
+  }
+  p.printOptionalAttrDictWithKeyword((*this)->getAttrs());
+  p << " ";
+  p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
+}
+
 // Same layout as `call.foreach`.
 ParseResult CallForeachTileOp::parse(OpAsmParser &parser,
                                      OperationState &result) {

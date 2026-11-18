@@ -61,7 +61,7 @@ func.func @graph_blob_two_contexts(%ctx0: !mogg.context, %ctx1: !mogg.context) {
 // -----
 
 func.func @execute_device_outside_graph_blob(%ctx: !mogg.context) {
-  // expected-error@+1 {{expects parent op 'mogg.graph_blob'}}
+  // expected-error@+1 {{expects parent op to be one of 'mogg.graph_blob, mogg.graph_blob.call'}}
   mogg.call.execute_device @missing.kernel context(%ctx : !mogg.context)
   return
 }

@@ -1361,23 +1361,31 @@ def MOGG_CallOpaqueOp : MOGG_Op<"call.opaque", [
 def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
   MOGG_CallLike,
   AttrSizedOperandSegments,
-  HasParent<"MOGG::GraphBlobOp">,
+  // TRANSITIONAL(GEX-4588): `MOGG::GraphBlobOp` goes once graph blobs are
+  // lowered before emission.
+  ParentOneOf<["MOGG::GraphBlobOp", "MOGG::GraphBlobCallOp"]>,
   DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
 ]> {
   let summary = "Run a declarative kernel as a call in a graph blob.";
   let description = [{
-    Runs `$callee`'s `execute_device` as one call in the enclosing
-    `mogg.graph_blob`'s launch. Emit calls the kernel's
-    `execute_configuration` on the host, and the blob's kernel calls its
-    `execute_device` on the device. Outside a blob, `mogg.call.opaque`
-    launches a declarative kernel by itself.
+    Runs `$callee`'s `execute_device` as one call of a graph blob.
+
+    TRANSITIONAL (GEX-4588): the op has two forms while graph blobs move to
+    lowering before emission. The `mogg.graph_blob` form, and with it
+    `$device_context`, goes once that is done.
+
+    In a `mogg.graph_blob`, the call takes `$device_context`, the context the
+    blob launches on, and also runs `$callee`'s `execute_configuration` on the
+    host. In a `mogg.graph_blob.call`, it takes no context and runs only
+    `execute_device`, in the enclosing launch's kernel. Outside a blob,
+    `mogg.call.opaque` launches a declarative kernel by itself.
 
     Example:
     ```mlir
-    mogg.graph_blob {
+    mogg.graph_blob.call active(%a) {
       mogg.call.execute_device @kernels.Softmax inputs(%x : !mogg.tensor)
-          outputs(%y : !mogg.tensor) context(%ctx : !mogg.context)
+          outputs(%y : !mogg.tensor)
     }
     ```
   }];
@@ -1385,14 +1393,50 @@ def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
     FlatSymbolRefAttr:$callee,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar]>>:$inputs,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$outputs,
-    MOGG_Context:$device_context,
+    // TRANSITIONAL(GEX-4588): only the `mogg.graph_blob` form has a context,
+    // and it goes with that form.
+    Optional<MOGG_Context>:$device_context,
     OptionalAttr<DictionaryAttr>:$kernel_param
   );
   let assemblyFormat = [{
     $callee `` custom<OptionalKernelParams>($kernel_param)
     (`inputs` `(` $inputs^ `:` type($inputs) `)`)?
     (`outputs` `(` $outputs^ `:` type($outputs) `)`)?
-    `context` `(` $device_context `:` type($device_context) `)`
+    (`context` `(` $device_context^ `:` type($device_context) `)`)?
+    attr-dict
+  }];
+  // TRANSITIONAL(GEX-4588): checks the context against the form.
+  let hasVerifier = 1;
+}
+
+def MOGG_CallExecuteConfigurationOp
+    : MOGG_Op<"call.execute_configuration", [
+  AttrSizedOperandSegments,
+  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
+  DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+]> {
+  let summary = "Compute a declarative kernel's launch configuration.";
+  let description = [{
+    Runs `$callee`'s `execute_configuration` on the call's operands and
+    returns the configuration the call launches with.
+
+    Example:
+    ```mlir
+    %cfg = mogg.call.execute_configuration @kernels.Softmax
+        inputs(%x : !mogg.tensor) outputs(%y : !mogg.tensor)
+    ```
+  }];
+  let arguments = (ins
+    FlatSymbolRefAttr:$callee,
+    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar]>>:$inputs,
+    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$outputs,
+    OptionalAttr<DictionaryAttr>:$kernel_param
+  );
+  let results = (outs MOGG_LaunchConfig:$config);
+  let assemblyFormat = [{
+    $callee `` custom<OptionalKernelParams>($kernel_param)
+    (`inputs` `(` $inputs^ `:` type($inputs) `)`)?
+    (`outputs` `(` $outputs^ `:` type($outputs) `)`)?
     attr-dict
   }];
 }
@@ -1427,6 +1471,95 @@ def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
     OpBuilder<(ins "::llvm::function_ref<void(::mlir::OpBuilder &, "
                    "::mlir::Location)>":$bodyBuilder)>
   ];
+}
+
+def MOGG_GraphBlobLaunchConfigOp : MOGG_Op<"graph_blob.launch_config", [
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Get the configuration of a whole-device launch.";
+  let description = [{
+    Returns the configuration that covers every core and thread of
+    `$device_context`'s device.
+  }];
+  let arguments = (ins MOGG_Context:$device_context);
+  let results = (outs MOGG_LaunchConfig:$config);
+  let assemblyFormat = "`context` `(` $device_context `)` attr-dict";
+}
+
+def MOGG_GraphBlobActiveThreadsOp : MOGG_Op<"graph_blob.active_threads", [
+  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
+]> {
+  let summary = "Get the part of a launch that a call runs on.";
+  let description = [{
+    Returns the part of `$launch` that a call configured by `$config` runs on.
+  }];
+  let arguments = (ins MOGG_LaunchConfig:$config, MOGG_LaunchConfig:$launch);
+  let results = (outs I32:$active);
+  let assemblyFormat = "$config `in` $launch attr-dict";
+}
+
+def MOGG_GraphBlobLaunchOp : MOGG_Op<"graph_blob.launch", [
+  MOGG_CallLike,
+  IsolatedFromAbove,
+  SingleBlock,
+  NoTerminator,
+  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
+]> {
+  let summary = "Launch a graph blob's calls as one device kernel.";
+  let description = [{
+    Launches its region as one kernel on `$device_context`, with `$config`.
+    The region's entry block has one argument per operand in `$args`, and the
+    kernel receives each operand as that argument. The region is isolated from
+    above, and its top level holds only `mogg.graph_blob.call` and
+    `mogg.graph_blob.barrier`, which run in order.
+
+    Example:
+    ```mlir
+    mogg.graph_blob.launch context(%ctx) config(%launch)
+        args {%x = %arg0 : !mogg.pointer, %a = %active : i32} {
+      mogg.graph_blob.call active(%a) {
+        ...
+      }
+    }
+    ```
+  }];
+  let arguments = (ins
+    MOGG_Context:$device_context,
+    MOGG_LaunchConfig:$config,
+    Variadic<AnyType>:$args
+  );
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasRegionVerifier = 1;
+}
+
+def MOGG_GraphBlobCallOp : MOGG_Op<"graph_blob.call", [
+  HasParent<"MOGG::GraphBlobLaunchOp">,
+  SingleBlock,
+  NoTerminator,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Run one call of a graph blob launch.";
+  let description = [{
+    Runs its region on the part of the enclosing launch that `$active` names.
+    The region holds one call and the ops that build its operands.
+  }];
+  let arguments = (ins I32:$active);
+  let regions = (region SizedRegion<1>:$body);
+  let assemblyFormat = "`active` `(` $active `)` $body attr-dict";
+  let hasRegionVerifier = 1;
+}
+
+def MOGG_GraphBlobBarrierOp : MOGG_Op<"graph_blob.barrier", [
+  HasParent<"MOGG::GraphBlobLaunchOp">,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Synchronize every thread of a graph blob launch.";
+  let description = [{
+    Waits until every thread of the enclosing launch reaches it. Writes made
+    before it are visible to every thread after it.
+  }];
+  let assemblyFormat = "attr-dict";
 }
 
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [

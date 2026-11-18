@@ -245,6 +245,67 @@ CallExecuteDeviceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
+// A formed `mogg.graph_blob` launches on its calls' context; a lowered
+// `mogg.graph_blob.launch` carries the context itself.
+//
+// TRANSITIONAL(GEX-4588): this check exists only while both forms do. It goes
+// with the `mogg.graph_blob` form once graph blobs are lowered before emission.
+LogicalResult CallExecuteDeviceOp::verify() {
+  bool inFormedBlob = isa<GraphBlobOp>((*this)->getParentOp());
+  if (inFormedBlob && !getDeviceContext())
+    return emitOpError("takes a device context in a 'mogg.graph_blob'");
+  if (!inFormedBlob && getDeviceContext())
+    return emitOpError("takes no device context in a 'mogg.graph_blob.call'");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// CallExecuteConfigurationOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult CallExecuteConfigurationOp::verifySymbolUses(
+    SymbolTableCollection &symbolTable) {
+  auto decl =
+      symbolTable.lookupNearestSymbolFrom<KernelDeclOp>(*this, getCalleeAttr());
+  if (!decl)
+    return emitOpError("'")
+           << getCallee() << "' does not refer to a kernel.decl op";
+  if (!decl.getExecuteConfiguration())
+    return emitOpError("kernel '")
+           << getCallee() << "' has no 'execute_configuration' function";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GraphBlobLaunchOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GraphBlobLaunchOp::verifyRegions() {
+  if (!llvm::equal(getBody().getArgumentTypes(), getArgs().getTypes()))
+    return emitOpError("expects one region argument per launch operand, of "
+                       "the operand's type");
+  for (Operation &op : getBody().getOps())
+    if (!isa<GraphBlobCallOp, GraphBlobBarrierOp>(op))
+      return emitOpError("holds only 'mogg.graph_blob.call' and "
+                         "'mogg.graph_blob.barrier', but holds '")
+             << op.getName() << "'";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// GraphBlobCallOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GraphBlobCallOp::verifyRegions() {
+  size_t numCalls = llvm::count_if(getBody().getOps(), [](Operation &op) {
+    return op.hasTrait<CallLike>();
+  });
+  if (numCalls != 1)
+    return emitOpError() << "expected exactly one call in the body, got "
+                         << numCalls;
+  return success();
+}
+
 // Each `mogg.call.execute_device` checks its own callee, so this needs no
 // symbol lookup.
 LogicalResult GraphBlobOp::verifyRegions() {

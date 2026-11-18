@@ -874,9 +874,9 @@ prepareDeclarativeCall(Operation *op, EmitMojoState &state, ValueRange outputs,
 //   def execute_device_N(a0: T0.device_type, a1: T1, a2: T2.device_type):
 //       Kernel[...].execute_device[...](T0(a0), a1, a2)
 static MojoValue
-emitDeviceKernel(MojoBuilder &builder, const DeviceKernelArgs &args,
+emitDeviceKernel(MojoBuilder &builder, ArrayRef<NamedMojoDef> arguments,
                  std::function<void(const FunctionBody &)> &&body) {
-  return builder.lambda("execute_device_", /*parameters=*/{}, args.parameters,
+  return builder.lambda("execute_device_", /*parameters=*/{}, arguments,
                         /*returnType=*/std::nullopt,
                         MojoBuilder::LambdaInline::kAutomatic,
                         /*isAsync=*/false, /*raises=*/false,
@@ -888,10 +888,10 @@ emitDeviceKernel(MojoBuilder &builder, const DeviceKernelArgs &args,
 //
 //   mogg_launch_declarative[execute_device_N](ctx, config, operand0, operand1)
 static void emitLaunch(EmitMojoState &state, const MojoValue &ctx,
-                       const MojoValue &kernel, const DeviceKernelArgs &args,
+                       const MojoValue &kernel, ArrayRef<MojoValue> kernelArgs,
                        const MojoValue &config) {
   SmallVector<MojoValue> launchArgs{ctx, config};
-  llvm::append_range(launchArgs, args.launchArgs);
+  llvm::append_range(launchArgs, kernelArgs);
   state.file->call(kFnMoggLaunchDeclarative, {kernel}, launchArgs);
   state.genAllKeepAliveStatements();
 }
@@ -923,12 +923,12 @@ static LogicalResult emitDeclarativeLaunch(CallOpaqueOp op,
   DeviceKernelArgs args;
   SmallVector<unsigned> indices = args.add(builder, *call);
   MojoValue kernel =
-      emitDeviceKernel(builder, args, [&](const FunctionBody &body) {
+      emitDeviceKernel(builder, args.parameters, [&](const FunctionBody &body) {
         builder.call(call->executeDevice.function,
                      call->executeDevice.parameters,
                      args.rebuild(body, indices));
       });
-  emitLaunch(state, ctx, kernel, args, config);
+  emitLaunch(state, ctx, kernel, args.launchArgs, config);
   return success();
 }
 
@@ -982,10 +982,39 @@ LogicalResult CallOpaqueOp::emitMojo(EmitMojoState &state) {
   return emitExecuteCall(*this, state, adaptor);
 }
 
-// Emits the call's `execute_configuration` and adds the call to the enclosing
-// blob, which launches it.
+// Returns a declarative call's operands in the order its entry points take
+// them: the outputs, then the inputs.
+static SmallVector<MojoValue> declarativeOperands(EmitMojoState &state,
+                                                  ValueRange outputs,
+                                                  ValueRange inputs) {
+  SmallVector<MojoValue> operands;
+  for (ValueRange values : {outputs, inputs})
+    for (Value value : values)
+      operands.push_back(state.getMojoValueFor(value));
+  return operands;
+}
+
+// With a context, emits the call's `execute_configuration` and adds the call to
+// the enclosing `mogg.graph_blob`, which launches it. Without one, the call is
+// already in a launch's kernel, with operands it built there in their roles:
+//
+//   Kernel[...].execute_device[...](output0, input0, ...)
+//
+// TRANSITIONAL(GEX-4588): a temporary branch on the op's form, needed only
+// while both forms exist. It goes with the context form once graph blobs are
+// lowered before emission.
 LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
   KernelDeclAdaptor adaptor(state.registry.lookupKernelBySymName(getCallee()));
+  if (!getDeviceContext()) {
+    FailureOr<KernelCallee> executeDevice = resolveKernelCallee(
+        *this, state, adaptor, KernelFunctionKind::ExecuteDevice,
+        getKernelParamAttr());
+    if (failed(executeDevice))
+      return failure();
+    state.file->call(executeDevice->function, executeDevice->parameters,
+                     declarativeOperands(state, getOutputs(), getInputs()));
+    return success();
+  }
   FailureOr<DeclarativeCall> call = prepareDeclarativeCall(
       *this, state, getOutputs(), getInputs(), adaptor, getKernelParamAttr());
   if (failed(call))
@@ -1053,8 +1082,8 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
     active.push_back(blob.args.addScalar(threads, "Int32"));
   }
 
-  MojoValue kernel =
-      emitDeviceKernel(builder, blob.args, [&](const FunctionBody &body) {
+  MojoValue kernel = emitDeviceKernel(
+      builder, blob.args.parameters, [&](const FunctionBody &body) {
         for (auto [i, blobCall] : llvm::enumerate(blob.calls)) {
           if (i > 0)
             builder.call(graphBlob.get("barrier"));
@@ -1067,7 +1096,119 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
           });
         }
       });
-  emitLaunch(state, ctx, kernel, blob.args, launch);
+  emitLaunch(state, ctx, kernel, blob.args.launchArgs, launch);
+  return success();
+}
+
+//   var config = Kernel[...].execute_configuration[...](output0, input0, ...)
+LogicalResult CallExecuteConfigurationOp::emitMojo(EmitMojoState &state) {
+  KernelDeclAdaptor adaptor(state.registry.lookupKernelBySymName(getCallee()));
+  FailureOr<KernelCallee> executeConfiguration = resolveKernelCallee(
+      *this, state, adaptor, KernelFunctionKind::ExecuteConfiguration,
+      getKernelParamAttr());
+  if (failed(executeConfiguration))
+    return failure();
+  MojoValue config =
+      state.file->var((*executeConfiguration)(declarativeOperands(
+                          state, getOutputs(), getInputs())),
+                      /*cache=*/false);
+  state.setMojoValueFor(getConfig(), config);
+  return success();
+}
+
+//   var launch = _graph_blob.launch_config(ctx)
+LogicalResult GraphBlobLaunchConfigOp::emitMojo(EmitMojoState &state) {
+  MojoValue graphBlob(kGraphBlobModuleAlias);
+  MojoValue launch =
+      state.file->var(graphBlob.get("launch_config")(
+                          {state.getMojoValueFor(getDeviceContext())}),
+                      /*cache=*/false);
+  state.setMojoValueFor(getConfig(), launch);
+  return success();
+}
+
+//   var active = _graph_blob.active_threads(
+//       config.get_grid_dim(), config.get_block_dim(),
+//       launch.get_grid_dim(), launch.get_block_dim())
+LogicalResult GraphBlobActiveThreadsOp::emitMojo(EmitMojoState &state) {
+  MojoValue graphBlob(kGraphBlobModuleAlias);
+  MojoValue config = state.getMojoValueFor(getConfig());
+  MojoValue launch = state.getMojoValueFor(getLaunch());
+  MojoValue active = state.file->var(
+      graphBlob.get("active_threads")(
+          {config.get("get_grid_dim")(), config.get("get_block_dim")(),
+           launch.get("get_grid_dim")(), launch.get("get_block_dim")()}),
+      /*cache=*/false);
+  state.setMojoValueFor(getActive(), active);
+  return success();
+}
+
+// Emits the region as one kernel and launches it with the operands. A dim
+// crosses as `Int64`, because GPU launches reject `Int` arguments:
+//
+//   comptime T0 = type_of(operand0)  # one per operand that isn't a dim
+//   def execute_device_N(a0: T0.device_type, a1: Int64, ...):
+//       ...  # the region, which reads a1 as Int(a1)
+//   mogg_launch_declarative[execute_device_N](ctx, config, operand0,
+//                                             Int64(dim1), ...)
+LogicalResult GraphBlobLaunchOp::emitMojo(EmitMojoState &state) {
+  MojoBuilder &builder = *state.file;
+  SmallVector<NamedMojoDef> kernelParams;
+  SmallVector<MojoValue> kernelArgs;
+  for (Value arg : getArgs()) {
+    MojoValue value = state.getMojoValueFor(arg);
+    if (isa<DimType>(arg.getType())) {
+      kernelParams.emplace_back("operand", kStructInt64);
+      kernelArgs.push_back(kStructInt64({value}));
+      continue;
+    }
+    kernelParams.emplace_back(
+        "operand", builder.comptime(kFnTypeOf({value})).get("device_type"));
+    kernelArgs.push_back(value);
+  }
+
+  bool failedToLower = false;
+  MojoValue kernel =
+      emitDeviceKernel(builder, kernelParams, [&](const FunctionBody &body) {
+        EmitMojoState::ValueScope scope(state);
+        for (auto [blockArg, param] :
+             llvm::zip_equal(getBody().getArguments(), body.arguments))
+          state.setMojoValueFor(blockArg, isa<DimType>(blockArg.getType())
+                                              ? kStructInt({param.resolvedName})
+                                              : param.resolvedName);
+        for (Operation &op : getBody().getOps())
+          if (failed(state.lowerOpToMojo(&op))) {
+            failedToLower = true;
+            return;
+          }
+      });
+  if (failedToLower)
+    return failure();
+  emitLaunch(state, state.getMojoValueFor(getDeviceContext()), kernel,
+             kernelArgs, state.getMojoValueFor(getConfig()));
+  return success();
+}
+
+//   if _graph_blob.is_thread_active(active):
+//       ...  # the region
+LogicalResult GraphBlobCallOp::emitMojo(EmitMojoState &state) {
+  MojoValue graphBlob(kGraphBlobModuleAlias);
+  MojoValue isActive =
+      graphBlob.get("is_thread_active")({state.getMojoValueFor(getActive())});
+  bool failedToLower = false;
+  state.file->if_(isActive, [&] {
+    for (Operation &op : getBody().getOps())
+      if (failed(state.lowerOpToMojo(&op))) {
+        failedToLower = true;
+        return;
+      }
+  });
+  return failure(failedToLower);
+}
+
+//   _graph_blob.barrier()
+LogicalResult GraphBlobBarrierOp::emitMojo(EmitMojoState &state) {
+  state.file->call(MojoValue(kGraphBlobModuleAlias).get("barrier"));
   return success();
 }
 

@@ -114,6 +114,12 @@ bool CallExecuteDeviceOp::isThrows() { return true; }
 
 bool GraphBlobOp::isThrows() { return true; }
 
+bool CallExecuteConfigurationOp::isThrows() { return true; }
+
+bool GraphBlobActiveThreadsOp::isThrows() { return true; }
+
+bool GraphBlobLaunchOp::isThrows() { return true; }
+
 bool CallRowwiseOp::isThrows() { return true; }
 
 RowwiseTileOp CallRowwiseOp::getTile() {

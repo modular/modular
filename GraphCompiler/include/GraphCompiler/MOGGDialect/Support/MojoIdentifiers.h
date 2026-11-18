@@ -57,9 +57,8 @@ namespace M::MOGG {
 constexpr MojoStaticValue kOpaqueTypeMappingAttrName =
     "mogg.opaque_type_mapping";
 
-/// The module of the primitives a graph blob's kernel calls, and the name a
-/// graph with a blob imports it as.
-constexpr MojoStaticValue kGraphBlobModule = "max._graph_blob";
+/// The name generated code imports `max._graph_blob` as, the module of the
+/// primitives a graph blob calls.
 constexpr MojoStaticValue kGraphBlobModuleAlias = "_graph_blob";
 
 /// The `@register` decorators, owned by KGEN's `LITUtils.h`, which the Mojo
@@ -225,6 +224,7 @@ constexpr MojoStaticValue kStructStableAddr = "max.gpu.host.StableAddr";
 constexpr MojoStaticValue kStructManagedTensorSlice =
     "extensibility.ManagedTensorSlice";
 constexpr MojoStaticValue kStructInt = "Int";
+constexpr MojoStaticValue kStructInt64 = "Int64";
 constexpr MojoStaticValue kStructSIMDLength = "SIMDLength";
 constexpr MojoStaticValue kStructUInt = "UInt";
 constexpr MojoStaticValue kStructBool = "Bool";
@@ -490,6 +490,8 @@ constexpr std::pair<llvm::StringLiteral, llvm::StringLiteral>
         {"algorithm.rowwise_types", ""},
         // For `layout.tile_io.TileCopier`.
         {"layout.tile_io", ""},
+        // For the graph blob primitives, as `kGraphBlobModuleAlias`.
+        {"max._graph_blob", "_graph_blob"},
 };
 
 /// TODO(GEX-2488): Find another way to detect that a type is an `IOSpec`
