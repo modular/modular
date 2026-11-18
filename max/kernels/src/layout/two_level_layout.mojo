@@ -40,7 +40,7 @@ from layout.two_level_layout import TwoLevelLayout
 ```
 """
 
-from std.bit import log2_floor
+from std.bit import count_leading_zeros, log2_floor
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 from .coord import (
@@ -51,7 +51,7 @@ from .coord import (
     _IntToComptimeInt,
     _NestedDynamicCoord,
 )
-from .bit_layout import BitLayout, BitLinear, bit, bits
+from .bit_layout import BIT_LAYOUT_BITS, BitLayout, BitLinear, bit, bits
 from .swizzle import Swizzle
 from .layout import Layout, TensorLayout
 
@@ -612,8 +612,12 @@ struct _TwoLevelLayout[
     comptime static_product = Coord[*Self._shape_types]().static_product
     """The compile-time product of all shape dimensions."""
 
-    comptime static_cosize = Self.Outer.static_cosize
-    """The compile-time size of the memory region spanned by the layout."""
+    comptime static_cosize = Self.Outer.static_cosize + _InnerMask[Self.Inner]
+    """The compile-time size of the memory region spanned by the layout.
+
+    The inner map's offsets are XORs of its images, so none exceeds their
+    OR, and every outer offset is a multiple of `2 ^ w`.
+    """
 
     comptime _TransposedLayout: TensorLayout = TwoLevelLayout[
         Self.Outer._TransposedLayout, _ReverseInner[Self.Inner]
@@ -973,6 +977,162 @@ Parameters:
         `k[i]` inner index bits contributes `k[i]` images, low bit first; a
         mode without inner bits contributes an empty list.
 """
+
+
+def _first_bit[Shape: TensorLayout](i: Int) -> Int:
+    """Returns the lowest coordinate bit of mode `i` of `Shape`, numbering
+    the bits colexicographically."""
+    var first = 0
+    comptime for m in range(Shape.rank):
+        if m < i:
+            first += _log2_or_zero(Shape.static_shape[m])
+    return first
+
+
+comptime _BitImageType[
+    images: BitLayout, Shape: TensorLayout, i: Int, j: Int
+]: CoordLike = ComptimeInt[Int(images.img[_first_bit[Shape](i) + j])]
+
+
+comptime _BitInnerEntry[images: BitLayout, Shape: TensorLayout, i: Int] = Coord[
+    *TypeList.tabulate[
+        Trait=CoordLike,
+        _log2_or_zero(Shape.static_shape[i]),
+        _BitImageType[images, Shape, i, _],
+    ]()
+]
+
+
+comptime _BitInnerTabulator[
+    images: BitLayout, Shape: TensorLayout, i: Int
+]: CoordLike = _BitInnerEntry[images, Shape, i]
+
+
+comptime _UnitTabulator[
+    Shape: TensorLayout, checked: Bool, i: Int
+]: CoordLike = ComptimeInt[Int(checked)]
+
+
+comptime _ZeroTabulator[Shape: TensorLayout, i: Int]: CoordLike = ComptimeInt[0]
+
+
+comptime _BitOuter[Shape: TensorLayout, checked: Bool] = Layout[
+    TypeList.tabulate[
+        Trait=CoordLike, Shape.rank, _UnitTabulator[Shape, checked, _]
+    ](),
+    TypeList.tabulate[Trait=CoordLike, Shape.rank, _ZeroTabulator[Shape, _]](),
+]
+"""The outer part of a `BitTensorLayout`: extent 1 and stride 0 in every
+mode. `checked` is always True; the extents read it so that building the
+type runs `_bit_tensor_check`."""
+
+
+def _low_mask(n: Int) -> UInt64:
+    """Returns a mask of the low `n` bits, for `n` from 0 to 64."""
+    return 0 if n == 0 else ~UInt64(0) >> UInt64(BIT_LAYOUT_BITS - n)
+
+
+def _f2_independent(images: BitLayout, n: Int) -> Bool:
+    """Returns whether the images of domain bits `0 .. n - 1` are nonzero and
+    linearly independent over F2, so the map they span is injective."""
+    var basis = SIMD[DType.uint64, BIT_LAYOUT_BITS](0)
+    for d in range(n):
+        var v = images.img[d]
+        while v != 0:
+            var top = BIT_LAYOUT_BITS - 1 - Int(count_leading_zeros(v))
+            if basis[top] == 0:
+                basis[top] = v
+                break
+            v ^= basis[top]
+        if v == 0:
+            return False
+    return True
+
+
+def _bit_tensor_check[images: BitLayout, Shape: TensorLayout]() -> Bool:
+    """Rejects a `Shape` and `images` that do not make an injective F2 map.
+
+    Returns:
+        True when the layout is valid.
+    """
+    comptime assert (
+        Shape.rank == Shape.flat_rank
+    ), "BitTensorLayout requires a flat Shape"
+    comptime for i in range(Shape.rank):
+        comptime assert _PowerOfTwo[Shape.static_shape[i]], String(
+            "BitTensorLayout mode ",
+            i,
+            " needs a static power-of-two extent, not ",
+            Shape.static_shape[i],
+        )
+    comptime n = _first_bit[Shape](Shape.rank)
+    comptime assert n <= BIT_LAYOUT_BITS, String(
+        "BitTensorLayout has ", n, " coordinate bits, more than 64"
+    )
+    comptime assert images.dom == _low_mask(n), String(
+        "BitTensorLayout images must have exactly the shape's ",
+        n,
+        " coordinate bits",
+    )
+    comptime assert images.dead == 0, "BitTensorLayout images cannot be dead"
+    comptime assert _f2_independent(
+        images, n
+    ), "BitTensorLayout images must be nonzero and linearly independent"
+    return True
+
+
+comptime _CheckedBitTensorLayout[
+    images: BitLayout, Shape: TensorLayout, checked: Bool
+]: TensorLayout = TwoLevelLayout[
+    _BitOuter[Shape, checked],
+    TypeList.tabulate[
+        Trait=CoordLike, Shape.rank, _BitInnerTabulator[images, Shape, _]
+    ](),
+]
+"""The bit tensor layout type. `checked` carries the result of
+`_bit_tensor_check` into the outer extents."""
+
+
+comptime BitTensorLayout[
+    images: BitLayout, Shape: TensorLayout
+]: TensorLayout = _CheckedBitTensorLayout[
+    images, Shape, _bit_tensor_check[images, Shape]()
+]
+"""A layout that is an F2 map: the coordinates of `Shape`'s points, as
+colexicographic bits, go to the XOR of `images`'s images of their set bits.
+
+It is a `TwoLevelLayout` whose outer part has extent 1 in every mode, so
+every coordinate bit is inner. Reshape a tensor to it, index its elements,
+and load or store it with the TileOps; `bit_layout.placement` gives
+`images` back. Slicing and `tile` assume affine modes and do not support
+it yet.
+
+Parameters:
+    images: The image of each coordinate bit. Its domain is exactly the
+        shape's coordinate bits, none dead, with nonzero and linearly
+        independent images.
+    Shape: A flat layout whose static shape gives each mode's extent, a
+        power of two. The extents hold at most 64 coordinate bits.
+"""
+
+
+def bit_tensor_layout[
+    images: BitLayout, Shape: TensorLayout
+]() -> BitTensorLayout[images, Shape]:
+    """Returns the `BitTensorLayout` of `images` over `Shape`'s modes.
+
+    Parameters:
+        images: The image of each coordinate bit. See `BitTensorLayout` for
+            its constraints.
+        Shape: A flat layout whose static shape gives each mode's extent, a
+            power of two.
+
+    Returns:
+        The layout.
+    """
+    return BitTensorLayout[images, Shape](
+        _BitOuter[Shape, _bit_tensor_check[images, Shape]()](), 0
+    )
 
 
 comptime _CheckedNestedTileLayout[

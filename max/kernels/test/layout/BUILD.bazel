@@ -10,6 +10,8 @@ _FILECHECK_TESTS = [
 ]
 
 _LIT_TESTS = [
+    "test_bit_tensor_layout_bad_extent_fail.mojo",
+    "test_bit_tensor_layout_dependent_images_fail.mojo",
     "test_gpu_storage_non_compact_layout_fail.mojo",
     "test_tile_tensor_copy_from_mismatched_total_elements_fail.mojo",
     "test_tile_tensor_split_static_non_divisible_fail.mojo",

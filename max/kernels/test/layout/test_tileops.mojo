@@ -22,8 +22,11 @@ from layout.atoms.pointer import PointerLoad, PointerStore
 from layout.atoms.tmem import TMemLoad, TMemStore
 from layout.bit_layout import is_bit_linear, placement
 from layout.owned_tensor import OwnedGPUTensor
+from layout.bit_layout import BitLayout
 from layout.two_level_layout import (
+    BitTensorLayout,
     SwizzledTwoLevelLayout,
+    bit_tensor_layout,
     two_level_layout_from_swizzle,
 )
 from layout.tensor_engine import DefaultEngine
@@ -235,6 +238,95 @@ def test_rejected_thread_counts() raises:
             TMemLoad[.float32, 16], Row32, Accum, TMemEngine, threads=64
         ]()
     )
+
+
+comptime _GapImages = BitLayout().run(0, 2, 0).put(2, 16)
+"""Points 0 to 3 at offsets 0 to 3, points 4 to 7 at 16 to 19."""
+comptime Gap = BitTensorLayout[_GapImages, type_of(row_major[8]())]
+
+
+def _gap_offset(p: Int) -> Int:
+    return p % 4 + 16 * (p // 4)
+
+
+def test_bit_tensor_layout() raises:
+    comptime same = placement[Gap]() == _GapImages
+    assert_true(same)
+    assert_true(is_bit_linear[Gap]())
+    assert_equal(Gap.static_cosize, 20)
+    var storage = OwnedGPUTensor[.float32, .GENERIC, alignment=8](
+        row_major[32]()
+    )
+    for i in range(32):
+        TileTensor(storage)[i] = Float32(i)
+    var gap = TileTensor(storage).reshape(
+        bit_tensor_layout[_GapImages, type_of(row_major[8]())](),
+    )
+    for i in range(8):
+        assert_equal(gap[i][0], Float32(_gap_offset(i)))
+    var regs = OwnedGPUTensor[.float32, .GENERIC, alignment=8](row_major[8]())
+    tiled_load(PointerLoad[.float32, 2](), TileTensor(regs), gap)
+    for i in range(8):
+        assert_equal(TileTensor(regs)[i][0], Float32(_gap_offset(i)))
+
+
+def test_bit_tensor_layout_xors() raises:
+    # Images 1 and 3 overlap, so point 3 lands at 1 ^ 3 = 2, not 1 + 3.
+    comptime images = BitLayout().put(0, 1).put(1, 3)
+    var storage = OwnedGPUTensor[.float32, .GENERIC](row_major[4]())
+    for i in range(4):
+        TileTensor(storage)[i] = Float32(i)
+    var view = TileTensor(storage).reshape(
+        bit_tensor_layout[images, type_of(row_major[4]())](),
+    )
+    var expected: List[Float32] = [0, 1, 3, 2]
+    for i in range(4):
+        assert_equal(view[i][0], expected[i])
+
+
+def test_bit_tensor_layout_rank_2() raises:
+    # Mode 0 (4 rows) holds coordinate bits 0 and 1, mode 1 (8 columns)
+    # bits 2 to 4. Column bit 2 also flips offset bit 3, a row bit.
+    comptime images = (
+        BitLayout().put(0, 8).put(1, 16).put(2, 1).put(3, 2).put(4, 4 | 8)
+    )
+    comptime Shape = type_of(row_major[4, 8]())
+    comptime L = BitTensorLayout[images, Shape]
+    comptime same = placement[L]() == images
+    assert_true(same)
+    var storage = OwnedGPUTensor[.float32, .GENERIC](row_major[32]())
+    for i in range(32):
+        TileTensor(storage)[i] = Float32(i)
+    var view = TileTensor(storage).reshape(bit_tensor_layout[images, Shape]())
+    for r in range(4):
+        for c in range(8):
+            var offset = images(UInt64(r + 4 * c))
+            assert_equal(view[r, c][0], Float32(Int(offset)))
+
+
+def test_bit_tensor_layout_across_threads() raises:
+    # A 2-wide access covers coordinate bit 0. The thread takes the next
+    # free bit, 1, and the issues walk bit 2, so thread t holds points
+    # 2t, 2t + 1, 2t + 4 and 2t + 5.
+    comptime Wide = PointerLoad[.float32, 2]
+    comptime Mine = type_of(row_major[4]())
+    assert_true(can_tiled_load[Wide, Mine, Gap, Mem, threads=2]())
+    var storage = OwnedGPUTensor[.float32, .GENERIC, alignment=8](
+        row_major[32]()
+    )
+    for i in range(32):
+        TileTensor(storage)[i] = Float32(i)
+    var gap = TileTensor(storage).reshape(
+        bit_tensor_layout[_GapImages, type_of(row_major[8]())](),
+    )
+    for t in range(2):
+        var regs = OwnedGPUTensor[.float32, .GENERIC, alignment=8](
+            row_major[4]()
+        )
+        tiled_load[threads=2](Wide(), TileTensor(regs), gap, t)
+        for j in range(4):
+            var p = (j & 1) | (t << 1) | ((j >> 1) << 2)
+            assert_equal(TileTensor(regs)[j][0], Float32(_gap_offset(p)))
 
 
 def test_tmem_splits_across_threads() raises:

@@ -12,24 +12,41 @@
 # ===----------------------------------------------------------------------=== #
 """Defines TileOps: tile-level operations built from `layout.atoms`.
 
-A TileOp moves or computes a whole tile by issuing atoms. It derives the
-memory tile's placement, a `BitLayout` from logical coordinate bits to
-element offsets, and matches it against the atom's operand maps, converted
-from the operand's address encoding to the engine's element offsets: every
-index bit the atom fixes on the memory side must be played by one logical
-bit that reaches the same offset.
+A TileOp moves or computes a whole tile by iteratively issuing atoms. It
+plans the move as a map from hardware bits to the tile's logical bits, each
+hardware bit selecting one logical bit.
 
-The `threads` that issue together split the tile: each bit of a thread's
-index plays one logical bit. A bit the atom fixes, such as a `tcgen05.ld`
-lane or warp, plays the logical bit at the offset the atom puts it at;
-every other one takes the free logical bit with the smallest memory offset,
-so adjacent threads move adjacent memory. The remaining logical bits, in
-order, are this thread's register tile, whose placement must put the
-atom's value bits on the registers its register map names. Logical bits no
-index bit plays are issued over: the TileOp issues the atom once per value
-of them. Each issue passes the memory at those bits and at this thread's
-index bits, except the lanes an instruction adds itself, as `tcgen05.ld`
-does.
+Hardware bits are a thread's register bits, split into:
+
+- value bits (within one access)
+- issue bits (which atom iteration)
+- lane bits
+- warp bits
+
+`layout.atoms` calls the value, lane and warp bits "index bits".
+
+Logical bits are the tile's coordinate bits, mode 0's lowest. For example, a
+load of a 16x16 square can be represented by 4+4 logical bits. The memory
+tile's placement, a `BitLayout`, maps them to element offsets.
+
+The atom's operand maps, converted from the operand's address encoding to
+the engine's element offsets, fix where some hardware bits go, and the plan
+fills in the rest:
+
+- Value bits, and the lane and warp bits the atom fixes, as `tcgen05.ld`
+  does, select the logical bit at the offset the atom ties them to.
+- Each other lane or warp bit of the `threads` that issue together selects
+  the unused logical bit with the smallest offset that stays clear of the
+  address bits the atom reserves, so adjacent threads move adjacent memory.
+- Issue (iteration) bits take the logical bits left over, in ascending
+  order, and the TileOp issues the atom once for each value of them.
+
+The logical bits that value and issue bits select index each thread's
+register tile, whose placement must put each value bit on the register the
+atom's register map names. Each issue starts at the memory that its issue
+bits and this thread's lane and warp bits select. Lanes the instruction adds
+itself, as `tcgen05.ld` does, are left out of that start, and the atom adds
+the value offsets.
 
 A TileOp never waits. `tiled_load` and `tiled_store` issue their atoms and
 return; the caller waits with the atom's completion, such as
