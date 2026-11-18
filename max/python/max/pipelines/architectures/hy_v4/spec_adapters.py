@@ -22,15 +22,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-import numpy as np
 from max import functional as F
-from max.driver import Buffer, Device
-from max.dtype import DType
-from max.graph import DeviceRef, DimLike, TensorType, TensorValue, Value
+from max.graph import DimLike, TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
 from max.nn.outputs import ReturnHiddenStates
-from max.pipelines.context import TextContext
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (
@@ -50,14 +46,12 @@ from max.pipelines.speculative.spec_target import Verified
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
 
-from .batch_processor import prefill_buffer_length
 from .decoder import HYV4Decoder
 from .hy_v4 import HYV4, HYV4TextModel
 from .mtp import HYV4MultiTokenPredictor
 
 __all__ = [
     "ADAPTER",
-    "BATCH_CONTEXT_LENGTH",
     "INDEXER_DRAFT_KV",
     "INDEXER_TARGET_KV",
     "HYV4MTPProposer",
@@ -72,9 +66,6 @@ INDEXER_TARGET_KV = "indexer"
 
 INDEXER_DRAFT_KV = "draft_indexer"
 """Names the draft's indexer K cache leaf in ``passthrough_kv``."""
-
-BATCH_CONTEXT_LENGTH = "batch_context_length"
-"""Names the host prefill buffer length in a driver batch's ``extra``."""
 
 
 def _caches(
@@ -111,12 +102,11 @@ def _first_device(t: Tensor) -> TensorValue:
 
 
 def _batch_context_length(batch: SequentialBatch) -> Tensor:
-    """The host prefill buffer length the attention blocks take.
+    """The host length the attention blocks take, a named input of the graph.
 
-    It stands in for reading the plan's back. It counts no draft rows; the
-    sparse MLA kernels, the only ones Hy4 builds, never read it.
+    The sparse MLA kernels, the only ones Hy4 builds, never read it.
     """
-    return Tensor.from_graph_value(batch.extra[BATCH_CONTEXT_LENGTH])
+    return Tensor.from_graph_value(batch.batch_context_lengths[0])
 
 
 class HYV4Target:
@@ -126,6 +116,9 @@ class HYV4Target:
     on the first device, and each device's copy of the final normalized
     hidden state of every position.
     """
+
+    # The attention blocks take the batch's context length.
+    takes_distributed_inputs = True
 
     def __init__(self, target: HYV4TextModel) -> None:
         self.target = target
@@ -179,6 +172,7 @@ class HYV4MTPProposer:
     step_hidden_mode = ReturnHiddenStates.ALL
     uses_thinking_phase = False
     supports_zero_draft_rows = False
+    takes_distributed_inputs = True
 
     def __init__(
         self, draft: HYV4MultiTokenPredictor, target: HYV4TextModel
@@ -280,42 +274,10 @@ def sequential_proposer(
     return HYV4MTPProposer(draft, verify.target)
 
 
-def trailing_input_types(target_config: Any) -> list[TensorType]:
-    """Returns the host prefill buffer length."""
-    del target_config
-    return [TensorType(DType.int32, [1], device=DeviceRef.CPU())]
-
-
-def trailing_buffers(
-    target_config: Any,
-    contexts: Sequence[TextContext],
-    devices: Sequence[Device],
-) -> list[Buffer]:
-    """Returns the batch's prefill buffer length.
-
-    It is the value ``HYV4BatchProcessor`` writes.
-    """
-    del devices
-    length = prefill_buffer_length(
-        list(contexts), target_config.kv_params.page_size
-    )
-    return [Buffer.from_numpy(np.array([length], dtype=np.int32))]
-
-
-def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
-    """Names the prefill buffer length."""
-    del target_config
-    (length,) = trailing
-    return {BATCH_CONTEXT_LENGTH: length.tensor}
-
-
 ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
     # Accepts strictly in thinking too, as its fused MTP graph did.
     relaxed_thinking_acceptance=False,
     sequential_proposer=sequential_proposer,
-    trailing_input_types=trailing_input_types,
-    trailing_buffers=trailing_buffers,
-    extra=extra,
 )

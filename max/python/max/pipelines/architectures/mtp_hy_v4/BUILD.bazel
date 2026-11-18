@@ -6,10 +6,8 @@ modular_py_library(
     name = "mtp_hy_v4",
     srcs = glob(["**/*.py"]),
     deps = [
-        requirement("numpy"),
         requirement("transformers"),
         "//max/python/max:tensor",
-        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn/kv_cache",

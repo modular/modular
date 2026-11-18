@@ -86,7 +86,6 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
     devices: list[DeviceRef]
     quantization_encoding: SupportedEncoding | None = None
     quant_config: QuantConfig | None = None
-    max_batch_context_length: int = 131072
     max_seq_len: int
 
     vocab_size: int
@@ -137,7 +136,7 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
         )
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
-        """Validates local expert sharding and applies the planned token size."""
+        """Validates local expert sharding."""
         n_devices = runtime.mesh.num_devices
         if runtime.data_parallel_degree != 1 or runtime.ep_size not in (
             1,
@@ -148,12 +147,7 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
                 "sharding: data_parallel_degree must be 1 and ep_size must "
                 "be 1 or the device count"
             )
-        return replace(
-            self,
-            max_batch_context_length=(
-                runtime.max_batch_total_tokens or self.max_batch_context_length
-            ),
-        )
+        return self
 
     def __post_init__(self) -> None:
         n = self.num_hidden_layers

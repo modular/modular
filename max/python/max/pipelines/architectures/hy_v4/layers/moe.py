@@ -47,7 +47,7 @@ from max.tensor.sharding.action import PerShard
 from typing_extensions import Self
 
 from ..model_config import HYV4Config
-from .mlp import HYV4MLP
+from .mlp import HYV4MLP, is_partial
 
 _M = TypeVar("_M", bound=Module[..., Tensor])
 
@@ -116,7 +116,7 @@ class HYV4TopKRouter(MoEGate):
         scores = F.sigmoid(logits)
         topk_idx, topk_weight = moe_router_group_limited(
             scores,
-            self.e_score_correction_bias,
+            self.e_score_correction_bias.cast(DType.float32),
             self.num_experts,
             self.num_experts_per_token,
             self.n_group,
@@ -252,18 +252,26 @@ class HYV4MoE(Module[[Tensor], Tensor]):
             config.quant_config,
         )
 
-    def shard_experts(self) -> None:
-        """Splits the routed experts evenly over the mesh (expert parallel).
+    def shard(self) -> None:
+        """Splits the routed experts by expert and the shared expert by width.
 
-        The router and the shared expert stay replicated.
+        The router stays replicated.
         """
+        self.shard_experts()
+        self.shared_experts.shard()
+
+    def shard_experts(self) -> None:
+        """Splits the routed experts evenly over the mesh (expert parallel)."""
         experts = self.experts
         spec = NamedMapping(experts.gate_up_proj.mesh, (TP, None, None))
         experts.gate_up_proj = experts.gate_up_proj.to(spec)
         experts.down_proj = experts.down_proj.to(spec)
 
     def routed(self, x: Tensor) -> Tensor:
-        """The weighted sum of the routed experts, without the shared one."""
+        """The weighted sum of the routed experts, without the shared one.
+
+        On several devices it is each device's unreduced sum (``Partial``).
+        """
         topk_idx, topk_weight = self.gate(x)
         mesh = x.mesh
         if mesh.num_devices == 1:
@@ -285,10 +293,9 @@ class HYV4MoE(Module[[Tensor], Tensor]):
                 first_expert=rank * self.num_experts // mesh.num_devices,
             )
 
-        partial = F.call_on_mesh(
+        return F.call_on_mesh(
             local, mesh, out_specs=DeviceMapping(mesh, (Partial(),))
         )(x, topk_idx, topk_weight, PerShard(range(mesh.num_devices)))
-        return F.allreduce_sum(partial)
 
     def _expert_sum(
         self,
@@ -346,4 +353,15 @@ class HYV4MoE(Module[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the routed and shared experts over ``x``."""
-        return self.routed(x) + self.shared_experts(x)
+        routed = self.routed(x)
+        shared = self.shared_experts.partial(x)
+        if not is_partial(routed):
+            return routed + shared
+        if not is_partial(shared):
+            return F.allreduce_sum(routed) + shared
+        # Adding per device keeps the generic add from reducing each term:
+        # one all-reduce carries both.
+        total = F.call_on_mesh(F.add, x.mesh, out_specs=routed.mapping)(
+            routed, shared
+        )
+        return F.allreduce_sum(total)

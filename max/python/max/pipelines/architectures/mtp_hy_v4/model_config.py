@@ -70,9 +70,6 @@ def configure_mtp_draft(
         raise ValueError(
             "Hy4 MTP requires a checkpoint with num_nextn_predict_layers > 0"
         )
-    config.max_batch_context_length = (
-        context.max_batch_total_tokens or config.max_batch_context_length
-    )
     config.quant_config = parse_quant_config(
         context.pipeline_config.model.huggingface_config,
         dict(state_dict),
