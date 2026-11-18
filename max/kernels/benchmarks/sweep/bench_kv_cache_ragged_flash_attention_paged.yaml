@@ -30,6 +30,13 @@
 # benchmark reads it through `-D` defines. The arms the benchmark does
 # expand itself would run in one executable.
 #
+# These are the configs every backend can build. `page_size` 16 and 64 live
+# in `..._small_pages.yaml`, which only the CUDA targets list: the AMD
+# structured attention kernels tile the KV cache at 128 rows (`mha_decode`)
+# and 64 (`mha_prefill`), and `PagedKVCache.block_paged_ptr` refuses a tile
+# larger than the page, so pages below 128 do not compile for gfx950
+# (KERN-4043).
+#
 # Usage:
 #   kbench bench_kv_cache_ragged_flash_attention_paged.yaml --timeout-secs 600
 #   kbench bench_kv_cache_ragged_flash_attention_paged.yaml \
@@ -58,30 +65,6 @@ params:
 - num_q_heads: 32
   num_kv_heads: 8
   head_dim: 128
-  page_size: 16
-  $seq_len: [1]
-  $cache_len: [215, 1024]
-  $batch_size: [20, 250, 500]
-  $use_random_seq_lengths: False
-  $use_random_cache_lengths: False
-  metadata:
-    MODEL: llama3.1
-
-- num_q_heads: 32
-  num_kv_heads: 8
-  head_dim: 128
-  page_size: 64
-  $seq_len: [1]
-  $cache_len: [215, 1024]
-  $batch_size: [20, 250, 500]
-  $use_random_seq_lengths: False
-  $use_random_cache_lengths: False
-  metadata:
-    MODEL: llama3.1
-
-- num_q_heads: 32
-  num_kv_heads: 8
-  head_dim: 128
   page_size: 256
   $seq_len: [1]
   $cache_len: [215, 1024]
@@ -92,30 +75,6 @@ params:
     MODEL: llama3.1
 
 # llama3.1 prefill: a chunk of new tokens over an empty cache.
-- num_q_heads: 32
-  num_kv_heads: 8
-  head_dim: 128
-  page_size: 16
-  $seq_len: [256, 512]
-  $cache_len: [0]
-  $batch_size: [20, 80]
-  $use_random_seq_lengths: False
-  $use_random_cache_lengths: False
-  metadata:
-    MODEL: llama3.1
-
-- num_q_heads: 32
-  num_kv_heads: 8
-  head_dim: 128
-  page_size: 64
-  $seq_len: [256, 512]
-  $cache_len: [0]
-  $batch_size: [20, 80]
-  $use_random_seq_lengths: False
-  $use_random_cache_lengths: False
-  metadata:
-    MODEL: llama3.1
-
 - num_q_heads: 32
   num_kv_heads: 8
   head_dim: 128
@@ -132,30 +91,6 @@ params:
 - num_q_heads: 24
   num_kv_heads: 8
   head_dim: 128
-  page_size: 16
-  $seq_len: [1]
-  $cache_len: [215, 1024]
-  $batch_size: [20, 250, 500]
-  $use_random_seq_lengths: False
-  $use_random_cache_lengths: False
-  metadata:
-    MODEL: llama3.2
-
-- num_q_heads: 24
-  num_kv_heads: 8
-  head_dim: 128
-  page_size: 64
-  $seq_len: [1]
-  $cache_len: [215, 1024]
-  $batch_size: [20, 250, 500]
-  $use_random_seq_lengths: False
-  $use_random_cache_lengths: False
-  metadata:
-    MODEL: llama3.2
-
-- num_q_heads: 24
-  num_kv_heads: 8
-  head_dim: 128
   page_size: 256
   $seq_len: [1]
   $cache_len: [215, 1024]
@@ -166,30 +101,6 @@ params:
     MODEL: llama3.2
 
 # llama3.2 prefill.
-- num_q_heads: 24
-  num_kv_heads: 8
-  head_dim: 128
-  page_size: 16
-  $seq_len: [215, 1024]
-  $cache_len: [0]
-  $batch_size: [20, 80]
-  $use_random_seq_lengths: False
-  $use_random_cache_lengths: False
-  metadata:
-    MODEL: llama3.2
-
-- num_q_heads: 24
-  num_kv_heads: 8
-  head_dim: 128
-  page_size: 64
-  $seq_len: [215, 1024]
-  $cache_len: [0]
-  $batch_size: [20, 80]
-  $use_random_seq_lengths: False
-  $use_random_cache_lengths: False
-  metadata:
-    MODEL: llama3.2
-
 - num_q_heads: 24
   num_kv_heads: 8
   head_dim: 128
