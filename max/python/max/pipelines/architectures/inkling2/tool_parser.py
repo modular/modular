@@ -37,11 +37,9 @@ from max.pipelines.modeling.types import (
 
 from .tokenizer import TOOL_CALL_JSON_MARKER
 
-# Payload shape: {"name":...,"args":{...}}. The tool-call grammar pins that
-# frame to a const string, but the parser also runs when no grammar is
-# generated (e.g. when ``tool_call_policy`` is ``force_unconstrained``) or
-# after a rejected token causes enforcement to fail open. So neither the key
-# order nor ``args`` being the payload's last key is guaranteed here.
+# Payload shape: {"name":...,"args":{...}}. The grammar pins that frame, but
+# the parser also runs when no grammar was generated or enforcement failed
+# open, so key order is not guaranteed.
 _DECODER = json.JSONDecoder()
 
 _WHITESPACE = " \t\n\r"
@@ -128,7 +126,28 @@ def _args_text(body: str, is_complete: bool) -> str | None:
         # A value still arriving streams as the raw tail, which the base class
         # diffs into deltas. In a closed payload it is malformed, so withhold.
         return None if is_complete else body[start:]
-    return body[start:end]
+    return _unwrap_string_object(body[start:end])
+
+
+def _unwrap_string_object(text: str) -> str:
+    """Unwrap a JSON string that holds a JSON object, else return ``text``.
+
+    An unconstrained payload can encode the arguments as a JSON string where a
+    client parses ``arguments`` as an object.
+    """
+    if not text.startswith('"'):
+        return text
+    try:
+        inner = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    if not isinstance(inner, str):
+        return text
+    try:
+        holds_object = isinstance(json.loads(inner), dict)
+    except json.JSONDecodeError:
+        return text
+    return inner if holds_object else text
 
 
 def _iter_call_payloads(
@@ -255,12 +274,15 @@ class InklingToolParser(StructuralTagToolParser):
                     return length
             return 0
 
-        # Prefer an exact declared name so content fused to it
-        # ("checkget_weather") is not swallowed whole.
+        # With the marker in the buffer the run ends with the bare name, but it
+        # may also carry prose fused to that name ("checkget_weather"). Hold
+        # back a declared name only: an undeclared run stays content here and
+        # ``parse_complete`` trims the payload's own name from it, so the two
+        # paths agree instead of the stream dropping a word.
         for name in self._declared_tool_names:
             if content.endswith(name):
                 return len(name)
-        return len(run)
+        return 0
 
     @staticmethod
     def generate_tool_call_grammar(

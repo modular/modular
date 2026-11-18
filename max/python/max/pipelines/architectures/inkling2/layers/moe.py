@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling2's sigmoid-routed mixture of experts, dense or block-scaled."""
+"""Inkling 2's sigmoid-routed mixture of experts."""
 
 from __future__ import annotations
 
@@ -39,8 +39,6 @@ from max.tensor.sharding.action import PerShard
 from ..model_config import ExpertFormat, Inkling2TextConfig
 from .placement import shard_axis
 
-__all__ = ["Inkling2Gate", "Inkling2MoE"]
-
 # The fused router runs one thread per expert in a single block.
 _ROUTER_WARP = 32
 _ROUTER_MAX_EXPERTS = 1024
@@ -66,15 +64,15 @@ class Inkling2Gate(Module[[Tensor], tuple[Tensor, Tensor]]):
     def __init__(
         self,
         *,
-        hidden_dim: int,
+        hidden_size: int,
         num_experts: int,
-        num_experts_per_token: int,
+        top_k: int,
         route_scale: float,
         device: DeviceRef,
     ) -> None:
-        self.num_experts_per_token = num_experts_per_token
+        self.top_k = top_k
         self.route_scale = route_scale
-        self.weight = Tensor.zeros([num_experts, hidden_dim])
+        self.weight = Tensor.zeros([num_experts, hidden_size])
         self.bias = Tensor.zeros([num_experts], dtype=DType.float32)
         # The fused kernel accumulates the gate GEMV in float32, as the
         # reference does. A matmul would run float32 as TF32 on GPU.
@@ -93,7 +91,7 @@ class Inkling2Gate(Module[[Tensor], tuple[Tensor, Tensor]]):
                 x32,
                 weight,
                 self.bias,
-                n_experts_per_tok=self.num_experts_per_token,
+                n_experts_per_tok=self.top_k,
                 norm_weights=True,
                 routed_scaling_factor=self.route_scale,
             )
@@ -103,9 +101,7 @@ class Inkling2Gate(Module[[Tensor], tuple[Tensor, Tensor]]):
         # would round its operands to TF32 on GPU.
         logits = (x32.unsqueeze(1) * weight).sum(axis=-1).squeeze(-1)
         scores = F.sigmoid(logits)
-        _, indices = F.top_k(
-            scores + self.bias, self.num_experts_per_token, axis=-1
-        )
+        _, indices = F.top_k(scores + self.bias, self.top_k, axis=-1)
         indices = indices.cast(DType.int32)
         weights = F.gather_nd(scores, indices.unsqueeze(-1), batch_dims=1)
         weights = weights / (weights.sum(axis=-1) + _ROUTER_EPS)
@@ -113,9 +109,8 @@ class Inkling2Gate(Module[[Tensor], tuple[Tensor, Tensor]]):
 
 
 # TODO(mrajagopalan): swizzle at load time. The weight rules only rename,
-# retype and drop tensors, so the graph swizzles the stored scales; the
-# compiler hoists it to init, at the cost of a second copy of every scale
-# tensor.
+# retype and drop tensors, so the graph swizzles the stored scales; the compiler
+# hoists it to init, at the cost of a second copy of every scale tensor.
 def _interleave_scales(scales: Tensor, block: int) -> Tensor:
     """Lays ``[E, N, K / block]`` block scales out in the SM100 scale tiles."""
     experts, rows, groups = (int(d) for d in scales.shape)
@@ -178,7 +173,7 @@ class RoutedExperts(Module[[Tensor, Tensor, Tensor, int], Tensor]):
     ) -> None:
         self.format = expert_format
         self.num_experts = text_config.n_routed_experts
-        self.num_experts_per_token = text_config.num_experts_per_tok
+        self.top_k = text_config.num_experts_per_tok
         self.activation = GatedActivation(
             "situ",
             alpha=text_config.mlp_gate_softcap,
@@ -287,22 +282,23 @@ class RoutedExperts(Module[[Tensor, Tensor, Tensor, int], Tensor]):
                 starts,
                 scale_offsets,
                 indices=order,
-                indices_divisor=self.num_experts_per_token,
+                indices_divisor=self.top_k,
             )
         data, scales = grouped_quantize_dynamic_block_scaled(
             x,
             starts,
             scale_offsets,
             expert_ids,
-            F.broadcast_to(
-                F.constant(1.0, DType.float32, device=expert_ids.device),
-                expert_ids.shape,
+            F.constant(
+                np.ones(int(self.w13_weight.shape[0]), np.float32),
+                DType.float32,
+                device=x.mapping,
             ),
             sf_vector_size=MXFP8_BLOCK,
             scales_type=DType.float8_e8m0fnu,
             out_type=DType.float8_e4m3fn,
             indices=order,
-            indices_divisor=self.num_experts_per_token,
+            indices_divisor=self.top_k,
         )
         return data, scales, None
 
@@ -353,11 +349,7 @@ class RoutedExperts(Module[[Tensor, Tensor, Tensor, int], Tensor]):
                     axis=0,
                 )
             gate_up = grouped_matmul_ragged(
-                F.gather(
-                    x,
-                    (order // self.num_experts_per_token).cast(DType.int32),
-                    axis=0,
-                ),
+                F.gather(x, (order // self.top_k).cast(DType.int32), axis=0),
                 self.w13_weight,
                 starts,
                 expert_ids,
@@ -424,9 +416,9 @@ class Inkling2MoE(Module[[Tensor], Tensor]):
                 f"{num_devices} devices"
             )
         self.gate = Inkling2Gate(
-            hidden_dim=text_config.hidden_size,
+            hidden_size=text_config.hidden_size,
             num_experts=text_config.n_routed_experts,
-            num_experts_per_token=text_config.num_experts_per_tok,
+            top_k=text_config.num_experts_per_tok,
             route_scale=text_config.route_scale,
             device=device,
         )

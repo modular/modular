@@ -10,7 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Replicated and sharded placement helpers."""
+"""Placement helpers for Inkling 2's per-device kernels.
+
+The kernels run on each device's shards and return tensors with no known
+placement, so the caller claims the one it knows they have.
+"""
 
 from __future__ import annotations
 

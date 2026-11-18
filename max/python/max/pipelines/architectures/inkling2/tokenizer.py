@@ -10,24 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The Inkling2 tokenizer."""
+"""Inkling 2 tokenizer: the shared text-and-vision one on our own processor."""
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
 from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
+    open_image,
     resolve_single_special_token,
     resolve_token_id_bound,
 )
-from max.pipelines.modeling.types import TokenIds
+from max.pipelines.modeling.types import TextGenerationRequest, TokenIds
+from max.support.image import hash_image
+from PIL import Image
 from transformers import AutoTokenizer
 
-from .model_config import InklingVisionConfig
-from .processor import InklingProcessor, load_processor_config
+from .batch_vision_inputs import IMAGE_GRID_THW
+from .image_processor import to_rgb
+from .processor import Inkling2Processor, load_processor_config
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
@@ -38,8 +45,20 @@ if TYPE_CHECKING:
 TOOL_CALL_JSON_MARKER = "<|content_invoke_tool_json|>"
 
 
-class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
-    """Tokenizer for Inkling, whose own ``AutoProcessor`` is not shipped."""
+class Inkling2Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
+    """Tokenizer for Inkling 2.
+
+    The checkpoint does not ship its own ``AutoProcessor``, so
+    :class:`Inkling2Processor` takes its place. A request's images reach it
+    with transparency already composited as the reference does, because the
+    shared tokenizer would otherwise flatten them onto white.
+
+    ``skipped_special_token_ids`` opts the streaming detokenizer into a
+    per-id filter so ``<|content_invoke_tool_json|>`` survives decode for the
+    tool parser. Only that marker: a request without ``tools`` runs no tool
+    parser, so anything else kept here leaks verbatim into
+    ``message.content``.
+    """
 
     reasoning_delimiters = ("<|content_thinking|>", "<|end_message|>")
 
@@ -51,9 +70,13 @@ class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         revision: str | None = None,
         max_length: int | None = None,
         trust_remote_code: bool = False,
+        chat_template: str | None = None,
         **unused_kwargs: Any,
     ) -> None:
         self.model_path = model_path
+        # ``--chat-template`` overrides the checkpoint's; the base class's
+        # ``apply_chat_template`` renders it when set.
+        self._chat_template = chat_template
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
             revision=revision,
@@ -62,23 +85,18 @@ class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         )
         self.max_length = max_length or self.delegate.model_max_length
 
-        huggingface_config = pipeline_config.model.huggingface_config
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
         )
-        # ``new_context`` bounds every prompt id by the embedding row count;
-        # this __init__ replaces the base one, so it resolves the bound itself.
         self._token_id_bound = resolve_token_id_bound(
             self.delegate, pipeline_config
         )
-
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
         )
-        self.processor = InklingProcessor(
-            self.delegate,
-            load_processor_config(model_path, revision),
-            InklingVisionConfig.from_hf(huggingface_config.vision_config),
+
+        self.processor = Inkling2Processor(
+            self.delegate, load_processor_config(model_path, revision)
         )
         self.vision_token_ids = [self.processor.image_token_id]
 
@@ -91,8 +109,12 @@ class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
             self.delegate.all_special_ids
         ) - {tool_call_json_id}
 
-    async def decode(self, encoded: TokenIds, **kwargs) -> str:
-        """Decodes tokens, dropping every special id except the tool-call marker."""
+    async def decode(self, encoded: TokenIds, **kwargs: Any) -> str:
+        """Decodes tokens, dropping every special id but the tool-call marker.
+
+        ``skip_special_tokens=True`` would drop the marker too, so filter by id
+        here and decode with the flag off.
+        """
         # Log-probability responses decode one token id (a plain int) and the
         # CLI passes a token list; normalize both to a rank-1 array.
         token_ids = np.atleast_1d(np.asarray(encoded))
@@ -109,3 +131,37 @@ class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
             np.array(filtered_ids, dtype=np.int64),
             **{**kwargs, "skip_special_tokens": False},
         )
+
+    async def new_context(
+        self, request: TextGenerationRequest
+    ) -> TextAndVisionContext:
+        """Builds the context and records each image's token grid and hash.
+
+        Raises:
+            InputError: If the request carries a video.
+        """
+        if request.videos:
+            raise InputError("Inkling 2 does not support video inputs.")
+        grids = []
+        if request.images:
+            images = [
+                to_rgb(open_image(image))
+                for image in request.images_for_processing()
+            ]
+            decoded: list[Image.Image | None] = [*images]
+            request = dataclasses.replace(request, decoded_images=decoded)
+            grids = [self.processor.image_processor.grid(i) for i in images]
+        context = await super().new_context(request)
+        if grids:
+            context.extra_model_args[IMAGE_GRID_THW] = np.array(
+                grids, dtype=np.int64
+            )
+            # The vision cache needs a hash either way; the encoded bytes tell
+            # images apart, and with no resize the size tier is constant.
+            for metadata, raw_bytes in zip(
+                context.images, request.images, strict=True
+            ):
+                metadata.image_hash = hash_image(
+                    raw_bytes, self.processor.image_processor.token_size
+                )
+        return context

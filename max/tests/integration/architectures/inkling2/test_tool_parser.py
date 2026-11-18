@@ -122,3 +122,29 @@ def test_text_that_only_looks_like_a_name_prefix_is_released() -> None:
     )
     assert content == "I'll get_going now."
     assert streamed == []
+
+
+def test_an_undeclared_name_does_not_take_the_prose_with_it() -> None:
+    """A request with no parameter schemas declares no names.
+
+    The stream cannot tell the bare name from prose fused to it, so the text
+    is kept; ``parse_complete`` trims the payload's own name.
+    """
+    payload = '{"name":"get_weather","args":{}}'
+    response = "Let me checkget_weather" + TOOL_CALL_JSON_MARKER + payload
+
+    content, streamed = _streamed([response], declared=[])
+    assert content == "Let me checkget_weather"
+    assert [c["name"] for c in streamed] == ["get_weather"]
+
+    assert (
+        InklingToolParser().parse_complete(response).content == "Let me check"
+    )
+
+
+def test_a_string_valued_args_payload_is_unwrapped() -> None:
+    payload = '{"name":"get_weather","args":"{\\"city\\":\\"Paris\\"}"}'
+    parsed = InklingToolParser().parse_complete(
+        f"Let me checkget_weather{TOOL_CALL_JSON_MARKER}{payload}"
+    )
+    assert json.loads(parsed.tool_calls[0].arguments) == {"city": "Paris"}

@@ -65,11 +65,9 @@ class InklingReasoningParser(ReasoningParser):
             ):
                 start_token_idx = i
             elif token_id in self._end_token_ids:
-                # Only honor an end delimiter while a span is active, either
-                # pre-seeded via ``is_currently_reasoning`` or opened earlier
-                # in this chunk. ``<|end_message|>`` closes every Inkling
-                # message type, so a closer from a content or tool message
-                # must not pull content into the reasoning span.
+                # Honor an end delimiter only while a span is active: every
+                # Inkling message type ends with ``<|end_message|>``, so a
+                # closer outside a span must not open one.
                 if is_currently_reasoning or start_token_idx is not None:
                     end_token_idx = i
                     break

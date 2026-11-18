@@ -10,19 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-"""The Inkling2 architecture on ModuleV3."""
+"""The Inkling 2 architecture on ModuleV3."""
 
 from .arch import inkling2_arch
-from .model_config import (
-    Inkling2Config,
-    Inkling2TextConfig,
-    Inkling2VisionConfig,
-)
 
-__all__ = [
-    "Inkling2Config",
-    "Inkling2TextConfig",
-    "Inkling2VisionConfig",
-    "inkling2_arch",
-]
+__all__ = ["inkling2_arch"]

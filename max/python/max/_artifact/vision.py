@@ -184,6 +184,17 @@ def _is_int_in(value: object, low: int, high: int) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class Inkling2Blocks:
+    """Pads to whole blocks of ``patch_size * merge_size`` without resizing.
+
+    The image keeps its pixels and grows at the bottom and right to the next
+    whole block; each block is one embedding row.
+    """
+
+    rule: ClassVar[str] = "inkling2_blocks"
+
+
 ResizeStrategy: TypeAlias = (
     SmartResize
     | AspectRatioPreserving
@@ -191,6 +202,7 @@ ResizeStrategy: TypeAlias = (
     | InklingPatchRows
     | MuseSmartResize
     | DeepseekV41Letterbox
+    | Inkling2Blocks
 )
 
 

@@ -10,11 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling2 decoder and vision modules on the shared contracts."""
+"""Inkling 2 modules implementing the shared decoder contract."""
 
 from __future__ import annotations
 
-from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
@@ -23,58 +22,37 @@ from max.pipelines.lib.role_contracts import (
     DecoderOutputs,
     VisionInputs,
 )
-from max.tensor import Tensor, default_dtype
+from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 
-from .inkling import Inkling
-from .layers.vision import InklingVisionModel
+from .inkling2 import Inkling2
 from .model_config import Inkling2Config
 
 
 class Inkling2Decoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
-    """Runs Inkling2 from semantic tokens, positions, vision and cache inputs."""
-
-    graph_name = "inkling2"
+    """Runs Inkling 2 from semantic tokens, row offsets and the KV tree."""
 
     consumes_vision = True
-
+    # Mach's registry entry binds this graph input order: the two image inputs
+    # (image_embeddings, image_token_indices) sit before the KV cache.
     input_layout = (
         "tokens",
-        "return_n_logits",
         "input_row_offsets",
-        "token_positions",
+        "return_n_logits",
         "vision",
         "kv",
     )
-    """``Inkling.forward``'s positional order, spelled as role fields.
-
-    The ModuleV3 ragged ABI puts the logit count second and the row offsets
-    third (``max/pipelines/lib/interfaces/batch_processor.py:785``), and the
-    position ramp follows the offsets, before the image rows and the cache.
-    The conv state rides inside ``kv``: the cache tree has one child holding
-    every layer's convolution state, so a single walk covers the attention
-    pages and the state leaves both (``model_config.STATE_CACHE_KEY``).
-    """
-
-    token_position_dtype = DType.uint32
 
     def __init__(self, config: Inkling2Config) -> None:
         super().__init__()
-        self.model = Inkling(
-            config,
-            return_logits=config.return_logits,
-            return_hidden_states=config.return_hidden_states,
-        )
-        # The decoder's weights are the language model's own leaves, so the
-        # graph is name-transparent: the weight rules' role prefix is what
-        # places them.
+        self.model = Inkling2(config)
         self.model.name_transparent = True
 
     @classmethod
     def vision_input_types(
         cls, config: Inkling2Config, mesh: DeviceMesh
     ) -> VisionInputs[TensorType]:
-        """Keeps the device-zero image inputs the module broadcasts."""
+        """Takes the image inputs on device zero, which the model broadcasts."""
         device = DeviceRef.from_device(mesh.devices[0])
         return VisionInputs(
             embeddings=TensorType(
@@ -88,44 +66,11 @@ class Inkling2Decoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
         )
 
     def forward(self, inputs: DecoderInputs[Tensor]) -> DecoderOutputs:
-        """Runs the text model with the position ramp and the image rows."""
-        assert inputs.vision is not None
-        assert inputs.token_positions is not None
-        output = self.model(
+        """Runs both attention and convolution state from the shared KV tree."""
+        return self.model(
             inputs.tokens,
-            inputs.return_n_logits,
             inputs.input_row_offsets,
-            inputs.token_positions,
-            inputs.vision.embeddings,
-            inputs.vision.scatter_indices,
-            *tree.leaves(inputs.kv),
+            inputs.return_n_logits,
+            inputs.vision,
+            inputs.kv,
         )
-        return DecoderOutputs(
-            next_token_logits=output.next_token_logits,
-            logits=output.logits,
-            logit_offsets=output.logit_offsets,
-        )
-
-
-class Inkling2Vision(InklingVisionModel):
-    """The vision role: a config-taking constructor and a device-free graph."""
-
-    graph_name = "inkling2_vision"
-
-    def __init__(self, config: Inkling2Config) -> None:
-        with default_dtype(config.dtype):
-            super().__init__(config.vision_config, config.dtype)
-        self._registered_config = config
-        # What a decoder that declares no ``vision_input_types`` reads off the
-        # module: the width and dtype of the rows it emits.
-        self.embedding_dtype = config.dtype
-        self.embedding_dim = config.text_config.hidden_size
-
-    def input_types(
-        self, device: DeviceRef | None = None
-    ) -> tuple[TensorType, ...]:
-        """Returns the raw patch tensor plus its taps and position ids."""
-        return super().input_types(device or self._registered_config.devices[0])
-
-
-__all__ = ["Inkling2Decoder", "Inkling2Vision"]

@@ -18,6 +18,7 @@ transformers does not recognize natively.
 """
 
 import copy
+from collections.abc import Mapping
 from typing import Any, ClassVar
 
 from max.pipelines.lib._hf_config import register_config_generator
@@ -790,6 +791,74 @@ class _InklingMMHFConfig(PretrainedConfig):
 AutoConfig.register("inkling_mm_model", _InklingMMHFConfig, exist_ok=True)
 
 
+class _Inkling2HFConfig(PretrainedConfig):
+    """Shim for the top-level ``inkling2`` model type.
+
+    The pinned transformers predates the ``inkling2`` config class, so
+    ``AutoConfig`` raises before MAX sees the checkpoint. ``text_config`` and
+    ``vision_config`` become nested ``PretrainedConfig`` objects carrying the
+    raw ``config.json`` keys.
+    """
+
+    model_type = "inkling2"
+
+    # The reader's field names, each with the name the reference's
+    # ``attribute_map`` (``configuration_inkling2.py``) stores it under. A
+    # checkpoint saved through the native config writes the stored names.
+    text_aliases: ClassVar[dict[str, str]] = {
+        "sconv_kernel_size": "conv_kernel_size",
+        "intermediate_size": "moe_intermediate_size",
+        "model_max_length": "max_position_embeddings",
+        "sliding_window_size": "sliding_window",
+        "n_routed_experts": "num_local_experts",
+        "route_scale": "routed_scaling_factor",
+    }
+    vision_aliases: ClassVar[dict[str, str]] = {
+        "native_patch_size": "patch_size",
+        "adapter_merge_size": "spatial_merge_size",
+    }
+
+    def __init__(
+        self,
+        text_config: Any = None,
+        vision_config: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.text_config = PretrainedConfig(
+            **_with_aliases(text_config, self.text_aliases)
+        )
+        self.vision_config = PretrainedConfig(
+            **_with_aliases(vision_config, self.vision_aliases)
+        )
+        super().__init__(**kwargs)
+
+
+def _with_aliases(
+    block: Mapping[str, Any] | PretrainedConfig | None,
+    aliases: Mapping[str, str],
+) -> dict[str, Any]:
+    """Returns ``block`` with each reader name filled from its stored name."""
+    if block is None:
+        fields: dict[str, Any] = {}
+    elif isinstance(block, PretrainedConfig):
+        fields = block.to_dict()
+    else:
+        fields = dict(block)
+    for name, stored in aliases.items():
+        if name not in fields and stored in fields:
+            fields[name] = fields[stored]
+    return fields
+
+
+# A transformers release that ships the native config owns the mapping:
+# registering over it makes `AutoConfig` hand the reference this shim, which
+# its own modeling classes refuse.
+try:
+    from transformers import Inkling2Config  # noqa: F401
+except ImportError:
+    AutoConfig.register("inkling2", _Inkling2HFConfig, exist_ok=True)
+
+
 class _Glm5NextHFConfig(PretrainedConfig):
     """Shim for GLM-5.3-Flash's ``glm5_next`` model type.
 
@@ -1446,119 +1515,3 @@ register_config_generator(
     "derive_hf_config",
     params_keys=frozenset({"nope", "dsa", "kv_sharing", "ssmax_scaling"}),
 )
-
-
-class _Inkling2TextHFConfig(PretrainedConfig):
-    """The ``text_config`` half of an Inkling2 config, kept verbatim.
-
-    ``inkling2`` is not a model type the pinned transformers release knows,
-    and the checkpoint ships no ``auto_map``, so ``AutoConfig.from_pretrained``
-    cannot resolve it without this class. Every field the checkpoint states
-    becomes an attribute of the same name, which is what
-    ``Inkling2TextConfig.from_hf`` reads.
-
-    ``attribute_map`` is the reference's (``configuration_inkling2.py``,
-    ``Inkling2TextConfig.attribute_map``). It is what makes the checkpoint's
-    ``sconv_kernel_size``, ``intermediate_size`` and ``model_max_length``
-    readable under the names the decoder uses for them.
-    """
-
-    model_type = "inkling2_text"
-    attribute_map = {
-        "sliding_window": "sliding_window_size",
-        "num_local_experts": "n_routed_experts",
-        "sconv_kernel_size": "conv_kernel_size",
-        "model_max_length": "max_position_embeddings",
-        "intermediate_size": "moe_intermediate_size",
-        "routed_scaling_factor": "route_scale",
-    }
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        # transformers 5's ``PretrainedConfig`` does not keep every unknown
-        # kwarg as an attribute, and the decoder reads its own fields off this
-        # object.
-        for key, value in kwargs.items():
-            if not hasattr(self, key):
-                setattr(self, key, value)
-
-
-class _Inkling2VisionHFConfig(PretrainedConfig):
-    """The ``vision_config`` half of an Inkling2 config, kept verbatim.
-
-    ``text_hidden_size`` is the one field the checkpoint omits that
-    ``Inkling2VisionConfig.from_hf`` reads, so it carries the reference's
-    declared default (``configuration_inkling2.py``,
-    ``Inkling2VisionConfig.text_hidden_size``). ``patch_size`` and
-    ``spatial_merge_size`` are the checkpoint's ``native_patch_size`` and
-    ``adapter_merge_size`` under the names the reference maps them to, and
-    ``intermediate_size`` is derived from ``mlp_ratio`` by the reader.
-    """
-
-    model_type = "inkling2_vision"
-    attribute_map = {
-        "native_patch_size": "patch_size",
-        "adapter_merge_size": "spatial_merge_size",
-    }
-    _defaults: ClassVar[dict[str, Any]] = {"text_hidden_size": 4608}
-
-    def __init__(self, **kwargs: Any) -> None:
-        kwargs = {**copy.deepcopy(self._defaults), **kwargs}
-        super().__init__(**kwargs)
-        for key, value in kwargs.items():
-            if not hasattr(self, key):
-                setattr(self, key, value)
-
-
-class Inkling2HFConfig(PretrainedConfig):
-    """HuggingFace configuration class for Inkling-2 models.
-
-    ``Inkling2Config.initialize`` reads fields off both halves and
-    ``get_text_config()`` finds ``text_config`` by name, so each block becomes
-    a config object rather than staying a dict. ``image_token_id`` is not
-    stated by the checkpoint, and its reader falls back to the reference's
-    default, so it is left absent.
-    """
-
-    model_type = "inkling2"
-    sub_configs = {
-        "text_config": _Inkling2TextHFConfig,
-        "vision_config": _Inkling2VisionHFConfig,
-    }
-
-    def __init__(
-        self,
-        text_config: dict[str, Any] | _Inkling2TextHFConfig | None = None,
-        vision_config: dict[str, Any] | _Inkling2VisionHFConfig | None = None,
-        **kwargs: Any,
-    ) -> None:
-        if isinstance(text_config, dict) or text_config is None:
-            text_config = _Inkling2TextHFConfig(**(text_config or {}))
-        if isinstance(vision_config, dict) or vision_config is None:
-            vision_config = _Inkling2VisionHFConfig(**(vision_config or {}))
-        self.text_config = text_config
-        self.vision_config = vision_config
-        super().__init__(**kwargs)
-        for key, value in kwargs.items():
-            if not hasattr(self, key):
-                setattr(self, key, value)
-
-
-# A transformers release that ships the native configs owns the mapping.
-# Registering the shims over them replaces `CONFIG_MAPPING` entries whose
-# `AutoModelFor*` targets are the reference's own modeling classes, so
-# `AutoConfig` hands back this class and the reference refuses it
-# ("Unrecognized configuration class ... hf_config_shims.Inkling2HFConfig"
-# out of AutoModelForImageTextToText). Same guard as gemma4 above.
-_native_inkling2 = True
-try:
-    from transformers import Inkling2Config  # noqa: F401
-except ImportError:
-    _native_inkling2 = False
-
-if not _native_inkling2:
-    AutoConfig.register("inkling2", Inkling2HFConfig, exist_ok=True)
-    AutoConfig.register("inkling2_text", _Inkling2TextHFConfig, exist_ok=True)
-    AutoConfig.register(
-        "inkling2_vision", _Inkling2VisionHFConfig, exist_ok=True
-    )

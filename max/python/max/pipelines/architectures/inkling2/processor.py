@@ -10,7 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The image processor: whole merge cells, no resize."""
+"""Inkling 2 processor: token ids plus image pixel blocks.
+
+The output has the shape :class:`~max.pipelines.lib.TextAndVisionTokenizer`
+reads. The chat template emits one ``<|unused_200054|>`` per image, between
+``<|content_image|>`` and ``<|end_message|>``, and this grows it into one token
+per image block.
+"""
 
 from __future__ import annotations
 
@@ -21,140 +27,30 @@ from pathlib import Path
 from typing import Any
 
 import huggingface_hub
-import numpy as np
-import numpy.typing as npt
 from PIL import Image
 from transformers import PreTrainedTokenizerBase
 
-from .model_config import Inkling2VisionConfig
+from .image_processor import Inkling2ImageProcessor
 
 PROCESSOR_CONFIG_FILE = "processor_config.json"
 
-# Raw pixel value the reference pads with, before rescaling
-# (``image_processing_inkling2.py:90``: ``fill_value=-1.0``).
-_PAD_RAW_VALUE = -1.0
 
-# The reference's class defaults, used when the checkpoint's
-# ``processor_config.json`` omits them (``image_processing_inkling2.py:35-38``).
-_IMAGE_MEAN = (0.5, 0.5, 0.5)
-_IMAGE_STD = (0.5, 0.5, 0.5)
-_RESCALE_FACTOR = 1.0 / 255.0
-
-# The transparency checkerboard the reference composites against before it
-# drops the alpha channel (``image_processing_inkling2.py:64-70``): 8-pixel
-# cells alternating 204 and 153 on the 0-255 scale.
-_CHECKER_CELL = 8
-_CHECKER_LIGHT = 204
-_CHECKER_DARK = 153
-
-
-class InklingImageProcessor:
-    """Turns one image into the merged patch block the vision tower consumes."""
-
-    def __init__(
-        self,
-        processor_config: Mapping[str, Any],
-        vision_config: Inkling2VisionConfig,
-    ) -> None:
-        block = processor_config.get("image_processor")
-        if not isinstance(block, Mapping):
-            raise ValueError(
-                f"{PROCESSOR_CONFIG_FILE} has no image_processor block, so the "
-                "image normalization constants are unknown"
-            )
-        self.patch_size = vision_config.patch_size
-        self.merge_size = vision_config.spatial_merge_size
-        # One merge token's worth of pixels along each side.
-        self.side = self.patch_size * self.merge_size
-        self.num_channels = vision_config.num_channels
-        self.image_mean = np.asarray(
-            block.get("image_mean", _IMAGE_MEAN), dtype=np.float32
-        )
-        self.image_std = np.asarray(
-            block.get("image_std", _IMAGE_STD), dtype=np.float32
-        )
-        self.rescale_factor = float(
-            block.get("rescale_factor", _RESCALE_FACTOR)
-        )
-        declared = block.get("size")
-        if isinstance(declared, Mapping):
-            declared_size = (
-                int(declared.get("height", self.side)),
-                int(declared.get("width", self.side)),
-            )
-            if declared_size != (self.side, self.side):
-                raise ValueError(
-                    f"{PROCESSOR_CONFIG_FILE} cuts images into "
-                    f"{declared_size[0]}x{declared_size[1]} cells, but the "
-                    f"vision config's patch_size {self.patch_size} x "
-                    f"spatial_merge_size {self.merge_size} is {self.side} "
-                    "pixels per image token; the batch processor takes the "
-                    "block side from the vision config, so the two must agree"
-                )
-        # The padding sentinel after rescale-and-normalize. The reference's
-        # raw -1 lands just below the scale's floor (-1.0078 at
-        # mean = std = 0.5) while the tower's contract is pixels in [-1, 1]
-        # (``modeling_inkling2.py:1426-1427``), so the sentinel enters the
-        # graph clamped to that floor. Only pad cells can be affected: a real
-        # pixel normalizes into [-1, 1] exactly.
-        pad_raw = np.float32(_PAD_RAW_VALUE) * self.rescale_factor
-        pad = (pad_raw - self.image_mean) / self.image_std
-        self._pad_value = np.clip(pad, -1.0, 1.0).astype(np.float32)
-
-    def __call__(self, image: Image.Image) -> npt.NDArray[np.float32]:
-        """Pixels of one image on the reference's ``[-1, 1]`` scale."""
-        pixels = _rgb_pixels(image)
-        height, width, channels = pixels.shape
-        if channels != self.num_channels:
-            raise ValueError(
-                f"image has {channels} channels but the vision config says "
-                f"{self.num_channels}"
-            )
-        rows = -(-height // self.side)
-        columns = -(-width // self.side)
-        padded = np.empty(
-            (rows * self.side, columns * self.side, channels),
-            dtype=np.float32,
-        )
-        padded[...] = self._pad_value
-        padded[:height, :width] = (
-            pixels.astype(np.float32) * self.rescale_factor - self.image_mean
-        ) / self.image_std
-        return padded.reshape(
-            rows, self.side, columns, self.side, channels
-        ).transpose(0, 2, 1, 3, 4)
-
-
-def _rgb_pixels(image: Image.Image) -> npt.NDArray[np.uint8]:
-    if image.mode != "RGB" and getattr(image, "has_transparency_data", False):
-        rgba = np.asarray(image.convert("RGBA"), dtype=np.int32)
-        alpha = rgba[..., 3:4]
-        row_cell = np.arange(rgba.shape[0], dtype=np.int32)[:, None]
-        column_cell = np.arange(rgba.shape[1], dtype=np.int32)[None, :]
-        background = np.where(
-            (row_cell // _CHECKER_CELL + column_cell // _CHECKER_CELL) % 2 == 0,
-            _CHECKER_LIGHT,
-            _CHECKER_DARK,
-        )[..., None]
-        composited = (
-            rgba[..., :3] * alpha + background * (255 - alpha) + 127
-        ) // 255
-        return composited.astype(np.uint8)
-    return np.asarray(image.convert("RGB"), dtype=np.uint8)
-
-
-class InklingProcessor:
-    """Stands in for the ``AutoProcessor`` the checkpoint names but does not ship."""
+class Inkling2Processor:
+    """Stands in for transformers' ``Inkling2Processor``."""
 
     def __init__(
         self,
         delegate: PreTrainedTokenizerBase,
         processor_config: Mapping[str, Any],
-        vision_config: Inkling2VisionConfig,
     ) -> None:
+        """Builds the image processor from ``processor_config.json``.
+
+        Raises:
+            ValueError: If the file names an image token the tokenizer lacks.
+        """
         self.delegate = delegate
-        self.image_processor = InklingImageProcessor(
-            processor_config, vision_config
+        self.image_processor = Inkling2ImageProcessor(
+            processor_config["image_processor"]["size"]["height"]
         )
         image_token = processor_config["image_token"]
         vocab = delegate.get_vocab()
@@ -166,7 +62,7 @@ class InklingProcessor:
         self.image_token_id = int(vocab[image_token])
 
     def apply_chat_template(self, messages: Any, **options: Any) -> str:
-        """Delegate the chat template to the checkpoint's processor."""
+        """Renders the conversation with the tokenizer's chat template."""
         templated = self.delegate.apply_chat_template(messages, **options)
         assert isinstance(templated, str)
         return templated
@@ -179,36 +75,30 @@ class InklingProcessor:
         add_special_tokens: bool = True,
         **unused_kwargs: Any,
     ) -> dict[str, Any]:
-        """Build the prompt's inputs, keeping the image placement."""
+        """Encodes ``text`` and expands every image placeholder.
+
+        Returns:
+            ``input_ids`` as ``[ids]`` and ``pixel_values`` as ``[[per-image
+            [tokens, side, side, 3] arrays]]``, batched like a HuggingFace
+            processor's output.
+        """
         del unused_kwargs
         token_ids = (
             self.delegate.encode(text, add_special_tokens=add_special_tokens)
             if isinstance(text, str)
             else list(text)
         )
-        blocks = [self.image_processor(image) for image in images or []]
-        # One image token per merge cell, so the placeholder run is the
-        # block's two leading axes multiplied out.
-        grids = [
-            [1, int(block.shape[0]), int(block.shape[1])] for block in blocks
-        ]
+        images = images or []
+        blocks = [self.image_processor(image) for image in images]
         return {
-            # Both keys are batched, as a HuggingFace processor returns them.
             "input_ids": [
                 expand_image_placeholders(
                     token_ids,
                     self.image_token_id,
-                    [grid[1] * grid[2] for grid in grids],
+                    [len(image_blocks) for image_blocks in blocks],
                 )
             ],
             "pixel_values": [blocks],
-            # The reference's own ``image_grid_thw`` (``[temporal, rows,
-            # columns]`` counted in image tokens,
-            # ``image_processing_inkling2.py:94``). MAX's ``ImageMetadata``
-            # has no field for it, so the grid reaches the tower through the
-            # block's leading axes; it is emitted here for parity with the
-            # checkpoint's processor.
-            "image_grid_thw": np.asarray(grids, dtype=np.int32).reshape(-1, 3),
         }
 
 
@@ -231,7 +121,11 @@ def load_processor_config(
 def expand_image_placeholders(
     token_ids: Sequence[int], placeholder_id: int, patch_counts: Sequence[int]
 ) -> list[int]:
-    """Grows each single placeholder token into that image's run of tokens."""
+    """Grows each single placeholder token into that image's run of patches.
+
+    The chat template emits one placeholder per image; the run length is only
+    known once the image has been through the processor.
+    """
     markers = [
         index
         for index, token_id in enumerate(token_ids)

@@ -135,6 +135,7 @@ def test_nightly_4xb200_pinned() -> None:
     assert scheduled == {
         "deepseek-ai/DeepSeek-V4.1-Flash-1017",
         "reflection/Beam-1.0-501B-A23B-NVFP4",
+        "thinkingmachines/Inkling-2-Small",
         "zai-org/GLM-5.3-Flash__tpep",
     }
 

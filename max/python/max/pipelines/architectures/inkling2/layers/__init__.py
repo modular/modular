@@ -10,4 +10,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling ModuleV3 layers."""
+"""Inkling 2 transformer layers."""

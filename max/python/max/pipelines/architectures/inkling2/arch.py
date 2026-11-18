@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling2 registration with MAX's architecture registry."""
+"""Inkling 2 architecture registration."""
 
 from __future__ import annotations
 
@@ -19,16 +19,17 @@ from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
+from .batch_processor import Inkling2BatchProcessor
 from .model_config import Inkling2Config
-from .modules import Inkling2Decoder, Inkling2Vision
+from .modules import Inkling2Decoder
 from .reasoning import (
     InklingReasoningParser,  # noqa: F401  registers "inkling2"
 )
-from .registered_batch_processor import Inkling2BatchProcessor
-from .tokenizer import InklingTokenizer
+from .tokenizer import Inkling2Tokenizer
 from .tool_parser import (
     InklingToolParser,  # noqa: F401  registers "inkling2"
 )
+from .vision import Inkling2Vision
 from .weight_adapters import inkling2_weight_rules
 
 inkling2_arch = SupportedArchitecture(
@@ -44,14 +45,13 @@ inkling2_arch = SupportedArchitecture(
         GraphRole.VISION: Inkling2Vision,
     },
     batching=Inkling2BatchProcessor,
-    tokenizer=InklingTokenizer,
+    tokenizer=Inkling2Tokenizer,
     context_type=TextAndVisionContext,
     config=Inkling2Config,
     tool_parser="inkling2",
+    reasoning_parser="inkling2",
     weight_rules=inkling2_weight_rules,
     use_weight_rules=True,
     multi_gpu_supported=True,
-    supports_device_graph_capture=True,
     checkpoints_recurrent_state=True,
-    reasoning_parser="inkling2",
 )

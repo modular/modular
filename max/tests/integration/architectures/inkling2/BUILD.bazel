@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -6,10 +6,31 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# Guards pipelines/architectures/hf_config_shims.py.
+modular_py_test(
+    name = "test_hf_config_shim",
+    srcs = ["test_hf_config_shim.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+    ],
+)
+
 modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],
     deps = [
         "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_input_contract",
+    srcs = ["test_vision_input_contract.py"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
     ],
 )

@@ -10,11 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The checkpoint-to-graph weight rules."""
+"""Names Inkling 2 checkpoint tensors as the decoder loads them."""
 
-from __future__ import annotations
-
-import re
 from collections.abc import Sequence
 
 from max.dtype import DType
@@ -26,39 +23,28 @@ from max.pipelines.lib.weight_transform import (
 )
 from transformers import PretrainedConfig
 
-DECODER_PREFIX = "language_model."
-"""The prefix the decoder role's weights sit under (``weight_prefixes``)."""
-
-VISION_PREFIX = "vision."
-"""The prefix the tower role's weights sit under."""
-
-_TEXT = "model.llm."
-_VISION = "model.visual."
-_SKIP = {
-    r"^(fuse_weight|mask_embed|markov_head\.|norm\.weight$|layers\.)": "the MTP drafter's tensors: they ship in their own file with no "
-    "`model.` prefix, so they would collide with the decoder's `norm`",
-}
-
-_VISION_WEIGHT_LEAVES = ("backbone.embeddings.position_embedding",)
-"""Tower leaves shipped without the `.weight` suffix their module declares."""
+from .vision import INKLING2_VISION_WEIGHT_RULES
 
 
 def inkling2_weight_rules(
     huggingface_config: PretrainedConfig,
 ) -> Sequence[WeightRule]:
-    """Returns the rules that map an Inkling2 checkpoint onto both roles."""
+    """Returns the rules for Inkling 2's checkpoint tensors.
+
+    The module trees use the checkpoint's own names below ``model.llm.`` and
+    ``model.visual.``, so only the prefixes and the raw ue8m0 scale bytes need
+    a rule.
+    """
     del huggingface_config
     return (
-        *(Ignore(pattern, reason=reason) for pattern, reason in _SKIP.items()),
-        *(
-            WeightRenaming(
-                rf"^{re.escape(_VISION)}{re.escape(leaf)}$",
-                VISION_PREFIX + leaf + ".weight",
-            )
-            for leaf in _VISION_WEIGHT_LEAVES
+        # The drafter ships in its own file, and its tensor names carry no
+        # `model.` prefix, so they would collide with the decoder's `norm`.
+        Ignore(
+            r"^(fuse_weight|mask_embed|markov_head\.|norm\.weight$|layers\.)",
+            reason="the MTP drafter loads as its own draft",
         ),
-        WeightRenaming(r"^model\.visual\.", VISION_PREFIX),
-        WeightRenaming(r"^model\.llm\.", DECODER_PREFIX),
+        WeightRenaming(r"^model\.llm\.", ""),
+        *INKLING2_VISION_WEIGHT_RULES,
         # MXFP8 scales are stored as raw uint8 ue8m0 bytes; NVFP4's are
         # already float8_e4m3fn, which the rule leaves alone.
         Bitcast(
