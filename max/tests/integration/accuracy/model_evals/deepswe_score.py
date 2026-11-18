@@ -28,12 +28,16 @@ usage: deepswe_score.py <job dir>
 from __future__ import annotations
 
 import collections
+import datetime
 import json
 import os
 import pathlib
 import sys
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 PATCH = pathlib.Path("artifacts", "model.patch")
+TRAJECTORY = pathlib.Path("agent", "mini-swe-agent.trajectory.json")
 
 
 def trial_rows(job_dir: pathlib.Path) -> list[dict[str, object]]:
@@ -44,6 +48,9 @@ def trial_rows(job_dir: pathlib.Path) -> list[dict[str, object]]:
     runs agree, and ``None`` when that directory is gone; ``repeat_index``
     numbers a task's attempts in the order they started; ``error`` says why
     an infra-error trial is excluded; ``response`` is the agent's patch.
+    ``opening``, ``turns`` and their count ``agent_turns`` come from the
+    agent's trajectory (see :func:`conversation_turns`), and are ``None``
+    when it left no readable one.
 
     Args:
         job_dir: Pier's job directory, one trial directory per task attempt.
@@ -103,6 +110,7 @@ def trial_rows(job_dir: pathlib.Path) -> list[dict[str, object]]:
                 "response": patch.read_text(errors="replace")
                 if patch.is_file()
                 else None,
+                **_trajectory_fields(path.parent / TRAJECTORY),
             }
         )
     by_task: dict[object, list[dict[str, object]]] = collections.defaultdict(
@@ -136,6 +144,167 @@ def _task_index(
             names = []
         cache[task_dir.parent] = {name: i for i, name in enumerate(names)}
     return cache[task_dir.parent].get(task_dir.name)
+
+
+def _trajectory_fields(path: pathlib.Path) -> dict[str, object]:
+    # A trial that died before or while the agent wrote its trajectory still
+    # gets its row and its score, just without turns.
+    try:
+        messages = json.loads(path.read_text())["messages"]
+        opening, turns = conversation_turns(messages)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as err:
+        print(
+            f"WARNING: no turns for trial {path.parent.parent.name}: {err!r}",
+            file=sys.stderr,
+        )
+        return {"agent_turns": None, "opening": None, "turns": None}
+    return {"agent_turns": len(turns), "opening": opening, "turns": turns}
+
+
+def conversation_turns(
+    messages: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, object]], list[dict[str, Any]]]:
+    """Splits a mini-swe-agent conversation into its opening and its turns.
+
+    A turn is one model call, in the form the results uploader writes to
+    ``turns.parquet``: what the model returned, its token usage, and what
+    each command it ran printed. The messages before the first call, the
+    system prompt and the task, are the opening. A call that fails
+    mini-swe-agent's format check, such as one cut off before its tool call,
+    is logged as a user message holding the completion in
+    ``extra.response``; it is a turn too, and the format error sent back is
+    its reply. Any other later message is the reply of the turn before it.
+
+    Args:
+        messages: The trajectory's ``messages``.
+
+    Returns:
+        The opening's ``role``/``content`` messages, and the turns.
+    """
+    opening: list[dict[str, object]] = []
+    turns: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        extra = message.get("extra") or {}
+        response = extra.get("response") or {}
+        if role == "assistant":
+            turns.append(_turn(response, message))
+        elif role == "user" and response:
+            choice = (response.get("choices") or [{}])[0]
+            turns.append(_turn(response, choice.get("message") or {}))
+            turns[-1]["reply"] = message.get("content")
+        elif role == "tool":
+            content = message.get("content")
+            raw = extra.get("raw_output")
+            _add_tool_output(
+                opening,
+                turns,
+                message.get("tool_call_id"),
+                {
+                    "output": content,
+                    "full_output": raw
+                    if raw and _shown_output(content) != raw
+                    else None,
+                    "returncode": extra.get("returncode"),
+                    "error": extra.get("exception_info") or None,
+                },
+            )
+        elif role != "exit":
+            _add_message(opening, turns, role, message.get("content"))
+    return opening, turns
+
+
+def _turn(
+    response: Mapping[str, Any], generated: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Builds a turn from a chat completion and the message it generated."""
+    usage = response.get("usage") or {}
+    created = response.get("created")
+    return {
+        "timestamp": datetime.datetime.fromtimestamp(
+            created, datetime.timezone.utc
+        ).isoformat()
+        if isinstance(created, (int, float))
+        else None,
+        "finish_reason": (response.get("choices") or [{}])[0].get(
+            "finish_reason"
+        ),
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "cached_tokens": (usage.get("prompt_tokens_details") or {}).get(
+            "cached_tokens"
+        ),
+        "completion_tokens": usage.get("completion_tokens"),
+        "reasoning_tokens": (usage.get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        ),
+        "reasoning": generated.get("reasoning_content"),
+        "response": generated.get("content"),
+        "tool_calls": [
+            {
+                "id": call.get("id"),
+                "name": (call.get("function") or {}).get("name"),
+                "arguments": _json_text(
+                    (call.get("function") or {}).get("arguments")
+                ),
+            }
+            for call in generated.get("tool_calls") or []
+        ],
+        "reply": None,
+    }
+
+
+def _shown_output(content: object) -> object:
+    """Returns the whole command output a tool message showed the model.
+
+    mini-swe-agent sends a long output as ``output_head`` and
+    ``output_tail`` instead of ``output``, so this is ``None`` for it.
+    """
+    if not isinstance(content, str):
+        return None
+    try:
+        shown = json.loads(content)
+    except ValueError:
+        return None
+    return shown.get("output") if isinstance(shown, dict) else None
+
+
+def _json_text(value: object) -> object:
+    return (
+        value if value is None or isinstance(value, str) else json.dumps(value)
+    )
+
+
+def _add_tool_output(
+    opening: list[dict[str, object]],
+    turns: list[dict[str, Any]],
+    call_id: object,
+    fields: dict[str, object],
+) -> None:
+    if not turns:
+        opening.append({"role": "tool", "content": fields["output"]})
+        return
+    calls = turns[-1]["tool_calls"]
+    call = next((c for c in calls if c["id"] == call_id), None)
+    if call is None:
+        # The model saw this output, so it is kept even with no call to match.
+        call = {"id": call_id}
+        calls.append(call)
+    call.update(fields)
+
+
+def _add_message(
+    opening: list[dict[str, object]],
+    turns: list[dict[str, Any]],
+    role: object,
+    content: object,
+) -> None:
+    if not turns:
+        opening.append({"role": role, "content": content})
+        return
+    previous = turns[-1]["reply"]
+    turns[-1]["reply"] = (
+        content if previous is None else f"{previous}\n{content or ''}"
+    )
 
 
 def score_job(

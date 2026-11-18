@@ -296,6 +296,109 @@ TAU2_ERROR_TERMINATIONS = frozenset(
 )
 
 
+def tau2_turns(
+    messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Splits a tau2 conversation into its opening and the agent's turns.
+
+    A turn is one agent model call, an assistant message carrying the model's
+    response in ``raw_data``, in the form the results uploader writes to
+    ``turns.parquet``: what the model returned, its token usage, and what
+    each of its tool calls returned. The messages before the first call,
+    tau2's canned greeting and the simulated user's request, are the opening;
+    each later user message is the reply of the turn before it. tau2 keeps
+    only prompt and completion token counts and never truncates a tool's
+    output. A tool output the user requested (telecom) is a reply too.
+
+    Args:
+        messages: A simulation's ``messages``.
+
+    Returns:
+        The opening's ``role``/``content`` messages, and the turns.
+    """
+    opening: list[dict[str, Any]] = []
+    turns: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        raw = message.get("raw_data") or {}
+        content = message.get("content")
+        if role == "assistant" and raw:
+            usage = message.get("usage") or {}
+            generated = raw.get("message") or {}
+            turns.append(
+                {
+                    "timestamp": message.get("timestamp"),
+                    "finish_reason": raw.get("finish_reason"),
+                    "prompt_tokens": usage.get("prompt_tokens"),
+                    "completion_tokens": usage.get("completion_tokens"),
+                    "reasoning": generated.get("reasoning_content")
+                    or generated.get("reasoning"),
+                    "response": content,
+                    "tool_calls": [
+                        {
+                            "id": call.get("id"),
+                            "name": call.get("name"),
+                            "arguments": _json_text(call.get("arguments")),
+                        }
+                        for call in message.get("tool_calls") or []
+                    ],
+                    "reply": None,
+                }
+            )
+        elif role == "tool" and message.get("requestor") != "user":
+            _add_tool_output(
+                opening,
+                turns,
+                message.get("id"),
+                {
+                    "output": content,
+                    "error": content if message.get("error") else None,
+                },
+            )
+        else:
+            _add_message(opening, turns, role, content)
+    return opening, turns
+
+
+def _json_text(value: object) -> object:
+    return (
+        value if value is None or isinstance(value, str) else json.dumps(value)
+    )
+
+
+def _add_tool_output(
+    opening: list[dict[str, Any]],
+    turns: list[dict[str, Any]],
+    call_id: object,
+    fields: dict[str, Any],
+) -> None:
+    if not turns:
+        opening.append({"role": "tool", "content": fields["output"]})
+        return
+    calls = turns[-1]["tool_calls"]
+    call = next((c for c in calls if c["id"] == call_id), None)
+    if call is None:
+        # The model saw this output, so it is kept even with no call to match.
+        call = {"id": call_id}
+        calls.append(call)
+    call.update(fields)
+
+
+def _add_message(
+    opening: list[dict[str, Any]],
+    turns: list[dict[str, Any]],
+    role: object,
+    content: object,
+) -> None:
+    if not turns:
+        opening.append({"role": role, "content": content})
+        return
+    previous = turns[-1]["reply"]
+    turns[-1]["reply"] = (
+        content if previous is None else f"{previous}\n{content or ''}"
+    )
+
+
 def _empty_user_turns(messages: list[dict[str, Any]]) -> list[str]:
     """Returns the ``finish_reason`` of each empty simulator attempt.
 
@@ -324,31 +427,15 @@ class AgentTurns:
     length_capped_turns: int
 
 
-def _agent_turns(messages: list[dict[str, Any]]) -> AgentTurns:
-    """Counts the agent's generations and their output tokens.
-
-    A generation is an assistant message carrying the model's response in
-    ``raw_data``. tau2's canned opening greeting has none, so it is not a turn.
-    """
-    tokens: list[int] = []
-    turns = 0
-    length_capped = 0
-    usage_missing = False
-    for message in messages:
-        raw = message.get("raw_data")
-        if message.get("role") != "assistant" or not raw:
-            continue
-        turns += 1
-        if raw.get("finish_reason") == "length":
-            length_capped += 1
-        completion = (message.get("usage") or {}).get("completion_tokens")
-        if isinstance(completion, int):
-            tokens.append(completion)
-        else:
-            usage_missing = True
-    if usage_missing:
-        return AgentTurns(turns, None, None, length_capped)
-    return AgentTurns(turns, sum(tokens), max(tokens, default=0), length_capped)
+def _agent_turns(turns: list[dict[str, Any]]) -> AgentTurns:
+    """Counts the agent's turns, from :func:`tau2_turns`, and their tokens."""
+    tokens = [turn["completion_tokens"] for turn in turns]
+    length_capped = sum(turn["finish_reason"] == "length" for turn in turns)
+    if not all(isinstance(n, int) for n in tokens):
+        return AgentTurns(len(turns), None, None, length_capped)
+    return AgentTurns(
+        len(turns), sum(tokens), max(tokens, default=0), length_capped
+    )
 
 
 def parse_tau2_log(
@@ -381,7 +468,8 @@ def parse_tau2_log(
     length_capped_turns = 0
     for sim in simulations:
         empty_user_turns = _empty_user_turns(sim.get("messages") or [])
-        agent = _agent_turns(sim.get("messages") or [])
+        opening, turns = tau2_turns(sim.get("messages") or [])
+        agent = _agent_turns(turns)
         if agent.output_tokens is not None:
             output_tokens.append(agent.output_tokens)
         length_capped_turns += agent.length_capped_turns
@@ -431,6 +519,8 @@ def parse_tau2_log(
                 "duration": sim.get("duration"),
                 "agent_cost": sim.get("agent_cost"),
                 "empty_user_turns": len(empty_user_turns),
+                "opening": opening,
+                "turns": turns,
             }
         )
 
