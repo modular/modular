@@ -73,6 +73,31 @@ struct _HALBufferInner(Movable):
         _ = self._parent^
 
 
+def _sub_buffer_byte_range(
+    offset: Int, size: Int, elem_size: Int, parent_byte_size: UInt64
+) raises -> Tuple[Int, Int]:
+    """Returns the byte offset and byte size of a sub-buffer view.
+
+    Args:
+        offset: The view's first element.
+        size: The view's element count.
+        elem_size: The size of one view element, in bytes.
+        parent_byte_size: The size of the parent buffer, in bytes.
+
+    Returns:
+        The view's byte offset and byte size within the parent.
+
+    Raises:
+        If the view does not fit inside the parent.
+    """
+    # Check in elements so a huge `offset` or `size` can't wrap the byte
+    # arithmetic back into range.
+    var max_elems = Int(parent_byte_size) // elem_size
+    if offset < 0 or size < 0 or size > max_elems or offset > max_elems - size:
+        raise Error("create_sub_buffer: view is out of range")
+    return (offset * elem_size, size * elem_size)
+
+
 @fieldwise_init
 struct _HALDeviceBuffer[dtype: DType](ImplicitlyCopyable, Movable):
     """The state of a `DeviceBuffer` on the HAL backend."""
@@ -364,16 +389,17 @@ struct DeviceBuffer[dtype: DType](
                 _impl=self._impl.create_sub_buffer[view_type](offset, size)
             )
 
-        comptime elem_size = size_of[view_type]()
-        var byte_offset = UInt64(offset * elem_size)
-        var byte_size = UInt64(size * elem_size)
-        if byte_offset + byte_size > self._impl._inner[]._buffer.byte_size:
-            raise Error("create_sub_buffer: view is out of range")
+        var byte_range = _sub_buffer_byte_range(
+            offset,
+            size,
+            size_of[view_type](),
+            self._impl._inner[]._buffer.byte_size,
+        )
         var view = DeviceBuffer[view_type](
             self.context(),
             Pointer[Scalar[view_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(
-                    self._impl._inner[]._device_addr + byte_offset
+                    self._impl._inner[]._device_addr + UInt64(byte_range[0])
                 )
             ),
             size,

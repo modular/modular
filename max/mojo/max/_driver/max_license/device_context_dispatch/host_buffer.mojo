@@ -26,6 +26,7 @@ from max._driver.max_license.device_context_dispatch.device_context import (
 )
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
+    _sub_buffer_byte_range,
 )
 
 
@@ -346,20 +347,16 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             )
 
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
-        comptime elem_size = size_of[view_type]()
-        # Check in elements so a huge `offset` or `size` can't wrap the byte
-        # arithmetic back into range.
-        var max_elems = Int(self._impl._inner[]._buffer.byte_size) // elem_size
-        if (
-            offset < 0
-            or size < 0
-            or size > max_elems
-            or offset > max_elems - size
-        ):
-            raise Error("create_sub_buffer: view is out of range")
-        var byte_offset = offset * elem_size
-        var byte_size = size * elem_size
-        var host_ptr = self._impl._inner[]._host_ptr.unsafe_offset(byte_offset)
+        var byte_range = _sub_buffer_byte_range(
+            offset,
+            size,
+            size_of[view_type](),
+            self._impl._inner[]._buffer.byte_size,
+        )
+        var byte_size = byte_range[1]
+        var host_ptr = self._impl._inner[]._host_ptr.unsafe_offset(
+            byte_range[0]
+        )
         var addr = UInt64(Int(host_ptr))
         # The view's buffer is a non-owning wrapper over the parent's pinned
         # memory. The plugin rejects wrapping a null address, so an empty
