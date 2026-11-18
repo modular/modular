@@ -37,6 +37,7 @@ from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceContextArray,
+    GridBlockLaunchConfig,
 )
 from layout.tile_tensor import row_major
 from max.gpu.host.info import is_cpu, is_gpu
@@ -6170,13 +6171,15 @@ def _mamba2_ssd_scan_launch[
                         query_start_loc_tt,
                         has_initial_state_tt,
                         update_state_tt,
-                        host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
-                        grid_dim=(
-                            ceildiv(head_dim, BLOCK_SIZE),
-                            nheads,
-                            batch,
+                        execution_config=GridBlockLaunchConfig(
+                            grid_dim=(
+                                ceildiv(head_dim, BLOCK_SIZE),
+                                nheads,
+                                batch,
+                            ),
+                            block_dim=(BLOCK_SIZE, 1, 1),
                         ),
-                        block_dim=(BLOCK_SIZE, 1, 1),
+                        host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
                     )
         else:
             # DSTATE_SPLIT threads cooperate on each channel, and each
@@ -7263,7 +7266,10 @@ struct Sleep:
 
             var device_ctx = ctx
             device_ctx.enqueue_function[sleep_kernel](
-                duration_sec, grid_dim=(1,), block_dim=(1,)
+                duration_sec,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(1,), block_dim=(1,)
+                ),
             )
         else:
             sleep(duration_sec)
@@ -7352,8 +7358,9 @@ struct StateSpaceCopyRows:
                 src_rows_tt.unsafe_ptr(),
                 Int64(rows),
                 Int64(row_size),
-                grid_dim=(ceildiv(rows * row_size, 256),),
-                block_dim=(256,),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(ceildiv(rows * row_size, 256),), block_dim=(256,)
+                ),
             )
         else:
             for row in range(rows):

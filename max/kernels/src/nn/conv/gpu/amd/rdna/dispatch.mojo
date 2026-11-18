@@ -25,7 +25,7 @@ Provides two paths for 2-D convolution on RDNA 3+:
 
 from std.math import ceildiv
 from max.gpu import global_idx, WARP_SIZE
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from layout import Coord, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import (
@@ -301,8 +301,10 @@ def dispatch_rdna_conv2d[
                 Int32(filter.dim[1]()),
                 Int32(filter.dim[2]()),
                 Int32(filter.dim[3]()),
-                grid_dim=transpose_grid,
-                block_dim=transpose_block,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=transpose_grid,
+                    block_dim=transpose_block,
+                ),
             )
         else:
             ctx.enqueue_function[_transpose_rscf_to_nk[filter_type]](
@@ -312,8 +314,10 @@ def dispatch_rdna_conv2d[
                 Int32(filter.dim[1]()),
                 Int32(filter.dim[2]()),
                 Int32(filter.dim[3]()),
-                grid_dim=transpose_grid,
-                block_dim=transpose_block,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=transpose_grid,
+                    block_dim=transpose_block,
+                ),
             )
 
         # Choose BLOCK_K based on K alignment
@@ -366,9 +370,11 @@ def dispatch_rdna_conv2d[
                 Int32(fw),
                 Int32(symmetric_padding[0]),
                 Int32(symmetric_padding[1]),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(ceildiv(N, BLOCK_N), ceildiv(M, BLOCK_M)),
+                    block_dim=(NUM_WARPS * WARP_SIZE,),
+                ),
                 host_args=(epilogue_fn, compute_fn),
-                grid_dim=(ceildiv(N, BLOCK_N), ceildiv(M, BLOCK_M)),
-                block_dim=(NUM_WARPS * WARP_SIZE,),
             )
 
         # --- Helper to launch explicit im2col + matmul fallback ---
@@ -399,8 +405,10 @@ def dispatch_rdna_conv2d[
                 Int32(out_w),
                 Int32(symmetric_padding[0]),
                 Int32(symmetric_padding[1]),
-                grid_dim=(im2col_grid,),
-                block_dim=(im2col_block,),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(im2col_grid,),
+                    block_dim=(im2col_block,),
+                ),
             )
 
             var a_tt = TileTensor(im2col_ptr, row_major(M, K))

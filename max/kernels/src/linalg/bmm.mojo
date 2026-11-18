@@ -37,7 +37,7 @@ from max.gpu import (
     block_idx,
     global_idx,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import A100, is_cpu
 from max.gpu.primitives.grid_controls import PDLLevel
@@ -1218,10 +1218,12 @@ def _batched_matmul_gpu_impl[
             a_tensor_reshaped.as_imm(),
             b_tensor_reshaped.as_imm(),
             c_shape,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(grid_dim[0], grid_dim[1], batch_size),
+                block_dim=kernels.ampere_128x128_4.block_dim(),
+                shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
+            ),
             host_args=(epilogue_fn, compute_fn),
-            grid_dim=(grid_dim[0], grid_dim[1], batch_size),
-            block_dim=kernels.ampere_128x128_4.block_dim(),
-            shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
         )
     elif (
         has_static_NK
@@ -1265,13 +1267,15 @@ def _batched_matmul_gpu_impl[
                 a_tensor_reshaped.as_imm(),
                 b_tensor_reshaped.as_imm(),
                 c_shape,
-                host_args=(epilogue_fn, compute_fn),
-                grid_dim=(
-                    ceildiv(n, block_n),
-                    ceildiv(m, block_m),
-                    batch_size,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(
+                        ceildiv(n, block_n),
+                        ceildiv(m, block_m),
+                        batch_size,
+                    ),
+                    block_dim=config.block_dim(),
                 ),
-                block_dim=config.block_dim(),
+                host_args=(epilogue_fn, compute_fn),
             )
 
         if m <= 32:
@@ -1304,13 +1308,15 @@ def _batched_matmul_gpu_impl[
             a_tensor_reshaped.as_imm(),
             b_tensor_reshaped.as_imm(),
             c_shape,
-            host_args=(epilogue_fn, compute_fn),
-            grid_dim=(
-                ceildiv(n, BLOCK_DIM),
-                ceildiv(m, BLOCK_DIM),
-                batch_size,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(
+                    ceildiv(n, BLOCK_DIM),
+                    ceildiv(m, BLOCK_DIM),
+                    batch_size,
+                ),
+                block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
             ),
-            block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+            host_args=(epilogue_fn, compute_fn),
         )
 
 
@@ -2033,10 +2039,12 @@ def _bmm_sm100_blockwise_scaled_fp8_impl[
         a_scales_tma_op,
         b_scales_,
         Int32(ceildiv(K, BK)),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
+            block_dim=(block_dim),
+            shared_mem_bytes=smem_use,
+        ),
         host_args=(epilogue_fn,),
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
-        block_dim=(block_dim),
-        shared_mem_bytes=smem_use,
     )
 
 
@@ -2350,8 +2358,10 @@ def blockwise_scaled_fp8_matmul_amd_batched[
         b,
         a_scales,
         b_scales,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
-        block_dim=(num_threads, 1, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
+            block_dim=(num_threads, 1, 1),
+        ),
     )
 
     # The whole batch is one kernel launch (grid.z = batch); that is the

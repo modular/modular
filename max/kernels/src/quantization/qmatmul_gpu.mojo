@@ -41,7 +41,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import is_gpu
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -2323,9 +2323,11 @@ def gpu_qint4_repack_Q4_0(
     ctx.enqueue_function[repack](
         b,
         b_packed,
-        grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
-        block_dim=(128, 1, 1),
-        shared_mem_bytes=smem_usage,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
+            block_dim=(128, 1, 1),
+            shared_mem_bytes=smem_usage,
+        ),
     )
 
 
@@ -2394,8 +2396,10 @@ def gpu_qint4_repack_GPTQ[
             b,
             b_packed,
             perm_idx,
-            grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
-            block_dim=(128, 1, 1),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
+                block_dim=(128, 1, 1),
+            ),
         )
 
     else:
@@ -2413,7 +2417,9 @@ def gpu_qint4_repack_GPTQ[
             b,
             b_packed,
             empty_permutation,
-            grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
-            block_dim=(128, 1, 1),
-            shared_mem_bytes=smem_usage,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
+                block_dim=(128, 1, 1),
+                shared_mem_bytes=smem_usage,
+            ),
         )

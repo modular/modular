@@ -63,7 +63,7 @@ from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
 from std.math import ceildiv
 from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.memory import unsafe_stack_allocation
 
 from layout import Idx, TensorEngine, TileTensor
@@ -1046,8 +1046,10 @@ def enqueue_matmul2d_fp4[
         Int32(m),
         Int32(n),
         Int32(k),
-        grid_dim=(grid_n, grid_m),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_n, grid_m),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
     )
 
 
@@ -1167,6 +1169,8 @@ def enqueue_matmul2d_fp4_smem[
         Int32(m),
         Int32(n),
         Int32(k),
-        grid_dim=(grid_n, grid_m),
-        block_dim=(MM.THREADS_PER_BLOCK),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(grid_n, grid_m),
+            block_dim=(MM.THREADS_PER_BLOCK),
+        ),
     )

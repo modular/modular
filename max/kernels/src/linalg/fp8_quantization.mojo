@@ -34,7 +34,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import GPUInfo, MI355X, _is_sm10x_gpu
 from layout import (
     Coord,
@@ -2104,9 +2104,11 @@ def naive_blockwise_scaled_fp8_matmul[
         b,
         a_scales,
         b_scales,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+            block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+        ),
         host_args=(epilogue_fn,),
-        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
-        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
 
@@ -2382,12 +2384,14 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
         expert_ids,
         a_scales,
         b_scales,
-        grid_dim=(
-            ceildiv(Int(c.dim(1)), BLOCK_DIM_N),
-            ceildiv(max_num_tokens_per_expert, BLOCK_DIM_M),
-            num_active_experts,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                ceildiv(Int(c.dim(1)), BLOCK_DIM_N),
+                ceildiv(max_num_tokens_per_expert, BLOCK_DIM_M),
+                num_active_experts,
+            ),
+            block_dim=(BLOCK_DIM_N, BLOCK_DIM_M, 1),
         ),
-        block_dim=(BLOCK_DIM_N, BLOCK_DIM_M, 1),
     )
 
 

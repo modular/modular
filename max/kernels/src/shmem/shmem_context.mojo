@@ -36,7 +36,7 @@ from max.gpu.host import (
     LaunchAttribute,
     default_accelerator,
 )
-from max.gpu.host import _DumpPath
+from max.gpu.host import GridBlockLaunchConfig, _DumpPath
 from max.gpu.host import (
     LaunchAttributeID,
     LaunchAttributeValue,
@@ -70,7 +70,11 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         var destination = ctx.enqueue_create_buffer[.int32](1)
 
         ctx.enqueue_function[simple_shift_kernel](
-            destination, grid_dim=1, block_dim=1
+            destination,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=1,
+                block_dim=1,
+            ),
         )
 
         ctx.barrier_all()
@@ -176,7 +180,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     from shmem import SHMEMContext
 
     with SHMEMContext() as ctx:
-        ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel](
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=1,
+                block_dim=1,
+            ),
+        )
     ```
     """
 
@@ -422,7 +431,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             print("hello from the GPU")
 
         with SHMEMContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=1,
+                    block_dim=1,
+                ),
+            )
             ctx.synchronize()
         ```
         """
@@ -508,7 +522,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=1,
+                    block_dim=1,
+                ),
+            )
             ctx.synchronize()
         ```
 
@@ -518,8 +537,18 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=1,
+                    block_dim=1,
+                ),
+            )
+            ctx.enqueue_function[kernel](
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=1,
+                    block_dim=1,
+                ),
+            )
             ctx.synchronize()
         ```
         """

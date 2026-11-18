@@ -28,7 +28,12 @@ from std.benchmark import (
 )
 from std.compile import compile_info
 from max.gpu import block_dim, global_idx, grid_dim
-from max.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceFunction,
+    GridBlockLaunchConfig,
+)
 from std.random import Random
 from std.utils import IndexList
 
@@ -460,8 +465,10 @@ def init_vector_launch[
         Int32(length),
         init_type,
         value.or_else(0),
-        grid_dim=(num_blocks),
-        block_dim=(block_dim),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_blocks),
+            block_dim=(block_dim),
+        ),
     )
 
 
@@ -511,8 +518,10 @@ def _init_block_scaled_scales_launch[
     context.enqueue_function[kernel](
         out_device,
         Int32(length),
-        grid_dim=(num_blocks),
-        block_dim=(block_dim),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_blocks),
+            block_dim=(block_dim),
+        ),
     )
 
 

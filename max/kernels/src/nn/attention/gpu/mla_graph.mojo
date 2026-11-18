@@ -42,7 +42,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import _is_sm10x_gpu
 from max.gpu.primitives.warp import shuffle_xor
 from layout import (
@@ -2592,8 +2592,10 @@ def _amd_sparse_mla_bf16_rows[
         Int32(indices_stride),
         zero_row.unsafe_bitcast[UInt8](),
         Int32(k_cache_dim * size_of[cache_t.dtype]()),
-        grid_dim=(seq_len, 1, 1),
-        block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(seq_len, 1, 1),
+            block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
+        ),
     )
     comptime q_row_stride = num_heads * k_cache_dim
     comptime output_row_stride = num_heads * kv_latent_dim
@@ -3155,15 +3157,17 @@ def mla_decode_branch_fp8[
                 valid_lengths_buf.unsafe_ptr(),
                 Int32(indices_stride),
                 Int32(selection_lag),
-                grid_dim=(
-                    ceildiv(indices_stride, GATHER_ROWS_PER_BLOCK),
-                    batch_size,
-                    1,
-                ),
-                block_dim=(
-                    k_cache_dim // _AMD_SPARSE_MLA_GATHER_VEC,
-                    GATHER_ROWS_PER_BLOCK,
-                    1,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(
+                        ceildiv(indices_stride, GATHER_ROWS_PER_BLOCK),
+                        batch_size,
+                        1,
+                    ),
+                    block_dim=(
+                        k_cache_dim // _AMD_SPARSE_MLA_GATHER_VEC,
+                        GATHER_ROWS_PER_BLOCK,
+                        1,
+                    ),
                 ),
             )
 
@@ -3474,8 +3478,10 @@ def mla_prefill_branch_sparse_fp8[
             Int32(indices_stride),
             zero_row_buf.unsafe_ptr().unsafe_bitcast[UInt8](),
             Int32(k_cache_dim * size_of[type_of(k_cache).dtype]()),
-            grid_dim=(batch_size, 1, 1),
-            block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(batch_size, 1, 1),
+                block_dim=(_AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS, 1, 1),
+            ),
         )
         var amd_lengths_tt = TileTensor(
             valid_lengths_buf.unsafe_ptr(), row_major(batch_size)
@@ -5433,8 +5439,7 @@ def _mla_split_dispatch_args(
         batch_args_ptr,
         Int32(view.rows),
         Int32(view.max_q_len),
-        grid_dim=1,
-        block_dim=1,
+        execution_config=GridBlockLaunchConfig(grid_dim=1, block_dim=1),
     )
     return (triple_ptr, triple^)
 
@@ -5629,8 +5634,10 @@ def _mla_split_topk_lengths[
                 ]().unsafe_origin_cast[MutAnyOrigin](),
                 Int32(first_row),
                 Int32(rows),
-                grid_dim=max(1, ceildiv(rows, _MLA_SPLIT_ROW_THREADS)),
-                block_dim=_MLA_SPLIT_ROW_THREADS,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=max(1, ceildiv(rows, _MLA_SPLIT_ROW_THREADS)),
+                    block_dim=_MLA_SPLIT_ROW_THREADS,
+                ),
             )
             var view_lengths = rebind[TopkLengthsPtrType](
                 NonNullPointer[.int32](lengths)

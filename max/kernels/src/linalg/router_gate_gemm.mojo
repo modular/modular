@@ -38,7 +38,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 from max.gpu import block_dim, block_idx, thread_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.utils.coord import Coord
 
 # Mask that keeps sign, exponent and the top 7 mantissa bits: the bf16 value
@@ -132,8 +132,10 @@ def router_gate_tf32_gemm[
         b_pairs.unsafe_ptr(),
         Int32(N * K),
         Int32(K),
-        grid_dim=ceildiv(N * K, threads),
-        block_dim=threads,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=ceildiv(N * K, threads),
+            block_dim=threads,
+        ),
     )
     var b_pairs_tt = TileTensor(b_pairs, row_major(Idx[2 * N], Idx[K])).as_imm()
 

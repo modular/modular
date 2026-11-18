@@ -58,7 +58,7 @@ Two hard M5 constraints, both satisfied by the width-16 decode:
 """
 
 from max.gpu import WARP_SIZE, global_idx, lane_id
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import ceildiv
 import max.gpu.primitives.warp as warp
 
@@ -219,6 +219,8 @@ def enqueue_apple_fp4_gemv[
         scales,
         Int32(n),
         Int32(k),
-        grid_dim=grid,
-        block_dim=BLK,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid,
+            block_dim=BLK,
+        ),
     )

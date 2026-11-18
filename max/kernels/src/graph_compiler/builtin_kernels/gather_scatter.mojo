@@ -29,7 +29,11 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 
 from max.gpu import global_idx
-from max.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host import (
+    DeviceContext,
+    DeviceContextArray,
+    GridBlockLaunchConfig,
+)
 from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
@@ -419,8 +423,10 @@ def squeeze_shape_gpu[
         Int32(remove_indices_stride),
         Int32(num_input_dims),
         Int32(num_remove_indices),
-        grid_dim=max(ceildiv(num_input_dims, _SHAPE_BLOCK), 1),
-        block_dim=_SHAPE_BLOCK,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=max(ceildiv(num_input_dims, _SHAPE_BLOCK), 1),
+            block_dim=_SHAPE_BLOCK,
+        ),
     )
 
 
@@ -468,10 +474,12 @@ def unsqueeze_shape_gpu[
         Int32(padding_indices_stride),
         Int32(num_input_dims),
         Int32(num_padding_indices),
-        grid_dim=max(
-            ceildiv(num_input_dims + num_padding_indices, _SHAPE_BLOCK), 1
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=max(
+                ceildiv(num_input_dims + num_padding_indices, _SHAPE_BLOCK), 1
+            ),
+            block_dim=_SHAPE_BLOCK,
         ),
-        block_dim=_SHAPE_BLOCK,
     )
 
 

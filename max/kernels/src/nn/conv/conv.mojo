@@ -107,7 +107,7 @@ from linalg.utils import (
     partial_simd_store,
 )
 from max.gpu import block_dim, block_idx, thread_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host import HIP
 from max.gpu.host import CUDA
 from max.gpu.host.info import _is_sm10x_gpu
@@ -6120,9 +6120,11 @@ def conv_gpu[
                     _int_coord[3](dilation),
                     _int_coord[3](symmetric_padding),
                     Int32(num_groups),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+                        block_dim=(block_size, block_size),
+                    ),
                     host_args=(epilogue_fn,),
-                    grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
-                    block_dim=(block_size, block_size),
                 )
             else:
                 ctx.enqueue_function[conv_gpu_3d](
@@ -6133,8 +6135,10 @@ def conv_gpu[
                     _int_coord[3](dilation),
                     _int_coord[3](symmetric_padding),
                     Int32(num_groups),
-                    grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
-                    block_dim=(block_size, block_size),
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+                        block_dim=(block_size, block_size),
+                    ),
                 )
                 comptime if has_compute_fn:
                     _conv_compute_in_place(output, compute_fn, ctx)

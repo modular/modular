@@ -59,7 +59,12 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from max.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    GridBlockLaunchConfig,
+    get_gpu_target,
+)
 from max.gpu.host.info import _is_sm10x_gpu
 
 from std.utils import StaticTuple
@@ -851,8 +856,10 @@ def _allgather_p2p_relay[
         Int32(recipe.relay_percent),
         Int32(num_direct_blocks),
         Int32(my_rank),
-        grid_dim=num_direct_blocks + num_relay_blocks,
-        block_dim=BLOCK_SIZE,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=num_direct_blocks + num_relay_blocks,
+            block_dim=BLOCK_SIZE,
+        ),
     )
 
 

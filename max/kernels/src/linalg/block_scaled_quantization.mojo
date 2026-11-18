@@ -28,7 +28,7 @@ from max.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from layout import (
     coord,
     Coord,
@@ -643,8 +643,10 @@ def block_scales_interleave_fp4[
     ctx.enqueue_function[kernel](
         input_scales_tile,
         output_scales_tile,
-        block_dim=block_dim,
-        grid_dim=grid_dim,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+        ),
     )
 
 
@@ -879,8 +881,10 @@ def naive_block_scaled_matmul[
         a_scales.as_imm(),
         b_scales.as_imm(),
         alpha,
-        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
-        block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+            block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
+        ),
     )
 
 
@@ -4467,8 +4471,10 @@ def quantize_mx_amd[
         input_tt,
         Int32(num_rows),
         Int32(num_cols),
-        block_dim=block_dim_val,
-        grid_dim=grid_dim_val,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid_dim_val,
+            block_dim=block_dim_val,
+        ),
     )
 
 
@@ -6114,8 +6120,10 @@ def swiglu_quantize_mx_amd[
         gate_up_tt,
         Int32(num_rows),
         Int32(num_cols),
-        block_dim=block_dim_val,
-        grid_dim=grid_dim_val,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid_dim_val,
+            block_dim=block_dim_val,
+        ),
     )
 
 
@@ -6224,8 +6232,12 @@ def quantize_dynamic_block_scaled_mxfp4[
             output_scales,
             input,
             Int32(num_elements),
-            grid_dim=ceildiv(num_elements // elements_per_thread, BLOCK_DIM),
-            block_dim=BLOCK_DIM,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=ceildiv(
+                    num_elements // elements_per_thread, BLOCK_DIM
+                ),
+                block_dim=BLOCK_DIM,
+            ),
         )
 
 
@@ -6460,8 +6472,13 @@ def matmul_dynamic_block_scaled_amd[
             Int32(M),
             Int32(N),
             Int32(K),
-            grid_dim=(ceildiv(N // BLOCK_N, BLOCK_DIM), ceildiv(M, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(
+                    ceildiv(N // BLOCK_N, BLOCK_DIM),
+                    ceildiv(M, BLOCK_DIM),
+                ),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            ),
         )
 
 
@@ -6640,6 +6657,11 @@ def grouped_matmul_block_scaled_amd[
             Int32(M),
             Int32(N),
             Int32(K),
-            grid_dim=(ceildiv(N // BLOCK_N, BLOCK_DIM), ceildiv(M, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(
+                    ceildiv(N // BLOCK_N, BLOCK_DIM),
+                    ceildiv(M, BLOCK_DIM),
+                ),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            ),
         )

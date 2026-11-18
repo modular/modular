@@ -140,7 +140,12 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    GridBlockLaunchConfig,
+    get_gpu_target,
+)
 
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
@@ -813,8 +818,10 @@ def _allreduce_naive_single_ptr[
                 accum,
                 dev_inputs[my_rank],
                 Int32(num_elements),
-                grid_dim=grid_size,
-                block_dim=BLOCK_SIZE,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=grid_size,
+                    block_dim=BLOCK_SIZE,
+                ),
             )
         else:
             ctx.enqueue_copy(scratch, dev_inputs[i])
@@ -822,8 +829,10 @@ def _allreduce_naive_single_ptr[
                 accum,
                 scratch,
                 Int32(num_elements),
-                grid_dim=grid_size,
-                block_dim=BLOCK_SIZE,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=grid_size,
+                    block_dim=BLOCK_SIZE,
+                ),
             )
 
     # Apply elementwise epilogue to write into the output buffer.
@@ -836,9 +845,11 @@ def _allreduce_naive_single_ptr[
         output_layout,
         accum,
         Int32(num_elements),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid_epilogue,
+            block_dim=BLOCK_SIZE,
+        ),
         host_args=(output_lambda,),
-        grid_dim=grid_epilogue,
-        block_dim=BLOCK_SIZE,
     )
 
 

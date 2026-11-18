@@ -47,7 +47,7 @@ Partial-buffer layout (partition-last / contiguous):
 
 from std.collections import OptionalReg
 from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import ceildiv, exp
 from std.sys import llvm_intrinsic
 from std.utils.numerics import get_accum_type
@@ -746,8 +746,10 @@ def naive_fa_decode_apple[
                     Int32(depth),
                     Int32(group),
                     Int32(num_partitions),
-                    grid_dim=(num_partitions, batch_size, num_heads),
-                    block_dim=WARP_SIZE,
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(num_partitions, batch_size, num_heads),
+                        block_dim=WARP_SIZE,
+                    ),
                 )
 
     comptime stitch_kernel = naive_fa_decode_apple_stitch[
@@ -782,8 +784,10 @@ def naive_fa_decode_apple[
         Int32(num_heads),
         Int32(depth),
         Int32(num_partitions),
-        grid_dim=(num_heads, batch_size),
-        block_dim=depth,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_heads, batch_size),
+            block_dim=depth,
+        ),
     )
 
     # Keep the partial buffers alive until both kernels have been enqueued.

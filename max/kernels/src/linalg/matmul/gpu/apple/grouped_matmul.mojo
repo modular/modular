@@ -44,7 +44,7 @@ from std.math import ceildiv
 from std.sys import align_of, size_of
 
 from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 import max.gpu.primitives.warp as warp
 
 from layout import Coord, Idx, TensorEngine, TileTensor
@@ -464,9 +464,11 @@ def enqueue_apple_grouped_gemv[
         b.as_imm(),
         a_offsets,
         expert_ids,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, rows_per_sg * num_sg), 1, num_active_experts),
+            block_dim=(num_sg * WARP_SIZE),
+        ),
         host_args=(epilogue_fn, compute_fn),
-        grid_dim=(ceildiv(N, rows_per_sg * num_sg), 1, num_active_experts),
-        block_dim=(num_sg * WARP_SIZE),
     )
 
 
@@ -571,9 +573,15 @@ def enqueue_apple_grouped_mma[
                     UInt32(g0),
                     log2_m,
                     log2_n,
+                    execution_config=GridBlockLaunchConfig(
+                        grid_dim=(
+                            (1 << Int(log2_m)) * (1 << Int(log2_n)),
+                            1,
+                            ng,
+                        ),
+                        block_dim=(MM.THREADS_PER_BLOCK),
+                    ),
                     host_args=(epilogue_fn, compute_fn),
-                    grid_dim=((1 << Int(log2_m)) * (1 << Int(log2_n)), 1, ng),
-                    block_dim=(MM.THREADS_PER_BLOCK),
                 )
         g0 += ng
 

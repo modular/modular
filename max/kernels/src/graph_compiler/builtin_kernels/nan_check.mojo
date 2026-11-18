@@ -27,7 +27,7 @@ inserted by the NanCheckPass compiler pass. The architecture is:
 from max.algorithm import elementwise
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import is_cpu
 from std.memory import alloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
@@ -146,7 +146,12 @@ def nan_check_count[
             inf_ptr[] = Int32(0)
 
         gpu_ctx.enqueue_function[zero_counts](
-            out_nan_ptr, out_inf_ptr, grid_dim=1, block_dim=1
+            out_nan_ptr,
+            out_inf_ptr,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=1,
+                block_dim=1,
+            ),
         )
 
         # `ceildiv(0, BLOCK) == 0`, and a zero-sized grid launch is rejected.
@@ -162,8 +167,10 @@ def nan_check_count[
             Int32(total),
             out_nan_ptr,
             out_inf_ptr,
-            grid_dim=grid,
-            block_dim=BLOCK,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=grid,
+                block_dim=BLOCK,
+            ),
         )
 
 

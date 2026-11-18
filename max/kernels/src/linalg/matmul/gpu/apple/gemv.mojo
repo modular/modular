@@ -35,7 +35,7 @@ accumulator set per row.
 from std.math import ceildiv, min
 
 from max.gpu import WARP_SIZE, global_idx, lane_id
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 import max.gpu.primitives.warp as warp
 
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
@@ -262,9 +262,11 @@ def enqueue_apple_gemv_config[
         Int32(m),
         Int32(n),
         Int32(k),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=ceildiv(num_warps, warps_per_block),
+            block_dim=BLK,
+        ),
         host_args=(epilogue_fn, compute_fn),
-        grid_dim=ceildiv(num_warps, warps_per_block),
-        block_dim=BLK,
     )
 
 

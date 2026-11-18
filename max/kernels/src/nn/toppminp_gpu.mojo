@@ -25,7 +25,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 from max.gpu.host import Dim
 from std.random import Random
 from layout import Coord, TileTensor, row_major
@@ -940,8 +940,10 @@ def _topp_minp_sampling_gpu[
             probs_buf,
             out_token_ids.to_device_buffer(ctx),
             Int32(vocab_size),
-            grid_dim=batch_size,
-            block_dim=BLOCK_SIZE,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=batch_size,
+                block_dim=BLOCK_SIZE,
+            ),
         )
         _ = probs_buf^
         return

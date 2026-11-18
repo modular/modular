@@ -45,7 +45,7 @@ tiles take the bounded path. See KB `kernels/apple-m5-int8-matmul`.
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.memory import build_edge_mask, gmem_edge_masked_load
 from std.collections import Optional
 from std.math import ceildiv, round
@@ -996,8 +996,10 @@ def enqueue_apple_int8_matmul[
             bias.as_imm(),
             log2_m,
             log2_n,
-            grid_dim=(side_m * side_n),
-            block_dim=(MM.THREADS_PER_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(side_m * side_n),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            ),
         )
     else:
         ctx.enqueue_function[kernel_i64](
@@ -1009,8 +1011,10 @@ def enqueue_apple_int8_matmul[
             bias.as_imm(),
             log2_m,
             log2_n,
-            grid_dim=(side_m * side_n),
-            block_dim=(MM.THREADS_PER_BLOCK),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(side_m * side_n),
+                block_dim=(MM.THREADS_PER_BLOCK),
+            ),
         )
 
 
@@ -1147,6 +1151,8 @@ def enqueue_apple_int8_quantize_activation[
         a.as_imm(),
         a_scale,
         Int32(k),
-        grid_dim=(m),
-        block_dim=(QK.THREADS),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(m),
+            block_dim=(QK.THREADS),
+        ),
     )
