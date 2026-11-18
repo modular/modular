@@ -19,6 +19,7 @@ selected by the build.
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from pathlib import Path
 
@@ -96,6 +97,18 @@ def two_queues(device: Device) -> None:
 def test_driver_load(driver: Driver) -> None:
     assert isinstance(driver.name, str) and driver.name != ""
     assert driver.device_count >= 1
+
+
+def test_driver_skips_cpu_plugin_entry(
+    driver: Driver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A toolchain lists the CPU plugin next to the accelerator's. `Driver`
+    # loads the accelerator's entry, so the CPU path is never opened.
+    spec = os.environ["MODULAR_DRIVER_PLUGINS"]
+    monkeypatch.setenv(
+        "MODULAR_DRIVER_PLUGINS", f"CPU@/nonexistent/CPUPlugin.so;{spec}"
+    )
+    assert Driver().name == driver.name
 
 
 def test_queue_record_event_and_synchronize(ctx: Context) -> None:
