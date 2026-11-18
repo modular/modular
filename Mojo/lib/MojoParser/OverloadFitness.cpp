@@ -385,14 +385,13 @@ OverloadFitness::evaluateIndirectCall(FnTypeGeneratorType signature,
   // inferred from the operands.
   ParamBindings noBindings(declScope, operands.callExpr);
   return evaluateImpl(signature, /*funcIfDirect=*/nullptr, noBindings,
-                      /*additionalAssumptions=*/{}, operands,
+                      /*additionalAssumptions=*/TypedAttr(), operands,
                       /*allowImplicitConversions=*/true);
 }
 
 OverloadFitness OverloadFitness::evaluateImpl(
     FnTypeGeneratorType signature, ASTDecl *funcIfDirect,
-    const ParamBindings &paramBindings,
-    ArrayRef<ConstraintAttr> additionalAssumptions,
+    const ParamBindings &paramBindings, TypedAttr additionalAssumptions,
     const CallOperands &operands, bool allowImplicitConversions) {
   SMLoc callLoc = paramBindings.getExprLoc();
   SharedState &shared = paramBindings.shared;

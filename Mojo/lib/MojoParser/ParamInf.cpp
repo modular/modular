@@ -107,7 +107,7 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
                    PogListAttr declaredParamPogs, bool allowImplicitConversions,
                    ASTDecl *declIfDirect, bool discardError,
                    DeferredTypingContext *deferredTypingContext,
-                   ArrayRef<ConstraintAttr> additionalAssumptions)
+                   TypedAttr additionalAssumptions)
     : InferenceState(paramBinding.declScope, declaredParamTypes,
                      declaredParamPogs, paramBinding.getExprLoc(), discardError,
                      deferredTypingContext, additionalAssumptions),
@@ -1416,7 +1416,7 @@ CallParamInf::CallParamInf(const ParamBindings &paramBinding,
                            const CallOperands &callOperands,
                            const CallOperands::PogAssignment &pogAssignment,
                            OperandsNeedingOriginsList &operandsNeedingOrigins,
-                           ArrayRef<ConstraintAttr> additionalAssumptions)
+                           TypedAttr additionalAssumptions)
     : ParamInf(paramBinding, declaredParamTypes, declaredParamPogs,
                allowImplicitConversions, declIfDirect, discardError,
                /*deferredTypingContext=*/nullptr, additionalAssumptions),

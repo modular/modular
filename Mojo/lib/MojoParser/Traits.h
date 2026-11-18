@@ -71,10 +71,10 @@ LogicalResult checkAtMostOneClosureTrait(SharedState &shared,
                                          ArrayRef<TraitSymbolAttr> symbols,
                                          SMLoc loc, SourceRange range = {});
 
-/// Given a type expression and scope-level assumptions, compute the effective
-/// trait bound implied by any `conforms_to(type, Trait)` constraints.
+/// Given a type expression and a scope-level assumption set, compute the
+/// effective trait bound implied by any `conforms_to(type, Trait)` clauses.
 TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
-                                       ArrayRef<ConstraintAttr> assumptions);
+                                       TypedAttr assumptions);
 
 /// Fuse one or more constraints on the same symbol into a single constraint. A
 /// single constraint is returned unchanged; multiple constraints are conjoined
@@ -100,9 +100,10 @@ FnTypeGeneratorType specializeSignature(FnTypeGeneratorType traitFnSignature,
 /// The GetWitnessAttr may be immediately evaluated if the type-value was
 /// already resolved. If the type does not conform to the trait, returns an
 /// empty TypedAttr.
-FailureOr<TypedAttr> getUniqueWitnessForTypeIfConforms(
-    SharedState &shared, ASTType type, TraitType trait, StringRef entryName,
-    ArrayRef<ConstraintAttr> callerAssumptions, SMLoc errorLoc);
+FailureOr<TypedAttr>
+getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
+                                  TraitType trait, StringRef entryName,
+                                  TypedAttr callerAssumptions, SMLoc errorLoc);
 
 /// Populate a ParameterEvaluator with the bindings from a trait symbol. Returns
 /// std::nullopt if the trait symbol has no param values (the common case before

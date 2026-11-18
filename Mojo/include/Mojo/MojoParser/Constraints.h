@@ -92,8 +92,7 @@ TriBool canDischargeConstraintsInScope(
     ArrayRef<ConstraintAttr> origConstraints,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
-    ParameterEvaluator *evaluator,
-    ArrayRef<ConstraintAttr> additionalAssumptions = {},
+    ParameterEvaluator *evaluator, TypedAttr additionalAssumptions = {},
     llvm::BitVector *provenConstraints = nullptr);
 
 /// Rewrite cond(a, b, a) patterns to and(a, b) for constraint propositions.
@@ -120,7 +119,7 @@ ConstraintAttr buildBranchAssumption(TypedAttr cond, bool invertCondition,
 bool attrConformsToTraitUnderAssumptions(TypedAttr actualAttr,
                                          TraitType expectedTrait,
                                          SharedState &shared,
-                                         ArrayRef<ConstraintAttr> assumptions);
+                                         TypedAttr assumptions);
 
 } // namespace LIT
 } // namespace M::KGEN

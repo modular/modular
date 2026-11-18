@@ -95,32 +95,13 @@ TriBool LIT::canDischargeConstraintsInScope(
     ArrayRef<ConstraintAttr> origConstraints,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
-    ParameterEvaluator *evaluator,
-    ArrayRef<ConstraintAttr> additionalAssumptions,
+    ParameterEvaluator *evaluator, TypedAttr additionalAssumptions,
     llvm::BitVector *provenConstraints) {
   if (constraints.empty())
     return TriBool::yes();
 
-  SmallVector<ConstraintAttr> assumptions;
-  declScope.getKnownAssumptionsIncludingParents(assumptions);
-  // Add any additional assumptions passed in (e.g., conformance constraint).
-  assumptions.append(additionalAssumptions.begin(),
-                     additionalAssumptions.end());
-
-  SmallVector<TypedAttr> overallAssumptionOperands;
-  for (ConstraintAttr assumption : assumptions)
-    overallAssumptionOperands.push_back(
-        getCanonicalAttr(assumption.getProposition()));
-
-  TypedAttr overallAssumption;
-  if (overallAssumptionOperands.empty())
-    overallAssumption = SIMDAttr::getScalarBool(
-        constraints.front().getProposition().getContext(), true);
-  else if (overallAssumptionOperands.size() == 1)
-    overallAssumption = overallAssumptionOperands.front();
-  else
-    overallAssumption =
-        ParamOperatorAttr::get(POC::And, overallAssumptionOperands);
+  TypedAttr overallAssumption = conjoinAssumptions(
+      declScope.getScopeAssumptions(), additionalAssumptions);
 
   if (provenConstraints)
     provenConstraints->resize(constraints.size());
@@ -258,9 +239,10 @@ ConstraintAttr LIT::buildBranchAssumption(TypedAttr cond, bool invertCondition,
   return ConstraintAttr::get(branchCondition, loc, /*message=*/StringAttr());
 }
 
-bool LIT::attrConformsToTraitUnderAssumptions(
-    TypedAttr actualAttr, TraitType expectedTrait, SharedState &shared,
-    ArrayRef<ConstraintAttr> assumptions) {
+bool LIT::attrConformsToTraitUnderAssumptions(TypedAttr actualAttr,
+                                              TraitType expectedTrait,
+                                              SharedState &shared,
+                                              TypedAttr assumptions) {
   ASTType actualType(actualAttr.getType());
   if (actualType.doesConformTo(expectedTrait, shared, {}).isTrue()) {
     return true;

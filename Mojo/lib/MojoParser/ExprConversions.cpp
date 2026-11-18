@@ -133,8 +133,7 @@ static bool canConvertFunctionTypes(FnTypeGeneratorType actualGen,
 /// constraints that lacked evidence.
 static TriBool
 canProveBodyConstraints(GeneratorType from, GeneratorType to,
-                        ASTDecl &declScope,
-                        ArrayRef<ConstraintAttr> additionalAssumptions,
+                        ASTDecl &declScope, TypedAttr additionalAssumptions,
                         SmallVectorImpl<ConstraintAttr> *unprovenConstraints) {
   ArrayRef<ConstraintAttr> fromConstraints = from.getBodyConstraints();
   if (fromConstraints.empty())
@@ -144,8 +143,9 @@ canProveBodyConstraints(GeneratorType from, GeneratorType to,
   // context but are not in `declScope`'s known assumptions; `to`'s constraints
   // join them because a value of that type is only ever reached where they
   // hold.
-  SmallVector<ConstraintAttr> assumptions(additionalAssumptions);
-  llvm::append_range(assumptions, to.getBodyConstraints());
+  TypedAttr assumptions = conjoinAssumptions(
+      additionalAssumptions,
+      buildAssumptions(to.getBodyConstraints(), from.getContext()));
 
   auto fromParamList = cast<PogListAttr>(from.getParamListAttrs());
   OptionalDiag diag(declScope.getShared(), declScope.getLoc(),
@@ -156,10 +156,11 @@ canProveBodyConstraints(GeneratorType from, GeneratorType to,
                                         /*evaluator=*/nullptr, assumptions);
 }
 
-static TriBool
-canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr, GeneratorType actual,
-                         GeneratorType expected, ASTDecl &declScope,
-                         ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
+static TriBool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
+                                        GeneratorType actual,
+                                        GeneratorType expected,
+                                        ASTDecl &declScope,
+                                        TypedAttr additionalAssumptions = {}) {
   // Tentatively disallow converting from constrained generators when bodies
   // are different. When bodies are the same, `canZeroCostConvert` will have
   // already allowed it.
@@ -839,11 +840,10 @@ static TypedAttr emitFullConstraintDischarge(PValue generatorValue,
                              discharged, &shared.getEvaluationContext());
 }
 
-static CValue
-convertGeneratorValue(CValue value, const ExprNode *expr,
-                      GeneratorType expected, IREmitter &emitter,
-                      ExprDest &dest,
-                      ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
+static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
+                                    GeneratorType expected, IREmitter &emitter,
+                                    ExprDest &dest,
+                                    TypedAttr additionalAssumptions = {}) {
   // Constraint discharge (shedding `value`'s body constraints to reach
   // `expected`) is handled up front by `emitZeroCostConvert`.
 
@@ -945,7 +945,7 @@ struct ConversionResult {
 static ConversionResult
 classifyEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr, ASTType requiredType,
                              ASTDecl &declScope,
-                             ArrayRef<ConstraintAttr> additionalAssumptions) {
+                             TypedAttr additionalAssumptions) {
   PValue value = valueExpr.ir.getIfPValue();
   if (!value)
     return ConversionResult::notApplicable();
@@ -975,20 +975,18 @@ classifyEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr, ASTType requiredType,
   return ConversionResult::scopeDependent(satisfied);
 }
 
-static bool
-canConvertEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr,
-                               ASTType requiredType, ASTDecl &declScope,
-                               ArrayRef<ConstraintAttr> additionalAssumptions) {
+static bool canConvertEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr,
+                                           ASTType requiredType,
+                                           ASTDecl &declScope,
+                                           TypedAttr additionalAssumptions) {
   ConversionResult conv = classifyEmptyGeneratorToBody(
       valueExpr, requiredType, declScope, additionalAssumptions);
   return conv.applies() && conv.isConvertible.isTrue();
 }
 
-static ConversionResult
-classifyGeneratorToGenerator(ASTExprAnd<CValue> valueExpr,
-                             GeneratorType requiredGenerator, ASTType rvType,
-                             ASTDecl &declScope,
-                             ArrayRef<ConstraintAttr> additionalAssumptions) {
+static ConversionResult classifyGeneratorToGenerator(
+    ASTExprAnd<CValue> valueExpr, GeneratorType requiredGenerator,
+    ASTType rvType, ASTDecl &declScope, TypedAttr additionalAssumptions) {
   auto rvGeneratorType = sugarDynCast<GeneratorType>(rvType);
   if (!rvGeneratorType)
     return ConversionResult::notApplicable();
@@ -1002,7 +1000,7 @@ classifyGeneratorToGenerator(ASTExprAnd<CValue> valueExpr,
                                declScope, additionalAssumptions);
   // A result that could have depended on `additionalAssumptions` is not safe to
   // cache.
-  if (additionalAssumptions.empty())
+  if (hasNoAssumptions(additionalAssumptions))
     return ConversionResult::scopeIndependent(result);
   return ConversionResult::scopeDependent(result);
 }
@@ -1182,7 +1180,7 @@ static bool canZeroCostConvertFnTypes(FnTypeGeneratorType from,
 static TriBool
 canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
                        SharedState &shared, ASTDecl &declScope,
-                       ArrayRef<ConstraintAttr> additionalAssumptions,
+                       TypedAttr additionalAssumptions,
                        SmallVectorImpl<ConstraintAttr> *unprovenConstraints) {
   if (sugaredFromType.isEqualCanon(sugaredToType))
     return TriBool::yes(); // No rebind needed!
@@ -1191,9 +1189,8 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
   // scope's assumptions select, so converting to or from that arm is free.
   if (sugarIsa<ParamType>(sugaredFromType) ||
       sugarIsa<ParamType>(sugaredToType)) {
-    SmallVector<ConstraintAttr> assumptions =
-        ASTDecl::getAssumptionsFromScope(&declScope);
-    llvm::append_range(assumptions, additionalAssumptions);
+    TypedAttr assumptions = conjoinAssumptions(declScope.getScopeAssumptions(),
+                                               additionalAssumptions);
     Type refinedFrom = maybeRefineCondTypeWithAssumptions(
         sugaredFromType.mlirType, assumptions);
     Type refinedTo =
@@ -1377,10 +1374,10 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
                                  additionalAssumptions, unprovenConstraints);
 }
 
-TriBool
-IREmitter::canZeroCostConvert(ASTType sugaredFromType, ASTType sugaredToType,
-                              SharedState &shared, ASTDecl &declScope,
-                              ArrayRef<ConstraintAttr> additionalAssumptions) {
+TriBool IREmitter::canZeroCostConvert(ASTType sugaredFromType,
+                                      ASTType sugaredToType,
+                                      SharedState &shared, ASTDecl &declScope,
+                                      TypedAttr additionalAssumptions) {
   return canZeroCostConvertImpl(sugaredFromType, sugaredToType, shared,
                                 declScope, additionalAssumptions,
                                 /*unprovenConstraints=*/nullptr);
@@ -1755,10 +1752,11 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
                                      TraitType trait) {
   // Use a special wrapper decl in the builtins as stubs.
   ASTType wrapperType = shared.getBuiltinStubsMLIRType(loc);
+  ASTDecl *wrapperDecl = wrapperType.getDecl(shared);
   return wrapperType
-      .doesConformTo(
-          trait, shared,
-          ASTDecl::getAssumptionsFromScope(wrapperType.getDecl(shared)))
+      .doesConformTo(trait, shared,
+                     wrapperDecl ? wrapperDecl->getScopeAssumptions()
+                                 : TypedAttr())
       .isTrue();
 }
 
@@ -1915,10 +1913,9 @@ canMetaTypeUpCastToImpl(SharedState &shared, SMLoc loc, ASTType fromType,
                         bool *scopeDependent,
                         SmallVectorImpl<ConstraintAttr> *unsatConstraints) {
   auto conformanceVerdict = [&](ASTType type, TraitType trait) {
-    // Owned, not an ArrayRef: `getAssumptionsFromScope` returns by value.
-    SmallVector<ConstraintAttr> assumptions =
-        ASTDecl::getAssumptionsFromScope(declScope);
-    if (scopeDependent && !assumptions.empty())
+    TypedAttr assumptions =
+        declScope ? declScope->getScopeAssumptions() : TypedAttr();
+    if (scopeDependent && !hasNoAssumptions(assumptions))
       *scopeDependent = true;
     if (!unsatConstraints)
       return type.doesConformTo(trait, shared, assumptions);
@@ -2093,8 +2090,8 @@ struct ConversionNonYesReason {
 /// CAUTION: This must line up with `IREmitter::emitImplicitConversionToType`!!!
 static TriBool classifyImplicitConversionImpl(
     ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
-    ArrayRef<ConstraintAttr> additionalAssumptions,
-    DeferredTypingContext *deferralCtx, ConversionNonYesReason *reason) {
+    TypedAttr additionalAssumptions, DeferredTypingContext *deferralCtx,
+    ConversionNonYesReason *reason) {
   auto &shared = declScope.getShared();
   assert(value.ir && "Should only query valid values");
   ASTType rvType = value.ir.getRValueType();
@@ -2279,8 +2276,7 @@ static TriBool classifyImplicitConversionImpl(
 
 TriBool IREmitter::classifyImplicitConversion(
     ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
-    ArrayRef<ConstraintAttr> additionalAssumptions,
-    DeferredTypingContext *deferralCtx) {
+    TypedAttr additionalAssumptions, DeferredTypingContext *deferralCtx) {
   return classifyImplicitConversionImpl(value, requiredType, declScope,
                                         additionalAssumptions, deferralCtx,
                                         /*reason=*/nullptr);
@@ -2289,8 +2285,7 @@ TriBool IREmitter::classifyImplicitConversion(
 IREmitter::ImplicitConversionResult
 IREmitter::classifyImplicitConversionWithDetails(
     ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
-    ArrayRef<ConstraintAttr> additionalAssumptions,
-    DeferredTypingContext *deferralCtx) {
+    TypedAttr additionalAssumptions, DeferredTypingContext *deferralCtx) {
   ConversionNonYesReason reason;
   TriBool verdict = classifyImplicitConversionImpl(
       value, requiredType, declScope, additionalAssumptions, deferralCtx,
@@ -2390,8 +2385,7 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
       }
       // Inapplicable, fails back to the simple case.
       if (concreteType
-              .doesConformTo(traitType, shared,
-                             ASTDecl::getAssumptionsFromScope(&declScope))
+              .doesConformTo(traitType, shared, declScope.getScopeAssumptions())
               .isTrue()) {
         // This is just the trait itself, not a conformance, just upcast.
         return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
@@ -2408,9 +2402,10 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
 /// implicit promotions like origin conversions.
 ///
 /// CAUTION: This method must line up with `canImplicitlyConvertToType`!!!
-CValue IREmitter::emitImplicitConversionToType(
-    ASTExprAnd<CValue> valueExpr, ASTType requiredType, ExprDest &dest,
-    ArrayRef<ConstraintAttr> additionalAssumptions) {
+CValue
+IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
+                                        ASTType requiredType, ExprDest &dest,
+                                        TypedAttr additionalAssumptions) {
   CValue value = valueExpr.ir;
   const ExprNode *expr = valueExpr.expr;
 

@@ -43,7 +43,7 @@ InferenceState::InferenceState(ASTDecl &declScope,
                                PogListAttr declaredParamPogs, SMLoc defaultLoc,
                                bool discardError,
                                DeferredTypingContext *deferredTypingContext,
-                               ArrayRef<ConstraintAttr> additionalAssumptions)
+                               TypedAttr additionalAssumptions)
     : deferredTypingContext(deferredTypingContext),
       additionalAssumptions(additionalAssumptions), declScope(declScope),
       shared(declScope.getShared()), evaluator(shared.getParameterEvaluator()),

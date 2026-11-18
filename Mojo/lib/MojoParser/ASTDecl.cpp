@@ -876,23 +876,12 @@ TypeScopeASTDecl::getTraitConformanceLineage(bool createIfMissing) {
   return traitConformanceLineage.get();
 }
 
-void ASTDecl::getKnownAssumptionsIncludingParents(
-    SmallVectorImpl<ConstraintAttr> &assumptions) const {
-  const ASTDecl *decl = this;
-  while (decl) {
+TypedAttr ASTDecl::getScopeAssumptions() const {
+  SmallVector<ConstraintAttr> constraints;
+  for (const ASTDecl *decl = this; decl; decl = decl->getParentDecl())
     if (decl->knownAssumptions)
-      assumptions.append(decl->knownAssumptions->begin(),
-                         decl->knownAssumptions->end());
-    decl = decl->getParentDecl();
-  }
-}
-
-llvm::SmallVector<ConstraintAttr>
-ASTDecl::getAssumptionsFromScope(const ASTDecl *scope) {
-  llvm::SmallVector<ConstraintAttr> assumptions;
-  if (scope)
-    scope->getKnownAssumptionsIncludingParents(assumptions);
-  return assumptions;
+      llvm::append_range(constraints, *decl->knownAssumptions);
+  return LIT::buildAssumptions(constraints, getContext());
 }
 
 void ASTDecl::insertKnownAssumptions(ArrayRef<ConstraintAttr> assumptions) {

@@ -1492,9 +1492,10 @@ static KGEN::StructType getMlirType(MLIRContext *ctx,
   return KGEN::StructType::get(ctx, mlirFieldTypes, isMemOnly);
 }
 
-bool ClosureEmitter::provenConformsToTrait(
-    ASTType type, TraitASTDecl &traitDecl, SharedState &shared,
-    ArrayRef<ConstraintAttr> callerAssumptions) {
+bool ClosureEmitter::provenConformsToTrait(ASTType type,
+                                           TraitASTDecl &traitDecl,
+                                           SharedState &shared,
+                                           TypedAttr callerAssumptions) {
   TraitDeclOp trait = traitDecl.getOp();
   return type
       .doesConformTo(TraitType::get(getFullyResolvedSymbolRef(trait)), shared,
@@ -1508,8 +1509,7 @@ static FailureOr<ASTType> getDeviceType(ASTType hostType, ASTDecl &scope,
       shared.getBuiltinDevicePassableTrait(scope.getLoc());
   assert(devicePassableDecl && "could not find device passable dependency");
 
-  SmallVector<ConstraintAttr> assumptions =
-      ASTDecl::getAssumptionsFromScope(&scope);
+  TypedAttr assumptions = scope.getScopeAssumptions();
 
   // A capture is device-encodable only if it conforms to DevicePassable;
   // resolve its device_type via GetWitness + fold attempt.
@@ -2007,8 +2007,7 @@ static TypeConvention typeConventionOf(SharedState &shared,
   // prove the conformance against its parameter bindings and the capturing
   // scope's `conforms_to` assumptions, as `isMovable`/`isCopyable` do.
   if (structDeclOp.getRegisterPassableConstraintAttr()) {
-    SmallVector<ConstraintAttr> assumptions =
-        ASTDecl::getAssumptionsFromScope(&nestedFnDecl);
+    TypedAttr assumptions = nestedFnDecl.getScopeAssumptions();
     if (ASTType(structType)
             .provenConformsToBuiltinTrait(
                 "RegisterPassable", nestedFnDecl.getLoc(), shared, assumptions))

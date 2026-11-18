@@ -377,23 +377,26 @@ inline bool isImplicationProven(TypedAttr proposition, TypedAttr assumption) {
   return isPropositionImplied(proposition, assumption).isTrue();
 }
 
-/// Determine how a list of assumptions relate to a goal proposition.
-///
-/// The assumptions are interpreted as a conjunction; an empty list therefore
-/// represents `True`. Returns `yes` if the conjunction proves the goal, `no` if
-/// it disproves the goal, and `unknown` when neither relation is provable.
-TriBool isPropositionImplied(TypedAttr proposition,
-                             ArrayRef<TypedAttr> assumptions);
+/// An assumption set is one canonical scalar-bool conjunction: True when
+/// there are no assumptions, False when they contradict each other. APIs that
+/// take one also accept a null attribute, which means the same as True.
+
+/// Returns true if `assumptions` carries no facts (null or True).
+bool hasNoAssumptions(TypedAttr assumptions);
+
+/// Returns the conjunction of `propositions` as an assumption set.
+TypedAttr buildAssumptions(ArrayRef<TypedAttr> propositions, MLIRContext *ctx);
+
+/// Returns the conjunction of the propositions of `constraints` as an
+/// assumption set.
+TypedAttr buildAssumptions(ArrayRef<ConstraintAttr> constraints,
+                           MLIRContext *ctx);
+
+/// Returns the assumption set holding the facts of both `lhs` and `rhs`.
+TypedAttr conjoinAssumptions(TypedAttr lhs, TypedAttr rhs);
 
 /// Returns true if `assumptions` prove that `proposition` cannot hold.
-bool isPropositionPrecluded(TypedAttr proposition,
-                            ArrayRef<TypedAttr> assumptions);
-
-/// Similar to isPropositionImplied but rebinds propositions using the
-/// evaluator prior to checking the constraint.
-TriBool isPropositionImplied(ConstraintAttr proposition,
-                             ArrayRef<ConstraintAttr> assumptions,
-                             ParameterEvaluator &evaluator);
+bool isPropositionPrecluded(TypedAttr proposition, TypedAttr assumptions);
 
 /// Visit each `TypeConformsToTraitAttr` found in a constraint proposition.
 /// Canonical AND is already flattened to a single n-ary node, so a single
@@ -403,11 +406,11 @@ void forEachConformsToInProposition(
     TypedAttr proposition,
     llvm::function_ref<void(TypeConformsToTraitAttr)> callback);
 
-/// Given a type expression and a set of assumptions, compute the effective
-/// trait bound implied by any `conforms_to(type, Trait)` constraints. Returns a
-/// null TraitType if no refinements apply.
+/// Given a type expression and an assumption set, compute the effective trait
+/// bound implied by any `conforms_to(type, Trait)` clauses. Returns a null
+/// TraitType if no refinements apply.
 TraitType getTraitBoundFromAssumptions(
-    TypedAttr typeAttr, ArrayRef<ConstraintAttr> assumptions,
+    TypedAttr typeAttr, TypedAttr assumptions,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
 
 /// TODO: `ClosureEmitter.cpp` has a nearly identical helper

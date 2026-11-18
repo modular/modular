@@ -139,11 +139,12 @@ public:
 private:
   /// The checks shared by direct and indirect calls: assigns `operands` to the
   /// signature's arguments, infers its parameters, and ranks the result.
-  static OverloadFitness
-  evaluateImpl(FnTypeGeneratorType signature, ASTDecl *funcIfDirect,
-               const ParamBindings &paramBindings,
-               ArrayRef<ConstraintAttr> additionalAssumptions,
-               const CallOperands &operands, bool allowImplicitConversions);
+  static OverloadFitness evaluateImpl(FnTypeGeneratorType signature,
+                                      ASTDecl *funcIfDirect,
+                                      const ParamBindings &paramBindings,
+                                      TypedAttr additionalAssumptions,
+                                      const CallOperands &operands,
+                                      bool allowImplicitConversions);
 
   /// For valid candidates, this defines the parameter bindings to use.
   VerifiedParamBindings paramBindings;

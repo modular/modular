@@ -203,7 +203,7 @@ public:
                  PogListAttr declaredParamPogs, SMLoc defaultLoc,
                  bool discardError,
                  DeferredTypingContext *deferredTypingContext = nullptr,
-                 ArrayRef<ConstraintAttr> additionalAssumptions = {});
+                 TypedAttr additionalAssumptions = {});
   virtual ~InferenceState() = default;
 
   ASTDecl &getDeclScope() const { return declScope; }
@@ -241,8 +241,8 @@ public:
 
   /// Facts that hold at the site driving this inference but are not reachable
   /// from `declScope`'s lexical assumptions. This is set once for the lifetime
-  /// of an inference operation. The storage is owned by the caller.
-  ArrayRef<ConstraintAttr> additionalAssumptions;
+  /// of an inference operation. Null when there are none.
+  TypedAttr additionalAssumptions;
 
   // Debug util.
   void dump() const;

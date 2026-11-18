@@ -4476,17 +4476,16 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
   // symbols.
   ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
   bool hasConstraints = !constraints.empty();
-  SmallVector<TypedAttr> bodyPropositions = llvm::map_to_vector(
-      structOp.getSignature().getParamListAttrs().getBodyConstraints(),
-      [&](ConstraintAttr constraint) { return constraint.getProposition(); });
+  ArrayRef<ConstraintAttr> bodyConstraints =
+      structOp.getSignature().getParamListAttrs().getBodyConstraints();
   IndexRefRemapper remapper(structOp.getParamsAttr());
   for (auto [i, parent] : llvm::enumerate(symbols)) {
     // A conformance whose condition the struct's own where-clause precludes is
     // an opt-out.
-    if (hasConstraints && !bodyPropositions.empty() &&
+    if (hasConstraints && !bodyConstraints.empty() &&
         isPropositionPrecluded(
             remapper.replace(constraints[i].getProposition()),
-            bodyPropositions))
+            buildAssumptions(bodyConstraints, structOp.getContext())))
       continue;
 
     TraitSymbolAttr traitSymbol = parent;
@@ -4814,8 +4813,7 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
   // copy constructor, move constructor or `__deinit__` lifts the requirement
   // for its conformance. `RegisterPassable` is about the representation,
   // hence, when declared, requires the payloads to conform to it as well.
-  SmallVector<std::pair<StringRef, SmallVector<ConstraintAttr>>, 5>
-      payloadRequirements;
+  SmallVector<std::pair<StringRef, TypedAttr>, 5> payloadRequirements;
   if (!isTrivial) {
     SmallVector<StringRef, 5> traitsRequiredOfPayloads;
     if (!shared.typeHasMember(enumDecl, "__deinit__", enumDecl.getLoc()))
@@ -4830,11 +4828,12 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
           enumDecl.getOp().getConformanceCondition(traitName);
       if (!whereClauseForTrait)
         continue;
-      SmallVector<ConstraintAttr> assumptions;
-      enumDecl.getKnownAssumptionsIncludingParents(assumptions);
+      TypedAttr assumptions = enumDecl.getScopeAssumptions();
       if (!isTriviallyTrueConstraint(*whereClauseForTrait))
-        assumptions.push_back(*whereClauseForTrait);
-      payloadRequirements.push_back({traitName, std::move(assumptions)});
+        assumptions = conjoinAssumptions(
+            assumptions, buildAssumptions(ArrayRef(*whereClauseForTrait),
+                                          enumDecl.getContext()));
+      payloadRequirements.push_back({traitName, assumptions});
     }
   }
 

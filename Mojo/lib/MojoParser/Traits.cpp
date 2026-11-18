@@ -212,7 +212,8 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     // has to be handed over explicitly.
     if (conformanceConstraint &&
         !isTriviallyTrueConstraint(conformanceConstraint))
-      ov.additionalAssumptions.push_back(conformanceConstraint);
+      ov.additionalAssumptions =
+          getCanonicalAttr(conformanceConstraint.getProposition());
 
     auto wrapperResult =
         ov.filterOverloadSetForValueType(wrapperSignature, nullptr);
@@ -665,9 +666,10 @@ checkConformanceMember(ConformanceWitnessASTDecl &member,
       assert(initializerExpr && "Struct's alias should have initializer");
 
       // Pass the conformance constraint as an assumption.
-      SmallVector<ConstraintAttr, 1> conformanceAssumptions;
+      TypedAttr conformanceAssumptions;
       if (ConstraintAttr conformanceConstraint = op.getConstraintAttr())
-        conformanceAssumptions.push_back(conformanceConstraint);
+        conformanceAssumptions =
+            getCanonicalAttr(conformanceConstraint.getProposition());
 
       // The witness must hold the value converted to the trait alias's type
       // (see SAVMBCTATBS), so first check that the conversion is possible.
@@ -883,8 +885,7 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 /// if none was, those left unproven.
 static TriBool doesNominalTypeConformToUncached(
     ASTDecl *self, TraitType trait, ASTType concreteType,
-    ArrayRef<ConstraintAttr> callerAssumptions,
-    bool *sawErroneousExtension = nullptr,
+    TypedAttr callerAssumptions, bool *sawErroneousExtension = nullptr,
     SmallVectorImpl<ConstraintAttr> *details = nullptr);
 
 /// Given a decl for a struct or trait type, check if this type conforms to the
@@ -896,13 +897,11 @@ static TriBool doesNominalTypeConformToUncached(
 /// - `no` if the type definitely does not conform
 /// - `unknown` if conformance depends on constraints that cannot be evaluated
 ///   statically
-static TriBool
-doesNominalTypeConformToCached(ASTDecl *self, TraitType trait,
-                               ASTType concreteType,
-                               ArrayRef<ConstraintAttr> callerAssumptions,
-                               SmallVectorImpl<ConstraintAttr> *details) {
+static TriBool doesNominalTypeConformToCached(
+    ASTDecl *self, TraitType trait, ASTType concreteType,
+    TypedAttr callerAssumptions, SmallVectorImpl<ConstraintAttr> *details) {
   TriBool result = TriBool::no();
-  if (!callerAssumptions.empty()) {
+  if (!hasNoAssumptions(callerAssumptions)) {
     // Only the assumption-free queries are context-independent enough to
     // memoize; where-clause assumptions make the result caller-dependent, so
     // those bypass the cache entirely.
@@ -963,16 +962,14 @@ doesNominalTypeConformToCached(ASTDecl *self, TraitType trait,
   return result;
 }
 
-TriBool
-ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
-                                  ArrayRef<ConstraintAttr> callerAssumptions) {
+TriBool ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
+                                          TypedAttr callerAssumptions) {
   return doesNominalTypeConformToCached(this, trait, concreteType,
                                         callerAssumptions, /*details=*/nullptr);
 }
 
 ConstraintResult ASTDecl::doesNominalTypeConformToWithDetails(
-    TraitType trait, ASTType concreteType,
-    ArrayRef<ConstraintAttr> callerAssumptions) {
+    TraitType trait, ASTType concreteType, TypedAttr callerAssumptions) {
   SmallVector<ConstraintAttr, 2> details;
   TriBool result = doesNominalTypeConformToCached(this, trait, concreteType,
                                                   callerAssumptions, &details);
@@ -981,7 +978,7 @@ ConstraintResult ASTDecl::doesNominalTypeConformToWithDetails(
 
 static TriBool doesNominalTypeConformToUncached(
     ASTDecl *self, TraitType trait, ASTType concreteType,
-    ArrayRef<ConstraintAttr> callerAssumptions, bool *sawErroneousExtension,
+    TypedAttr callerAssumptions, bool *sawErroneousExtension,
     SmallVectorImpl<ConstraintAttr> *details) {
   SharedState &shared = self->getShared();
 
@@ -1100,27 +1097,10 @@ static TriBool doesNominalTypeConformToUncached(
   }
 
   ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
-  SmallVector<TypedAttr> callerAssumptionProps =
-      llvm::map_to_vector(callerAssumptions, [](ConstraintAttr constraint) {
-        return constraint.getProposition();
-      });
-  // Fold the caller conjunction on first use, not up front: most requirements
-  // are unconditionally provided and never consult the assumptions, and a
-  // scalar-bool AND now pays a full `insertClause` fold to build.
-  std::optional<TypedAttr> callerCanonicalCache;
-  auto callerCanonical = [&] {
-    if (!callerCanonicalCache) {
-      if (callerAssumptionProps.empty())
-        callerCanonicalCache =
-            SIMDAttr::getScalarBool(self->getContext(), true);
-      else if (callerAssumptionProps.size() == 1)
-        callerCanonicalCache = callerAssumptionProps.front();
-      else
-        callerCanonicalCache =
-            ParamOperatorAttr::get(POC::And, callerAssumptionProps);
-    }
-    return *callerCanonicalCache;
-  };
+  TypedAttr callerCanonical =
+      hasNoAssumptions(callerAssumptions)
+          ? SIMDAttr::getScalarBool(self->getContext(), true)
+          : callerAssumptions;
 
   // Check the provided symbols against the required symbols by the target
   // trait: a definitively-missing required symbol keeps the whole thing `no`,
@@ -1163,13 +1143,13 @@ static TriBool doesNominalTypeConformToUncached(
     // Assume each requirement's own condition while checking it. Remember that
     // an empty constraints array means every requirement is unconditional.
     std::optional<TypedAttr> refined;
-    auto assumption = [&] { return refined ? *refined : callerCanonical(); };
+    auto assumption = [&] { return refined ? *refined : callerCanonical; };
     if (!requiredConstraints.empty()) {
       TypedAttr requiredCond = requiredConstraints[i].getProposition();
-      if (isPropositionImplied(requiredCond, callerCanonical()).isFalse())
+      if (isPropositionImplied(requiredCond, callerCanonical).isFalse())
         continue;
       refined =
-          ParamOperatorAttr::get(POC::And, {callerCanonical(), requiredCond});
+          ParamOperatorAttr::get(POC::And, {callerCanonical, requiredCond});
     }
 
     auto it = providedConditions.find(required);
@@ -1437,9 +1417,9 @@ LogicalResult LIT::checkAtMostOneClosureTrait(SharedState &shared,
   return failure();
 }
 
-TraitType
-LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
-                                  ArrayRef<ConstraintAttr> assumptions) {
+TraitType LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr,
+                                            SharedState &shared,
+                                            TypedAttr assumptions) {
   return getTraitBoundFromAssumptions(
       typeAttr, assumptions, [&](SymbolRefAttr symbol) -> TraitDeclOp {
         ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
@@ -1525,7 +1505,7 @@ LIT::specializeSignature(FnTypeGeneratorType traitFnSignature,
 
 FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
     SharedState &shared, ASTType type, TraitType trait, StringRef entryName,
-    ArrayRef<ConstraintAttr> callerAssumptions, SMLoc errorLoc) {
+    TypedAttr callerAssumptions, SMLoc errorLoc) {
   // Get the decl for the type.
   ASTDecl *typeDecl = type.getDecl(shared);
   if (!typeDecl) {
@@ -1648,7 +1628,7 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
   // Tuple[*Ts]: Writable.
   auto conformance = type.doesConformToWithDetails(
-      trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope()));
+      trait, shared, getDeclScope().getScopeAssumptions());
   if (conformance.isNo()) {
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)

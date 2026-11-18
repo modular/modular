@@ -38,15 +38,17 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 /// Check if a parameterized field type conditionally conforms to a builtin
-/// trait based on the function's where-clause constraints.  Constructs a
-/// conforms_to proposition and delegates to isImplicationProven.
+/// trait under the `assumptions` set of the function's where-clause
+/// constraints. Constructs a conforms_to proposition and delegates to
+/// isImplicationProven.
 ///
 /// Returns the resolved TraitDeclOp on success (for reuse in code-gen),
 /// or a null TraitDeclOp if no conditional conformance was found.
-static TraitDeclOp
-fieldConditionallyConformsToBuiltin(ASTType fieldType, StringRef traitName,
-                                    SharedState &shared, ASTDecl &structDecl,
-                                    ArrayRef<ConstraintAttr> bodyConstraints) {
+static TraitDeclOp fieldConditionallyConformsToBuiltin(ASTType fieldType,
+                                                       StringRef traitName,
+                                                       SharedState &shared,
+                                                       ASTDecl &structDecl,
+                                                       TypedAttr assumptions) {
   auto paramType = dyn_cast<ParamType>(fieldType);
   if (!paramType)
     return {};
@@ -65,9 +67,8 @@ fieldConditionallyConformsToBuiltin(ASTType fieldType, StringRef traitName,
   auto conformsTo =
       TypeConformsToTraitAttr::get(fieldParam, traitType.getPValue());
 
-  for (ConstraintAttr constraint : bodyConstraints)
-    if (isImplicationProven(conformsTo, constraint.getProposition()))
-      return traitOp;
+  if (isImplicationProven(conformsTo, assumptions))
+    return traitOp;
   return {};
 }
 
@@ -738,9 +739,10 @@ void StructEmitter::diagnoseNonDeinitableFields(
   // We do this after creating the function so we don't emit a redundant error
   // complaining that a missing __deinit__ means the struct doesn't conform to
   // Deinitable.
-  SmallVector<ConstraintAttr> assumptions;
-  structDecl.getKnownAssumptionsIncludingParents(assumptions);
-  assumptions.append(getDtorConstraints(conformanceConstraint));
+  TypedAttr assumptions = conjoinAssumptions(
+      structDecl.getScopeAssumptions(),
+      buildAssumptions(getDtorConstraints(conformanceConstraint),
+                       structDecl.getContext()));
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
     TriBool confResult =
@@ -875,8 +877,9 @@ LogicalResult StructEmitter::populateMoveCopy(DefASTDecl &fnDecl, bool isMove) {
   bool isImplicitlyCopyableStruct =
       structDecl.getSelfType().isImplicitlyCopyable(structDecl.getLoc(), shared,
                                                     fnDecl);
-  ArrayRef<ConstraintAttr> bodyConstraints =
-      fn.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
+  TypedAttr bodyAssumptions = buildAssumptions(
+      fn.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints(),
+      fn.getContext());
 
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
@@ -905,7 +908,7 @@ LogicalResult StructEmitter::populateMoveCopy(DefASTDecl &fnDecl, bool isMove) {
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
                                           fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
-            fieldType, "Movable", shared, structDecl, bodyConstraints);
+            fieldType, "Movable", shared, structDecl, bodyAssumptions);
         if (!conditionalTraitOp)
           return emitError(fieldASTDecl.getLoc())
                  << "cannot synthesize move constructor because field '"
@@ -926,7 +929,7 @@ LogicalResult StructEmitter::populateMoveCopy(DefASTDecl &fnDecl, bool isMove) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
             fieldType,
             isImplicitlyCopyableStruct ? "ImplicitlyCopyable" : "Copyable",
-            shared, structDecl, bodyConstraints);
+            shared, structDecl, bodyAssumptions);
         if (!conditionalTraitOp) {
           return emitError(fieldASTDecl.getLoc())
                  << "cannot synthesize "

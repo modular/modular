@@ -100,8 +100,9 @@ public:
 
   /// Facts that hold at this call site but are not reachable from
   /// `explicitParamBindings.declScope`'s lexical assumptions. These are used as
-  /// assumptions when discharging candidates' constraints.
-  SmallVector<ConstraintAttr> additionalAssumptions;
+  /// assumptions when discharging candidates' constraints. Null when there are
+  /// none.
+  TypedAttr additionalAssumptions;
 
   /// When doing resolution, we should only raise new errors if previous errors
   /// haven't already been raised about functions in the overload set.  The most

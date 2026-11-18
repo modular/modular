@@ -1016,22 +1016,42 @@ Attribute NameToImplicitOriginRefRemapper::tryReplace(Attribute attr,
 // Constraint Implication
 //===----------------------------------------------------------------------===//
 
-static TypedAttr conjunctionOf(ArrayRef<TypedAttr> propositions,
-                               MLIRContext *ctx) {
+bool LIT::hasNoAssumptions(TypedAttr assumptions) {
+  return !assumptions || isTriviallyTrueProposition(assumptions);
+}
+
+TypedAttr LIT::buildAssumptions(ArrayRef<TypedAttr> propositions,
+                                MLIRContext *ctx) {
   if (propositions.empty())
     return SIMDAttr::getScalarBool(ctx, true);
   if (propositions.size() == 1)
-    return propositions.front();
+    return getCanonicalAttr(propositions.front());
   return ParamOperatorAttr::get(POC::And, propositions);
 }
 
-bool LIT::isPropositionPrecluded(TypedAttr proposition,
-                                 ArrayRef<TypedAttr> assumptions) {
+TypedAttr LIT::buildAssumptions(ArrayRef<ConstraintAttr> constraints,
+                                MLIRContext *ctx) {
+  SmallVector<TypedAttr> propositions = llvm::map_to_vector(
+      constraints, [](ConstraintAttr c) { return c.getProposition(); });
+  return buildAssumptions(propositions, ctx);
+}
+
+TypedAttr LIT::conjoinAssumptions(TypedAttr lhs, TypedAttr rhs) {
+  if (hasNoAssumptions(rhs))
+    return lhs;
+  if (hasNoAssumptions(lhs))
+    return rhs;
+  return ParamOperatorAttr::get(POC::And, {lhs, rhs});
+}
+
+bool LIT::isPropositionPrecluded(TypedAttr proposition, TypedAttr assumptions) {
   TypedAttr negated = ParamOperatorAttr::getNot(proposition);
   return isPropositionImplied(negated, assumptions).isTrue();
 }
 
 TriBool LIT::isPropositionImplied(TypedAttr proposition, TypedAttr assumption) {
+  if (!assumption)
+    assumption = SIMDAttr::getScalarBool(proposition.getContext(), true);
   switch (
       testClause(getCanonicalAttr(assumption), getCanonicalAttr(proposition))) {
   case ClauseInsertResult::Redundant:
@@ -1042,29 +1062,6 @@ TriBool LIT::isPropositionImplied(TypedAttr proposition, TypedAttr assumption) {
     return TriBool::unknown();
   }
   llvm_unreachable("unhandled ClauseInsertResult");
-}
-
-TriBool LIT::isPropositionImplied(TypedAttr proposition,
-                                  ArrayRef<TypedAttr> assumptions) {
-  return isPropositionImplied(
-      proposition, conjunctionOf(assumptions, proposition.getContext()));
-}
-
-TriBool LIT::isPropositionImplied(ConstraintAttr proposition,
-                                  ArrayRef<ConstraintAttr> assumptions,
-                                  ParameterEvaluator &evaluator) {
-  TypedAttr propositionAttr = getCanonicalAttr(proposition.getProposition());
-  TypedAttr reboundProposition =
-      getCanonicalAttr(evaluator.getReboundAttribute(propositionAttr));
-  if (isTriviallyTrueProposition(reboundProposition))
-    return TriBool::yes();
-
-  SmallVector<TypedAttr> canonAssumptions;
-  canonAssumptions.reserve(assumptions.size());
-  for (ConstraintAttr assumption : assumptions)
-    canonAssumptions.push_back(getCanonicalAttr(assumption.getProposition()));
-
-  return isPropositionImplied(reboundProposition, canonAssumptions);
 }
 
 void LIT::forEachConformsToInProposition(
@@ -1090,11 +1087,11 @@ void LIT::forEachConformsToInProposition(
 }
 
 TraitType LIT::getTraitBoundFromAssumptions(
-    TypedAttr typeAttr, ArrayRef<ConstraintAttr> assumptions,
+    TypedAttr typeAttr, TypedAttr assumptions,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
   typeAttr = getCanonicalAttr(typeAttr);
 
-  if (assumptions.empty())
+  if (hasNoAssumptions(assumptions))
     return {};
 
   TypedAttr targetStripped = stripIdentityWrappers(typeAttr);
@@ -1107,21 +1104,17 @@ TraitType LIT::getTraitBoundFromAssumptions(
 
   // Collect trait symbols from all relevant conforms_to constraints.
   SmallVector<TraitSymbolAttr> allTraits;
-  for (ConstraintAttr assumption : assumptions) {
-    forEachConformsToInProposition(
-        assumption.getProposition(), [&](TypeConformsToTraitAttr ct) {
-          TypedAttr striped =
-              stripIdentityWrappers(getCanonicalAttr(ct.getTypeValue()));
-          if (isEqualCanon(striped, targetStripped) ||
-              (targetParamList && isEqualCanon(striped, targetParamList))) {
-            std::optional<ArrayRef<TraitSymbolAttr>> symOr =
-                ct.getTraitSymbols();
-            if (!symOr)
-              return;
-            allTraits.append(symOr->begin(), symOr->end());
-          }
-        });
-  }
+  forEachConformsToInProposition(assumptions, [&](TypeConformsToTraitAttr ct) {
+    TypedAttr striped =
+        stripIdentityWrappers(getCanonicalAttr(ct.getTypeValue()));
+    if (isEqualCanon(striped, targetStripped) ||
+        (targetParamList && isEqualCanon(striped, targetParamList))) {
+      std::optional<ArrayRef<TraitSymbolAttr>> symOr = ct.getTraitSymbols();
+      if (!symOr)
+        return;
+      allTraits.append(symOr->begin(), symOr->end());
+    }
+  });
 
   if (allTraits.empty())
     return {};

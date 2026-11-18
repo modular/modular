@@ -40,7 +40,7 @@ public:
            PogListAttr declaredParamPogs, bool allowImplicitConversions,
            ASTDecl *declIfDirect, bool discardError,
            DeferredTypingContext *deferredTypingContext = nullptr,
-           ArrayRef<ConstraintAttr> additionalAssumptions = {});
+           TypedAttr additionalAssumptions = {});
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding. On success, returns the verified bindings (which can be
@@ -177,7 +177,7 @@ public:
                const CallOperands &callOperands,
                const CallOperands::PogAssignment &pogAssignment,
                OperandsNeedingOriginsList &operandsNeedingOrigins,
-               ArrayRef<ConstraintAttr> additionalAssumptions = {});
+               TypedAttr additionalAssumptions = {});
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the verified parameter bindings. On

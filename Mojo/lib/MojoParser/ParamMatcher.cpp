@@ -840,10 +840,9 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
         if (auto va = sugarDynCast<ParamListAttr>(actualAttr))
           toCheck = va.getValues();
 
-        SmallVector<ConstraintAttr> assumptions;
-        if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
-          state.declScope.getKnownAssumptionsIncludingParents(assumptions);
-        }
+        TypedAttr assumptions;
+        if (isa<TraitType>(targetMT))
+          assumptions = state.declScope.getScopeAssumptions();
 
         fixableByUpCast =
             !state.hasReferences(targetMT) &&
@@ -864,7 +863,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
               if (succeeded(upCastable))
                 upCastFailure = std::move(*upCastable);
 
-              if (!assumptions.empty()) {
+              if (!hasNoAssumptions(assumptions)) {
                 if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
                   return (LIT::attrConformsToTraitUnderAssumptions(
                       typeExpr, targetTrait, shared, assumptions));
