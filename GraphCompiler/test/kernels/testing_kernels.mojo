@@ -3671,6 +3671,28 @@ struct MapLowerDeclarativeBinary:
         pass
 
 
+# A declarative kernel with a scalar input, which the launch passes by value.
+@extensibility.register("map_lower_declarative_scalar")
+struct MapLowerDeclarativeScalar:
+    @staticmethod
+    def execute_configuration[
+        dtype: DType
+    ](
+        res: Some[Tensor], a: Some[Tensor], s: Scalar[dtype]
+    ) -> DeclarativeLaunchConfig:
+        return DeclarativeLaunchConfig(grid_dim=Dim(1), block_dim=Dim(4))
+
+    @staticmethod
+    def execute_device[
+        dtype: DType
+    ](
+        res: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        s: Scalar[dtype],
+    ):
+        pass
+
+
 # A declarative kernel that also updates a buffer in place, as a KV cache store
 # does: `cache` is a mutable input, which the op's chain sequences.
 @extensibility.register("map_lower_declarative_inplace")

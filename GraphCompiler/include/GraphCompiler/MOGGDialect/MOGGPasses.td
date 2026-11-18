@@ -255,6 +255,28 @@ def ReuseGraphBlobBuffers : Pass<"mogg-reuse-graph-blob-buffers"> {
   ];
 }
 
+def LowerGraphBlobs : Pass<"mogg-lower-graph-blobs"> {
+  let summary = "Write each graph blob as host ops and one kernel launch.";
+  let description = [{
+    Replaces each `mogg.graph_blob` with the host ops that launch it and a
+    `mogg.graph_blob.launch` whose region is the kernel. The host computes each
+    declarative call's configuration, the blob's launch configuration, and the
+    part of the launch each call runs on. The kernel runs each call in a
+    `mogg.graph_blob.call`, in the blob's order, with a barrier between
+    consecutive calls.
+
+    Each call builds its operands from the values that cross the launch. A
+    value crosses when the kernel can't build it: a routine argument, or the
+    result of an op whose results are built on the host. A value that several
+    calls use crosses once. A value the host builds that can't cross is an
+    error.
+
+    Assumes every call in a blob runs on the blob's device context.
+  }];
+
+  let dependentDialects = ["M::MOGG::MOGGDialect"];
+}
+
 def OutlineRoutines
     : Pass<"mogg-outline-routines", "mlir::ModuleOp"> {
   let summary = "Outline each `mogg.routine` body into a `mogg.func`.";
