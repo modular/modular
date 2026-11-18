@@ -33,8 +33,8 @@ struct Token(__Enum):
     comptime eof: Token = Token.__enum_init[0]()
 
     @staticmethod
-    def ident(var payload: String) -> Token:
-        return Token.__enum_init[1](payload^)
+    def ident(var payload0: String) -> Token:
+        return Token.__enum_init[1](payload0^)
 
     @staticmethod
     def span(var payload0: Int, var payload1: Int) -> Token:
@@ -229,9 +229,12 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
 
 
 trait __Enum(EnumLike):
-    """An `__enum`: a struct whose only field, `__enum_storage`, is an
+    """Provides the defaults every `__enum` gets.
+
+    The compiler generates each enum's only field, `__enum_storage`, an
     `__EnumStorage` over its case types. `__get_enum_storage` reaches that
-    field; the two `EnumLike` methods read it and `__enum_init` writes it."""
+    field; the two `EnumLike` methods read the storage and `__enum_init`
+    writes it."""
 
     @inline(.always)
     def __get_enum_storage(

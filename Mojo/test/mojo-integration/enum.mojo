@@ -18,6 +18,11 @@
 
 from std.hash import Hasher
 from std.iter import map
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 
 
 struct Tracked(ImplicitlyCopyable, Movable, Writable):
@@ -229,12 +234,122 @@ __enum Shape(ImplicitlyCopyable, RegisterPassable):
                 return width * height
 
 
+@fieldwise_init
+struct Pixel(TrivialRegisterPassable):
+    var x: Int
+    var y: Int
+
+
+__enum Trivial[T: TrivialRegisterPassable](TrivialRegisterPassable):
+    case none
+    case some(Self.T)
+    case pixel(Pixel)
+    case pair(Int, Float64)
+
+
+def describe_trivial(value: Trivial[Int]) -> String:
+    match value:
+        case .none:
+            return "none"
+        case .some(x):
+            return String("some:", x)
+        case .pixel(p):
+            return String("pixel:", p.x, ",", p.y)
+        case .pair(n, f):
+            return String("pair:", n, ",", f)
+
+
+comptime Callback = def(Int) thin -> Int
+
+
+def twice(x: Int) -> Int:
+    return 2 * x
+
+
+# A payload type that is not a struct is `TrivialRegisterPassable` as well.
+__enum Primitive(TrivialRegisterPassable):
+    case index(__mlir_type.index)
+    case call(Callback)
+
+
+def describe_primitive(value: Primitive) -> String:
+    match value:
+        case .index(i):
+            return String("index:", Int(mlir_value=i))
+        case .call(f):
+            return String("call:", f(21))
+
+
+def require_trivial[T: TrivialRegisterPassable](value: T) -> T:
+    return value
+
+
+struct TrivialHolder[value: Trivial[Int]]:
+    @staticmethod
+    def describe() -> String:
+        return describe_trivial(Self.value)
+
+
+# CHECK-LABEL: == trivial register passable
+def test_trivial_register_passable():
+    print("== trivial register passable")
+    var original: Trivial[Int] = .pixel(Pixel(1, 2))
+    var copy = original
+    match copy:
+        case .pixel(ref p):
+            p.x = 3
+        case _:
+            pass
+    # CHECK-NEXT: pixel:1,2 pixel:3,2
+    print(describe_trivial(original), describe_trivial(copy))
+    # CHECK-NEXT: some:4 pair:5,0.5 none
+    print(
+        describe_trivial(require_trivial(Trivial[Int].some(4))),
+        describe_trivial(.pair(5, 0.5)),
+        describe_trivial(.none),
+    )
+    var call: Primitive = .call(twice)
+    var call_copy = call
+    # CHECK-NEXT: index:5 call:42 call:42
+    print(
+        describe_primitive(.index(Int(5).__mlir_index__())),
+        describe_primitive(call_copy),
+        describe_primitive(require_trivial(call)),
+    )
+    comptime constant = Trivial[Int].some(6)
+    # CHECK-NEXT: some:6 some:7
+    print(
+        describe_trivial(constant),
+        TrivialHolder[Trivial[Int].some(7)].describe(),
+    )
+    # CHECK-NEXT: True True True
+    print(
+        IsTriviallyCopyable[Trivial[Pixel]],
+        IsTriviallyMovable[Trivial[Pixel]],
+        IsTriviallyDeinitable[Trivial[Pixel]],
+    )
+
+
 # CHECK-LABEL: == register passable
 def test_register_passable():
     print("== register passable")
     var shapes: List[Shape] = [Shape.empty, Shape.rect(2, 3), 4]
     # CHECK-NEXT: 0 6 16
     print(shapes[0].area(), shapes[1].area(), shapes[2].area())
+    # Copying, moving and destroying an enum are each trivial when they are for
+    # every payload: `Key` has a `String` payload.
+    # CHECK-NEXT: True True True
+    print(
+        IsTriviallyCopyable[Shape],
+        IsTriviallyMovable[Shape],
+        IsTriviallyDeinitable[Shape],
+    )
+    # CHECK-NEXT: False True False
+    print(
+        IsTriviallyCopyable[Key],
+        IsTriviallyMovable[Key],
+        IsTriviallyDeinitable[Key],
+    )
 
 
 struct BitwiseTracked(ImplicitlyCopyable, Movable):
@@ -528,6 +643,7 @@ def main() raises:
     test_writable()
     test_function_value()
     test_generic()
+    test_trivial_register_passable()
     test_register_passable()
     test_trivial_lifecycle()
     test_comptime_match()

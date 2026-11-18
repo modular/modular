@@ -1600,7 +1600,10 @@ struct Pointer[
         return {self._mlir_value}  # allow kgen.pointer to convert.
 
 
-struct Tuple[*element_types: Movable](ImplicitlyCopyable):
+struct Tuple[*element_types: Movable](
+    ImplicitlyCopyable,
+    RegisterPassable where conforms_to(element_types.values, RegisterPassable),
+):
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
         _MLIR.KGENParamListType[Movable],

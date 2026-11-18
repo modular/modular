@@ -1138,7 +1138,8 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
 // their bodies are Mojo code in `std.builtin._enum`. The compiler finds that
 // module's declarations by path (`lookupEnumSupportDecl`) and the enum's
 // inherited `__Enum` members in the enum's own scope, whose names
-// `checkEnumMemberNames` keeps free, so user code cannot shadow either. For
+// `checkEnumMemberNames` and `checkEnumCaseName` keep free, so user code cannot
+// shadow either. For
 //
 //     __enum Token(Copyable):
 //         case eof
@@ -1156,8 +1157,8 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
 //     comptime eof: Token = Token.__enum_init[0]()
 //
 //     @staticmethod
-//     def ident(var payload: String) -> Token:
-//         return Token.__enum_init[1](payload^)
+//     def ident(var payload0: String) -> Token:
+//         return Token.__enum_init[1](payload0^)
 //
 //     @staticmethod
 //     def span(var payload0: Int, var payload1: Int) -> Token:
@@ -1263,9 +1264,7 @@ LogicalResult StructEmitter::synthesizeEnumCaseConstructor(
   SmallVector<StringAttr> argNames;
   SmallVector<PassingKind> argPassingKinds;
   for (auto [eltIndex, eltType] : llvm::enumerate(payload)) {
-    std::string argName = payload.size() == 1
-                              ? std::string("payload")
-                              : ("payload" + Twine(eltIndex)).str();
+    std::string argName = ("payload" + Twine(eltIndex)).str();
     argTypes.push_back(
         ASTType(eltType).getRefForArgument(argName, /*isMut=*/true));
     argConventions.push_back(ArgConvention::OwnedMem);
@@ -1301,21 +1300,43 @@ LogicalResult StructEmitter::synthesizeEnumCaseConstructor(
   return success();
 }
 
-/// Report every clash between the members an `__enum` gets and the members
-/// written in it; failure if there was one.
-static LogicalResult checkEnumMemberNames(ASTDecl &enumDecl,
-                                          ArrayRef<EnumCaseOp> cases,
-                                          ArrayRef<SMLoc> caseLocs,
-                                          ASTDecl &enumLikeDecl) {
+LogicalResult LIT::checkEnumCaseName(ASTDecl &enumDecl, StringRef caseName,
+                                     SMLoc caseLoc) {
+  SharedState &shared = enumDecl.getShared();
+  // The member a case generates must not collide with a synthesized,
+  // `__Enum`-provided or `EnumLike` member.
+  constexpr StringLiteral synthesizedNames[] = {
+      kEnumStorageFieldName, kEnumCaseNamesName, kEnumCaseTypesName,
+      kEnumDiscriminantName, kEnumPayloadName,   kEnumInitName,
+      kEnumStorageGetterName};
+  ASTDecl *enumLikeDecl = lookupEnumLikeTrait(shared, caseLoc);
+  if (!enumLikeDecl ||
+      failed(shared.getDeclResolver().resolveBody(*enumLikeDecl, caseLoc)))
+    return failure();
+  if (llvm::is_contained(synthesizedNames, caseName) ||
+      !enumLikeDecl->lookupInCurrentScope(caseName).empty()) {
+    shared.emitError(caseLoc) << "invalid redefinition of '" << caseName << "'";
+    return failure();
+  }
+  // Nor with a member written in the enum.
+  ArrayRef<ASTDecl *> existing = enumDecl.lookupInCurrentScope(caseName);
+  if (existing.empty())
+    return success();
+  auto diag = shared.emitError(caseLoc)
+              << "enum case '" << caseName
+              << "' conflicts with a member of the same name";
+  diag.attachNote(existing.front()->getLoc()) << "member declared here";
+  return failure();
+}
+
+/// Report every member written in `enumDecl` whose name is that of a member
+/// synthesized for every enum; failure if there was one.
+static LogicalResult checkEnumMemberNames(ASTDecl &enumDecl) {
   SharedState &shared = enumDecl.getShared();
   // Every synthesized or `__Enum`-provided name must be free: the members a
   // user writes live in the same scope. `_enum_elt_type_for_case` is derived
   // from the case types; `_enum_is_exhaustive` may be declared to open the
   // enum.
-  constexpr StringLiteral synthesizedNames[] = {
-      kEnumStorageFieldName, kEnumCaseNamesName, kEnumCaseTypesName,
-      kEnumDiscriminantName, kEnumPayloadName,   kEnumInitName,
-      kEnumStorageGetterName};
   constexpr StringLiteral undeclarableNames[] = {
       kEnumStorageFieldName, kEnumCaseNamesName,    kEnumCaseTypesName,
       kEnumDiscriminantName, kEnumPayloadName,      kEnumEltTypeName,
@@ -1327,27 +1348,6 @@ static LogicalResult checkEnumMemberNames(ASTDecl &enumDecl,
           << "'" << name << "' is synthesized for enums and cannot be declared";
       hasConflict = true;
     }
-  }
-  for (auto [constCaseOp, caseLoc] : llvm::zip_equal(cases, caseLocs)) {
-    EnumCaseOp caseOp = constCaseOp; // op accessors are not const
-    StringRef caseName = caseOp.getName();
-    // The member a case generates must not collide with a synthesized or
-    // `EnumLike` member either.
-    if (llvm::is_contained(synthesizedNames, caseName) ||
-        !enumLikeDecl.lookupInCurrentScope(caseName).empty()) {
-      shared.emitError(caseLoc)
-          << "invalid redefinition of '" << caseName << "'";
-      hasConflict = true;
-      continue;
-    }
-    ArrayRef<ASTDecl *> existing = enumDecl.lookupInCurrentScope(caseName);
-    if (existing.empty())
-      continue;
-    auto diag = shared.emitError(caseLoc)
-                << "enum case '" << caseName
-                << "' conflicts with a member of the same name";
-    diag.attachNote(existing.front()->getLoc()) << "member declared here";
-    hasConflict = true;
   }
   return failure(hasConflict);
 }
@@ -1425,11 +1425,7 @@ LogicalResult StructEmitter::synthesizeEnumMembers() {
     return shared.diags.convertLocToSMLoc(op.getLoc());
   });
 
-  ASTDecl *enumLikeDecl = lookupEnumLikeTrait(shared, loc);
-  if (!enumLikeDecl ||
-      failed(getDeclResolver().resolveBody(*enumLikeDecl, loc)))
-    return failure();
-  if (failed(checkEnumMemberNames(structDecl, cases, caseLocs, *enumLikeDecl)))
+  if (failed(checkEnumMemberNames(structDecl)))
     return failure();
 
   ASTDecl *enumStorageDecl =
@@ -1511,11 +1507,7 @@ static CValue emitEnumInitCall(IREmitter &emitter, ASTDecl &enumDecl,
     return fail();
   }
   overloads.explicitParamBindings.add(node, PValue(indexValue));
-  auto callee = overloads.filterOverloadSet(
-      operands, /*emitDiagnosticOnFailure=*/true, emitter);
-  if (!callee.isYes())
-    return fail();
-  return emitter.emitIndirectCall(callee.getYes(), std::move(operands));
+  return overloads.emitCall(std::move(operands), emitter);
 }
 
 /// Whether a written `_enum_is_exhaustive` of `enumDecl` fails conformance
