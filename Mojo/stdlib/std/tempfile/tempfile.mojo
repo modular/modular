@@ -233,7 +233,7 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
                 std.os.remove(curr_path)
             except e:
                 if not ignore_errors:
-                    raise e^
+                    raise e
             continue
         if std.os.path.isdir(curr_path):
             try:
@@ -246,7 +246,7 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
         std.os.rmdir(path)
     except e:
         if not ignore_errors:
-            raise e^
+            raise e
 
 
 struct TemporaryDirectory:

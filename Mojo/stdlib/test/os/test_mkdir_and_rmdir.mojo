@@ -30,7 +30,7 @@ def create_and_delete(path: String) raises:
 
     std.os.rmdir(path)
     # trying to delete non existing dir
-    with assert_raises(contains="Can not remove directory: "):
+    with assert_raises(contains="No such file or directory"):
         std.os.rmdir(path)
 
 
@@ -50,7 +50,7 @@ def _test_mkdir_and_rmdir_str(path: String) raises:
 
     std.os.rmdir(path)
     # trying to delete non existing dir
-    with assert_raises(contains="Can not remove directory: "):
+    with assert_raises(contains="No such file or directory"):
         std.os.rmdir(path)
 
 
@@ -69,7 +69,7 @@ def _test_mkdir_and_rmdir_path(path: Path) raises:
 
     std.os.rmdir(path)
     # trying to delete non existing dir
-    with assert_raises(contains="Can not remove directory: "):
+    with assert_raises(contains="No such file or directory"):
         std.os.rmdir(path)
 
 
@@ -126,7 +126,7 @@ def test_rmdir_not_empty() raises:
     with open(file_name, "w"):
         pass
 
-    with assert_raises(contains="Can not remove directory: "):
+    with assert_raises(contains="Directory not empty"):
         std.os.rmdir(my_dir_path)
 
     std.os.remove(file_name)

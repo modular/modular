@@ -315,6 +315,18 @@ This version is still a work in progress.
   match on the error's `kind()`. Code in a plain `raises` function still
   compiles unchanged.
 
+- File and directory functions in `std.os`, such as `mkdir()`, `remove()`,
+  and `listdir()`, now raise `IOError`, so you can check what went wrong
+  with `e.kind()`:
+
+  ```mojo
+  try:
+      os.remove(path)
+  except e:
+      if e.kind() != .not_found:
+          raise e
+  ```
+
 - Added `BorrowedFileDescriptor` to `std.io`, a copyable, non-owning view
   of a `FileDescriptor` that carries the owner's origin, so it can be
   passed around without closing the descriptor or outliving its owner.
