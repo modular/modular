@@ -22,7 +22,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/Preprocessor.h"
 #include "Support/SymbolExport.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
@@ -528,7 +528,7 @@ public:
 #define CUDA_FUNC(name, ret, ...)                                              \
   ret name(EXPAND_PARAMS(__VA_ARGS__)) const {                                 \
     CUDA_DRIVER_CALL_LOG();                                                    \
-    TRACY_ZONE_SCOPED_NC(#name, TRACY_COLOR_GREEN);                            \
+    M_PROFILE_TRACY_ZONE(#name, M_PROFILE_COLOR_GREEN);                        \
     ret result = name##_(EXPAND_ARGS(__VA_ARGS__));                            \
     if (isCUDADebugLoggingEnabled()) {                                         \
       llvm::errs() << "[CUDA] " << #name << " -> " << result << "\n";          \

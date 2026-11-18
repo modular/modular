@@ -25,7 +25,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "MLRT/Driver/DeviceContext/KernelLoadGate.h"
 #include "Support/SymbolExport.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace M;
@@ -39,8 +39,8 @@ using namespace M;
 MODULAR_EXPORT bool AsyncRT_KernelLoadGate_tryAcquireCollective(
     Driver::DeviceContext *ctx,
     AsyncRT::AsyncValueRef<AsyncRT::Chain> *grantOut) {
-  TRACY_ZONE_SCOPED_NC("AsyncRT_KernelLoadGate_tryAcquireCollective",
-                       TRACY_COLOR_GRAY);
+  M_PROFILE_SPAN("AsyncRT_KernelLoadGate_tryAcquireCollective",
+                 M_PROFILE_COLOR_GRAY);
   Driver::KernelLoadGate *gate = ctx->kernelLoadGate();
   if (gate == nullptr)
     return true;

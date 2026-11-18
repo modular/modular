@@ -27,13 +27,15 @@
 #include "Support/Configuration.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #if MODULAR_ASYNCRT_MAX_PROFILING_LEVEL != 0
 #include "Support/Profiling/Ranges.h"
-#include "Support/max_license/Tracy/Tracy.h"
 #else
-// TODO: This is duplicating some things, maybe find a better way
-#define TRACY_ZONE_SCOPED_NC(name, color)
-#define TRACY_ZONE_SCOPED_NCT(name, color, text)
+// Per-task ranges are too fine-grained to record by default.
+#undef M_PROFILE_RANGE
+#undef M_PROFILE_RANGE_TEXT
+#define M_PROFILE_RANGE(name, color)
+#define M_PROFILE_RANGE_TEXT(name, color, text)
 #endif
 #include "Support/Threading/Atomics.h"
 #include "Support/Threading/HWInfo.h"
@@ -447,9 +449,9 @@ struct WorkQueueThread {
   // or addLocalTask (via an AsyncValue waiter).
   template <bool IsWaiter>
   void doWork(WorkItem &&workItem, WorkType type) {
-    TRACY_ZONE_SCOPED_NCT("WorkQueueThread::doWork", TRACY_COLOR_BLUE,
-                          "Unique task ID: " +
-                              std::to_string(workItem.uniqueTaskId));
+    M_PROFILE_RANGE_TEXT("WorkQueueThread::doWork", M_PROFILE_COLOR_BLUE,
+                         "Unique task ID: " +
+                             std::to_string(workItem.uniqueTaskId));
 
 #if ASYNCRT_WORKER_STATS
     auto start = std::chrono::high_resolution_clock::now();
@@ -589,7 +591,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
                                    bool waitForTasks,
                                    StringLiteral spinningLabel,
                                    StringLiteral sleepingLabel) {
-  TRACY_ZONE_SCOPED_NC("WorkQueueThread::runItemsImpl", TRACY_COLOR_BLUE);
+  M_PROFILE_RANGE("WorkQueueThread::runItemsImpl", M_PROFILE_COLOR_BLUE);
 
   while (true) {
   KeepRunning:
@@ -607,8 +609,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       // May append to localTaskList.
       // May re-enter this loop.
       {
-        TRACY_ZONE_SCOPED_NC("Invoke WorkQueueThread::doWork (immediate,local)",
-                             TRACY_COLOR_BLUE);
+        M_PROFILE_RANGE("Invoke WorkQueueThread::doWork (immediate,local)",
+                        M_PROFILE_COLOR_BLUE);
         doWork</*IsWaiter=*/true>(std::move(workItem), kLocal);
       }
     }
@@ -623,9 +625,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // Check for tasks in local taskId affinities queue.
     if (auto workItem = affinityTaskList.dequeue()) {
       {
-        TRACY_ZONE_SCOPED_NC(
-            "Invoke WorkQueueThread::doWork (immediate,affinity)",
-            TRACY_COLOR_BLUE);
+        M_PROFILE_RANGE("Invoke WorkQueueThread::doWork (immediate,affinity)",
+                        M_PROFILE_COLOR_BLUE);
         doWork</*IsWaiter=*/false>(std::move(workItem), kAffinity);
       }
 #if ASYNCRT_WORKER_STATS
@@ -644,9 +645,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     if (WorkItem workItem; taskList.try_dequeue(workItem)) {
       {
-        TRACY_ZONE_SCOPED_NC(
-            "Invoke WorkQueueThread::doWork (immediate,global)",
-            TRACY_COLOR_BLUE);
+        M_PROFILE_RANGE("Invoke WorkQueueThread::doWork (immediate,global)",
+                        M_PROFILE_COLOR_BLUE);
         doWork</*IsWaiter=*/false>(std::move(workItem), kGlobal);
       }
 #if ASYNCRT_WORKER_STATS
@@ -684,9 +684,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
         if (auto workItem = affinityTaskList.dequeue()) {
           {
-            TRACY_ZONE_SCOPED_NC(
-                "Invoke WorkQueueThread::doWork (spin,affinity)",
-                TRACY_COLOR_BLUE);
+            M_PROFILE_RANGE("Invoke WorkQueueThread::doWork (spin,affinity)",
+                            M_PROFILE_COLOR_BLUE);
             doWork</*IsWaiter=*/true>(std::move(workItem), kAffinity);
           }
 #if ASYNCRT_WORKER_STATS
@@ -704,8 +703,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
         if (WorkItem workItem; taskList.try_dequeue(workItem)) {
           {
-            TRACY_ZONE_SCOPED_NC("Invoke WorkQueueThread::doWork (spin,global)",
-                                 TRACY_COLOR_BLUE);
+            M_PROFILE_RANGE("Invoke WorkQueueThread::doWork (spin,global)",
+                            M_PROFILE_COLOR_BLUE);
             doWork</*IsWaiter=*/true>(std::move(workItem), kGlobal);
           }
 #if ASYNCRT_WORKER_STATS
@@ -778,9 +777,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     start = std::chrono::high_resolution_clock::now();
     if (auto labelledTask = affinityTaskList.dequeue()) {
       {
-        TRACY_ZONE_SCOPED_NC(
-            "Invoke WorkQueueThread::doWork (pre-suspend,affinity)",
-            TRACY_COLOR_BLUE);
+        M_PROFILE_RANGE("Invoke WorkQueueThread::doWork (pre-suspend,affinity)",
+                        M_PROFILE_COLOR_BLUE);
         doWork</*IsWaiter=*/false>(std::move(labelledTask), kAffinity);
       }
 #if ASYNCRT_WORKER_STATS
@@ -812,9 +810,9 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
       while (true) {
         if (WorkItem labelledTask; taskList.try_dequeue(labelledTask)) {
           {
-            TRACY_ZONE_SCOPED_NC(
+            M_PROFILE_RANGE(
                 "Invoke WorkQueueThread::doWork (pre-suspend,global)",
-                TRACY_COLOR_BLUE);
+                M_PROFILE_COLOR_BLUE);
             doWork</*IsWaiter=*/false>(std::move(labelledTask), kGlobal);
           }
 #if ASYNCRT_WORKER_STATS
@@ -1128,9 +1126,9 @@ void ThreadPoolWorkQueue::shutdown() {
 }
 
 void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
-  TRACY_ZONE_SCOPED_NCT("ThreadPoolWorkQueue::addTask", TRACY_COLOR_BLUE,
-                        "Unique task ID: " +
-                            std::to_string(workItem.uniqueTaskId));
+  M_PROFILE_RANGE_TEXT("ThreadPoolWorkQueue::addTask", M_PROFILE_COLOR_BLUE,
+                       "Unique task ID: " +
+                           std::to_string(workItem.uniqueTaskId));
 
   assert(workItem);
 #if ASYNCRT_WORKER_STATS
@@ -1203,9 +1201,9 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
 }
 
 void ThreadPoolWorkQueue::addLocalTask(WorkItem &&workItem) {
-  TRACY_ZONE_SCOPED_NCT("ThreadPoolWorkQueue::addLocalTask", TRACY_COLOR_BLUE,
-                        "Unique task ID: " +
-                            std::to_string(workItem.uniqueTaskId));
+  M_PROFILE_RANGE_TEXT(
+      "ThreadPoolWorkQueue::addLocalTask", M_PROFILE_COLOR_BLUE,
+      "Unique task ID: " + std::to_string(workItem.uniqueTaskId));
 
   assert(workItem && "invalid work item");
 
@@ -1224,7 +1222,7 @@ void ThreadPoolWorkQueue::addLocalTask(WorkItem &&workItem) {
 }
 
 void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
-  TRACY_ZONE_SCOPED_NC("ThreadPoolWorkQueue::await", TRACY_COLOR_BLUE);
+  M_PROFILE_RANGE("ThreadPoolWorkQueue::await", M_PROFILE_COLOR_BLUE);
 
   // If all the values are ready, then we don't have to do anything.
   if (llvm::all_of(values, [](auto &av) { return av.isReady(); }))

@@ -38,7 +38,7 @@
 #include "Support/HashUtils.h"
 #include "Support/ML/CommonAttributes.h"
 #include "Support/Profiling/Ranges.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -351,7 +351,7 @@ ExecutableModel::~ExecutableModel() = default;
 
 SmallVector<AnyAsyncValueRef>
 ExecutableModel::execute(MutableArrayRef<AnyAsyncValueRef> args) const {
-  TRACY_ZONE_SCOPED_NC("ExecutableModel::execute", TRACY_COLOR_TEAL);
+  M_PROFILE_RANGE("ExecutableModel::execute", M_PROFILE_COLOR_TEAL);
 
   checkUniqueCPUDevice(getCPUDevice());
 

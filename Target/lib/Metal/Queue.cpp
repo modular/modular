@@ -135,9 +135,6 @@ M_driver_status_t M_driver_queue::drainPriorWork() {
 M_driver_status_t M_driver_queue::copyToDevice(M_driver_memory_t dst,
                                                uint64_t dstOffset,
                                                const void *src, uint64_t size) {
-  // TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueCopyToDevice",
-  //                      TRACY_COLOR_PURPLE);
-
   if (src == nullptr)
     return context->device->driver->status.create("Source pointer is null");
   if (size == 0)
@@ -185,8 +182,6 @@ M_driver_status_t M_driver_queue::copyFromDevice(void *dst,
                                                  M_driver_memory_t src,
                                                  uint64_t srcOffset,
                                                  uint64_t size) {
-  // TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueCopyFromDevice",
-  //                      TRACY_COLOR_PURPLE);
   if (dst == nullptr)
     return context->device->driver->status.create(
         "Destination pointer cannot be null");
@@ -456,9 +451,6 @@ M_driver_status_t
 M_driver_queue::execute(M_driver_function_t function,
                         M_driver_queue_execute_config_t *config, void **args,
                         uint64_t *argSizes, uint32_t numArgs) {
-  // TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueFunctionExecDirect",
-  //                      TRACY_COLOR_PURPLE);
-
   if (config->mode != M_DRIVER_QUEUE_EXECUTE_MODE_GPU)
     return M_DRIVER_STATUS_EXECUTE_MODE_NOT_SUPPORTED;
 

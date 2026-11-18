@@ -20,7 +20,7 @@
 #include "Kernels/max_license/WeightsRegistry.h"
 #include "Support/Filesystem/Paths.h"
 #include "Support/Profiling/Ranges.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "_core/DLPack/Utils.h"
 #include "_core/Driver/Buffer.h"
 #include "_core/Engine/DebugConfig.h"
@@ -451,7 +451,7 @@ static void validateInputSpecList(
 // Entrypoint for executing Python DeviceTensors.
 std::vector<Driver::Python::Buffer> M::Core::ModelHandle::executeDeviceTensors(
     std::vector<Driver::Python::Buffer *> &inputTensors) {
-  TRACY_ZONE_SCOPED_NC("ModelHandle::executeDeviceTensors", TRACY_COLOR_YELLOW);
+  M_PROFILE_RANGE("ModelHandle::executeDeviceTensors", M_PROFILE_COLOR_YELLOW);
 
   if (!loadedModel)
     return {};

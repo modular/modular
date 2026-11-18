@@ -19,7 +19,7 @@
 #include "Support/ML/DebugPrint.h"
 #include "Support/ML/TensorShape.h"
 #include "Support/SpanGuard.h"
-#include "Support/max_license/Tracy/Tracy.h"
+#include "Support/max_license/Profiling/ProfileRange.h"
 #include "max/max_license/API/c/EngineContext.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -101,7 +101,7 @@ ErrorOr<ExecResultType>
 extractDriverResults(const M::Engine::Context &context,
                      M::AsyncExecutableModel executableModel,
                      MutableArrayRef<AnyAsyncValueRef> results) {
-  TRACY_ZONE_SCOPED_NC("extractDriverResults", TRACY_COLOR_TEAL);
+  M_PROFILE_RANGE("extractDriverResults", M_PROFILE_COLOR_TEAL);
 
   // Await async model so we can execute synchronously.
   M::AsyncExecutableModel asyncModel = executableModel.copy();
@@ -193,7 +193,7 @@ ErrorOr<ExecResultType>
 executeFromDriver(const M::Engine::Context &context,
                   M::AsyncExecutableModel executableModel,
                   SmallVectorImpl<AnyAsyncValueRef> &inputs) {
-  TRACY_ZONE_SCOPED_NC("executeFromDriver", TRACY_COLOR_TEAL);
+  M_PROFILE_RANGE("executeFromDriver", M_PROFILE_COLOR_TEAL);
   // Every way into the runtime funnels through here, so one
   // guard covers a forward pass whoever the caller is.
   M::Log::SpanGuard executeSpan("model_execute");
