@@ -6,3 +6,17 @@ mojo_cabi_test(
     name = "futex_abi_linux",
     platforms = ["linux"],
 )
+
+mojo_cabi_test(
+    name = "pthread_abi_linux",
+    platforms = [
+        "linux",
+    ],
+)
+
+mojo_cabi_test(
+    name = "pthread_abi_macos",
+    platforms = [
+        "macos",
+    ],
+)
