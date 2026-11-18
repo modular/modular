@@ -103,6 +103,7 @@ def __wrap_and_execute_raising_main[
     external_call["KGEN_CompilerRT_PrintStackTraceOnFault", NoneType]()
 
     # Call into the user main function.
+    var exit_code: Int32 = 0
     try:
         main_func()
     except e:
@@ -119,13 +120,12 @@ def __wrap_and_execute_raising_main[
                 file=stderr,
             )
         print("Unhandled exception caught during execution:", e, file=stderr)
-        return 1
+        exit_code = 1
 
     # Delete any globals we have allocated.
     external_call["KGEN_CompilerRT_DestroyGlobals", NoneType]()
 
-    # Return OK.
-    return 0
+    return exit_code
 
 
 # A prototype of the main entry point, used by the compiled when synthesizing
