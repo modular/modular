@@ -1366,25 +1366,15 @@ def MOGG_CallOpaqueOp : MOGG_Op<"call.opaque", [
 def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
   MOGG_CallLike,
   AttrSizedOperandSegments,
-  // TRANSITIONAL(GEX-4588): `MOGG::GraphBlobOp` goes once graph blobs are
-  // lowered before emission.
-  ParentOneOf<["MOGG::GraphBlobOp", "MOGG::GraphBlobCallOp"]>,
+  HasParent<"MOGG::GraphBlobCallOp">,
   DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
 ]> {
-  let summary = "Run a declarative kernel as a call in a graph blob.";
+  let summary = "Run a declarative kernel as a call in a graph blob launch.";
   let description = [{
-    Runs `$callee`'s `execute_device` as one call of a graph blob.
-
-    TRANSITIONAL (GEX-4588): the op has two forms while graph blobs move to
-    lowering before emission. The `mogg.graph_blob` form, and with it
-    `$device_context`, goes once that is done.
-
-    In a `mogg.graph_blob`, the call takes `$device_context`, the context the
-    blob launches on, and also runs `$callee`'s `execute_configuration` on the
-    host. In a `mogg.graph_blob.call`, it takes no context and runs only
-    `execute_device`, in the enclosing launch's kernel. Outside a blob,
-    `mogg.call.opaque` launches a declarative kernel by itself.
+    Runs `$callee`'s `execute_device` in the enclosing launch's kernel, on
+    operands the kernel built. Outside a blob, `mogg.call.opaque` launches a
+    declarative kernel by itself.
 
     Example:
     ```mlir
@@ -1398,20 +1388,14 @@ def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
     FlatSymbolRefAttr:$callee,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar]>>:$inputs,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$outputs,
-    // TRANSITIONAL(GEX-4588): only the `mogg.graph_blob` form has a context,
-    // and it goes with that form.
-    Optional<MOGG_Context>:$device_context,
     OptionalAttr<DictionaryAttr>:$kernel_param
   );
   let assemblyFormat = [{
     $callee `` custom<OptionalKernelParams>($kernel_param)
     (`inputs` `(` $inputs^ `:` type($inputs) `)`)?
     (`outputs` `(` $outputs^ `:` type($outputs) `)`)?
-    (`context` `(` $device_context^ `:` type($device_context) `)`)?
     attr-dict
   }];
-  // TRANSITIONAL(GEX-4588): checks the context against the form.
-  let hasVerifier = 1;
 }
 
 def MOGG_CallExecuteConfigurationOp
@@ -1448,24 +1432,19 @@ def MOGG_CallExecuteConfigurationOp
 
 def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   MOGG_CallLike,
-  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   NoTerminator,
   SingleBlock,
 ]> {
   let summary = "Launch several declarative kernels as one device kernel.";
   let description = [{
-    Runs the `mogg.call.execute_device`s in its body, in order, in one launch
-    on their shared device context, on every core and thread of the device:
-    `max._graph_blob.launch_config` of the context. Emit calls each
-    kernel's `execute_configuration` on the host, then compiles one kernel that
-    runs each `execute_device` only on the threads
-    `max._graph_blob.is_thread_active` accepts for its own grid, with
-    `max._graph_blob.barrier` between kernels.
+    Runs the declarative `mogg.call.opaque`s in its body, in order, as one
+    launch on their shared device context. Each call runs on the part of the
+    launch its own configuration asks for, and every call sees the writes of
+    the calls before it.
 
-    The body is host code: it holds only the ops that build the calls'
-    operands, and the calls. The kernel takes each operand as an argument
-    rather than capturing it, so the body can use the enclosing region's values
-    and the op isn't isolated from above.
+    The body holds the calls and the ops that build their operands, and can use
+    the enclosing region's values. `LowerGraphBlobs` writes the op as host ops
+    and a `mogg.graph_blob.launch` before emission.
   }];
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = "$body attr-dict";

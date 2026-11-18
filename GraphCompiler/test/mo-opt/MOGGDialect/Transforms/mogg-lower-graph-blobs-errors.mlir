@@ -23,7 +23,7 @@ mo.graph @slice(%arg0: !mo.tensor<[10, 64], f32>, %arg1: !mo.tensor<[2], si64>) 
       %a2 = mogg.trait.create(%a1) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       // expected-error @below {{reads a value that the host builds and a graph blob launch can't take}}
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0 : !mo.tensor<[3, 32], f32>
@@ -49,7 +49,7 @@ mo.graph @transpose(%arg0: !mo.tensor<[2, 3], f32>, %arg1: !mo.tensor<[2], si64>
       %a2 = mogg.trait.create(%a1) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       // expected-error @below {{reads a value that the host builds and a graph blob launch can't take}}
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0 : !mo.tensor<[3, 2], f32>

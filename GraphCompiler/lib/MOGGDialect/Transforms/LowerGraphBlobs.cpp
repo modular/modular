@@ -31,7 +31,7 @@ namespace {
 // Adds the ops the kernel runs to produce `value` to `producers`, each after
 // the producers of its operands, and the values they take from the host to
 // `crossing`. Fails on a value the host builds that can't cross the launch.
-LogicalResult collectOperandProducers(Value value, CallExecuteDeviceOp call,
+LogicalResult collectOperandProducers(Value value, CallOpaqueOp call,
                                       llvm::SetVector<Operation *> &producers,
                                       llvm::SetVector<Value> &crossing) {
   Operation *def = value.getDefiningOp();
@@ -72,7 +72,7 @@ LogicalResult collectOperandProducers(Value value, CallExecuteDeviceOp call,
 
 LogicalResult lowerBlob(GraphBlobOp blob) {
   Block &body = blob.getBody().front();
-  auto calls = llvm::to_vector(body.getOps<CallExecuteDeviceOp>());
+  auto calls = llvm::to_vector(body.getOps<CallOpaqueOp>());
 
   // Find what each call's region builds and what crosses the launch, before
   // changing any IR.
@@ -87,10 +87,9 @@ LogicalResult lowerBlob(GraphBlobOp blob) {
     }
   }
 
-  // Move all the host code to the top, leaving only a list of `execute_device`
-  // calls at the end.
+  // Move all the host code to the top, leaving only the calls at the end.
   for (Operation &op : llvm::make_early_inc_range(body)) {
-    if (!isa<CallExecuteDeviceOp>(op))
+    if (!isa<CallOpaqueOp>(op))
       op.moveBefore(blob);
   }
 
@@ -98,16 +97,15 @@ LogicalResult lowerBlob(GraphBlobOp blob) {
   Location loc = blob.getLoc();
   OpBuilder builder(blob);
   Type configType = LaunchConfigType::get(ctx);
-  Value context = calls.front().getDeviceContext();
+  Value context = calls.front().getDeviceContexts().front();
 
   // Generate a call to `execute_configuration` on the host for each call,
   // passing the same inputs and outputs.
-  auto configs =
-      llvm::map_to_vector(calls, [&](CallExecuteDeviceOp call) -> Value {
-        return CallExecuteConfigurationOp::create(
-            builder, call.getLoc(), configType, call.getCalleeAttr(),
-            call.getInputs(), call.getOutputs(), call.getKernelParamAttr());
-      });
+  auto configs = llvm::map_to_vector(calls, [&](CallOpaqueOp call) -> Value {
+    return CallExecuteConfigurationOp::create(
+        builder, call.getLoc(), configType, call.getCalleeAttr(),
+        call.getInputs(), call.getOutputs(), call.getKernelParamAttr());
+  });
 
   // Get the whole-device launch configuration and each call's part of it.
   Value launchConfig =
@@ -150,8 +148,7 @@ LogicalResult lowerBlob(GraphBlobOp blob) {
     };
     CallExecuteDeviceOp::create(
         builder, call.getLoc(), call.getCalleeAttr(), mapped(call.getInputs()),
-        mapped(call.getOutputs()), /*device_context=*/Value(),
-        call.getKernelParamAttr());
+        mapped(call.getOutputs()), call.getKernelParamAttr());
   }
 
   blob.erase();

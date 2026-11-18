@@ -26,6 +26,7 @@
 #include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/Support/AsmSyntax.h"
+#include "GraphCompiler/MOGGDialect/Support/EmitMojoDeclarativeCall.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "GraphCompiler/MOGGDialect/Support/LegacyTileMojoTraits.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoBuilder.h"
@@ -994,109 +995,19 @@ static SmallVector<MojoValue> declarativeOperands(EmitMojoState &state,
   return operands;
 }
 
-// With a context, emits the call's `execute_configuration` and adds the call to
-// the enclosing `mogg.graph_blob`, which launches it. Without one, the call is
-// already in a launch's kernel, with operands it built there in their roles:
+// The call is in a launch's kernel, with operands it built there in their
+// roles:
 //
 //   Kernel[...].execute_device[...](output0, input0, ...)
-//
-// TRANSITIONAL(GEX-4588): a temporary branch on the op's form, needed only
-// while both forms exist. It goes with the context form once graph blobs are
-// lowered before emission.
 LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
   KernelDeclAdaptor adaptor(state.registry.lookupKernelBySymName(getCallee()));
-  if (!getDeviceContext()) {
-    FailureOr<KernelCallee> executeDevice = resolveKernelCallee(
-        *this, state, adaptor, KernelFunctionKind::ExecuteDevice,
-        getKernelParamAttr());
-    if (failed(executeDevice))
-      return failure();
-    state.file->call(executeDevice->function, executeDevice->parameters,
-                     declarativeOperands(state, getOutputs(), getInputs()));
-    return success();
-  }
-  FailureOr<DeclarativeCall> call = prepareDeclarativeCall(
-      *this, state, getOutputs(), getInputs(), adaptor, getKernelParamAttr());
-  if (failed(call))
+  FailureOr<KernelCallee> executeDevice = resolveKernelCallee(
+      *this, state, adaptor, KernelFunctionKind::ExecuteDevice,
+      getKernelParamAttr());
+  if (failed(executeDevice))
     return failure();
-
-  // The call's parent blob pushed its context before emitting its body, and
-  // the blob's verifier gave every call the same context.
-  GraphBlobRegion &blob = state.currentRegion<GraphBlobRegion>();
-  blob.ctx = getDeviceContext();
-  MojoBuilder &builder = *state.file;
-  MojoValue config =
-      builder.var(call->executeConfiguration(call->operands), /*cache=*/false);
-  SmallVector<unsigned> indices = blob.args.add(builder, *call);
-  blob.calls.push_back({std::move(*call), std::move(indices), config});
-  return success();
-}
-
-// Emits the body's declarative calls as one launch on every core and thread of
-// the device, which `_graph_blob.launch_config` gets from the device's target.
-// Each call runs its `execute_device` only on the first blocks of the launch,
-// as many as its own grid has:
-//
-//   var config0 = Kernel0[...].execute_configuration[...](operands0...)
-//   var config1 = Kernel1[...].execute_configuration[...](operands1...)
-//   comptime T0 = type_of(operand0)  # one per distinct operand
-//   var launch = _graph_blob.launch_config(ctx)
-//   def execute_device_N(a0: T0.device_type, ..., a5: Int32, a6: Int32):
-//       if _graph_blob.is_thread_active(a5):
-//           Kernel0[...].execute_device[...](T0(a0), ...)
-//       _graph_blob.barrier()
-//       if _graph_blob.is_thread_active(a6):
-//           Kernel1[...].execute_device[...](...)
-//   mogg_launch_declarative[execute_device_N](
-//       ctx, launch, operand0, ...,
-//       _graph_blob.active_threads(config0.get_grid_dim(),
-//                                  config0.get_block_dim(),
-//                                  launch.get_grid_dim(),
-//                                  launch.get_block_dim()), ...)
-//
-// Every thread reaches every barrier, so a barrier sits outside the guards.
-LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
-  // Each body op emits through `lowerOpToMojo`, which passes it only the state,
-  // so the state carries the blob for each call to add itself to. The scope
-  // pops it on every return; nothing needs the outer value back, because the
-  // verifier keeps a blob out of another.
-  auto blobScope = state.enterRegion<GraphBlobRegion>();
-  for (Operation &op : getBody().getOps())
-    if (failed(state.lowerOpToMojo(&op)))
-      return failure();
-  GraphBlobRegion &blob = state.currentRegion<GraphBlobRegion>();
-  ASSERT_STREAM(!blob.calls.empty(), "the verifier requires a call");
-
-  MojoBuilder &builder = *state.file;
-  MojoValue graphBlob(kGraphBlobModuleAlias);
-  MojoValue ctx = state.getMojoValueFor(blob.ctx);
-  MojoValue launch =
-      builder.var(graphBlob.get("launch_config")({ctx}), /*cache=*/false);
-
-  SmallVector<unsigned> active;
-  for (const GraphBlobRegion::BlobCall &blobCall : blob.calls) {
-    MojoValue threads = graphBlob.get("active_threads")(
-        {blobCall.config.get("get_grid_dim")(),
-         blobCall.config.get("get_block_dim")(), launch.get("get_grid_dim")(),
-         launch.get("get_block_dim")()});
-    active.push_back(blob.args.addScalar(threads, "Int32"));
-  }
-
-  MojoValue kernel = emitDeviceKernel(
-      builder, blob.args.parameters, [&](const FunctionBody &body) {
-        for (auto [i, blobCall] : llvm::enumerate(blob.calls)) {
-          if (i > 0)
-            builder.call(graphBlob.get("barrier"));
-          MojoValue isActive = graphBlob.get("is_thread_active")(
-              {body.arguments[active[i]].resolvedName});
-          const KernelCallee &executeDevice = blobCall.call.executeDevice;
-          builder.if_(isActive, [&] {
-            builder.call(executeDevice.function, executeDevice.parameters,
-                         blob.args.rebuild(body, blobCall.indices));
-          });
-        }
-      });
-  emitLaunch(state, ctx, kernel, blob.args.launchArgs, launch);
+  state.file->call(executeDevice->function, executeDevice->parameters,
+                   declarativeOperands(state, getOutputs(), getInputs()));
   return success();
 }
 

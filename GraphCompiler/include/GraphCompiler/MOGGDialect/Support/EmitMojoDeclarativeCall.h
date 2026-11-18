@@ -56,7 +56,7 @@ struct DeclarativeCall {
   // def execute_device(...)
   KernelCallee executeDevice;
   // The IR value of each of `operands`. `DeviceKernelArgs::add` keys on it, so
-  // an operand shared by several calls in a graph blob becomes one argument.
+  // an operand passed twice becomes one argument.
   SmallVector<Value> values;
   // List of operands for both calls.
   SmallVector<MojoValue> operands;
@@ -73,7 +73,7 @@ struct DeviceKernelArgs {
   SmallVector<MojoValue> types;
   SmallVector<DeviceArgKind> kinds;
   // Maps an operand's IR value to the index of the argument that carries it, so
-  // an operand shared by several calls crosses the launch once.
+  // an operand passed twice crosses the launch once.
   llvm::DenseMap<Value, unsigned> indexOf;
 
   // Adds `call`'s operands as arguments and returns their indices. Emits each
@@ -103,16 +103,6 @@ struct DeviceKernelArgs {
       launchArgs.push_back(operand);
     }
     return indices;
-  }
-
-  // Adds a scalar argument of `type` that the launch passes `value` for, and
-  // returns its index.
-  unsigned addScalar(const MojoValue &value, const MojoValue &type) {
-    types.push_back(type);
-    kinds.push_back(DeviceArgKind::Scalar);
-    parameters.emplace_back("operand", type);
-    launchArgs.push_back(value);
-    return parameters.size() - 1;
   }
 
   // Rebuilds, inside the kernel, the operands at `indices`: a tensor from its

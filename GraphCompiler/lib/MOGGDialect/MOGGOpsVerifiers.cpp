@@ -245,20 +245,6 @@ CallExecuteDeviceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return success();
 }
 
-// A formed `mogg.graph_blob` launches on its calls' context; a lowered
-// `mogg.graph_blob.launch` carries the context itself.
-//
-// TRANSITIONAL(GEX-4588): this check exists only while both forms do. It goes
-// with the `mogg.graph_blob` form once graph blobs are lowered before emission.
-LogicalResult CallExecuteDeviceOp::verify() {
-  bool inFormedBlob = isa<GraphBlobOp>((*this)->getParentOp());
-  if (inFormedBlob && !getDeviceContext())
-    return emitOpError("takes a device context in a 'mogg.graph_blob'");
-  if (!inFormedBlob && getDeviceContext())
-    return emitOpError("takes no device context in a 'mogg.graph_blob.call'");
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // CallExecuteConfigurationOp
 //===----------------------------------------------------------------------===//
@@ -306,21 +292,22 @@ LogicalResult GraphBlobCallOp::verifyRegions() {
   return success();
 }
 
-// Each `mogg.call.execute_device` checks its own callee, so this needs no
-// symbol lookup.
 LogicalResult GraphBlobOp::verifyRegions() {
   Value ctx;
   for (Operation &op : getBody().getOps()) {
     if (!op.hasTrait<MOGG::CallLike>())
       continue;
-    auto call = dyn_cast<CallExecuteDeviceOp>(op);
+    auto call = dyn_cast<CallOpaqueOp>(op);
     if (!call)
-      return emitOpError("calls kernels only through "
-                         "'mogg.call.execute_device', but holds '")
+      return emitOpError("calls kernels only through 'mogg.call.opaque', but "
+                         "holds '")
              << op.getName() << "'";
+    if (call.getDeviceContexts().size() != 1 ||
+        !isa<ContextType>(call.getDeviceContexts().front().getType()))
+      return emitOpError("calls each kernel on one device context");
     if (!ctx)
-      ctx = call.getDeviceContext();
-    else if (call.getDeviceContext() != ctx)
+      ctx = call.getDeviceContexts().front();
+    else if (call.getDeviceContexts().front() != ctx)
       return emitOpError("calls kernels on more than one device context");
   }
   if (!ctx)

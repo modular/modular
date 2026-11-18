@@ -42,7 +42,6 @@ struct KernelDeclFunctionAdaptor;
 struct KernelDeclAdaptor;
 class PrimitiveDeclOp;
 class ShapeFunctionDeclOp;
-class GraphBlobRegion;
 
 /// A fused load/store receiver's `ManagedTensorSlice` decomposed into a bare
 /// pointer, runtime shape/strides, and comptime `StaticTensorSpec`, all

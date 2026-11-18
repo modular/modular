@@ -96,8 +96,7 @@ bool canJoinBlob(RoutineOp routine, SymbolTable &symbols,
   if (!llvm::all_of(args.dims, isNamedDim) || args.contexts.size() != 1)
     return false;
 
-  // Exactly one call, to a declarative kernel on one device context, which the
-  // blob makes a `mogg.call.execute_device`.
+  // Exactly one call, to a declarative kernel on one device context.
   CallOpaqueOp call;
   for (Operation &op : routine.getBody().front()) {
     if (!op.hasTrait<CallLike>())
@@ -245,21 +244,8 @@ void fuse(ArrayRef<RoutineOp> routines,
       for (BlockArgument dim : args.dims)
         mapping.map(dim, dims.at(dim.getType()));
       mapping.map(args.contexts.front(), context);
-      auto mapped = [&](ValueRange values) {
-        return llvm::map_to_vector(
-            values, [&](Value value) { return mapping.lookup(value); });
-      };
-      for (Operation &op : routine.getBody().front()) {
-        // In the blob, the routine's call runs its kernel's `execute_device`.
-        if (auto call = dyn_cast<CallOpaqueOp>(op))
-          CallExecuteDeviceOp::create(
-              builder, call.getLoc(), call.getCalleeAttr(),
-              mapped(call.getInputs()), mapped(call.getOutputs()),
-              mapping.lookup(call.getDeviceContexts().front()),
-              call.getKernelParamAttr());
-        else
-          builder.clone(op, mapping);
-      }
+      for (Operation &op : routine.getBody().front())
+        builder.clone(op, mapping);
     }
   });
 

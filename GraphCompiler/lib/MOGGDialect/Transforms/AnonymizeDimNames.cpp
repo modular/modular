@@ -29,26 +29,20 @@ namespace M::MOGG {
 
 namespace {
 
-// Drops the param-decl-ref name from every `!mogg.dim<name>` block arg of
-// `stub` (and its function signature). Idempotent.
+// Drops the param-decl-ref name from every `!mogg.dim<name>` block arg in
+// `stub`, nested blocks included, and from its function signature. Idempotent.
 void stripStubDimNames(MOGG::FuncOp stub) {
   MLIRContext *ctx = stub.getContext();
-  SmallVector<Type> argTypes;
-  bool changed = false;
-  for (BlockArgument arg : stub.getBodyBlock().getArguments()) {
-    Type type = arg.getType();
-    if (auto dim = dyn_cast<MOGG::DimType>(type); dim && dim.getName()) {
-      type = MOGG::DimType::get(ctx, /*name=*/{});
-      arg.setType(type);
-      changed = true;
-    }
-    argTypes.push_back(type);
-  }
-  if (!changed)
-    return;
+  auto anonymous = MOGG::DimType::get(ctx, /*name=*/{});
+  stub->walk([&](Block *block) {
+    for (BlockArgument arg : block->getArguments())
+      if (auto dim = dyn_cast<MOGG::DimType>(arg.getType());
+          dim && dim.getName())
+        arg.setType(anonymous);
+  });
   FunctionType funcType = stub.getFunctionType();
-  stub.setFunctionTypeAttr(
-      TypeAttr::get(FunctionType::get(ctx, argTypes, funcType.getResults())));
+  stub.setFunctionTypeAttr(TypeAttr::get(FunctionType::get(
+      ctx, stub.getBodyBlock().getArgumentTypes(), funcType.getResults())));
 }
 
 struct AnonymizeDimNamesPass

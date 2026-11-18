@@ -53,14 +53,14 @@ mo.graph @sequence(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
       %b0 = mogg.tensor.create(%b, %s1) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %a1 = mogg.trait.create(%a0) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a1 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a1 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
       %s2 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
       %b2 = mogg.tensor.create(%b, %s2) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %s3 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
       %c0 = mogg.tensor.create(%c, %s3) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %b3 = mogg.trait.create(%b2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %c1 = mogg.trait.create(%c0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[2, 2], f32>
@@ -89,14 +89,14 @@ mo.graph @dim<batch>(%arg0: !mo.tensor<[batch, 2], f32, gpu:0>) -> !mo.tensor<[b
       %b0 = mogg.tensor.create(%b, %s1) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[batch, 2]> : !mosh.ape> : !mogg.tensor
       %a1 = mogg.trait.create(%a0) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a1 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a1 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
       %s2 = mogg.shape.create(%n) <shape = #mosh<ape[dyn, 2]> : !mosh.ape> : !mogg.dim<batch>
       %b2 = mogg.tensor.create(%b, %s2) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[batch, 2]> : !mosh.ape> : !mogg.tensor
       %s3 = mogg.shape.create(%n) <shape = #mosh<ape[dyn, 2]> : !mosh.ape> : !mogg.dim<batch>
       %c0 = mogg.tensor.create(%c, %s3) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[batch, 2]> : !mosh.ape> : !mogg.tensor
       %b3 = mogg.trait.create(%b2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %c1 = mogg.trait.create(%c0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[batch, 2], f32, gpu:0>
@@ -124,7 +124,7 @@ mo.graph @scalar(%arg0: !mo.tensor<[2, 2], f32, gpu:0>, %arg1: !mo.tensor<[], f3
       %4 = mogg.tensor.create(%b, %3) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %5 = mogg.trait.create(%2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %6 = mogg.trait.create(%4) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%5 : !mogg.tensor) outputs(%6 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%5 : !mogg.tensor) outputs(%6 : !mogg.tensor) context(%ctx : !mogg.context)
       %7 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
       %8 = mogg.tensor.create(%b, %7) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %9 = mogg.shape.create() <shape = #mosh<ape[]> : !mosh.ape>
@@ -134,7 +134,7 @@ mo.graph @scalar(%arg0: !mo.tensor<[2, 2], f32, gpu:0>, %arg1: !mo.tensor<[], f3
       %13 = mogg.trait.create(%8) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %14 = mogg.scalar.create(%10)
       %15 = mogg.trait.create(%12) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarativeScalar inputs(%13, %14 : !mogg.tensor, !mogg.scalar) outputs(%15 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarativeScalar inputs(%13, %14 : !mogg.tensor, !mogg.scalar) outputs(%15 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[2, 2], f32, gpu:0>
@@ -175,7 +175,7 @@ mo.graph @fused(%arg0: !mo.tensor<[2, 2], f32, gpu:0>, %arg1: !mo.tensor<[2, 2],
         mogg.tensor.store %cap0[%idx] = %22 : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
       }
       %10 = mogg.trait.create(%2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarativeFusedStore inputs(%10 : !mogg.tensor) outputs(%9 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarativeFusedStore inputs(%10 : !mogg.tensor) outputs(%9 : !mogg.tensor) context(%ctx : !mogg.context)
       %11 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
       %12 = mogg.tensor.create(%c, %11) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %13 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
@@ -190,7 +190,7 @@ mo.graph @fused(%arg0: !mo.tensor<[2, 2], f32, gpu:0>, %arg1: !mo.tensor<[2, 2],
         mogg.tensor.store %cap0[%idx] = %22 : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
       }
       %20 = mogg.trait.create(%12) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarativeFusedStore inputs(%20 : !mogg.tensor) outputs(%19 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarativeFusedStore inputs(%20 : !mogg.tensor) outputs(%19 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[2, 2], f32, gpu:0>
@@ -220,12 +220,12 @@ mo.graph @reshape(%arg0: !mo.tensor<[4], f32>) -> !mo.tensor<[2, 2], f32> {
       %b0 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %a2 = mogg.trait.create(%a1) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
       %b2 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %c0 = mogg.tensor.create(%c, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %b3 = mogg.trait.create(%b2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %c1 = mogg.trait.create(%c0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[2, 2], f32>
@@ -255,12 +255,12 @@ mo.graph @broadcast(%arg0: !mo.tensor<[1, 2], f32>) -> !mo.tensor<[2, 2], f32> {
       %b0 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %a2 = mogg.trait.create(%a1) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
       %b2 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %c0 = mogg.tensor.create(%c, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %b3 = mogg.trait.create(%b2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %c1 = mogg.trait.create(%c0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[2, 2], f32>
@@ -286,12 +286,12 @@ mo.graph @constant(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
       %b0 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %a2 = mogg.trait.create(%a1) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
       %b2 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %c0 = mogg.tensor.create(%c, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %b3 = mogg.trait.create(%b2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %c1 = mogg.trait.create(%c0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[2, 2], f32>
@@ -321,12 +321,12 @@ mo.graph @get_ptr(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
       %b0 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %a2 = mogg.trait.create(%a1) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a2 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
       %b2 = mogg.tensor.create(%b, %s0) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %c0 = mogg.tensor.create(%c, %s0) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %b3 = mogg.trait.create(%b2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %c1 = mogg.trait.create(%c0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[2, 2], f32>
@@ -361,14 +361,14 @@ mo.graph @prologue(%arg0: !mo.tensor<[2, 2], f32, gpu:0>, %arg1: !mo.tensor<[2, 
         mogg.yield %18 : !mogg.simd<f32>
       }
       %9 = mogg.trait.create(%6) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarativeFusedLoad inputs(%8 : !mogg.tensor) outputs(%9 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarativeFusedLoad inputs(%8 : !mogg.tensor) outputs(%9 : !mogg.tensor) context(%ctx : !mogg.context)
       %10 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
       %11 = mogg.tensor.create(%b, %10) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %12 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
       %13 = mogg.tensor.create(%c, %12) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
       %14 = mogg.trait.create(%11) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
       %15 = mogg.trait.create(%13) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%14 : !mogg.tensor) outputs(%15 : !mogg.tensor) context(%ctx : !mogg.context)
+      mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%14 : !mogg.tensor) outputs(%15 : !mogg.tensor) context(%ctx : !mogg.context)
     }
   }
   mo.output %0#1 : !mo.tensor<[2, 2], f32, gpu:0>

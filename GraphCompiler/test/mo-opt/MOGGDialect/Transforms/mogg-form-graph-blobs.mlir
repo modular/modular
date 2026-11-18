@@ -13,13 +13,13 @@
 // CHECK:         mogg.graph_blob {
 // CHECK:           mogg.tensor.create(%[[A]],
 // CHECK:           mogg.tensor.create(%[[B]],
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative {{.*}}context(%[[CTX]]
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative {{.*}}context(%[[CTX]]
 // CHECK:           mogg.tensor.create(%[[B]],
 // CHECK:           mogg.tensor.create(%[[C]],
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative
 // CHECK:           mogg.tensor.create(%[[C]],
 // CHECK:           mogg.tensor.create(%[[D]],
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative
 // CHECK-NOT:   mogg.routine
 // CHECK:       mo.output %[[R]]#2
 mo.graph @sequence(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
@@ -46,7 +46,7 @@ mo.graph @shared_intermediate(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2]
 // CHECK-LABEL: mo.graph @fan_out
 // CHECK:       %[[R:.*]]:3 = mogg.routine
 // CHECK:         mogg.graph_blob {
-// CHECK-COUNT-3:   mogg.call.execute_device
+// CHECK-COUNT-3:   mogg.call.opaque
 // CHECK:       mo.output %[[R]]#1, %[[R]]#2
 mo.graph @fan_out(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
   %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
@@ -204,11 +204,11 @@ mo.graph @two_devices(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
 // CHECK:       %[[R0:.*]]:2 = mogg.routine
 // CHECK:         attributes {device = #M.device_ref<"gpu", 0>
 // CHECK-NEXT:      mogg.graph_blob {
-// CHECK-COUNT-2:   mogg.call.execute_device
+// CHECK-COUNT-2:   mogg.call.opaque
 // CHECK:       %[[R1:.*]]:2 = mogg.routine
 // CHECK:         attributes {device = #M.device_ref<"gpu", 1>
 // CHECK-NEXT:      mogg.graph_blob {
-// CHECK-COUNT-2:   mogg.call.execute_device
+// CHECK-COUNT-2:   mogg.call.opaque
 // CHECK-NOT:   mogg.routine
 // CHECK:       mo.output %[[R0]]#1, %[[R1]]#1
 mo.graph @interleaved_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
@@ -308,9 +308,9 @@ mo.graph @join_waited_across_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor
 // CHECK:       mogg.routine (%{{[^ ,]+}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
 // CHECK-NEXT:    inputs (%[[A:[^ ,)]+]])
 // CHECK:         mogg.graph_blob {
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative{{ }}
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative{{ }}
 // CHECK:           mogg.tensor.create(%[[A]],
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarativeBinary
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarativeBinary
 // CHECK-NOT:   mogg.routine
 mo.graph @shared_input(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
@@ -324,7 +324,7 @@ mo.graph @shared_input(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
 // CHECK:       mo.parallel
 // CHECK:         mogg.routine
 // CHECK:           mogg.graph_blob {
-// CHECK-COUNT-2:     mogg.call.execute_device @{{.*}}MapLowerDeclarative
+// CHECK-COUNT-2:     mogg.call.opaque @{{.*}}MapLowerDeclarative
 // CHECK-NOT:     mogg.routine
 // CHECK:         mo.yield
 mo.graph @parallel(%a: !mo.tensor<[2, 2], f32, gpu:0>, %b: !mo.tensor<[2, 2], f32, gpu:1>) -> (!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>) {
@@ -428,9 +428,9 @@ mo.graph @read_in_branch(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32
 // CHECK:       %[[CH:.*]] = mo.chain.create()
 // CHECK-NEXT:  %[[R:.*]]:4 = mogg.routine (%{{.*}}, %{{.*}} : !mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>) chain(%[[CH]]) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain)
 // CHECK:         mogg.graph_blob {
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarativeInplace inputs({{.*}} : !mogg.tensor, !mogg.buffer)
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarativeInplace inputs({{.*}} : !mogg.tensor, !mogg.buffer)
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative inputs
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarativeInplace inputs({{.*}} : !mogg.tensor, !mogg.buffer)
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarativeInplace inputs({{.*}} : !mogg.tensor, !mogg.buffer)
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative inputs
 // CHECK-NOT:   mo.chain.create
 // CHECK:       mo.output %[[R]]#2
 mo.graph @buffer_chain(%a: !mo.tensor<[2, 2], f32>, %cache: !mo.buffer<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {

@@ -16,16 +16,16 @@
 // CHECK:         mogg.graph_blob {
 // CHECK:           mogg.tensor.create(%[[A]],
 // CHECK:           mogg.tensor.create(%[[P0]],
-// CHECK:           mogg.call.execute_device
+// CHECK:           mogg.call.opaque
 // CHECK:           mogg.tensor.create(%[[P0]],
 // CHECK:           mogg.tensor.create(%[[P1]],
-// CHECK:           mogg.call.execute_device
+// CHECK:           mogg.call.opaque
 // CHECK:           mogg.tensor.create(%[[P1]],
 // CHECK:           mogg.tensor.create(%[[P0]],
-// CHECK:           mogg.call.execute_device
+// CHECK:           mogg.call.opaque
 // CHECK:           mogg.tensor.create(%[[P0]],
 // CHECK:           mogg.tensor.create(%[[P1]],
-// CHECK:           mogg.call.execute_device
+// CHECK:           mogg.call.opaque
 // CHECK:       mo.output %[[R]]#1
 mo.graph @sequence(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>

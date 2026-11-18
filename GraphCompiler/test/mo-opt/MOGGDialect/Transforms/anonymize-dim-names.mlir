@@ -33,3 +33,16 @@ mogg.func @already_anonymous private dispatch(deferred)(%d: !mogg.dim)
   attributes {abi = #mogg.abi<MOGG>, constantResources = [], device = "cpu", fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"already_anonymous">>} {
   mogg.output
 }
+
+// A launch's dim block argument has its operand's type, so it loses the name
+// with the stub's argument.
+// CHECK-LABEL: mogg.func @launch_dim private
+// CHECK-SAME: (%[[D:[^:]+]]: !mogg.dim, %{{.*}}: !mogg.context, %{{.*}}: !mogg.launch_config)
+// CHECK: mogg.graph_blob.launch {{.*}} args {%{{[^ ]+}} = %[[D]] : !mogg.dim}
+// CHECK-NOT: !mogg.dim<
+mogg.func @launch_dim private dispatch(deferred)(%d: !mogg.dim<batch>, %ctx: !mogg.context, %cfg: !mogg.launch_config)
+  attributes {abi = #mogg.abi<MOGG>, constantResources = [], device = "gpu", fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"launch_dim">>} {
+  mogg.graph_blob.launch context(%ctx) config(%cfg) args {%x = %d : !mogg.dim<batch>} {
+  }
+  mogg.output
+}

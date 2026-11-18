@@ -1,58 +1,58 @@
 // RUN: rm -rf %t && mkdir -p %t
 // RUN: env MODULAR_DEBUG=ir-output-dir=%t mo-opt %s \
-// RUN:   --mlir-very-unsafe-disable-verifier-on-parsing \
 // RUN:   --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
-// RUN:   --mogg-outline-routines --mogg-emit-mojo -verify-each=false
+// RUN:   --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers \
+// RUN:   --map-outline-structured-kernel-bodies \
+// RUN:   --canonicalize --cse --map-to-mogg --mogg-conform-call-operands \
+// RUN:   --mogg-form-graph-blobs="max-calls=100" \
+// RUN:   --mogg-reuse-graph-blob-buffers --mogg-lower-graph-blobs \
+// RUN:   --canonicalize --mogg-outline-routines --mogg-emit-mojo \
+// RUN:   -verify-each=false
 // RUN: FileCheck %s < %t/graph.mojo
-//
-// The hand-written `mogg.call.execute_device`s name kernel declarations that
-// only exist once `--mogg-import-packages` has run, so parse-time
-// verification is disabled.
 
-// A `mogg.graph_blob` launches its declarative calls as one kernel: each
-// call's `execute_configuration` runs on the host, the blob launches on its
-// context's `_graph_blob.launch_config`, and the kernel runs each
-// `execute_device` only where `_graph_blob.is_thread_active` accepts that
-// call's grid, with a barrier between them. The intermediate `%b` crosses the launch once per use.
+// Three declarative calls form one graph blob, which formation, buffer reuse
+// and lowering write out as one launch. The kernel takes the routine's
+// pointers and builds each call's views inside its guard. The first call's
+// fused output stays on the host and crosses as its `device_type`, with the
+// bias its epilogue captures inside it. The second and third calls both read
+// the first call's buffer, which crosses once.
 
-// CHECK: import max._graph_blob as _graph_blob
-// CHECK: def {{__[A-Za-z0-9_]+}}({{.*}}, [[CTX:[A-Za-z0-9_]+]]: {{.*}}DeviceContext) raises:
-// CHECK:   var [[CONFIG0:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration([[OUT0:[A-Za-z0-9_]+]], [[IN0:[A-Za-z0-9_]+]])
-// CHECK:   comptime [[OUT0_T:[A-Za-z0-9_]+]] = type_of([[OUT0]])
-// CHECK:   comptime [[IN0_T:[A-Za-z0-9_]+]] = type_of([[IN0]])
-// CHECK:   var [[CONFIG1:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration([[OUT1:[A-Za-z0-9_]+]], [[IN1:[A-Za-z0-9_]+]])
-// CHECK:   comptime [[OUT1_T:[A-Za-z0-9_]+]] = type_of([[OUT1]])
-// CHECK:   comptime [[IN1_T:[A-Za-z0-9_]+]] = type_of([[IN1]])
-// CHECK:   var [[LAUNCH:[A-Za-z0-9_]+]] = _graph_blob.launch_config([[CTX]])
-// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].device_type, [[A1:[A-Za-z0-9_]+]]: [[IN0_T]].device_type, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].device_type, [[A3:[A-Za-z0-9_]+]]: [[IN1_T]].device_type, [[ACTIVE0:[A-Za-z0-9_]+]]: Int32, [[ACTIVE1:[A-Za-z0-9_]+]]: Int32):
-// CHECK-NEXT: if {{\(?}}_graph_blob.is_thread_active([[ACTIVE0]]){{\)?}}:
-// CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT0_T]]([[A0]]), [[IN0_T]]([[A1]]))
-// CHECK: _graph_blob.barrier()
-// CHECK-NEXT: if {{\(?}}_graph_blob.is_thread_active([[ACTIVE1]]){{\)?}}:
-// CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT1_T]]([[A2]]), [[IN1_T]]([[A3]]))
-// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[LAUNCH]], [[OUT0]], [[IN0]], [[OUT1]], [[IN1]], _graph_blob.active_threads([[CONFIG0]].get_grid_dim(), [[CONFIG0]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim()), _graph_blob.active_threads([[CONFIG1]].get_grid_dim(), [[CONFIG1]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim()))
+// CHECK:      def {{__[A-Za-z0-9_]+}}([[A:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[BIAS:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[C:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[D:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[E:[A-Za-z0-9_]+]]: OpaquePointer[MutAnyOrigin], [[CTX:[A-Za-z0-9_]+]]: {{.*}}DeviceContext) raises:
+// CHECK:        var [[FUSED:[A-Za-z0-9_]+]] = _MoggOutputStoreFusionTensor[
+// CHECK:        var [[CONFIG0:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarativeFusedStore.execute_configuration(
+// CHECK-NEXT:   var [[CONFIG1:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration(
+// CHECK-NEXT:   var [[CONFIG2:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration(
+// CHECK-NEXT:   var [[LAUNCH:[A-Za-z0-9_]+]] = _graph_blob.launch_config([[CTX]])
+// CHECK-NEXT:   var [[ACT0:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG0]].get_grid_dim(), [[CONFIG0]].get_block_dim(), [[LAUNCH]].get_grid_dim(), [[LAUNCH]].get_block_dim())
+// CHECK-NEXT:   var [[ACT1:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG1]].get_grid_dim(),
+// CHECK-NEXT:   var [[ACT2:[A-Za-z0-9_]+]] = _graph_blob.active_threads([[CONFIG2]].get_grid_dim(),
+// CHECK-NEXT:   comptime [[A_T:[A-Za-z0-9_]+]] = type_of([[A]])
+// CHECK-NEXT:   comptime [[FUSED_T:[A-Za-z0-9_]+]] = type_of([[FUSED]])
+// CHECK-NEXT:   comptime [[C_T:[A-Za-z0-9_]+]] = type_of([[C]])
+// CHECK-NEXT:   comptime [[D_T:[A-Za-z0-9_]+]] = type_of([[D]])
+// CHECK-NEXT:   comptime [[E_T:[A-Za-z0-9_]+]] = type_of([[E]])
+// CHECK:        def [[KERNEL:execute_device_[_0-9]+]]([[X:[A-Za-z0-9_]+]]: [[A_T]].device_type, [[O0:[A-Za-z0-9_]+]]: [[FUSED_T]].device_type, [[Y:[A-Za-z0-9_]+]]: [[C_T]].device_type, [[Z0:[A-Za-z0-9_]+]]: [[D_T]].device_type, [[Z1:[A-Za-z0-9_]+]]: [[E_T]].device_type, [[A0:[A-Za-z0-9_]+]]: {{[^,]+}}, [[A1:[A-Za-z0-9_]+]]: {{[^,]+}}, [[A2:[A-Za-z0-9_]+]]: {{[^,]+}}):
+// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A0]]){{\)?}}:
+// CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[X]].unsafe_bitcast
+// CHECK:            var [[IN0:[A-Za-z0-9_]+]] = _MoggDenseTensorArg[{{.*}}_MoggTensorIO.INPUT
+// CHECK-NEXT:       {{.*}}.MapLowerDeclarativeFusedStore.execute_device([[O0]], [[IN0]])
+// CHECK:          _graph_blob.barrier()
+// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A1]]){{\)?}}:
+// CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[Y]].unsafe_bitcast
+// CHECK:            mogg_tensor_init[{{.*}}IO.Output{{.*}}]([[Z0]].unsafe_bitcast
+// CHECK:            {{.*}}.MapLowerDeclarative.execute_device(
+// CHECK:          _graph_blob.barrier()
+// CHECK-NEXT:     if {{\(?}}_graph_blob.is_thread_active([[A2]]){{\)?}}:
+// CHECK:            mogg_tensor_init[{{.*}}IO.Input{{.*}}]([[Y]].unsafe_bitcast
+// CHECK:            mogg_tensor_init[{{.*}}IO.Output{{.*}}]([[Z1]].unsafe_bitcast
+// CHECK:            {{.*}}.MapLowerDeclarative.execute_device(
+// CHECK:        builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[LAUNCH]], [[A]], [[FUSED]], [[C]], [[D]], [[E]], [[ACT0]], [[ACT1]], [[ACT2]])
+// CHECK-NOT:    mogg_launch_declarative
 
-mo.graph @blob(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
-  %0:2 = mogg.routine (%arg0 : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
-    inputs (%a)
-    outputs (%b, %c)
-    context (%ctx) attributes {device = #M.device_ref<"gpu", 0>} {
-    mogg.graph_blob {
-      %s0 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
-      %a0 = mogg.tensor.create(%a, %s0) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
-      %s1 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
-      %b0 = mogg.tensor.create(%b, %s1) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
-      %a1 = mogg.trait.create(%a0) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      %b1 = mogg.trait.create(%b0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%a1 : !mogg.tensor) outputs(%b1 : !mogg.tensor) context(%ctx : !mogg.context)
-      %s2 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
-      %b2 = mogg.tensor.create(%b, %s2) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
-      %s3 = mogg.shape.create() <shape = #mosh<ape[2, 2]> : !mosh.ape>
-      %c0 = mogg.tensor.create(%c, %s3) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[2, 2]> : !mosh.ape> : !mogg.tensor
-      %b3 = mogg.trait.create(%b2) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      %c1 = mogg.trait.create(%c0) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-      mogg.call.execute_device @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%b3 : !mogg.tensor) outputs(%c1 : !mogg.tensor) context(%ctx : !mogg.context)
-    }
-  }
-  mo.output %0#1 : !mo.tensor<[2, 2], f32>
+mo.graph @blob(%a: !mo.tensor<[2, 2], f32, gpu:0>, %bias: !mo.tensor<[2, 2], f32, gpu:0>) -> (!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:0>) {
+  %b = mo.custom [symbol = "map_lower_declarative_fused_store", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  %c = mo.add(%b, %bias) : !mo.tensor<[2, 2], f32, gpu:0>
+  %d = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%c) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  %e = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%c) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+  mo.output %d, %e : !mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:0>
 }

@@ -389,9 +389,10 @@ def RowwiseSetLaunchParams
 def AnonymizeDimNames: Pass<"mogg-anonymize-dim-names", "ModuleOp"> {
   let summary = "Drop symbolic dim names from every kernel stub's signature.";
   let description = [{
-    Turns every `!mogg.dim<name>` in a `mogg.func` signature into
-    `!mogg.dim`, so `MergeIdenticalFuncs` can merge stubs that differ
-    only in dim names. Runs inside `EmitMojo` just before that merge.
+    Turns every `!mogg.dim<name>` in a `mogg.func` signature, and every one
+    that a block nested in its body takes, into `!mogg.dim`, so
+    `MergeIdenticalFuncs` can merge stubs that differ only in dim names. Runs
+    inside `EmitMojo` just before that merge.
   }];
 
   let dependentDialects = ["MOGG::MOGGDialect"];

@@ -5,8 +5,8 @@
 // CHECK-LABEL: mo.graph @one_deferred
 // CHECK:       mogg.routine (
 // CHECK:         mogg.graph_blob {
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative
 // CHECK-NEXT:    }
 // CHECK-NOT:   mogg.routine
 // CHECK:       mo.output
@@ -38,8 +38,8 @@ mo.graph @one_deferred(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32
 // CHECK-LABEL: mo.graph @all_immediate
 // CHECK:       mogg.routine dispatch(immediate) (
 // CHECK:         mogg.graph_blob {
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative
-// CHECK:           mogg.call.execute_device @{{.*}}MapLowerDeclarative
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative
+// CHECK:           mogg.call.opaque @{{.*}}MapLowerDeclarative
 // CHECK-NEXT:    }
 // CHECK-NOT:   mogg.routine
 // CHECK:       mo.output
