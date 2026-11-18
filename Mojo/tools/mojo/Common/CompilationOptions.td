@@ -126,6 +126,7 @@ def elaboration_stats: Flag<["--", "-"], "elaboration-stats">,
   MarshallingInfoFlag<CompilationOpts<"elaborationStats">>;
 
 include "Common/ParserStatsOptions.td"
+include "Common/RunParameterVerifierOptions.td"
 
 defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
   "elaboration-error-verbose",

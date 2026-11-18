@@ -20,6 +20,7 @@
 #include "Mojo/Compiler/Target/TargetBackend.h"
 #include "Mojo/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
+#include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/Support/BuildInfo.h"
@@ -1048,7 +1049,11 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
 KGENCompiler::KGENCompiler(MLIRContext &context, CompilationOptions options,
                            PassManagerConfigOptions pmConfigOptions)
     : options(std::move(options)), pmConfigOptions(std::move(pmConfigOptions)),
-      context(context) {}
+      context(context) {
+  // Every pass that builds a parameter use-def graph reads this.
+  context.getOrLoadDialect<KGENDialect>()->setRunParameterVerifier(
+      this->options.runParameterVerifier);
+}
 
 ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
                                              TargetInfoAttr target) {

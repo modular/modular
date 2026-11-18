@@ -22,6 +22,7 @@ include "Common/IncludeOptions.td"
 include "Common/ParserStatsOptions.td"
 include "Common/MLIRTimingOptions.td"
 include "Common/TimingReportOptions.td"
+include "Common/RunParameterVerifierOptions.td"
 include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//

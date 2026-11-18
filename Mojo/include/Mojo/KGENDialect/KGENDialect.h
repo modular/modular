@@ -18,11 +18,13 @@
 #ifndef KGEN_KGENDIALECT_H
 #define KGEN_KGENDIALECT_H
 
+#include "Mojo/KGENDialect/ParameterVerification.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "mlir/IR/Dialect.h"
 #include "llvm/ADT/StringMap.h"
 
+#include <atomic>
 #include <filesystem>
 #include <type_traits>
 

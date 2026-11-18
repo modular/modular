@@ -96,6 +96,16 @@ def KGENDialect : Dialect {
       symbolTypeParser = std::move(parser);
     }
 
+    /// Whether a parameter use-def graph built in this context also runs the
+    /// checks of the parameter verifier. The compiler driver sets it from
+    /// `--run-parameter-verifier` before it parses or compiles.
+    bool getRunParameterVerifier() const {
+      return runParameterVerifier.load(std::memory_order_relaxed);
+    }
+    void setRunParameterVerifier(bool run) {
+      runParameterVerifier.store(run, std::memory_order_relaxed);
+    }
+
   private:
     /// The map of keyword parsers.
     llvm::StringMap<TypeParseFn> typeParseFns;
@@ -109,6 +119,10 @@ def KGENDialect : Dialect {
 
     /// Function that parses symbol references as types.
     std::function<FailureOr<Type>(AsmParser &, SymbolRefAttr)> symbolTypeParser;
+
+    /// Atomic because compilations on threads that share the context read it.
+    std::atomic<bool> runParameterVerifier{
+        ::M::KGEN::kVerifyParametersByDefault};
 
     /// Allow the type pretty printer and parser utilities to access the
     /// pretty functions.

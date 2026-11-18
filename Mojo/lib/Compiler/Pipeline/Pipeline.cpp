@@ -29,9 +29,8 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
   // Lower semantic control flow operations like lit.return to terminators and
   // diagnose unreachable code.
   pm.addPass(createLowerSemanticCF());
-#ifndef MODULAR_PRODUCTION
-  pm.addPass(createVerifyParameters());
-#endif
+  if (options.runParameterVerifier)
+    pm.addPass(createVerifyParameters());
 
   // These passes doesn't touch parameters, no need to re-verify them after it.
   // Insert calls to destructors, reject use before free, and borrow check.
@@ -47,9 +46,8 @@ static void buildLowerLITPipeline(mlir::PassManager &pm,
 
   pm.addPass(createLowerLIT(
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
-#ifndef MODULAR_PRODUCTION
-  pm.addPass(createVerifyParameters());
-#endif
+  if (options.runParameterVerifier)
+    pm.addPass(createVerifyParameters());
 }
 
 void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
@@ -126,9 +124,8 @@ void KGEN::buildElaborateModulePipeline(
 
   if (options.optimizationLevel >= 1)
     pm.addNestedPass<GeneratorOp>(mlir::createCSEPass());
-#ifndef MODULAR_PRODUCTION
-  pm.addPass(createVerifyParameters());
-#endif
+  if (options.runParameterVerifier)
+    pm.addPass(createVerifyParameters());
   pm.addPass(createLiftAndFoldApply());
 
   pm.addPass(createReorderParamOps(true));
@@ -187,10 +184,9 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
   pm.addPass(createLowerCallingConventions());
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
-#ifndef MODULAR_PRODUCTION
   // Ensure no illegal parameters remain.
-  pm.addNestedPass<FuncOp>(createEnsureNoParameters());
-#endif
+  if (options.runParameterVerifier)
+    pm.addNestedPass<FuncOp>(createEnsureNoParameters());
 
   pm.addPass(createInferFunctionAttrs());
 

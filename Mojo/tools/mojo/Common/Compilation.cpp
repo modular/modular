@@ -15,6 +15,7 @@
 #include "Mojo/Compiler/KGENCompiler.h"
 #include "Mojo/Compiler/ObjectCompiler.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/ParserStats.h"
@@ -420,6 +421,9 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   registerAllKGENDialects(registry);
   ctx->appendDialectRegistry(registry);
   configureKGENContext(ctx);
+  // Before the parse, which builds parameter use-def graphs.
+  ctx->getOrLoadDialect<KGENDialect>()->setRunParameterVerifier(
+      compilationOptions.runParameterVerifier);
 
   // Parse the input Mojo file into an MLIR module.
   std::unique_ptr<AutoFixItHandler> fixItHandler;

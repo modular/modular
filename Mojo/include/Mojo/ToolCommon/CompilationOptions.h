@@ -15,6 +15,7 @@
 #define KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/ParameterVerification.h"
 #if MLRT_ACCELERATOR_SUPPORT
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #endif
@@ -243,6 +244,10 @@ public:
   bool elaborationStats = false;
 
   bool parserStats = false;
+
+  // Whether to run the parameter verifier. It finds compiler bugs, not user
+  // errors, so CI can turn it off to save compile time.
+  bool runParameterVerifier = kVerifyParametersByDefault;
 
   // HACK: to disable llvm splitting for some cases.
   // - mojo REPL (#35345)

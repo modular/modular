@@ -18,6 +18,7 @@
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
@@ -479,8 +480,10 @@ namespace {
 class VerifyingParameterCollector : public ParameterCollector {
 public:
   VerifyingParameterCollector(SymTabEvaluationContext *evaluationContext,
-                              ParameterCollector::Analysis &cache)
-      : ParameterCollector(cache), evaluationContext(evaluationContext) {}
+                              ParameterCollector::Analysis &cache,
+                              bool runChecks)
+      : ParameterCollector(cache), evaluationContext(evaluationContext),
+        runChecks(runChecks) {}
 
   /// The first time we encounter an attribute with a reference to an
   /// out-of-line declaration, verify it.
@@ -495,10 +498,9 @@ public:
   void maybeVerify(
       function_ref<LogicalResult(function_ref<InFlightDiagnostic()>)> verifyFn)
       override {
-#ifndef MODULAR_PRODUCTION
-    if (failed(verifyFn([&] { return mlir::emitError(op->getLoc()); })))
+    if (runChecks &&
+        failed(verifyFn([&] { return mlir::emitError(op->getLoc()); })))
       hadError = true;
-#endif
   }
 
   /// Whether a verification error occurred.
@@ -508,16 +510,17 @@ public:
 
 private:
   /// The symbol to use to verify symbol references.
-  [[maybe_unused]] SymTabEvaluationContext *evaluationContext;
+  SymTabEvaluationContext *evaluationContext;
+  /// Whether to run the checks, rather than only collect the parameters.
+  bool runChecks;
   /// Cached references that have already been verified.
   DenseSet<const void *> verifiedRefs;
 };
 } // namespace
 
 void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
-#ifndef MODULAR_PRODUCTION
   // We only check this during the op verification phase.
-  if (!evaluationContext)
+  if (!runChecks || !evaluationContext)
     return;
 
   if (!verifiedRefs.insert(refAttr.getAsOpaquePointer()).second)
@@ -530,23 +533,20 @@ void VerifyingParameterCollector::verifyRefAttr(DeclRefAttrInterface refAttr) {
     op->emitOpError("invalid symbol use within this operator");
     hadError = true;
   }
-#endif
 }
 
 void VerifyingParameterCollector::verifyRefType(StructTypeInterface refType) {
-#ifndef MODULAR_PRODUCTION
-  VerboseCompilerTimeTraceScope traceScope("verifyRefType");
-
   // We only check this during the op verification phase.
-  if (!evaluationContext)
+  if (!runChecks || !evaluationContext)
     return;
+
+  VerboseCompilerTimeTraceScope traceScope("verifyRefType");
 
   if (!verifiedRefs.insert(refType.getAsOpaquePointer()).second)
     return;
 
   if (failed(refType.verifySymbolUses(*evaluationContext, op->getLoc())))
     hadError = true;
-#endif
 }
 
 //===----------------------------------------------------------------------===//
@@ -894,6 +894,12 @@ static void emitCycleError(ParameterUseDefGraph &g,
   }
 }
 
+bool M::KGEN::runParamVerifier(MLIRContext *ctx) {
+  auto *dialect = ctx->getLoadedDialect<KGENDialect>();
+  return dialect ? dialect->getRunParameterVerifier()
+                 : kVerifyParametersByDefault;
+}
+
 LogicalResult ParameterUseDefGraph::calculateOrVerify(
     SymTabEvaluationContext *evaluationContext,
     ParameterCollector::Analysis &cache) {
@@ -906,7 +912,8 @@ LogicalResult ParameterUseDefGraph::calculateOrVerify(
       });
 
   // The parameter collector to use.
-  VerifyingParameterCollector c(evaluationContext, cache);
+  VerifyingParameterCollector c(evaluationContext, cache,
+                                runParamVerifier(scope->getContext()));
 
   auto processOp = [&](Operation *op) -> WalkResult {
     // Set the operation for which we are collecting parameters. It will be used
