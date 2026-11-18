@@ -21,6 +21,7 @@ from max.gpu import WARP_SIZE, thread_idx, warp_id
 from max.gpu.host import DeviceContext
 from layout import (
     Coord,
+    Idx,
     TensorLayout,
     TileTensor,
     row_major,
@@ -590,6 +591,71 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
     _test_shape(IndexList[rank](1, 1, 4))
 
 
+def test_gpu_softmax_static_dims[
+    logsoftmax: Bool = False
+](ctx: DeviceContext, var shape: Coord) raises:
+    """Drives `_softmax_gpu` with a shape that has `ComptimeInt` dims.
+
+    The other tests build the shape from an `IndexList`, which leaves every
+    dimension a runtime value. A `TileTensor.shape_coord()` caller keeps
+    static dims in the `Coord` type, and the kernels receive that `Coord`
+    as-is, so only a static-dim shape checks that the kernel argument and
+    the row-to-index translation handle mixed static and runtime dims.
+    """
+    print("== test_gpu_softmax_static_dims", "logsoftmax=", logsoftmax)
+    seed(42)
+
+    comptime type = DType.float32
+    comptime rank = type_of(shape).rank
+    var length = Int(shape.product())
+
+    var in_host_ptr = ctx.enqueue_create_host_buffer[type](length)
+    var in_device_ptr = ctx.enqueue_create_buffer[type](length)
+    var in_host = TileTensor(in_host_ptr, row_major(shape))
+    var in_device = TileTensor(in_device_ptr.unsafe_ptr(), row_major(shape))
+    var out_host_ptr = ctx.enqueue_create_host_buffer[type](length)
+    var out_ref_ptr = ctx.enqueue_create_host_buffer[type](length)
+    var out_device_ptr = ctx.enqueue_create_buffer[type](length)
+    for i in range(length):
+        in_host_ptr[i] = random_float64(-3, 3).cast[type]()
+    ctx.enqueue_copy(in_device_ptr, in_host_ptr)
+
+    def input_fn_device[
+        _simd_width: Int
+    ](coords: Coord) {var in_device} -> SIMD[type, _simd_width]:
+        return in_device.load[width=_simd_width](coords)
+
+    def input_fn_host[
+        _simd_width: Int
+    ](coords: Coord) {var in_host} -> SIMD[type, _simd_width]:
+        return in_host.load[width=_simd_width](coords)
+
+    _softmax_gpu[type, 1, rank, logsoftmax=logsoftmax](
+        input_fn_device,
+        shape,
+        TileTensor(out_device_ptr, row_major(shape)),
+        rank - 1,
+        ctx,
+    )
+
+    _softmax_cpu[type, 1, rank, logsoftmax=logsoftmax](
+        input_fn_host,
+        shape,
+        TileTensor(out_ref_ptr, row_major(shape)),
+        rank - 1,
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host_ptr, out_device_ptr)
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_almost_equal(out_host_ptr[i], out_ref_ptr[i], atol=1e-4)
+
+    _ = in_device_ptr
+    _ = out_device_ptr
+
+
 def _online_softmax_scratch_kernel[
     OutputLayout: TensorLayout
 ](output: TileTensor[.float32, OutputLayout, MutAnyOrigin]) where (
@@ -681,3 +747,15 @@ def main() raises:
         test_gpu_softmax_masked_split[.float32](ctx)
         test_gpu_softmax_masked_split[.bfloat16](ctx)
         test_gpu_logsoftmax(ctx)
+        # Runtime outer dim with static inner dims: the single-block kernel
+        # and, with `logsoftmax`, the 3-pass kernel. The (4, 32768) shape
+        # takes the split partial/combine kernels.
+        test_gpu_softmax_static_dims(ctx, Coord(Int64(3), Idx[5], Idx[515]))
+        test_gpu_softmax_static_dims[logsoftmax=True](
+            ctx, Coord(Int64(3), Idx[5], Idx[515])
+        )
+        test_gpu_softmax_static_dims(ctx, Coord(Int64(4), Idx[32768]))
+        # All dims static: the shape `Coord` reaches the kernel with no
+        # runtime fields.
+        test_gpu_softmax_static_dims(ctx, Coord(Idx[3], Idx[5], Idx[515]))
+        test_gpu_softmax_static_dims(ctx, Coord(Idx[4], Idx[32768]))

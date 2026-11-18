@@ -56,7 +56,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
     stack_allocation as tt_stack_allocation,
 )
@@ -64,9 +63,7 @@ from layout.layout import Layout as InternalLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils import IndexList
-from std.utils.coord import ComptimeInt, Coord, DynamicCoord, coord
-from std.utils.index import product
+from std.utils.coord import ComptimeInt, Coord, CoordLike, DynamicCoord, coord
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 # Free-form row-wise scaffolder (Row) + monoids.
@@ -493,13 +490,14 @@ def _softmax_cpu[
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")
 
-    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
+    comptime assert type_of(shape).rank == rank, "shape must have rank `rank`"
 
-    if shape_il.flattened_length() == 0:
+    var num_elements = Int(shape.product())
+    if num_elements == 0:
         return
 
     var inner_dim = Int(output.dim[rank - 1]())
-    var outer_dim = product[rank](shape_il, rank - 1)
+    var outer_dim = num_elements // Int(shape[rank - 1])
     var num_workers = min(parallelism_level(ctx), outer_dim)
     var chunk_size = ceildiv(outer_dim, num_workers)
 
@@ -515,7 +513,7 @@ def _softmax_cpu[
                 output.ptr.unsafe_offset(buffer_offset),
                 row_major(inner_dim),
             )
-            var indices = _get_nd_indices_from_flat_index(i, shape_il, rank - 1)
+            var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
 
             @inline(.always)
             # Given input lambda accepts N-dimensional coordinates, but the
@@ -524,8 +522,8 @@ def _softmax_cpu[
             def input_fn_1d[
                 _width: Int
             ](idx: Int) {mut indices, imm} -> SIMD[dtype, _width]:
-                indices[rank - 1] = idx
-                return input_fn[_width](Coord(indices))
+                indices.replace_dynamic[rank - 1](idx)
+                return input_fn[_width](indices)
 
             softmax_3_pass[simd_width, logsoftmax=logsoftmax](
                 input_fn_1d, output_buffer_view
@@ -543,7 +541,7 @@ def softmax_kernel[
     & def[_dtype: DType, _simd_width: Int](Coord) -> SIMD[_dtype, _simd_width],
     dtype: DType,
     sink_type: DType,
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     OutputEngine: TensorEngine,
@@ -553,7 +551,7 @@ def softmax_kernel[
     sink: Bool = False,
     logsoftmax: Bool = False,
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     output: TileTensor[
         dtype, OutputLayoutType, output_origin, Engine=OutputEngine
     ],
@@ -571,7 +569,7 @@ def softmax_kernel[
         InputFnType: The type of `input_fn`.
         dtype: The dtype of the input and output buffers.
         sink_type: The dtype of the sink weights.
-        rank: The rank of the input and output tensors.
+        shape_types: The element types of the `shape` coordinate.
         OutputLayoutType: The layout type of the output tensor.
         output_origin: The origin of the output tensor.
         OutputEngine: Engine of the output tensor.
@@ -581,7 +579,7 @@ def softmax_kernel[
         logsoftmax: Enable to apply elementwise log() to outputs after softmax.
 
     Args:
-        shape: The shape of the tensor as an IndexList.
+        shape: The shape of the tensor.
         output: The output buffer in which to store the softmax values.
         sink_weights: Per-head sink weights used when `sink` is True.
         input_fn: The elementwise input lambda.
@@ -590,10 +588,10 @@ def softmax_kernel[
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
-    comptime axis = rank - 1
+    comptime axis = Coord[*shape_types].rank - 1
 
-    var row_size: Int = shape[axis]
-    var num_rows = ufloordiv(shape.flattened_length(), row_size)
+    var row_size = Int(shape[axis])
+    var num_rows = ufloordiv(Int(shape.product()), row_size)
 
     var max_buf = tt_stack_allocation[dtype=accum_type, address_space=.SHARED](
         row_major[1]()
@@ -625,7 +623,7 @@ def softmax_kernel[
 
             # Step 1: compute max in row
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx, Coord(shape), axis
+                row_idx, shape, axis
             )
 
             comptime if sink:
@@ -825,8 +823,9 @@ def _softmax_gpu[
     ](idx: Coord) {var input_fn} -> SIMD[_dtype, width]:
         return rebind[SIMD[_dtype, width]](input_fn[width](idx))
 
-    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
-    var num_rows = shape_il.flattened_length() // shape_il[axis]
+    comptime assert type_of(shape).rank == rank, "shape must have rank `rank`"
+    var row_size = Int(shape[rank - 1])
+    var num_rows = Int(shape.product()) // row_size
     var sm_count = ctx.device().multiprocessor_count()
     comptime sm_overprovision_factor = 32  # tunable
 
@@ -842,7 +841,14 @@ def _softmax_gpu[
         # block/online path below.
         def dispatch_warp_or_block[
             use_warp: Bool
-        ]() raises {var num_rows, var shape_il, var output, var sm_count, imm}:
+        ]() raises {
+            var num_rows,
+            var row_size,
+            var shape,
+            var output,
+            var sm_count,
+            imm,
+        }:
             comptime if use_warp:
                 comptime WARP_BLOCK_SIZE = warp_size * WARP_ROWS
                 var warp_num_blocks = min(
@@ -883,9 +889,7 @@ def _softmax_gpu[
                 comptime accum_type = get_accum_type[dtype]()
                 var target_blocks = blocks_per_sm * sm_count
                 # Widest-tile count so no split ends up empty in either variant.
-                var total_tiles = ceildiv(
-                    shape_il[axis], BLOCK_SIZE * simd_width
-                )
+                var total_tiles = ceildiv(row_size, BLOCK_SIZE * simd_width)
                 var num_splits = min(
                     min(max(target_blocks // num_rows, 1), max_splits),
                     max(total_tiles // min_tiles_per_split, 1),
@@ -900,7 +904,7 @@ def _softmax_gpu[
                     use_vectorized: Bool
                 ]() raises {
                     var num_blocks,
-                    var shape_il,
+                    var shape,
                     var output,
                     var num_splits,
                     imm,
@@ -932,10 +936,10 @@ def _softmax_gpu[
                             type_of(input_fn_wrapper),
                             dtype,
                             DType.float32,
-                            rank,
+                            type_of(shape).element_types,
                         ]
                         ctx.enqueue_function[partial_kernel](
-                            shape_il,
+                            shape,
                             Float32(1),
                             null_temp_arr,
                             Int32(num_splits),
@@ -953,13 +957,13 @@ def _softmax_gpu[
                             type_of(input_fn_wrapper),
                             dtype,
                             DType.float32,
-                            rank,
+                            type_of(shape).element_types,
                             output.LayoutType,
                             output.origin,
                             output.Engine,
                         ]
                         ctx.enqueue_function[combine_kernel](
-                            shape_il,
+                            shape,
                             output,
                             Float32(1),
                             null_temp_arr,
@@ -981,13 +985,13 @@ def _softmax_gpu[
                         type_of(input_fn_wrapper),
                         dtype,
                         DType.float32,
-                        rank,
+                        type_of(shape).element_types,
                         output.LayoutType,
                         output.origin,
                         output.Engine,
                     ]
                     ctx.enqueue_function[kernel](
-                        shape_il,
+                        shape,
                         output,
                         Float32(1),
                         null_temp_arr,
@@ -999,12 +1003,12 @@ def _softmax_gpu[
 
                 unswitch(
                     simd_width > 1
-                    and shape_il[axis] % simd_width == 0
-                    and shape_il[axis] >= BLOCK_SIZE * simd_width,
+                    and row_size % simd_width == 0
+                    and row_size >= BLOCK_SIZE * simd_width,
                     dispatch,
                 )
 
-        unswitch(shape_il[axis] <= warp_size, dispatch_warp_or_block)
+        unswitch(row_size <= warp_size, dispatch_warp_or_block)
     else:
         # Fallback: sink-attention or logsoftmax variants stay on the legacy
         # 3-pass kernel until those variants are added to the online path.
@@ -1015,7 +1019,7 @@ def _softmax_gpu[
             type_of(input_fn_wrapper),
             dtype,
             sink_type,
-            rank,
+            type_of(shape).element_types,
             output.LayoutType,
             output.origin,
             output.Engine,
@@ -1024,7 +1028,7 @@ def _softmax_gpu[
             logsoftmax=logsoftmax,
         ]
         ctx.enqueue_function[kernel](
-            shape_il,
+            shape,
             output,
             sink_weights.unsafe_value(),
             host_args=(input_fn_wrapper,),
@@ -1124,7 +1128,7 @@ def _softmax_temperature_kernel[
     & def[_dtype: DType, _simd_width: Int](Coord) -> SIMD[_dtype, _simd_width],
     dtype: DType,
     temp_dtype: DType,
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     OutputEngine: TensorEngine,
@@ -1132,7 +1136,7 @@ def _softmax_temperature_kernel[
     TempEngine: TensorEngine = DefaultEngine[element_width=1],
     accum_type: DType = get_accum_type[dtype](),
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     output: TileTensor[
         dtype, OutputLayoutType, output_origin, Engine=OutputEngine
     ],
@@ -1160,11 +1164,11 @@ def _softmax_temperature_kernel[
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
-    comptime axis = rank - 1
+    comptime axis = Coord[*shape_types].rank - 1
     comptime BLOCK_SPAN = BLOCK_SIZE * simd_width
 
-    var row_size = shape[axis]
-    var num_rows = ufloordiv(shape.flattened_length(), row_size)
+    var row_size = Int(shape[axis])
+    var num_rows = ufloordiv(Int(shape.product()), row_size)
     var tid = thread_idx.x
 
     # Masked positions arrive as `-inf` (e.g. attention scores after a
@@ -1178,7 +1182,7 @@ def _softmax_temperature_kernel[
     with PDL():
         for row_idx in range(block_idx.x, num_rows, grid_dim.x):
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx, Coord(shape), axis
+                row_idx, shape, axis
             )
 
             var temp = _temperature.cast[accum_type]()
@@ -1279,12 +1283,12 @@ def _softmax_split_partial_kernel[
     & def[_dtype: DType, _simd_width: Int](Coord) -> SIMD[_dtype, _simd_width],
     dtype: DType,
     temp_dtype: DType,
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     TempLayoutType: TensorLayout = RowMajorLayout[Int64],
     TempEngine: TensorEngine = DefaultEngine[element_width=1],
     accum_type: DType = get_accum_type[dtype](),
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     temperature: Scalar[temp_dtype],
     temperature_arr: Optional[
         TileTensor[
@@ -1309,12 +1313,12 @@ def _softmax_split_partial_kernel[
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
-    comptime axis = rank - 1
+    comptime axis = Coord[*shape_types].rank - 1
     comptime BLOCK_SPAN = BLOCK_SIZE * simd_width
     comptime NEG_INF = Scalar[accum_type].MIN
 
-    var row_size = shape[axis]
-    var num_rows = ufloordiv(shape.flattened_length(), row_size)
+    var row_size = Int(shape[axis])
+    var num_rows = ufloordiv(Int(shape.product()), row_size)
     var num_pairs = num_rows * num_splits
     var tid = thread_idx.x
     var tiles_per_split = ceildiv(ceildiv(row_size, BLOCK_SPAN), num_splits)
@@ -1323,7 +1327,7 @@ def _softmax_split_partial_kernel[
         for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
             var row_idx, split = divmod(pair_idx, num_splits)
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx, Coord(shape), axis
+                row_idx, shape, axis
             )
 
             # Every block owning this row must read the same temperature.
@@ -1390,7 +1394,7 @@ def _softmax_split_combine_kernel[
     & def[_dtype: DType, _simd_width: Int](Coord) -> SIMD[_dtype, _simd_width],
     dtype: DType,
     temp_dtype: DType,
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
     OutputEngine: TensorEngine,
@@ -1398,7 +1402,7 @@ def _softmax_split_combine_kernel[
     TempEngine: TensorEngine = DefaultEngine[element_width=1],
     accum_type: DType = get_accum_type[dtype](),
 ](
-    shape: IndexList[rank],
+    shape: Coord[*shape_types],
     output: TileTensor[
         dtype, OutputLayoutType, output_origin, Engine=OutputEngine
     ],
@@ -1424,12 +1428,12 @@ def _softmax_split_combine_kernel[
     comptime assert (
         accum_type.is_floating_point()
     ), "accum_type must be floating point"
-    comptime axis = rank - 1
+    comptime axis = Coord[*shape_types].rank - 1
     comptime BLOCK_SPAN = BLOCK_SIZE * simd_width
     comptime NEG_INF = Scalar[accum_type].MIN
 
-    var row_size = shape[axis]
-    var num_rows = ufloordiv(shape.flattened_length(), row_size)
+    var row_size = Int(shape[axis])
+    var num_rows = ufloordiv(Int(shape.product()), row_size)
     var num_pairs = num_rows * num_splits
     var tid = thread_idx.x
     var tiles_per_split = ceildiv(ceildiv(row_size, BLOCK_SPAN), num_splits)
@@ -1438,7 +1442,7 @@ def _softmax_split_combine_kernel[
         for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
             var row_idx, split = divmod(pair_idx, num_splits)
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx, Coord(shape), axis
+                row_idx, shape, axis
             )
 
             var temp = temperature.cast[accum_type]()
