@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# Config sweep for the MiniMax-H3 DiT GEMMs (qkv N21504 K5376, out N5376
-# K7168, down N5376 K14336) at the packed-row counts of a 4 s and a 15 s clip.
+# Config sweep for large-M DiT GEMMs (qkv N21504 K5376, out N5376
+# K7168, down N5376 K14336) at the two ends of the packed-row band.
 #
 # One group per arm: `shape` covers the three linears, `$M` the two ends of
-# the clip band. Every group pins each config knob to a single value, so kbench
+# the band. Every group pins each config knob to a single value, so kbench
 # builds one executable per (arm, shape) and the CSV carries the knobs as
 # columns.
 #
@@ -139,7 +139,7 @@ params:
   mma_n: 256
   swap_ab: True
 
-# 18-23: MiniMax-H3 gate_up, one GEMM over the fused gate+up projection
+# 18-23: gate_up, one GEMM over the fused gate+up projection
 # (`F.linear(x[M, 5376], W[28672, 5376])`). Same K as qkv, twice the N, so the
 # finalists of the qkv, out and down sweeps are the candidates: swapAB (qkv's
 # pick) and the 256x224 tile (out's and down's pick), each against arm 0.

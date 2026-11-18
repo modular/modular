@@ -19,7 +19,7 @@ the `MatmulConfig` from its own defines and launches
 `select_and_launch_sm100_config` launches for a tuning-table row - so a number
 here is the number that row would get.
 
-The three `shape` values are the MiniMax-H3 DiT linears, measured as
+The `shape` values are large-M DiT linears, measured as
 `x[M, K] @ W[N, K]^T` with `M` from the host plan's packed row count:
 
   0  qkv   N=21504  K=5376
@@ -210,6 +210,9 @@ def check_against_vendor(ctx: DeviceContext) raises:
         t" rel_diff={rel_diff} (bound {VERIFY_REL_DIFF})"
     )
 
+    if bad != 0 or not (rel_diff <= VERIFY_REL_DIFF):
+        raise Error("candidate failed numerical verification")
+
     _ = cb_a^
     _ = cb_b^
     _ = cb_c^
@@ -219,7 +222,7 @@ def check_against_vendor(ctx: DeviceContext) raises:
 
 
 def main() raises:
-    var m = Int(arg_parse("M", 109632))
+    var m = arg_parse("M", 109632)
     var run_benchmark = arg_parse("run_benchmark", True)
     var verify = arg_parse("verify", True)
 

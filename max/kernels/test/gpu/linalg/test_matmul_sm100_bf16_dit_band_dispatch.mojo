@@ -11,33 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-# SM100 (B200) bf16 outlier-table routing for the MiniMax-H3 DiT linears.
-#
-# The 4-15 s clip band of the DiT packs 33152..111680 rows into one M per
-# linear, far above every small-M decode row in the bf16 outlier table, so
-# until now these four shapes fell back to the `choose_config` heuristic
-# (256x256, cluster 2x1, swizzle 8, rst 1, no swapAB). A B200 sweep over
-# eight M points of the band found a config that beats the heuristic at every
-# one of them, which is now four rows in `tuning_table_sm100_bf16.yaml`
-# (M 32768..131072):
-#
-#   N21504 K5376 (qkv)     256x256 swapAB   -2.6% summed, -1.3..-3.2% per M
-#   N28672 K5376 (gate_up) 256x256 swapAB   -1.7% summed, -0.4..-2.7% per M
-#   N5376  K7168 (out)     256x224          -6.9% summed, -4.7..-7.8% per M
-#   N5376  K14336 (down)   256x224          -4.9% summed, -4.2..-5.5% per M
-#
-# `_sm100_outlier_configs` walks the table in file order and takes the first
-# row whose half-open [M, M_end) contains m, so "the tuned row is selected"
-# is a property of the table itself, not of a GEMM launch. This test asserts
-# that property directly for every M in the band and at both band edges, plus
-# that the shapes have no other bf16 outlier rows (so an out-of-band M really
-# does fall through to the heuristic).
-#
-# The rows' numerics are covered by the kbench run that produced them
-# (`bench_matmul_sm100_bf16_config`, pytoch bf16 tolerances against cuBLAS)
-# and by a production `bench_matmul` run at M=33152 and M=109632; a full GEMM
-# at these M values does not fit the bazel GPU sandbox (C alone is 6.3 GB at
-# M=109632, N=28672).
+# The first matching half-open M range must select the tuned DiT row.
+# Check table routing on CPU: full band GEMMs exceed the GPU test memory limit.
 
 from internal_utils import Table
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
@@ -47,11 +22,11 @@ from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
 )
 from std.testing import assert_equal
 
-# Eight M points of the packed-row band (4 s .. 15 s clips) used by the sweep.
+# Eight M points of the packed-row band used by the sweep.
 comptime BAND_MS = [33152, 38272, 48448, 58688, 73984, 89216, 109632, 111680]
 
 # The landed rows cover [32768, 131072), wider than the band: above every
-# small-M decode row and enough headroom for a 16 s clip.
+# small-M decode row, with headroom.
 comptime BAND_M = 32768
 comptime BAND_M_END = 131072
 

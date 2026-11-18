@@ -829,7 +829,7 @@ params:
   NUM_ACCUM_PIPELINE_STAGES: 2
   NUM_CLC_PIPELINE_STAGES: 2
 
-# MiniMax-H3 DiT linears, the packed-row band of a 4-15 s clip
+# Large-M DiT linears, one packed-row band
 # (M = 33152..111680; the band below covers it with headroom). Measured on
 # B200 against the heuristic config these shapes used to take
 # (256x256, cl 2x1, swizzle 8, rst 1, auto 6 stages, no swapAB) over eight M
