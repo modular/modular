@@ -197,11 +197,19 @@ def _format_exec_properties_resources(resources, max_cpu, max_memory):
         result["test.EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
     return result
 
+def _gpu_count(exec_properties):
+    for count in [4, 2]:
+        if float(exec_properties.get("test.resources:gpu-{}".format(count), "0")) > 0:
+            return count
+    return 1
+
 def get_default_test_env(exec_properties):
     """Get environment variables that should be shared between different test target types.
 
     Args:
-        exec_properties: The target's 'exec_properties'
+        exec_properties: The target's 'exec_properties', merged over the ones
+            'get_default_exec_properties' returns so the GPU count covers
+            'gpu_constraints' too
 
     Returns:
         A dictionary that should be added to the test target's 'env'
@@ -218,6 +226,8 @@ def get_default_test_env(exec_properties):
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
             "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
+            # Read by nvidia_device_wrapper, which pins only single-GPU tests.
+            "MODULAR_TEST_GPU_COUNT": str(_gpu_count(exec_properties)),
         },
         "//conditions:default": {},
     }) | select({

@@ -30,14 +30,15 @@ def modular_run_binary_test(
     """
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
 
+    all_exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties
     binary_test(
         name = name,
         binary = binary,
         data = RUNTIME_SANITIZER_DATA + data,
-        env = GPU_TEST_ENV | get_default_test_env(exec_properties) | runtime_sanitizer_env(location_specifier = "rootpath") | env_for_available_tools() | env,
+        env = GPU_TEST_ENV | get_default_test_env(all_exec_properties) | runtime_sanitizer_env(location_specifier = "rootpath") | env_for_available_tools() | env,
         tags = tags,
         target_compatible_with = target_compatible_with + gpu_constraints,
-        exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties,
+        exec_properties = all_exec_properties,
         toolchains = toolchains + [
             "//bazel/internal:current_gpu_toolchain",
         ],

@@ -290,11 +290,12 @@ EOF
         toolchains = ["//bazel/internal:current_gpu_toolchain"] + mojo_test_deps,
     )
 
+    all_exec_properties = get_default_exec_properties(tags, gpu_constraints) | exec_properties
     default_env = {
         "LIT_PRESERVES_TMP": "1",
         "MODULAR_LIT_TEST": "1",
         "ZERO_AR_DATE": "1",
-    } | GPU_TEST_ENV | runtime_sanitizer_env(preload = False) | get_default_test_env(exec_properties)
+    } | GPU_TEST_ENV | runtime_sanitizer_env(preload = False) | get_default_test_env(all_exec_properties)
 
     extra_data = RUNTIME_SANITIZER_DATA
     default_args = ["--config-prefix=" + name]
@@ -317,7 +318,7 @@ EOF
         "env": env_for_available_tools() | default_env | env | mojo_test_env,
         "env_inherit": env_inherit,
         "size": size,
-        "exec_properties": get_default_exec_properties(tags, gpu_constraints) | exec_properties,
+        "exec_properties": all_exec_properties,
         "force_strip": force_strip,
     }
 

@@ -5,6 +5,8 @@ load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_rust//extensions/pyo3:defs.bzl", "rust_pyo3_toolchain")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_OPTIONS", "TOP_LEVEL_TAG")
 load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
@@ -400,4 +402,18 @@ cc_shared_library(
         "//conditions:default": [],
     }),
     deps = MLIR_DYLIB_LIBS,
+)
+
+# Applied to every test by `--config=remote-b200` through `--run_under`.
+sh_binary(
+    name = "nvidia_device_wrapper",
+    srcs = ["nvidia_device_wrapper.sh"],
+)
+
+sh_test(
+    name = "nvidia_device_wrapper_test",
+    size = "small",
+    srcs = ["nvidia_device_wrapper_test.sh"],
+    args = ["$(rootpath nvidia_device_wrapper.sh)"],
+    data = ["nvidia_device_wrapper.sh"],
 )

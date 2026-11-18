@@ -361,6 +361,12 @@ build:remote-b200 --build_metadata=TAG_TARGET_OS=linux
 # The executors show 384 cores but grant an 86-CPU cgroup quota; see the
 # remote-mi355 config for why OpenMP must not size itself from the cores.
 build:remote-b200 --test_env=OMP_NUM_THREADS=32
+# 2-GPU executors also run single-GPU tests, and CUDA puts each of them on
+# device 0. The wrapper gives each one the GPU with the least memory in use.
+# On `build` rather than `test` because `--run_under` is part of the
+# configuration: a `bazel run` without it would discard the test run's
+# analysis cache.
+build:remote-b200 --run_under="//bazel/internal:nvidia_device_wrapper --tests-only"
 
 build:ci-remote-b200 --config=ci-gpu-common
 build:ci-remote-b200 --config=remote-b200
