@@ -114,7 +114,6 @@ from ..nvidia.launch_config import (
     _holds_cluster_dim_attribute,
 )
 
-from ._device_context_extras import *
 from max.gpu.host._driver_handles import (
     _CompletionFlagCpp,
     _DeviceContextPtr,
