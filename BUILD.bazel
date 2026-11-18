@@ -540,6 +540,20 @@ config_setting(
     tags = [ALLOW_UNUSED_TAG],
 )
 
+# Compiles out the M_PROFILE_RANGE host ranges
+# (Support/max_license/Profiling/ProfileRange.h) when false.
+bool_flag(
+    name = "profile_ranges",
+    build_setting_default = True,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "profile_ranges_disabled",
+    flag_values = {"//:profile_ranges": "false"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 selects.config_setting_group(
     name = "tracy_cuda_enabled",
     match_all = [

@@ -45,7 +45,7 @@
 // M_PROFILER_API_HAS), which is what lets newer shims degrade gracefully
 // against older plugins and vice versa.
 #define M_PROFILER_ABI_MAJOR 1
-#define M_PROFILER_ABI_MINOR 2
+#define M_PROFILER_ABI_MINOR 3
 
 // Filename the shim probes when MODULAR_PROFILER_PLUGIN does not name an
 // explicit path: next to the host DSO first, then the default dlopen search.
@@ -127,6 +127,11 @@ typedef struct M_ProfilerPluginAPI {
   // needing no escapes. Dropped when no trace is live.
   void (*setTraceMetadata)(const char *key, size_t keyLen, const char *value,
                            size_t valueLen);
+
+  // ABI 1.3. As rangeBegin, but the span claims no device work: kernels and
+  // copies launched inside it stay correlated to the enclosing range. Returns
+  // whether the caller must pair it with rangeEnd.
+  bool (*rangeBeginSpanOnly)(const char *name, size_t nameLen, uint32_t color);
 } M_ProfilerPluginAPI;
 
 // True iff `api` (a plugin's table) is long enough to carry `field` and sets

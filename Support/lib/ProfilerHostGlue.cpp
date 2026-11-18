@@ -315,6 +315,13 @@ void sinkSetTraceMetadata(StringRef key, StringRef value) {
   table->setTraceMetadata(key.data(), key.size(), value.data(), value.size());
 }
 
+bool sinkRangeBeginSpanOnly(StringRef name, uint32_t color) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, rangeBeginSpanOnly))
+    return false;
+  return table->rangeBeginSpanOnly(name.data(), name.size(), color);
+}
+
 constexpr RangeSink kSink = {
     .enable = sinkEnable,
     .disable = sinkDisable,
@@ -330,6 +337,7 @@ constexpr RangeSink kSink = {
     .registerCurrentThread = sinkRegisterCurrentThread,
     .requestBurst = sinkRequestBurst,
     .setTraceMetadata = sinkSetTraceMetadata,
+    .rangeBeginSpanOnly = sinkRangeBeginSpanOnly,
 };
 
 } // namespace

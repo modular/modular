@@ -117,6 +117,9 @@ struct RangeSink {
   bool (*requestBurst)(StringRef reason);
   // Null when the attached profiler predates it.
   void (*setTraceMetadata)(StringRef key, StringRef value);
+  // Returns whether the caller must pair it with rangeEnd; false when the
+  // attached profiler predates span-only ranges.
+  bool (*rangeBeginSpanOnly)(StringRef name, uint32_t color);
 };
 
 // Why a sink is being requested; the integration decides per request kind
@@ -186,6 +189,13 @@ MODULAR_CXX_EXPORT void rangeEnd();
 // rangeEnd() is shared with rangeBegin (per-thread LIFO).
 MODULAR_CXX_EXPORT void rangeBeginWithId(uint64_t correlationId, StringRef name,
                                          uint32_t color);
+
+// As rangeBegin, but the span claims no device work: GPU kernels and copies
+// launched inside it stay correlated to the enclosing range. Runtime layers
+// below the op (driver bindings, device contexts) use it so that their spans
+// show in the trace without taking the op's attribution. Returns whether the
+// caller must pair it with rangeEnd(). Prefer SpanScope.
+MODULAR_CXX_EXPORT bool rangeBeginSpanOnly(StringRef name, uint32_t color);
 
 // Attach a top-level metadata field to the live trace, if any. The first value
 // set for a key in a trace wins and later calls for it are cheap, so callers
@@ -291,6 +301,21 @@ struct MODULAR_CXX_EXPORT RangeScope {
 
 private:
   // True iff the ctor called rangeBegin. The dtor pairs the call.
+  bool enabled_;
+};
+
+// RAII helper for rangeBeginSpanOnly, with RangeScope's cost and contract.
+struct MODULAR_CXX_EXPORT SpanScope {
+  explicit SpanScope(StringRef name, uint32_t color = 0);
+  ~SpanScope();
+
+  SpanScope(const SpanScope &) = delete;
+  SpanScope &operator=(const SpanScope &) = delete;
+  SpanScope(SpanScope &&) = delete;
+  SpanScope &operator=(SpanScope &&) = delete;
+
+private:
+  // True iff the ctor's begin needs a rangeEnd. The dtor pairs it.
   bool enabled_;
 };
 
