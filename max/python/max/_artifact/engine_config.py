@@ -91,6 +91,29 @@ class EngineSpeculativeConfig:
 
 
 @dataclass(frozen=True)
+class EnginePrefillContextParallel:
+    """When a prefill step splits its rows across a DCP group's ranks.
+
+    The graphs take the prefill context parallel (PCP) path for a step whose
+    rows average more than ``min_rows_per_request`` per request, number at
+    least ``min_step_tokens``, and sum to at most ``max_batch_context``
+    page-aligned context tokens per replica. Every other step, decode and
+    verify among them, takes the decode context parallel path.
+
+    Args:
+        min_step_tokens: The fewest rows a PCP step has.
+        min_rows_per_request: The rows per request a PCP step averages more
+            than.
+        max_batch_context: The most page-aligned summed context a PCP step
+            has on one replica.
+    """
+
+    min_step_tokens: int
+    min_rows_per_request: int
+    max_batch_context: int
+
+
+@dataclass(frozen=True)
 class SpecGraphFacts:
     """The verify facts of a built fused speculative graph.
 
@@ -137,6 +160,8 @@ class EngineConfig:
         device_graph_capture: Whether the architecture supports device graph
             capture of its decode steps: the graph makes no host call inside
             a step, its expert-parallel arm included.
+        prefill_context_parallel: When a prefill step takes the PCP path,
+            or ``None`` for graphs without one.
     """
 
     max_batch_size: int
@@ -149,6 +174,7 @@ class EngineConfig:
     sampling: EngineSamplingConfig
     speculative: EngineSpeculativeConfig | None
     device_graph_capture: bool = False
+    prefill_context_parallel: EnginePrefillContextParallel | None = None
 
     def __serialize__(self) -> Mapping[str, ArtifactType]:
         """Returns the settings as a JSON object."""
@@ -188,6 +214,13 @@ class EngineConfig:
                 "successor_replay": speculative.successor_replay,
             },
             "device_graph_capture": self.device_graph_capture,
+            "prefill_context_parallel": None
+            if (pcp := self.prefill_context_parallel) is None
+            else {
+                "min_step_tokens": pcp.min_step_tokens,
+                "min_rows_per_request": pcp.min_rows_per_request,
+                "max_batch_context": pcp.max_batch_context,
+            },
         }
 
     @classmethod
@@ -222,6 +255,14 @@ class EngineConfig:
             device_graph_capture=expect(
                 value.get("device_graph_capture", False), bool
             ),
+            # An artifact exported before the field reads as without PCP.
+            prefill_context_parallel=decode_field(
+                value,
+                "prefill_context_parallel",
+                decode_optional(_prefill_context_parallel),
+            )
+            if "prefill_context_parallel" in value
+            else None,
         )
 
 
@@ -301,4 +342,15 @@ def _speculative(value: ArtifactType) -> EngineSpeculativeConfig:
             obj.get("verify_commits_long_rows", False), bool
         ),
         successor_replay=expect(obj.get("successor_replay", False), bool),
+    )
+
+
+def _prefill_context_parallel(
+    value: ArtifactType,
+) -> EnginePrefillContextParallel:
+    obj = decode_object(value, EnginePrefillContextParallel)
+    return EnginePrefillContextParallel(
+        min_step_tokens=expect(obj["min_step_tokens"], int),
+        min_rows_per_request=expect(obj["min_rows_per_request"], int),
+        max_batch_context=expect(obj["max_batch_context"], int),
     )

@@ -88,6 +88,26 @@ class KVCacheQuantization:
 
 
 @dataclass(frozen=True)
+class ContextParallel:
+    """How a cache splits each request's token positions across ranks.
+
+    It mirrors MAX's ``KVCacheContextParallel``: the positions split across
+    ``degree`` consecutive ranks of a replica's tensor-parallel group, and
+    position ``p`` lives on rank ``(p // interleave) % degree``. The cache's
+    ``slots_per_page`` and its leaves' ``bytes_per_page`` stay one device's
+    page.
+
+    Args:
+        degree: The ranks that split the positions.
+        interleave: The consecutive positions one rank owns before the next
+            rank's turn.
+    """
+
+    degree: int
+    interleave: int
+
+
+@dataclass(frozen=True)
 class MHAKVCache:
     """A multi-head attention cache the graphs read.
 
@@ -119,6 +139,9 @@ class MHAKVCache:
         num_draft_tokens: The draft width the cache is sized for, ``0``
             without speculative decoding.
         leaves: The pool leaves the cache occupies.
+        context_parallel: How the cache splits token positions across a
+            decode context parallel group, or ``None`` when every rank of a
+            replica holds them all.
     """
 
     kind: ClassVar[str] = "mha"
@@ -139,6 +162,7 @@ class MHAKVCache:
     speculative_method: str | None
     num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
+    context_parallel: ContextParallel | None = None
 
 
 @dataclass(frozen=True)
@@ -195,6 +219,9 @@ class MLAKVCache:
         sparse_kv_form: The form sparse MLA decode dispatches on, or ``None``
             for dense MLA. An indexer cache records its MLA cache's form,
             whose capture key it follows.
+        context_parallel: How the cache splits token positions across a
+            decode context parallel group, or ``None`` when every rank of a
+            replica holds them all.
     """
 
     kind: ClassVar[str] = "mla"
@@ -216,6 +243,7 @@ class MLAKVCache:
     num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
     sparse_kv_form: SparseKVForm | None = None
+    context_parallel: ContextParallel | None = None
 
 
 @dataclass(frozen=True)
@@ -341,6 +369,7 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
         ),
         "speculative_method": cache.speculative_method,
         "num_draft_tokens": cache.num_draft_tokens,
+        "context_parallel": _serialize_context_parallel(cache.context_parallel),
     }
     if isinstance(cache, MLAKVCache):
         return (
@@ -381,6 +410,17 @@ def _serialize_quantization(
         "scale_dtype": quantization.scale_dtype.name,
         "quantization_granularity": quantization.quantization_granularity,
         "fp8_tail_dim": quantization.fp8_tail_dim,
+    }
+
+
+def _serialize_context_parallel(
+    context_parallel: ContextParallel | None,
+) -> ArtifactType:
+    if context_parallel is None:
+        return None
+    return {
+        "degree": context_parallel.degree,
+        "interleave": context_parallel.interleave,
     }
 
 
@@ -452,6 +492,10 @@ def _mha(value: dict[str, ArtifactType], cls: type[MHAKVCache]) -> MHAKVCache:
         speculative_method=decode_optional(_str)(obj["speculative_method"]),
         num_draft_tokens=_int(obj["num_draft_tokens"]),
         leaves=_tuple(_leaf)(obj["leaves"]),
+        # An artifact exported before the field reads as unsplit.
+        context_parallel=decode_optional(_context_parallel)(
+            obj.get("context_parallel")
+        ),
     )
 
 
@@ -480,6 +524,10 @@ def _mla(value: dict[str, ArtifactType]) -> MLAKVCache:
         # An artifact written before the field existed reads as dense.
         sparse_kv_form=decode_optional(_sparse_kv_form)(
             obj.get("sparse_kv_form")
+        ),
+        # An artifact exported before the field reads as unsplit.
+        context_parallel=decode_optional(_context_parallel)(
+            obj.get("context_parallel")
         ),
     )
 
@@ -527,4 +575,11 @@ def _quantization(value: ArtifactType) -> KVCacheQuantization:
         scale_dtype=_dtype(obj["scale_dtype"]),
         quantization_granularity=_int(obj["quantization_granularity"]),
         fp8_tail_dim=_int(obj["fp8_tail_dim"]),
+    )
+
+
+def _context_parallel(value: ArtifactType) -> ContextParallel:
+    obj = decode_object(value, ContextParallel)
+    return ContextParallel(
+        degree=_int(obj["degree"]), interleave=_int(obj["interleave"])
     )

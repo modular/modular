@@ -27,6 +27,11 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import SymbolicDim
+from max.nn.common_layers.context_parallel import (
+    PCP_MAX_BATCH_CONTEXT,
+    PCP_MIN_ROWS_PER_REQUEST,
+    PCP_MIN_STEP_TOKENS,
+)
 from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheParams,
@@ -68,12 +73,14 @@ from .batch_processor import BatchProcessorDims
 from .block_diffusion import BlockDiffusionMetadata
 from .engine_config import (
     EngineConfig,
+    EnginePrefillContextParallel,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
     SpecGraphFacts,
 )
 from .format_spec import FormatSpec
 from .kv_cache import (
+    ContextParallel,
     KVCache,
     KVCacheLayout,
     KVCacheQuantization,
@@ -429,6 +436,7 @@ def pipeline_engine_config(
     *,
     verify_facts: SpecGraphFacts | None = None,
     device_graph_capture: bool = False,
+    prefill_context_parallel: EnginePrefillContextParallel | None = None,
 ) -> EngineConfig:
     """Returns the settings a pipeline is built with, for its artifact.
 
@@ -443,6 +451,8 @@ def pipeline_engine_config(
             spec-decode pipeline model; ``None`` for a pipeline without one.
         device_graph_capture: Whether the architecture supports device graph
             capture of its decode steps.
+        prefill_context_parallel: When a prefill step takes the PCP path,
+            or ``None`` for graphs without one.
 
     Returns:
         The artifact's ``engine_config`` component.
@@ -493,6 +503,59 @@ def pipeline_engine_config(
         ),
         speculative=spec_config,
         device_graph_capture=device_graph_capture,
+        prefill_context_parallel=prefill_context_parallel,
+    )
+
+
+def _splits_positions(kv_cache: KVCacheLayout | None) -> bool:
+    """Returns whether any cache splits token positions across ranks."""
+    return kv_cache is not None and any(
+        isinstance(cache, MHAKVCache | MLAKVCache)
+        and cache.context_parallel is not None
+        for cache in kv_cache.caches
+    )
+
+
+def _warn_unhonored_context_parallel(
+    pipeline_config: PipelineConfig,
+    architecture: str,
+    kv_cache: KVCacheLayout | None,
+) -> None:
+    """Warns when the export asks for context parallelism its caches lack.
+
+    Only an architecture that builds DCP caches reads the flags; any other
+    exports unsplit caches, which a serving engine serves unsplit.
+    """
+    model = pipeline_config.model
+    if (
+        model.decode_context_parallel_degree > 1
+        or model.prefill_context_parallel
+    ) and not _splits_positions(kv_cache):
+        logger.warning(
+            "%s does not split its KV cache by token position, so its"
+            " artifact ignores the context parallel flags and serves every"
+            " position on every rank.",
+            architecture,
+        )
+
+
+def _prefill_context_parallel(
+    pipeline_config: PipelineConfig, kv_cache: KVCacheLayout | None
+) -> EnginePrefillContextParallel | None:
+    """Returns when a prefill step takes the PCP path, for its artifact.
+
+    ``None`` unless the export asks for PCP and its caches split positions:
+    PCP splits prefill rows over DCP groups, and only an architecture that
+    builds DCP caches builds the PCP path.
+    """
+    if not pipeline_config.model.prefill_context_parallel:
+        return None
+    if not _splits_positions(kv_cache):
+        return None
+    return EnginePrefillContextParallel(
+        min_step_tokens=PCP_MIN_STEP_TOKENS,
+        min_rows_per_request=PCP_MIN_ROWS_PER_REQUEST,
+        max_batch_context=PCP_MAX_BATCH_CONTEXT,
     )
 
 
@@ -565,6 +628,7 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             speculative_method=params.speculative_method,
             num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
+            context_parallel=_context_parallel(params),
         )
     elif type(params) is MLAKVCacheParams:
         assert isinstance(params, MLAKVCacheParams)
@@ -587,6 +651,7 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             sparse_kv_form=None
             if params.sparse_indices_stride is None
             else _SPARSE_KV_FORMS[params.resolved_sparse_kv_form],
+            context_parallel=_context_parallel(params),
         )
     elif type(params) is RecurrentStateParams:
         assert isinstance(params, RecurrentStateParams)
@@ -626,6 +691,13 @@ def _slots_per_page(params: KVCacheParams) -> int:
     # Construction resolves an unset slot count to the page size.
     assert params.slots_per_page is not None
     return params.slots_per_page
+
+
+def _context_parallel(params: KVCacheParams) -> ContextParallel | None:
+    split = params.context_parallel
+    if split is None:
+        return None
+    return ContextParallel(degree=split.degree, interleave=split.interleave)
 
 
 def _quantization(params: KVCacheParams) -> KVCacheQuantization | None:
@@ -902,6 +974,8 @@ def export_pipeline(
             sorted(overlap_helpers.files),
             time.monotonic() - started,
         )
+    kv_cache = pipeline_kv_cache(kv_params) if kv_params is not None else None
+    _warn_unhonored_context_parallel(pipeline_config, architecture, kv_cache)
     artifact = model_artifact(
         model,
         pipeline_model,
@@ -912,10 +986,11 @@ def export_pipeline(
             verify_facts=_verify_facts(pipeline),
             device_graph_capture=arch is not None
             and arch.supports_device_graph_capture,
+            prefill_context_parallel=_prefill_context_parallel(
+                pipeline_config, kv_cache
+            ),
         ),
-        kv_cache=pipeline_kv_cache(kv_params)
-        if kv_params is not None
-        else None,
+        kv_cache=kv_cache,
         format_spec=FormatSpec(format_spec)
         if format_spec is not None
         else None,

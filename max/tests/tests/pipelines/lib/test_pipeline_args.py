@@ -119,6 +119,19 @@ def test_runtime_flags_survive_flat_kwargs_path() -> None:
     assert config.runtime.execute_empty_batches is True
 
 
+def test_context_parallel_flags_survive_flat_kwargs_path() -> None:
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(
+            decode_context_parallel_degree=4,
+            decode_context_parallel_interleave=128,
+            prefill_context_parallel=True,
+        )
+    )
+    assert config.model.decode_context_parallel_degree == 4
+    assert config.model.decode_context_parallel_interleave == 128
+    assert config.model.prefill_context_parallel is True
+
+
 def test_sampling_flags_survive_flat_kwargs_path() -> None:
     # gen-mef passes enable_structured_output as a flat kwarg at
     # construction; dropping it on this path would silently export a

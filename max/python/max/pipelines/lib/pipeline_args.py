@@ -438,6 +438,28 @@ class PipelineArgs(ConfigFileModel):
         description=("Data-parallelism parameter."),
     )
 
+    decode_context_parallel_degree: int = Field(
+        default=1,
+        description=(
+            "Decode context parallel degree; only `max export` offers it."
+        ),
+    )
+
+    decode_context_parallel_interleave: int = Field(
+        default=1,
+        description=(
+            "Decode context parallel interleave; only `max export` offers it."
+        ),
+    )
+
+    prefill_context_parallel: bool | None = Field(
+        default=None,
+        description=(
+            "Whether prefill steps run prefill context parallelism; only "
+            "`max export` offers it."
+        ),
+    )
+
     pool_embeddings: bool = Field(
         default=True,
         description="Whether to pool embedding outputs.",

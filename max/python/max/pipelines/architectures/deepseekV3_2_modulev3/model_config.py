@@ -24,6 +24,7 @@ from max.nn._graph_ops import HiSparseParams
 from max.nn.common_layers.quant_ops import is_fp8_block_quantized
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import (
+    KVCacheContextParallel,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
@@ -658,12 +659,24 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             cache_dtype=cache_dtype,
         )
         assert isinstance(mla_kv_params, MLAKVCacheParams)
+        model_config = pipeline_config.model
+        dcp = model_config.decode_context_parallel_degree
+        # Both caches hold only each DCP rank's positions.
+        context_parallel = (
+            KVCacheContextParallel(
+                degree=dcp,
+                interleave=model_config.decode_context_parallel_interleave,
+            )
+            if dcp > 1
+            else None
+        )
         mla_kv_params = replace(
             mla_kv_params,
             sparse_indices_stride=sparse_selection_width(
                 mla_kv_params, huggingface_config.index_topk
             ),
             sparse_physical_indices=True,
+            context_parallel=context_parallel,
         )
 
         # Always store the indexer's K cache in float8_e4m3fn.
@@ -715,8 +728,9 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             num_draft_tokens=num_draft_tokens,
         )
         assert isinstance(indexer_kv_params, MLAKVCacheParams)
-        indexer_kv_params = indexer_kv_params.joining_sparse_dispatch_of(
-            mla_kv_params
+        indexer_kv_params = replace(
+            indexer_kv_params.joining_sparse_dispatch_of(mla_kv_params),
+            context_parallel=context_parallel,
         )
         return MultiKVCacheParams.from_params(
             {"mla": mla_kv_params, "indexer": indexer_kv_params}
