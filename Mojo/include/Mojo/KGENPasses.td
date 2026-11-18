@@ -993,6 +993,61 @@ def SynthesizeDebugInfo : Pass<"synth-debuginfo", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// RotateLoops
+//===----------------------------------------------------------------------===//
+
+def RotateLoops: Pass<"rotate-loops", "KGEN::FuncOp"> {
+  let summary = "move a loop's exiting test to the top of its body.";
+  let description = [{
+    Rotating a loop means moving its exiting test to the top of the body, so
+    that the test decides whether to run an iteration before any of that
+    iteration runs, instead of part way through it.
+
+    This is a canonicalization rather than an optimization: every op runs
+    exactly as many times as it did before. What it buys is one shape for
+    every loop, which `raise-for-loops` needs. An `hlcf.for` evaluates its
+    bound before the body, so raising a loop whose test follows part of its
+    body gives one iteration too few; without rotation, each shape an
+    `hlcf.loop` can take would need its own check that raising it is correct.
+
+    The ops that were ahead of the test are duplicated: one copy runs before
+    the loop, ahead of the first test, and one at the end of the body, ahead
+    of the next. What the copies define is carried from one iteration to the
+    next.
+
+    ```mlir
+    // Before: the store runs for %i = %n down to 0, one more time than the
+    // ops behind the test.
+    hlcf.loop (%i = %n : index) {
+      pop.store %i, %p : !kgen.pointer<index>
+      %c = index.cmp eq(%i, %idx0)
+      hlcf.if %c { hlcf.break } else { hlcf.yield }
+      %next = index.sub %i, %idx1
+      hlcf.continue %next : index
+    }
+
+    // After: the test leads, and the store still runs that many times.
+    pop.store %n, %p : !kgen.pointer<index>
+    hlcf.loop (%i = %n : index) {
+      %c = index.cmp eq(%i, %idx0)
+      hlcf.if %c { hlcf.break } else { hlcf.yield }
+      %next = index.sub %i, %idx1
+      pop.store %next, %p : !kgen.pointer<index>
+      hlcf.continue %next : index
+    }
+    ```
+
+    A loop does not rotate when the ops ahead of its test must not be
+    duplicated: a convergent function, an op carrying a region, a stack
+    allocation, or more ops than `kgen-rotate-loops-max-ops` allows it to
+    copy. Nor does it when the test itself reads memory, since the test stays
+    where it is while the rest of the body moves past it.
+  }];
+
+  let dependentDialects = ["HLCF::HLCFDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // RaiseForLoops
 //===----------------------------------------------------------------------===//
 

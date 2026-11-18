@@ -1338,6 +1338,7 @@ modular_cc_library(
         ":HLCFDialect",
         ":Support",
         "//AsyncRT:Runtime",
+        "//Support:DebugInfoDialect",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
         "@llvm-project//mlir:LLVMDialect",
