@@ -80,6 +80,25 @@
 //     map.iter.map index (%j) { ... }
 //   }
 //
+// When the earlier kernel has a map phase whose output the later kernel reads
+// at the same element, the phase becomes a `map.iter.cache` the later phases
+// read. An output something else reads is stored from the cache:
+//
+//   %h = map.iter.rowwise {                %y, %h2 = map.iter.rowwise {
+//     %a = map.iter.reduce ...               %a = map.iter.reduce ...
+//     map.iter.map index (%j) {     =>       %c = map.iter.cache index (%k) {
+//       store %h[%j] = f(%a, %x[%j])           %v = f(%a, %x[%k])
+//     }                                        store %h2[%k] = %v
+//   }                                          map.yield %v
+//   %y = map.iter.rowwise {                  }
+//     %b = map.iter.reduce index (%i) {      %b = map.iter.reduce index (%i) {
+//       ... %h[%i] ...                         ... map.iter.cache.load %c[%i]
+//     }                                      }
+//     map.iter.map index (%j) {              map.iter.map index (%j) {
+//       ... %h[%j] ...                         ... map.iter.cache.load %c[%j]
+//     }                                      }
+//   }                                      }
+//
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
@@ -89,6 +108,7 @@
 #include "GraphCompiler/MODialect/MODevices.h"
 #include "GraphCompiler/MOGGDialect/MOGGAttrs.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
+#include "Support/AssertStream.h"
 
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -608,93 +628,194 @@ IterRowwiseOp fuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer,
   return rebuildResults(newDst, kept, TypeRange{}, rewriter);
 }
 
-// Whether `consumer` reads `dst`'s per-row results only at its own row: at
-// its row index, or through a broadcast in one of its phases.
-bool readsOnlyOwnRow(IterRowwiseOp dst, IterRowwiseOp consumer) {
+// Whether `consumer` reads its input `arg`, a per-row tensor, only at its own
+// row: at its row index, or through a broadcast in one of its phases.
+bool readsOwnRowOnly(IterRowwiseOp consumer, BlockArgument arg) {
   int64_t rank = consumer.getShape().getRank(), axis = consumer.getAxis();
+  return llvm::all_of(arg.getUsers(), [&](Operation *user) {
+    auto load = dyn_cast<LoadOp>(user);
+    if (!load)
+      return false;
+    if (load.getIndex() == consumer.getRowArg())
+      return true;
+    auto phase = load->getParentOfType<RowwisePhaseOpInterface>();
+    std::optional<SmallVector<int64_t>> dims =
+        phase ? traceLoopDims(load.getIndex(), phase.getIndexArg())
+              : std::nullopt;
+    return dims && readsOwnRow(*dims, rank, axis);
+  });
+}
+
+// Whether a later rowwise kernel can read its input `arg` from a cache: it
+// reads it only in its folds and map phases, at their own element, and those
+// phases read no other cache.
+bool readsOwnElementOnly(BlockArgument arg) {
+  return llvm::all_of(arg.getUsers(), [](Operation *user) {
+    auto load = dyn_cast<LoadOp>(user);
+    auto phase = load ? dyn_cast<RowwisePhaseOpInterface>(load->getParentOp())
+                      : RowwisePhaseOpInterface();
+    return phase && !isa<IterCacheOp>(*phase) && !phase.getReadCache() &&
+           load.getIndex() == phase.getIndexArg();
+  });
+}
+
+// Whether `consumer` reads `dst`'s per-row outputs only at its own row, and
+// at most one of its per-element outputs, only from its folds and map phases
+// at their own element. Sets `cached` to that one.
+bool readsOwnRowOrElement(IterRowwiseOp dst, IterRowwiseOp consumer,
+                          std::optional<unsigned> &cached) {
   for (auto [input, arg] :
        llvm::zip(consumer.getInputs(), consumer.getInputBlockArgs())) {
-    if (input.getDefiningOp() != dst)
+    auto result = dyn_cast<OpResult>(input);
+    if (!result || result.getOwner() != dst)
       continue;
-    for (Operation *user : arg.getUsers()) {
-      auto load = dyn_cast<LoadOp>(user);
-      if (!load)
+    unsigned idx = result.getResultNumber();
+    if (perRowStore(dst, idx)) {
+      if (!readsOwnRowOnly(consumer, arg))
         return false;
-      if (load.getIndex() == consumer.getRowArg())
-        continue;
-      auto phase = load->getParentOfType<RowwisePhaseOpInterface>();
-      std::optional<SmallVector<int64_t>> dims =
-          phase ? traceLoopDims(load.getIndex(), phase.getIndexArg())
-                : std::nullopt;
-      if (!dims || !readsOwnRow(*dims, rank, axis))
-        return false;
+      continue;
     }
+    if (!perElementStore(dst, idx) || (cached && *cached != idx) ||
+        !readsOwnElementOnly(arg))
+      return false;
+    cached = idx;
   }
   return true;
 }
 
-// Whether `dst` can run at the start of `consumer`'s row. `dst` only folds
-// and writes per-row results, which `consumer` alone reads, at its own row.
-// `consumer` writes every element: a row that writes one value per row
-// launches as one phase, which holds one fold.
+// Whether `dst` can run at the start of `consumer`'s row, its map phase, if
+// any, becoming a cache. `consumer` alone reads `dst`'s per-row outputs, at
+// its own row, and reads one of the map phase's outputs at the same element;
+// other readers of those read `consumer`'s copy. `consumer` writes every
+// element: a row that writes one value per row launches as one phase, which
+// holds one fold. A `dst` that writes a buffer stays.
 bool canFuseRowwiseConsumer(IterRowwiseOp dst, IterRowwiseOp consumer) {
   if (consumer == dst || consumer->getBlock() != dst->getBlock() ||
       !sameDevice(consumer, dst) || dst.getInputChain() ||
-      dst.getOutputChain() || consumer.getInputChain() ||
-      consumer.getShape() != dst.getShape() ||
+      dst.getOutputChain() || dst.getHasWriteEffect() ||
+      consumer.getInputChain() || consumer.getShape() != dst.getShape() ||
       consumer.getAxis() != dst.getAxis() || !lastMapPhase(consumer))
     return false;
-  if (llvm::any_of(dst.getBody().front(), llvm::IsaPred<IterMapOp>))
+  IterMapOp phase = lastMapPhase(dst);
+  if (llvm::count_if(dst.getBody().front(), llvm::IsaPred<IterMapOp>) !=
+          (phase ? 1 : 0) ||
+      (phase && cast<RowwisePhaseOpInterface>(*phase).getReadCache()))
     return false;
-  for (auto [idx, result] : llvm::enumerate(dst.getResults()))
-    if (!perRowStore(dst, idx) ||
-        llvm::any_of(result.getUsers(),
-                     [&](Operation *user) { return user != consumer; }))
+  for (auto [idx, result] : llvm::enumerate(dst.getResults())) {
+    bool othersRead = llvm::any_of(
+        result.getUsers(), [&](Operation *user) { return user != consumer; });
+    if (perRowStore(dst, idx) ? othersRead : !perElementStore(dst, idx))
       return false;
-  return readsOnlyOwnRow(dst, consumer);
+  }
+  std::optional<unsigned> cached;
+  return readsOwnRowOrElement(dst, consumer, cached) &&
+         static_cast<bool>(phase) == cached.has_value() &&
+         canSinkTo(dst, consumer);
 }
 
-// Moves `dst`'s row to the start of `consumer`'s, which then reads the
-// values `dst` stored instead of loading them.
+// Clones `phase` into a `map.iter.cache` that yields `cachedValue`. A store
+// to an output `mapping` doesn't know, which only the consumer read, goes.
+IterCacheOp cacheFromPhase(IterMapOp phase, Value cachedValue,
+                           IRMapping &mapping, RewriterBase &rewriter) {
+  Location loc = phase.getLoc();
+  auto cache = IterCacheOp::create(rewriter, loc, cachedValue.getType());
+  BlockArgument index = cast<RowwisePhaseOpInterface>(*phase).getIndexArg();
+  Block *block =
+      rewriter.createBlock(&cache.getBody(), {}, {index.getType()}, {loc});
+  mapping.map(index, block->getArgument(0));
+  for (Operation &op : phase.getBody().front()) {
+    auto store = dyn_cast<StoreOp>(op);
+    if (!store || mapping.contains(store.getTensor()))
+      rewriter.clone(op, mapping);
+  }
+  YieldOp::create(rewriter, loc, mapping.lookup(cachedValue));
+  rewriter.setInsertionPointAfter(cache);
+  return cache;
+}
+
+// Moves `dst`'s row to the start of `consumer`'s, which then reads the values
+// `dst` stored instead of loading them: a per-row value directly, the map
+// phase's output from the cache the phase becomes. Outputs other kernels also
+// read become `consumer`'s.
 IterRowwiseOp fuseRowwiseConsumer(IterRowwiseOp dst, IterRowwiseOp consumer,
                                   RewriterBase &rewriter) {
+  std::optional<unsigned> cachedIdx;
+  bool reads = readsOwnRowOrElement(dst, consumer, cachedIdx);
+  ASSERT_STREAM(reads, << "checked by canFuseRowwiseConsumer");
+  SmallVector<unsigned> keptOutputs;
+  SmallVector<Type> keptTypes;
+  for (auto [idx, result] : llvm::enumerate(dst.getResults()))
+    if (perElementStore(dst, idx) &&
+        llvm::any_of(result.getUsers(),
+                     [&](Operation *user) { return user != consumer; })) {
+      keptOutputs.push_back(idx);
+      keptTypes.push_back(result.getType());
+    }
+  unsigned numOutputs = consumer.getOutputBlockArgs().size();
+  IterRowwiseOp newConsumer =
+      keptTypes.empty()
+          ? consumer
+          : rebuildResults(consumer,
+                           llvm::to_vector(llvm::seq<unsigned>(0, numOutputs)),
+                           keptTypes, rewriter);
+
   IRMapping mapping;
   for (auto [input, arg] :
        llvm::zip(dst.getInputs(), dst.getInputBlockArgs())) {
-    unsigned idx = consumer.getInputs().size();
-    consumer.insertInputsAt(idx, input);
-    mapping.map(arg, consumer.getInputBlockArgs()[idx]);
+    unsigned idx = newConsumer.getInputs().size();
+    newConsumer.insertInputsAt(idx, input);
+    mapping.map(arg, newConsumer.getInputBlockArgs()[idx]);
   }
-  mapping.map(dst.getRowArg(), consumer.getRowArg());
+  mapping.map(dst.getRowArg(), newConsumer.getRowArg());
+  for (auto [i, idx] : llvm::enumerate(keptOutputs))
+    mapping.map(dst.getOutputBlockArgs()[idx],
+                newConsumer.getOutputBlockArgs()[numOutputs + i]);
 
-  Block &body = consumer.getBody().front();
-  rewriter.setInsertionPointToStart(&body);
+  rewriter.setInsertionPointToStart(&newConsumer.getBody().front());
+  IterMapOp phase = lastMapPhase(dst);
+  IterCacheOp cache;
   SmallVector<Value> stored(dst.getNumResults());
   for (Operation &op : dst.getBody().front()) {
     if (auto store = dyn_cast<StoreOp>(op)) {
       auto arg = cast<BlockArgument>(store.getTensor());
       stored[arg.getArgNumber() - dst.getInputs().size()] =
           mapping.lookupOrDefault(store.getValue());
-      continue;
+    } else if (&op == phase.getOperation()) {
+      cache = cacheFromPhase(phase, perElementStore(dst, *cachedIdx).getValue(),
+                             mapping, rewriter);
+    } else {
+      rewriter.clone(op, mapping);
     }
-    rewriter.clone(op, mapping);
   }
 
-  // Loads of `dst`'s results read the stored values, and those inputs go.
-  for (int64_t idx = consumer.getInputs().size() - 1; idx >= 0; --idx) {
-    auto result = dyn_cast<OpResult>(consumer.getInputs()[idx]);
+  // Loads of `dst`'s outputs read the stored row values, or the cache.
+  for (int64_t idx = newConsumer.getInputs().size() - 1; idx >= 0; --idx) {
+    auto result = dyn_cast<OpResult>(newConsumer.getInputs()[idx]);
     if (!result || result.getOwner() != dst)
       continue;
-    BlockArgument arg = consumer.getInputBlockArgs()[idx];
-    for (Operation *user : llvm::make_early_inc_range(arg.getUsers()))
-      rewriter.replaceOp(user, stored[result.getResultNumber()]);
-    rewriter.modifyOpInPlace(consumer, [&] { consumer.eraseInputsAt(idx, 1); });
+    BlockArgument arg = newConsumer.getInputBlockArgs()[idx];
+    for (Operation *user : llvm::make_early_inc_range(arg.getUsers())) {
+      auto load = cast<LoadOp>(user);
+      if (cachedIdx != result.getResultNumber()) {
+        rewriter.replaceOp(load, stored[result.getResultNumber()]);
+        continue;
+      }
+      rewriter.setInsertionPoint(load);
+      rewriter.replaceOp(
+          load, IterCacheLoadOp::create(rewriter, load.getLoc(), load.getType(),
+                                        cache.getResult(), load.getIndex()));
+    }
+    rewriter.modifyOpInPlace(newConsumer,
+                             [&] { newConsumer.eraseInputsAt(idx, 1); });
   }
 
-  stampFusion(consumer, dst, /*isProducer=*/true);
+  for (auto [i, idx] : llvm::enumerate(keptOutputs))
+    rewriter.replaceAllUsesWith(dst.getResult(idx),
+                                newConsumer.getResult(numOutputs + i));
+  stampFusion(newConsumer, dst, /*isProducer=*/true);
   rewriter.eraseOp(dst);
-  IterOpInterface(consumer).dedupeInputs(rewriter);
-  return consumer;
+  IterOpInterface(newConsumer).dedupeInputs(rewriter);
+  return newConsumer;
 }
 
 // A rowwise kernel `dst` can run at the start of.

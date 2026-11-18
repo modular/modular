@@ -155,7 +155,8 @@ def FuseReductions : Pass<"map-fuse-reductions", "MO::GraphOp"> {
     readers all end up in that reduction's kernel. A rowwise
     kernel whose per-row results only a later rowwise kernel over the same
     rows, with a map phase, reads at its own row runs at the start of that
-    kernel's row.
+    kernel's row; its own map phase, if the later kernel reads its output at
+    the same element, becomes a `map.iter.cache`.
   }];
 
   let dependentDialects = [
