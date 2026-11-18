@@ -719,4 +719,10 @@ void InlineParametricPass::runOnOperation() {
        llvm::make_second_range(graph.nodes))
     state.fork([&] { inlineReadyFn(caller); });
   state.join();
+
+  // Keep the workers' new cache entries for the passes that follow. No worker
+  // reads `paramCache` any more, so writing to it is safe.
+  graph.paramCaches.consolidate(
+      [](ParameterCollector::Analysis &base,
+         const ParameterCollector::Analysis &layer) { layer.mergeInto(base); });
 }
