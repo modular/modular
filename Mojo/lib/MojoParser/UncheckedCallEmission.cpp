@@ -1763,6 +1763,14 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
   for (auto elt :
        OriginTrackable::decodeIndividualVariadicArguments(argVal, extraOrigin))
     checkArg(elt);
+
+  // The elements are checked above, but the container is passed too. A locally
+  // built container has a mutable origin yet reaches the callee through an
+  // immutable view, so casting its origin is equivalent to that view.
+  if (auto refType =
+          dyn_cast<RefType>(RefImmutOp::stripRebinds(argVal).getType()))
+    checkOriginAccess(argVal, argIdx,
+                      OriginMutCastAttr::get(refType.getOrigin(), false));
 }
 
 /// Emit an error about an access to a conflicting origin after a previous

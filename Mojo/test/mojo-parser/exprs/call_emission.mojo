@@ -608,6 +608,45 @@ def check_tail_call(str_arg: String, var var_str_arg: String):
     use_string(str_arg)
 
 
+def use_string_varargs(*args: String): pass
+
+def use_string_pack[*Ts: AnyType](*args: *Ts): pass
+
+# Forwarding a variadic passes the container it was given, which lives outside
+# this frame.
+# CHECK-LABEL: lit.fn @"check_tail_call_forwarded_varargs
+# CHECK: lit.call tail @{{.*}}@"use_string_varargs{{.*}}(%args)
+def check_tail_call_forwarded_varargs(*args: String):
+    use_string_varargs(*args)
+
+# CHECK-LABEL: lit.fn @"check_tail_call_local_varargs
+def check_tail_call_local_varargs(var var_str_arg: String):
+    # CHECK: lit.call @{{.*}}@"use_string_varargs
+    use_string_varargs(var_str_arg)
+    # CHECK: lit.call @{{.*}}@"use_string_pack
+    use_string_pack(var_str_arg)
+
+
+struct TailCallIndex(Movable):
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+
+struct TailCallContainer(Movable):
+    def __getitem__(self, *args: TailCallIndex) -> Int:
+        return args[0].value
+
+
+# CHECK-LABEL: lit.fn @"check_tail_call_subscript
+def check_tail_call_subscript(
+    container: TailCallContainer, key: TailCallIndex
+) -> Int:
+    # CHECK: lit.call @{{.*}}@"__getitem__
+    return container[key]
+
+
 # These take values that have to be in memory.  Verify that we're forming the
 # temp boxes correctly even though we're inferring parameters with them.
 def test_mem_temp_1(ref x: Int, *, y: Int) -> ref[x] Int:

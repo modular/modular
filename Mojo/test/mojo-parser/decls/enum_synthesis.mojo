@@ -31,12 +31,14 @@
 # and passing it on in a pack.
 # CHECK: lit.fn @"ident(::String$)"{{.*}}(%payload: !lit.ref<!String, {{.*}}> owned_in_mem, |, ?, %__result__: !lit.ref<!Token, {{.*}}> byref_result) {{.*}} attributes {isStatic, sourceName = "ident"
 # CHECK-NEXT: lit.ref.pack.create(%payload) : !lit.ref.pack<:param_list<!AnyType_Movable> [!String], {{.*}}>
-# CHECK: lit.call tail @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!String], :!Int {:scalar<index> 1}, {{.*}}>(%anonymous{{.*}}, %__result__)
+# The callee reads the pack, which lives in this frame, so this is not a tail
+# call.
+# CHECK: lit.call @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!String], :!Int {:scalar<index> 1}, {{.*}}>(%anonymous{{.*}}, %__result__)
 
 # Several payload types are passed on together; each is taken by `var`.
 # CHECK: lit.fn @"span(::SIMD[DType.int, 1]$,::SIMD[DType.int, 1]$)"{{.*}}(%payload0: !lit.ref<:meta<!Int> #alias_Int, mut *"payload0`"> owned_in_mem, %payload1: !lit.ref<:meta<!Int> #alias_Int, mut *"payload1`"> owned_in_mem, |, ?, %__result__: !lit.ref<!Token, {{.*}}> byref_result) {{.*}} attributes {isStatic, sourceName = "span"
 # CHECK: lit.ref.pack.create(%{{.*}}, %{{.*}}) : !lit.ref.pack<:param_list<!AnyType_Movable> [!Int, !Int], {{.*}}>
-# CHECK: lit.call tail @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!Int, !Int], :!Int {:scalar<index> 2}, {{.*}}>(%anonymous{{.*}}, %__result__)
+# CHECK: lit.call @enum_synthesis::@Token::@"__enum_init[{{.*}}__Enum"{{.*}}<:param_list<!AnyType_Movable> [!Int, !Int], :!Int {:scalar<index> 2}, {{.*}}>(%anonymous{{.*}}, %__result__)
 
 # The `__Enum` defaults, `__get_enum_storage`, `__enum_init` and the two
 # `EnumLike` methods, come in as always-inlined wrappers that call them.
