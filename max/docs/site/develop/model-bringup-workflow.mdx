@@ -134,15 +134,13 @@ builds the decoder:
    wraps. The batch processor supplies the input types, and each parameter takes
    its value from the state dict by name.
 
-The following `model.py` from the `olmo3` reference architecture implements
-both hooks. It also sets `model_config_cls`, the config class the pipeline
-model uses to size the KV cache before the decoder is built. A
-`ModuleV3PipelineModelWithKVCache` subclass that leaves it unset raises an
-error at construction:
+The following `model.py`, adapted from `llama3_modulev3/model.py`, implements
+both hooks. `model_config_cls` names the config class the pipeline model uses
+to size the KV cache before the decoder is built:
 
 <!-- invisible-code-block: python
-from max.pipelines.architectures.olmo3.model_config import Olmo3Config
-from max.pipelines.architectures.olmo3.olmo3 import Olmo3
+from max.pipelines.architectures.llama3_modulev3.llama3 import Llama3Decoder
+from max.pipelines.architectures.llama3_modulev3.model_config import Llama3Config
 from max.pipelines.context import TextContext
 -->
 
@@ -152,11 +150,11 @@ from typing import Any, ClassVar
 from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 
 
-class Olmo3Model(ModuleV3PipelineModelWithKVCache[TextContext]):
-    model_config_cls: ClassVar[type[Any]] = Olmo3Config
+class Llama3Model(ModuleV3PipelineModelWithKVCache[TextContext]):
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
 
     def _create_model_config(self, state_dict):
-        model_config = Olmo3Config.initialize(
+        model_config = Llama3Config.initialize(
             self.pipeline_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
@@ -167,16 +165,16 @@ class Olmo3Model(ModuleV3PipelineModelWithKVCache[TextContext]):
         return model_config
 
     def _instantiate_module(self, model_config):
-        nn_model = Olmo3(model_config, self.kv_params)
+        nn_model = Llama3Decoder(model_config)
         nn_model.to(self.devices[0])
         return nn_model
 ```
 
 <!-- invisible-code-block: python
 from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
-assert issubclass(Olmo3Model, ModuleV3PipelineModelWithKVCache)
+assert issubclass(Llama3Model, ModuleV3PipelineModelWithKVCache)
 hooks = {"_create_model_config", "_instantiate_module"}
-assert hooks <= set(vars(Olmo3Model))
+assert hooks <= set(vars(Llama3Model))
 -->
 
 During development, the same `forward()` also runs eagerly on real tensors.
@@ -332,15 +330,15 @@ To list the names your module expects, build it under `F.lazy()` and read its
 
 <!-- invisible-code-block: python
 config, kv_params = smol_llama3()
-from max.pipelines.architectures.llama3_modulev3.llama3 import Llama3
-YourRootModule = Llama3
+from max.pipelines.architectures.llama3_modulev3.llama3 import Llama3Decoder
+YourRootModule = Llama3Decoder
 -->
 
 ```python
 from max import functional as F
 
 with F.lazy():
-    model = YourRootModule(config, kv_params)
+    model = YourRootModule(config)
 expected = {name for name, _ in model.parameters}
 ```
 
@@ -464,9 +462,9 @@ tree, which the cache manager consumes through the shared
 
 ### Pass the cache into the module
 
-The compiled module receives the KV cache as flat inputs after the token
-inputs. The root module's `forward()` collects them in `*variadic_args` and
-unflattens them with its `kv_params`. For a single cache, call
+A decoder module's `forward()` receives a `DecoderInputs`. Its `kv` field
+holds the flat cache inputs, which `forward()` unflattens with
+`self.kv_params`. For a single cache, call
 `self.kv_params.unflatten_kv_inputs()`. For a sliding-window and global
 cache pair, call `unflatten_basic_kv_tree()`. The `olmo3` root module wraps
 each cache in `PagedCacheValues` from
@@ -474,43 +472,39 @@ each cache in `PagedCacheValues` from
 
 <!-- invisible-code-block: python
 from max.nn import Module
-from max.tensor import Tensor
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.architectures.olmo3.model_config import Olmo3Config
-from max.pipelines.architectures.olmo3.olmo3 import (
-    Olmo3TextModel,
-    PagedCacheValues,
-)
-from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.architectures.olmo3.olmo3 import Olmo3TextModel
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 -->
 
 ```python title="olmo3.py"
-class Olmo3(Module[[Tensor, Tensor, Tensor], ModuleV3Outputs]):
-    def __init__(self, config: Olmo3Config, kv_params: KVCacheParamInterface):
+class Olmo3(Module[[DecoderInputs], DecoderOutputs]):
+    def __init__(self, config: Olmo3Config) -> None:
         super().__init__()
-        # ...
         self.language_model = Olmo3TextModel(config)
-        self.kv_params = kv_params
+        self.config = config
+        self.kv_params = config.kv_params
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *variadic_args: Tensor,
-    ) -> ModuleV3Outputs:
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        kv_inputs = iter(kv_input_values(inputs.kv))
+        assert isinstance(self.kv_params, MultiKVCacheParams)
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(
             kv_inputs
         )
         sliding_kv = PagedCacheValues.from_upstream(
-            sliding_inputs, tokens.mapping
+            sliding_inputs, inputs.tokens.mapping
         )
         global_kv = PagedCacheValues.from_upstream(
-            global_inputs, tokens.mapping
+            global_inputs, inputs.tokens.mapping
         )
         return self.language_model(
-            tokens, sliding_kv, global_kv, return_n_logits, input_row_offsets
+            inputs.tokens,
+            sliding_kv,
+            global_kv,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
         )
 ```
 
@@ -666,18 +660,19 @@ A multi-GPU architecture builds its module on a
 `_instantiate_module()`. Constructing the module inside
 [`default_device(mesh)`](/api/python/generated/max.tensor.default_device/)
 creates each weight on the mesh. `Module.to()` moves a module to one device
-only, and raises for a mesh with more than one device. The `gemma3_modulev3`
-reference architecture builds a one-axis tensor-parallel mesh:
+only, and raises for a mesh with more than one device. The `hy_v4` reference
+architecture builds a one-axis tensor-parallel mesh:
 
 ```python title="model.py"
-from max.tensor.sharding import DeviceMesh
+from max.nn.common_layers.mesh_axis import TP
 from max.tensor import default_device
+from max.tensor.sharding import DeviceMesh
 
 
 def _instantiate_module(self, model_config):
-    mesh = DeviceMesh(tuple(self.devices), (len(self.devices),), ("tp",))
+    mesh = DeviceMesh(tuple(self.devices), (len(self.devices),), (TP,))
     with default_device(mesh):
-        return Gemma3(model_config, self.kv_params)
+        return HYV4(model_config)
 ```
 
 Layers declare how their weights split across the mesh axes.
