@@ -14,7 +14,6 @@
 
 It runs BF16, or AMD CDNA4 MXFP4 W4A8 under tensor parallelism; expert
 parallelism runs BF16 only.
-Mirrors ``kimi_k3/layers/moe_latent.py``'s ``KimiK3LatentMoE``.
 :func:`expert_parallel_latent_moe` rejects an MXFP4 layer: expert
 parallelism's quantized dispatch needs its own transport kernels, a
 separate piece of work.
@@ -23,10 +22,6 @@ The real production checkpoint ships its routed experts MXFP4-only, so
 the W4A8 arm below is what actually runs the real model on this hardware
 (AMD CDNA4 / MI355X). See ``lossy_mxfp4_activations_available`` for why
 the alternatives (BF16 dequant, W4A4) aren't built here instead.
-
-Its AMD W4A8 validation (``validate_amd_tp_w4a8``, ``validate_amd_packed_k``)
-is copied from ``kimi_k3.layers.moe_latent`` rather than imported, so this
-port has no build dependency on V2.
 
 ``tensor_parallel_latent_moe`` shards the per-expert FFN width and the
 latent exit's input dim across the ``tp`` mesh axis. Unlike the other
@@ -50,12 +45,11 @@ BEFORE the gate sees anything, at the full ``hidden_size``, while experts run
 at the narrower ``routed_expert_hidden_size`` latent) without also starving
 the gate of the width it needs. This block instead calls the same shared
 primitives ``QuantizedMoE`` itself calls (``moe_create_indices``,
-``grouped_matmul_ragged``, ``moe_finalize``) directly, the same way K3's V2
-``KimiK3LatentMoE`` does against ``max.graph.ops`` -- reusing the kernel-level
-infrastructure without reusing the monolithic orchestration class.
+``grouped_matmul_ragged``, ``moe_finalize``) directly, reusing the
+kernel-level infrastructure without reusing the monolithic orchestration
+class.
 
-Three non-obvious things this mirrors exactly from the V2 implementation and
-the official reference (``modeling_kimi_linear.py:776-832``):
+Three non-obvious things this mirrors exactly from the official reference (``modeling_kimi_linear.py:776-832``):
 
 * ``routed_expert_down_proj`` [latent, hidden] is the ENTRY (hidden -> latent)
   and ``routed_expert_up_proj`` [hidden, latent] is the EXIT (latent ->
@@ -127,11 +121,11 @@ from .moe_router import make_kimi_k3_moe_router
 from .tensor_parallel import check_divisible
 
 # Scale-factor block width for MXFP4/MXFP8: one E8M0 scale per this many
-# elements along the contraction axis. Matches V2's ``_MXFP8_GROUP``.
+# elements along the contraction axis.
 _SF_VECTOR_SIZE = 32
 
-# Per-device K-granule the AMD block-scaled GEMM tiles at; matches V2's
-# ``_AMD_K_GRANULE``. ``validate_amd_packed_k`` checks against this.
+# Per-device K-granule the AMD block-scaled GEMM tiles at.
+# ``validate_amd_packed_k`` checks against this.
 _AMD_K_GRANULE = 128
 
 # Fallback per-expert token cap; serving passes
@@ -162,13 +156,13 @@ def _amd_moe_usage_stats(
     """The host ``[max_tokens_per_expert, num_active_experts]`` pair.
 
     The AMD grouped GEMM reads it.
-    Direct port of V2's ``_host_usage_stats``: ``moe_create_indices`` leaves
+    ``moe_create_indices`` leaves
     its own usage stats on device, while the AMD kernel reads element 0 and 1
     of a HOST ``uint32`` pair, so the bound is computed host-side here. A
     bound too small for this step's real token count silently drops an
-    expert's tail rows rather than erroring -- see that V2 docstring for the
-    real incident (98% of one kernel's launched workgroups were dead grid
-    rows from an unbounded per-expert cap, 47% of decode kernel time).
+    expert's tail rows rather than erroring. An unbounded per-expert cap once
+    left 98% of one kernel's launched workgroups as dead grid rows (47% of
+    decode kernel time).
 
     ``rows`` is the minimum of the static per-expert budget and this step's
     real token count, since no expert can hold more rows than the batch has
@@ -199,7 +193,7 @@ def _quantize_mxfp8(activations: Tensor) -> tuple[TensorValue, TensorValue]:
     """BF16 activations -> (E4M3 values, E8M0 scales), row-major.
 
     MXFP8 is purely block scaled (no per-tensor factor), so ``tensor_sf``
-    stays the identity; matches V2's ``_amd_w4a8_matmul``'s quantize call.
+    stays the identity.
     """
     return quantize_dynamic_block_scaled(
         TensorValue(activations),
@@ -346,9 +340,8 @@ def _amd_w4a8_grouped_matmul(
 ) -> TensorValue:
     """E4M3 activations against packed-MXFP4 weights, row-major (no preshuffle).
 
-    Direct port of V2's ``_amd_w4a8_matmul`` call, without its
-    ``preshuffled_b`` option -- an unmeasured optimization this first
-    MXFP4 commit doesn't add yet.
+    It does not use the ``preshuffled_b`` option, an optimization not yet
+    measured here.
     """
     return grouped_dynamic_block_scaled_matmul_amd(
         TensorValue(activations),
@@ -1146,8 +1139,7 @@ def tensor_parallel_latent_moe(
         # The down weight is packed two values per byte along the expert FFN
         # axis and carries one E8M0 scale per 32 of those values, so a shard
         # boundary that is not a multiple of 32 would split a scale block and
-        # silently rescale the wrong elements -- same check V2 runs before
-        # sharding, via the same shared helper.
+        # silently rescale the wrong elements.
         validate_amd_packed_k(
             latent_size=layer.latent_size,
             per_device_ffn=layer.moe_intermediate_size // tp_size,

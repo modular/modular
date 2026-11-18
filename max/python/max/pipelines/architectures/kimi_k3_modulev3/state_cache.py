@@ -12,9 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """The shape of a Kimi K3 KDA state, and how a layer reaches it.
 
-Copied from ``kimi_k3.state_cache`` (V2) rather than imported, so this
-ModuleV3 port has no build dependency on the V2 package.
-
 K3 splits the KDA heads across devices, so the conv and recurrent state split
 with them: device ``i`` holds ``conv_dim / n`` channels and ``num_heads / n``
 heads of every request's state. The cache declares that state as the ``state``

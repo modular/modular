@@ -10,11 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Selection and validation for Kimi K3's AMD CDNA4 W4A8 compute path.
-
-Copied from ``kimi_k3.layers.moe_latent`` (V2) rather than imported, so this
-ModuleV3 port has no build dependency on the V2 package.
-"""
+"""Selection and validation for Kimi K3's AMD CDNA4 W4A8 compute path."""
 
 from __future__ import annotations
 

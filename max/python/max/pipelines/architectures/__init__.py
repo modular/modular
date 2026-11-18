@@ -532,21 +532,6 @@ def register_all_models() -> None:
     except ModuleNotFoundError:
         pass
 
-    # Optional: import the Kimi K3 model if available.
-    try:
-        from kimi_k3 import kimi_k3_arch  # type: ignore[import-not-found]
-
-        PIPELINE_REGISTRY.register(kimi_k3_arch)
-    except ModuleNotFoundError:
-        pass
-
-    # Optional: import the Kimi K3 DSpark draft if available.
-    try:
-        kimi_k3_dspark = importlib.import_module("kimi_k3_spec.dspark")
-        PIPELINE_REGISTRY.register(kimi_k3_dspark.dspark_kimi_k3_draft_arch)
-    except ModuleNotFoundError:
-        pass
-
     # Optional: import the Qwen4-Exp model if available.
     try:
         from qwen4_exp import qwen4_exp_arch  # type: ignore[import-not-found]

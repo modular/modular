@@ -12,21 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Kimi K3's attention-residual mixture, fused with the norm after it.
 
-It is the model's only residual stream.
-Direct V3 port of ``kimi_k3/layers/attn_residual.py``. There is no
-``x = x + f(x)`` anywhere in this decoder. A running ``prefix_sum`` and a
-``block_residual`` stack of earlier per-block prefixes feed a learned SOFTMAX
-MIXTURE (the ``attn_res_mix_norm`` custom kernel, fp32 accumulation
-regardless of input dtype) that a sublayer consumes and then discards -- the
-value that advances the stream is ``prefix_sum``, never the mixture. The
-mixture's only consumer is the RMSNorm the next sublayer applies, so the
-fused kernel reads the candidates in place (no materialized stack) and emits
-that normed value directly. See the V2 module's docstring for the three
-specific ways a port gets this wrong (layer-0 has an empty stack so the
-embedding is NOT added by a plain sum; scores come from RMS-normalized
-candidates but the weighted average is over the RAW ones; ``block_residual``
-grows with DEPTH, not sequence length, so it is a Python list of ``Tensor``,
-not a cache).
+It is the model's only residual stream: there is no ``x = x + f(x)``
+anywhere in this decoder. A running ``prefix_sum`` and a ``block_residual``
+stack of earlier per-block prefixes feed a learned SOFTMAX MIXTURE (the
+``attn_res_mix_norm`` custom kernel, fp32 accumulation regardless of input
+dtype) that a sublayer consumes and then discards -- the value that advances
+the stream is ``prefix_sum``, never the mixture. The mixture's only consumer
+is the RMSNorm the next sublayer applies, so the fused kernel reads the
+candidates in place (no materialized stack) and emits that normed value
+directly. Three specifics are easy to get wrong: layer-0 has an empty stack
+so the embedding is NOT added by a plain sum; scores come from
+RMS-normalized candidates but the weighted average is over the RAW ones;
+``block_residual`` grows with DEPTH, not sequence length, so it is a Python
+list of ``Tensor``, not a cache.
 """
 
 from __future__ import annotations

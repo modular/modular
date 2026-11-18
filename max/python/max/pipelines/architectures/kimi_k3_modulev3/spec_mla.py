@@ -28,9 +28,8 @@ each owned by a different file:
   ``_compute_seq_len(ctx, 0, 0)`` and a draft-carrying step writes past the
   last allocated page: the plan/kernel window is right but the pages it
   indexes are one short, the write lands on the null page and the read-back
-  returns its zeros. This is the ModuleV3 form of a defect V2 already fixed
-  (``draft_aware_batch_context_length``: one page short when a 9-row verify
-  crossed a 128-token page).
+  returns its zeros. The concrete case: a 9-row verify crossing a
+  128-token page, one page short.
 * the prefill plan's ``buffer_size`` cap
   (``model_config.py``'s ``apply_runtime`` sizes ``max_batch_context_length``
   with the draft-aware :func:`kimi_k3_mla_buffer_size` for a speculative

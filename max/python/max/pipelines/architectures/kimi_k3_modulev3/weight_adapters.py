@@ -18,8 +18,9 @@ The tree is the ModuleV3 registry's layout for the text tower
 applying the same shape transforms (fused KDA qkvg and MLA q_a/kv_a/gate
 projections, fused qkv conv, fused gate/up, de-padded ``A_log``) that
 ``model.py``'s ``load_kimi_k3_weights`` applies to a live module --
-re-derived locally here rather than imported, to avoid a dependency on V2's
-package. Layer, KDA, and expert counts instead come from
+re-derived locally here rather than imported from it: this path maps
+checkpoint tensors onto :class:`WeightData` and never builds a live module.
+Layer, KDA, and expert counts instead come from
 :class:`~.model_config.KimiK3Config`,
 the single source of truth for those.
 

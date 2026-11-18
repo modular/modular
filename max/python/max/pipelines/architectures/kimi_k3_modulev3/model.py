@@ -21,8 +21,7 @@ that is later work. This module's job is purely: build the real graph shape
 and load real checkpoint weights into it, so the result can be driven with an
 actual forward pass.
 
-Mirrors two things from ``kimi_k3/kimi_k3.py``'s top-level ``KimiK3`` easy to
-miss by only porting the per-layer pieces:
+Two model-level pieces sit outside the per-layer modules:
 
 * a FINAL, model-level ``kimi_k3_attn_res_mix_norm`` after the layer loop,
   over separate ``output_attn_res_proj``/``output_attn_res_norm`` weights
@@ -31,16 +30,11 @@ miss by only porting the per-layer pieces:
 * ``lm_head`` is never tied to ``embed_tokens`` on this checkpoint
   (``tie_word_embeddings`` is false), so it gets its own weight.
 
-Weight loading is a direct, from-scratch port of
-``kimi_k3/weight_adapters.py``'s ``convert_kimi_k3_state_dict`` onto this
-module tree, reading a plain ``dict[str, np.ndarray]`` (e.g. from
-``safetensors.numpy.load_file``) instead of MAX's ``Weights``/``WeightData``
-plumbing -- V2's own adapter only exists bound to that heavier
-``PipelineConfig``/``Weights`` machinery, which this module does not depend
-on. The four checkpoint-shape transforms it needs (fused qkv projection,
-fused qkv conv, fused gate/up, de-padded ``A_log``) are reproduced here
-rather than imported, so this module has no import dependency on the
-``kimi_k3`` (V2) package.
+Weight loading maps the checkpoint onto this module tree, reading a plain
+``dict[str, np.ndarray]`` (e.g. from ``safetensors.numpy.load_file``) instead
+of MAX's ``Weights``/``WeightData`` plumbing. It applies four checkpoint-shape
+transforms: fused qkv projection, fused qkv conv, fused gate/up, and the
+de-padded ``A_log``.
 """
 
 from __future__ import annotations
@@ -124,9 +118,10 @@ _TEXT = "language_model.model"
 class KimiK3ModelConfig:
     """The fields the full-depth assembly needs, read from ``text_config``.
 
-    Deliberately not V2's ``KimiK3Config``: that class is built from a
-    ``PipelineConfig``/``AutoConfig`` pair and carries TP/EP/quantization/KV
-    cache fields this single-device, no-registry stage has no use for.
+    Deliberately not :class:`~.model_config.KimiK3Config`: that class is
+    built from a ``PipelineConfig``/``AutoConfig`` pair and carries
+    TP/EP/quantization/KV cache fields this single-device, no-registry
+    stage has no use for.
     """
 
     hidden_size: int
@@ -566,8 +561,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             [config.vocab_size, config.hidden_size]
         )
         # Distinct from every layer's own residual-mix weights -- the
-        # model-level mix the V2 top-level `__call__` applies after the last
-        # decoder layer and before the output head.
+        # model-level mix `forward` applies after the last decoder layer
+        # and before the output head.
         self.output_attn_res_proj_weight = Tensor.zeros([1, config.hidden_size])
         self.output_attn_res_norm_weight = Tensor.ones([config.hidden_size])
 
@@ -741,7 +736,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
 
         # The final norm rides the fused mix; the output head takes the
         # already-normed hidden state (norm-then-gather is per-row
-        # identical to V2's gather-then-norm).
+        # identical to gather-then-norm).
         if isinstance(current, PendingAttnResStream):
             normed, _ = kimi_k3_attn_res_mix_norm_delta(
                 current.prefix,
@@ -863,7 +858,7 @@ def expert_parallel_kimi_k3_model(
 
 
 def _fuse_gate_up(gate: np.ndarray, up: np.ndarray) -> np.ndarray:
-    """Gate-first concatenation; mirrors ``kimi_k3/layers/mlp.py::fuse_gate_up``."""
+    """Gate-first concatenation; mirrors ``weight_adapters.py``'s ``_fuse_gate_up``."""
     return np.ascontiguousarray(np.concatenate([gate, up], axis=0))
 
 
@@ -907,7 +902,7 @@ def _fuse_qkv_conv_weight(
     """Packs three ``[C, 1, K]`` depthwise convs into one ``[3C, K]`` weight.
 
     ``KimiK3KDAAttention.conv_weight`` takes the packed weight. Mirrors
-    ``kimi_k3/layers/short_conv.py::fuse_qkv_conv_weight``.
+    ``weight_adapters.py``'s ``_fuse_qkv_conv_weight``.
     """
     return np.ascontiguousarray(
         np.concatenate([w.reshape(w.shape[0], -1) for w in (q, k, v)], axis=0)
@@ -920,7 +915,7 @@ def _canonical_a_log(
     """Broadcasts per-head gate coefficients.
 
     Exact-zero storage padding is dropped, mirroring
-    ``kimi_k3/weight_adapters.py::_canonical_a_log``. That version handles a
+    ``weight_adapters.py``'s ``_canonical_a_log``. That version handles a
     bf16-as-uint16 checkpoint; this fixture stores A_log as fp32.
     """
     if values.ndim != 1 or values.size < num_heads:

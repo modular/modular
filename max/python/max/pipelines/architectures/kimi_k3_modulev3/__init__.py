@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Kimi K3 (ModuleV3 port).
 
-Registered as ``KimiK3ForConditionalGeneration_ModuleV3``, selected over the
-Graph-API architecture (``kimi_k3.kimi_k3_arch``) by ``prefer_module_v3``.
+Registered as ``KimiK3ForConditionalGeneration_ModuleV3``; a checkpoint that
+names ``KimiK3ForConditionalGeneration`` resolves to it.
 
-The KDA state is addressed by row id, as in ``kimi_k3`` (V2): each KDA layer
+The KDA state is addressed by row id: each KDA layer
 takes a conv and a recurrent pool (one per layer, or the same pooled leaf
 passed to every layer) and its own ``[batch]`` row ids into each, the row of
 that layer in the ``[num_layers, batch]`` tables ``state_cache.py`` declares.

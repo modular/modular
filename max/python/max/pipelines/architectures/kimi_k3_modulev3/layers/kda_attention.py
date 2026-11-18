@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Kimi K3's Kimi Delta Attention (ModuleV3).
 
-Direct V3 port of ``kimi_k3/layers/kda_attention.py``'s
-``kimi_k3_kda_attention`` orchestration, calling the same ``kda_decode``
+The ``KimiK3KDAAttention`` orchestration, calling the ``kda_decode``
 custom op via :func:`max.functional.inplace_custom`.
 
 Every batch takes ``kda_decode``, and the op itself picks the recurrence,
@@ -58,7 +57,7 @@ replay reads as its second output. The ring records and the fold contract
 are the unfused ops' own, so the rollback is unchanged; every other config
 keeps the four-launch chain, byte for byte.
 
-Both gate-lower-bound arms V2 supports are kept (not scoped out): the
+Both gate-lower-bound arms are kept (not scoped out): the
 "original" arm (``gate_lower_bound is None``, the kernel's own per-head
 ``-exp(A_log) * softplus(pre)``) and the "safe" arm
 (``log_alpha = bound * sigmoid(exp(A_log) * (raw_gate + dt_bias))``).
@@ -105,7 +104,7 @@ from .short_conv import kimi_short_conv_qkv
 from .tensor_parallel import check_divisible, shard_interleaved_blocks
 
 _KIMI_O_NORM_EPS = 1e-5
-"""``KIMI_RMS_NORM_EPS`` in ``kimi_k3/layers/norm.py`` -- ``o_norm``'s eps,
+"""``KIMI_RMS_NORM_EPS`` in ``norm.py`` -- ``o_norm``'s eps,
 distinct from MLA's ``q_a_layernorm``/``kv_a_layernorm`` eps."""
 _FUSED_CONV_ARCH = "gfx950"
 """The one target the fused verify kernel is built for (CDNA4, MI355X)."""
@@ -394,10 +393,10 @@ def _kimi_short_conv_qkv_verify(
     """Runs the verify form of :func:`.short_conv.kimi_short_conv_qkv`.
 
     Kept here rather than in ``short_conv.py`` so the plain form stays the
-    V2 port alone. Same fp32 working dtype and the same raw fp32 output (the
-    caller applies ``silu`` per q/k/v slice); the kernel writes the live
-    window only at a verify width of zero, and with drafts it returns the
-    copy of its input the conv replay replays over instead.
+    shared-kernel bridge alone. Same fp32 working dtype and the same raw
+    fp32 output (the caller applies ``silu`` per q/k/v slice); the kernel
+    writes the live window only at a verify width of zero, and with drafts
+    it returns the copy of its input the conv replay replays over instead.
     """
     conv, window = gated_delta_conv1d_verify_fwd(
         qkv_input_ragged=ops.cast(TensorValue(x_qkv_ragged), DType.float32),

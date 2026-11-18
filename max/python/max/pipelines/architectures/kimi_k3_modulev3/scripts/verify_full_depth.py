@@ -25,8 +25,8 @@ library's own venv, which gives plain filesystem access this script needs:
         --checkpoint /tmp/k3_04b_fixture/model.safetensors
 
 The fixture is ``inference-optimization/Kimi-K3-0.40B`` -- the bring-up
-fixture named in ``max_private/kimi_k3/arch.py``'s ``example_repo_ids`` and in
-the Mach model registry's comment on this architecture. Fetch it with:
+fixture this architecture names in ``example_repo_ids``
+(``kimi_k3_modulev3/arch.py``). Fetch it with:
 
     curl -sL "https://huggingface.co/inference-optimization/Kimi-K3-0.40B/resolve/main/config.json" \
         -o /tmp/k3_04b_fixture/config.json

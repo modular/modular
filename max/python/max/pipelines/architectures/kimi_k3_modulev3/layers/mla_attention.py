@@ -15,9 +15,7 @@
 ``forward`` is the padded/parity form K3's own 0.4B fixture validates
 against. ``forward_ragged`` and ``forward_latent_ragged`` serve over a real
 paged KV cache instead -- the former decompressed, the latter the
-compressed-latent form K3 actually serves -- direct V3 ports of
-``kimi_k3/layers/mla_attention.py``'s ``kimi_k3_mla_attention``,
-``kimi_k3_mla_attention_ragged``, and ``kimi_k3_mla_attention_latent_ragged``.
+compressed-latent form K3 actually serves.
 
 Neither ``deepseekV3_modulev3``'s ``QuantizedLatentAttentionWithRope`` nor the
 generic V3 building block (``max.nn.common_layers.multi_latent_attention.LatentAttentionWithRope``)
@@ -30,13 +28,13 @@ can be wrapped for this layer:
   ``o_proj``, gating on the layer's INPUT, not the attention output. Both V3
   classes call their own ``o_proj`` internally with no seam to insert this.
 
-This block instead calls the same shared kernel-level primitive K3's own V2
-parity form and the V3 attention building blocks both call
-(``flash_attention_gpu``) directly, writing K3-native orchestration around it
--- the same pattern ``moe_latent.py`` uses for the MoE expert-compute side.
+This block instead calls the same shared kernel-level primitive the V3
+attention building blocks call (``flash_attention_gpu``) directly, writing
+K3-native orchestration around it -- the same pattern ``moe_latent.py``
+uses for the MoE expert-compute side.
 
-Two more facts this mirrors exactly from K3's V2 code and the official
-reference, easy to get wrong silently:
+Two more facts this mirrors exactly from the official reference
+(``modeling_kimi_linear.py``), easy to get wrong silently:
 
 * ``scaling`` is ``q_head_dim ** -0.5``, not ``v_head_dim ** -0.5``.
 * ``k_rot`` (the rope-shaped slice) is MQA-shared -- one copy broadcast across
@@ -83,7 +81,7 @@ from max.tensor.sharding import DeviceMesh, NamedMapping
 from .tensor_parallel import check_divisible
 
 # K3's q_a_layernorm/kv_a_layernorm always use this epsilon, independent of
-# the model's general `rms_norm_eps` -- see `kimi_k3/layers/norm.py`.
+# the model's general `rms_norm_eps`.
 _KIMI_QKV_A_LAYERNORM_EPS = 1e-6
 
 # The accelerator whose MLA kernel folds the output gate into its `w_uv`

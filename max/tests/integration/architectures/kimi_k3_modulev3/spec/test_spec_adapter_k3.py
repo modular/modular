@@ -15,8 +15,7 @@
 Graph-level checks, ahead of the end-to-end pair in
 ``test_spec_parity.py`` (neither of them needs an accelerator):
 
-* the adapter registry routes the ModuleV3 target to the K3 adapter, past
-  the V2 graph-API entry its base name maps to;
+* the adapter registry routes the ModuleV3 target to the K3 adapter;
 * the verify hands the target's ``forward`` the very graph inputs the
   driver decoded -- so the KDA pools the rollback folds are the buffers
   the forward mutated, never copies.
@@ -136,14 +135,7 @@ def _per_device_leaves(
 
 
 def test_the_registry_routes_the_modulev3_target_to_its_adapter() -> None:
-    """The ModuleV3 variant reaches the K3 adapter; the base name keeps the
-    V2 graph-API entry a private build serves."""
-    assert (
-        spec_adapters_registry._TARGET_ADAPTERS[
-            "KimiK3ForConditionalGeneration"
-        ]
-        == "kimi_k3_spec"
-    )
+    """The ModuleV3 variant reaches the K3 adapter."""
     # The production gate: the spec pipeline pairs this target only when
     # an adapter is registered under its exact architecture name.
     assert spec_adapters_registry.has_adapter(

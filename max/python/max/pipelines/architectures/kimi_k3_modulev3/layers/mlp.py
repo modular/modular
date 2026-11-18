@@ -35,10 +35,9 @@ def kimi_situ_and_mul(
 ) -> Tensor:
     """Applies ``SituAndMul`` to a fused ``[gate ; up]`` tensor.
 
-    Direct V3 port of ``kimi_k3/layers/mlp.py``'s ``kimi_situ_and_mul`` --
-    same math (``beta * tanh(gate / beta) * sigmoid(gate)``, optionally
-    ``linear_beta * tanh(up / linear_beta)`` on the up half), both halves
-    upcast to fp32 for the activation and cast back at the end.
+    ``beta * tanh(gate / beta) * sigmoid(gate)`` on the gate half,
+    optionally ``linear_beta * tanh(up / linear_beta)`` on the up half,
+    both halves upcast to fp32 for the activation and cast back at the end.
 
     Args:
         gate_up: Concatenation of the gate and up projections along the LAST
@@ -112,7 +111,7 @@ class KimiK3DenseMLP(Module[[Tensor], Tensor]):
         self.beta = beta
         self.linear_beta = linear_beta
         self.intermediate_size = intermediate_size
-        # One fused projection rather than two: see `fuse_gate_up` in the V2
+        # One fused projection rather than two: see `_fuse_gate_up` in the
         # weight adapter, which concatenates the checkpoint's separate
         # gate_proj/up_proj at load time to match this layout.
         self.gate_up_proj = Linear(
