@@ -20,6 +20,8 @@
 ///   - no device pair is peer-accessible; enabling peer access is refused
 ///   - memory alloc returns malloc'd blocks; free calls free()
 ///   - queue/event/bundle/function operations succeed silently
+///   - MOCK_FAIL_CALL names an entry point to refuse with
+///     M_DRIVER_STATUS_UNSUPPORTED
 
 #include "HAL/M_driver_api.h"
 
@@ -83,6 +85,12 @@ static void mock_maybe_stall(const char *name) {
 /// to resolve out of this plugin; the runtime never calls it.
 M_DRIVER_API_EXPORT
 void M_driver_mock_arm_stall(void) { g_stall_armed = true; }
+
+/// Whether MOCK_FAIL_CALL names `name`, the entry point being called.
+static bool mock_refuses(const char *name) {
+  const char *target = getenv("MOCK_FAIL_CALL");
+  return target != NULL && strcmp(target, name) == 0;
+}
 
 static int64_t mock_device_count(void) {
   const char *env = getenv("MOCK_DEVICE_COUNT");
@@ -486,6 +494,8 @@ M_driver_status_t M_driver_memory_wrap(M_driver_context_t context,
   (void)size;
   if (!memory || address == 0)
     return M_DRIVER_STATUS_INVALID_ARG;
+  if (mock_refuses(__func__))
+    return M_DRIVER_STATUS_UNSUPPORTED;
   M_driver_memory_t m = malloc(sizeof(*m));
   if (!m)
     return M_DRIVER_STATUS_OUT_OF_MEMORY;
@@ -505,6 +515,8 @@ M_driver_status_t M_driver_memory_unwrap(M_driver_context_t context,
   (void)context;
   if (!memory || !address)
     return M_DRIVER_STATUS_INVALID_ARG;
+  if (mock_refuses(__func__))
+    return M_DRIVER_STATUS_UNSUPPORTED;
   memory->owning = false;
   *address = (uint64_t)(uintptr_t)memory->ptr;
   return M_DRIVER_STATUS_SUCCESS;

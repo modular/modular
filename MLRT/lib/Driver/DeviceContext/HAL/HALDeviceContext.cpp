@@ -31,6 +31,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <atomic>
 #include <functional>
@@ -496,6 +497,11 @@ DeviceBuffer::~DeviceBuffer() {
     MojoHALBufferBox *owner = nullptr;
     if (const char *err = MojoHAL_DeviceContext_createBufferOwning(
             &owner, context_->mojoCtx_, ptr_, byteSize_, /*owning=*/true)) {
+      // The plugin has no entry point that frees memory it refuses to wrap
+      // as owning, so the memory leaks.
+      llvm::errs() << "warning: leaking a DeviceBuffer the driver plugin "
+                      "would not free: "
+                   << err << "\n";
       MojoHAL_strfree(err);
       return;
     }
@@ -538,9 +544,12 @@ ErrorOr<DeviceBufferRef> DeviceBuffer::createSubBuffer(size_t byteOffset,
 }
 
 void *DeviceBuffer::releasePtr() {
-  if (const char *err = MojoHAL_DeviceBuffer_relinquishOwnership(mojoBox_))
-    MojoHAL_strfree(err); // Cannot fail in practice (plugin-side flag flip);
-                          // the legacy signature is non-failing.
+  // The buffer still owns the memory after a refusal, so handing out the
+  // pointer would free it twice.
+  if (const char *err = MojoHAL_DeviceBuffer_relinquishOwnership(mojoBox_)) {
+    MojoHAL_strfree(err);
+    return nullptr;
+  }
   freeOnDestroy_ = false;
   auto tmp = ptr_;
   ptr_ = nullptr;

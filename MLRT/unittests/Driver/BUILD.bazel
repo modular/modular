@@ -864,6 +864,32 @@ modular_cc_test(
     ],
 )
 
+# A driver plugin's refusals surface as errors through the HAL DeviceContext.
+# HAL-only: the mock plugin refuses on demand, and the legacy driver has no
+# plugin to load.
+modular_cc_test(
+    name = "HALBridgeErrorTest",
+    size = "small",
+    srcs = [
+        "HALBridgeErrorTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    data = ["//MLRT/test/Driver/HAL:MockPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+    },
+    target_compatible_with = select({
+        "//:hal_device_context_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 modular_cc_test(
     name = "LaunchTraceLabelsTest",
     size = "small",

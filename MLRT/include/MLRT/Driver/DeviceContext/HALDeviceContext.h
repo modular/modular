@@ -290,7 +290,8 @@ public:
 
   void *ptr() const { return ptr_; }
   /// Relinquishes ownership of the underlying allocation to the caller and
-  /// returns its pointer; destroying the buffer then frees nothing.
+  /// returns its pointer; destroying the buffer then frees nothing. Returns
+  /// null, and keeps ownership, if the driver plugin refuses to release it.
   void *releasePtr();
 
   /// Wraps a heap-boxed Mojo `DeviceBuffer` surrendered by the Mojo side (the

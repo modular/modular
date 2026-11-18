@@ -114,6 +114,71 @@ struct _HALDeviceBuffer[dtype: DType](ImplicitlyCopyable, Movable):
     var _inner: ArcPointer[_HALBufferInner]
 
 
+def _wrap_hal_memory[
+    dtype: DType
+](
+    ctx: DeviceContext,
+    ptr: Pointer[Scalar[dtype], ...],
+    size: Int,
+    *,
+    owning: Bool,
+) raises -> DeviceBuffer[dtype]:
+    """Wraps an externally-managed device pointer in a HAL buffer.
+
+    Parameters:
+        dtype: The buffer's element dtype.
+
+    Args:
+        ctx: The device context the pointer belongs to.
+        ptr: The device pointer to wrap.
+        size: Number of elements addressable through the pointer.
+        owning: Whether releasing the buffer should free the pointer.
+
+    Returns:
+        The buffer that wraps `ptr`.
+
+    Raises:
+        If the plugin refuses to wrap the memory.
+    """
+    comptime assert (
+        not use_legacy_backend()
+    ), "_wrap_hal_memory is only available in a HAL DeviceContext build"
+    var byte_size = UInt64(size * size_of[dtype]())
+    var addr = UInt64(Int(ptr))
+    try:
+        # The plugin rejects wrapping a null address; represent the empty
+        # buffer the way a zero-byte allocation does (null memory handle).
+        var buffer = ctx._impl._context[].alloc_sync(
+            0
+        ) if addr == 0 else ctx._impl._context[].wrap_memory(
+            addr, byte_size, owning=owning
+        )
+        # The plugin may give the wrapped region an address of its own.
+        # If it can't report one, keep the address we were given.
+        if addr != 0:
+            try:
+                addr = ctx._impl._context[].memory_get_address(buffer)
+            except:
+                pass
+        return DeviceBuffer[dtype](
+            _impl=rebind_var[DeviceBuffer[dtype]._Impl](
+                _HALDeviceBuffer[dtype](
+                    _HALDeviceBuffer[dtype]._DevicePtr(
+                        unsafe_from_address=Int(addr)
+                    ),
+                    ctx.into_unknown_target(),
+                    ArcPointer(
+                        _HALBufferInner(
+                            buffer^, ctx._impl._context, addr, [], []
+                        )
+                    ),
+                )
+            )
+        )
+    except e:
+        raise Error(t"DeviceBuffer: failed to wrap external memory: {e}")
+
+
 struct DeviceBuffer[dtype: DType](
     DevicePassable, ImplicitlyCopyable, Sized, Writable
 ):
@@ -202,7 +267,8 @@ struct DeviceBuffer[dtype: DType](
         underlying pointer to whoever allocated it.
 
         This mirrors the non-raising legacy constructor; a wrap failure
-        aborts rather than raising.
+        aborts rather than raising. The HAL C exports call
+        `_wrap_hal_memory` instead, to return the failure to their caller.
 
         Args:
             ctx: The device context the pointer belongs to.
@@ -219,32 +285,12 @@ struct DeviceBuffer[dtype: DType](
             )
             return
 
-        var byte_size = UInt64(size * size_of[Self.dtype]())
-        var addr = UInt64(Int(ptr))
+        # The HAL plugin can refuse the wrap, and this signature has no error
+        # channel.
         try:
-            # The plugin rejects wrapping a null address; represent the empty
-            # buffer the way a zero-byte allocation does (null memory handle).
-            var buffer = ctx._impl._context[].alloc_sync(
-                0
-            ) if addr == 0 else ctx._impl._context[].wrap_memory(
-                addr, byte_size, owning=owning
-            )
-            # The plugin may give the wrapped region an address of its own.
-            # If it can't report one, keep the address we were given.
-            if addr != 0:
-                try:
-                    addr = ctx._impl._context[].memory_get_address(buffer)
-                except:
-                    pass
-            self._impl = Self._HAL(
-                Self._DevicePtr(unsafe_from_address=Int(addr)),
-                ctx.into_unknown_target(),
-                ArcPointer(
-                    _HALBufferInner(buffer^, ctx._impl._context, addr, [], [])
-                ),
-            )
+            self = _wrap_hal_memory(ctx, ptr, size, owning=owning)
         except e:
-            abort(String(t"DeviceBuffer: failed to wrap external memory: {e}"))
+            abort(String(e))
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend buffer.
