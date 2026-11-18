@@ -2379,8 +2379,8 @@ struct FlashAttentionCPU:
         ](coords: Coord) {var v_view} -> SIMD[dtype, width]:
             return rebind[SIMD[dtype, width]](v_view.load[width=width](coords))
 
-        var k_shape = rebind[IndexList[rank]](coord_to_index_list(k.shape()))
-        var v_shape = rebind[IndexList[rank]](coord_to_index_list(v.shape()))
+        var k_shape = k.shape()
+        var v_shape = v.shape()
 
         def _run[mask_t: MHAMask](mask: mask_t) raises {imm}:
             nn_flash_attention(

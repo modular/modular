@@ -135,9 +135,9 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
                 input_v_fn,
                 mask_fn,
                 q,
-                kv_shape,
-                kv_shape,
-                mask_shape,
+                Coord(kv_shape),
+                Coord(kv_shape),
+                Coord(mask_shape),
                 output,
                 scale=scale,
             )

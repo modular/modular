@@ -65,7 +65,6 @@ from nn.attention.mha_mask import MHAMask
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 
@@ -535,9 +534,8 @@ struct _Matmul[dtype: DType, simd_width: Int]:
 
 struct _FlashAttentionConfig[
     dtype: DType,
-    rank: Int,
     simd_width: Int,
-    output_static_shape: IndexList[rank],
+    depth_static_dim: Int,
 ](Defaultable):
     var block_m: Int
     var qk_block_n: Int
@@ -550,11 +548,9 @@ struct _FlashAttentionConfig[
         # Set a target size for the output block array.
         comptime output_target_size = 8192
 
-        comptime depth_static_dim = Self.output_static_shape[Self.rank - 1]
-
-        comptime if depth_static_dim != UNKNOWN_VALUE:
+        comptime if Self.depth_static_dim != UNKNOWN_VALUE:
             # Extract the static depth dimension with a guard against zero.
-            var depth_dim = max(depth_static_dim, 1)
+            var depth_dim = max(Self.depth_static_dim, 1)
 
             # Compute the number of columns for the output block array. If the
             # count is too large, then use the default size.
@@ -573,7 +569,7 @@ struct _FlashAttention[
     dtype: DType,
     rank: Int,
     mask_rank: Int,
-    padded_output_shape: IndexList[rank],
+    depth_static_dim: Int,
     *,
     simd_width: Int = simd_width_of[get_accum_type[dtype]()](),
 ]:
@@ -582,9 +578,8 @@ struct _FlashAttention[
     comptime _accum_type = get_accum_type[Self.dtype]()
     comptime _matmul = _Matmul[Self._accum_type, Self.simd_width]
     comptime _config = _FlashAttentionConfig[
-        Self.dtype, Self.rank, Self.simd_width, Self.padded_output_shape
+        Self.dtype, Self.simd_width, Self.depth_static_dim
     ]()
-    comptime _depth_static_dim = Self.padded_output_shape[Self.rank - 1]
 
     @staticmethod
     def _online_softmax[
@@ -891,7 +886,7 @@ struct _FlashAttention[
                     try:
                         Self._matmul._matmul[
                             transpose_b=True,
-                            static_k=Self._depth_static_dim,
+                            static_k=Self.depth_static_dim,
                         ](
                             input_k_2d_fn,
                             count_m,
@@ -1008,7 +1003,6 @@ struct _FlashAttention[
 @inline(.always)
 def _flash_attention_mask_fn[
     dtype: DType,
-    rank: Int,
     q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     InputKFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
@@ -1023,29 +1017,25 @@ def _flash_attention_mask_fn[
     input_v_fn: InputVFnType,
     mask_fn: MaskFnType,
     q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
-    k_shape: IndexList[rank],
-    v_shape: IndexList[rank],
+    k_shape: Coord,
+    v_shape: Coord,
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
     ctx: Optional[DeviceContext.CPU] = None,
 ):
-    comptime assert q.rank == q.flat_rank == rank
+    comptime rank = q.rank
+    comptime assert q.rank == q.flat_rank
     comptime assert output.rank == output.flat_rank == rank
+    comptime assert type_of(k_shape).rank == type_of(v_shape).rank == rank
     comptime OutputType = type_of(output)
-
-    def output_static_shape() -> IndexList[rank]:
-        var result = IndexList[rank]()
-        comptime for i in range(rank):
-            result[i] = OutputType.static_shape[i]
-        return result
 
     var num_batches = Int(output.dim[0]())
     var max_seq_len = Int(output.dim[1]())
     var num_heads = Int(output.dim[rank - 2]()) if rank == 4 else 1
     var depth_dim = Int(output.dim[rank - 1]())
-    var kv_cache_len = v_shape[1] - max_seq_len
-    var num_kv_heads = k_shape[rank - 2] if rank == 4 else 1
+    var kv_cache_len = Int(v_shape[1]) - max_seq_len
+    var num_kv_heads = Int(k_shape[rank - 2]) if rank == 4 else 1
 
     @inline(.always)
     def input_q_ptr_fn(
@@ -1069,7 +1059,9 @@ def _flash_attention_mask_fn[
     def q_length_fn(batch: Int) {var max_seq_len} -> Int:
         return max_seq_len
 
-    _FlashAttention[dtype, rank, mask_rank, output_static_shape()].run(
+    _FlashAttention[
+        dtype, rank, mask_rank, OutputType.static_shape[rank - 1]
+    ].run(
         input_q_ptr_fn,
         input_k_fn,
         input_v_fn,
@@ -1095,8 +1087,6 @@ def _flash_attention_mask_fn[
 @inline(.always)
 def _flash_attention[
     dtype: DType,
-    rank: Int,
-    mask_rank: Int,
     q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     InputKFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
@@ -1108,9 +1098,9 @@ def _flash_attention[
     input_v_fn: InputVFnType,
     input_mask_fn: InputMaskFnType,
     q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
-    k_shape: IndexList[rank],
-    v_shape: IndexList[rank],
-    mask_shape: IndexList[mask_rank],
+    k_shape: Coord,
+    v_shape: Coord,
+    mask_shape: Coord,
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
@@ -1129,7 +1119,7 @@ def _flash_attention[
             + input_mask_fn[simd_width](idx).cast[get_accum_type[dtype]()]()
         )
 
-    _flash_attention_mask_fn[mask_rank](
+    _flash_attention_mask_fn[type_of(mask_shape).rank](
         input_k_fn,
         input_v_fn,
         mask_fn,
@@ -1145,8 +1135,6 @@ def _flash_attention[
 
 def flash_attention[
     dtype: DType,
-    rank: Int,
-    mask_rank: Int,
     q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     InputKFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
@@ -1158,9 +1146,9 @@ def flash_attention[
     input_v_fn: InputVFnType,
     input_mask_fn: InputMaskFnType,
     q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
-    k_shape: IndexList[rank],
-    v_shape: IndexList[rank],
-    mask_shape: IndexList[mask_rank],
+    k_shape: Coord,
+    v_shape: Coord,
+    mask_shape: Coord,
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
@@ -1171,10 +1159,6 @@ def flash_attention[
     Parameters:
         dtype: The element type of the query, key, value, and output
             tensors (inferred).
-        rank: The number of dimensions in the query, key, value, and output
-            tensors, either 3 or 4 (inferred).
-        mask_rank: The number of dimensions in the attention mask tensor
-            (inferred).
         q_origin: The memory origin of the read-only query tensor
             (inferred).
         output_origin: The memory origin of the writable output tensor
@@ -1216,7 +1200,6 @@ def flash_attention[
 
 def flash_attention[
     dtype: DType,
-    rank: Int,
     q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     InputKFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
@@ -1227,8 +1210,8 @@ def flash_attention[
     input_k_fn: InputKFnType,
     input_v_fn: InputVFnType,
     q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
-    k_shape: IndexList[rank],
-    v_shape: IndexList[rank],
+    k_shape: Coord,
+    v_shape: Coord,
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     mask: mask_t,
     scale: Float32,
@@ -1239,8 +1222,6 @@ def flash_attention[
     Parameters:
         dtype: The element type of the query, key, value, and output
             tensors (inferred).
-        rank: The number of dimensions in the query, key, value, and output
-            tensors, either 3 or 4 (inferred).
         q_origin: The memory origin of the read-only query tensor
             (inferred).
         output_origin: The memory origin of the writable output tensor
@@ -1292,8 +1273,6 @@ def flash_attention[
 
 def flash_attention_split_kv[
     dtype: DType,
-    rank: Int,
-    mask_rank: Int,
     InputKFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
     InputVFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
     InputKCacheFnType: def[simd_width: Int](Coord) -> SIMD[dtype, simd_width],
@@ -1307,12 +1286,13 @@ def flash_attention_split_kv[
     input_v_cache_fn: InputVCacheFnType,
     input_mask_fn: InputMaskFnType,
     q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    k_shape: IndexList[rank],
-    v_shape: IndexList[rank],
-    # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
-    k_cache_shape: IndexList[rank + 1],
-    v_cache_shape: IndexList[rank + 1],
-    mask_shape: IndexList[mask_rank],
+    k_shape: Coord,
+    v_shape: Coord,
+    # {k,v}_cache_shape have one more dim than q because reshape in MO IR
+    # prevents fusion.
+    k_cache_shape: Coord,
+    v_cache_shape: Coord,
+    mask_shape: Coord,
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: Optional[DeviceContext.CPU] = None,
@@ -1329,10 +1309,6 @@ def flash_attention_split_kv[
     Parameters:
         dtype: The element type of the query, key, value, and output
             tensors (inferred).
-        rank: The number of dimensions in the query, key, value, and output
-            tensors, either 3 or 4 (inferred).
-        mask_rank: The number of dimensions in the attention mask tensor
-            (inferred).
         InputKFnType: The type of `input_k_fn` (inferred).
         InputVFnType: The type of `input_v_fn` (inferred).
         InputKCacheFnType: The type of `input_k_cache_fn` (inferred).
@@ -1369,7 +1345,10 @@ def flash_attention_split_kv[
     # v (input_v_fn): BSHD
     # k_cache (input_k_cache_fn): 1BHS'D
     # v_cache (input_v_cache_fn): 1BHS'D
-    comptime assert rank == 4
+    comptime assert q.rank == 4
+    comptime assert type_of(k_shape).rank == type_of(v_shape).rank == q.rank
+    comptime assert type_of(k_cache_shape).rank == q.rank + 1
+    comptime assert type_of(v_cache_shape).rank == q.rank + 1
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -1393,7 +1372,7 @@ def flash_attention_split_kv[
         "flash_attention_split_kv",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
     ):
-        var kv_cache_len = v_cache_shape[3]
+        var kv_cache_len = Int(v_cache_shape[3])
 
         @inline(.always)
         def load_from_split_cache[
@@ -1436,11 +1415,17 @@ def flash_attention_split_kv[
                 input_v_fn, input_v_cache_fn, idx
             )
 
-        var combined_k_shape = IndexList[rank](
-            k_shape[0], k_shape[1] + k_cache_shape[3], k_shape[2], k_shape[3]
+        var combined_k_shape = Coord(
+            Int(k_shape[0]),
+            Int(k_shape[1]) + Int(k_cache_shape[3]),
+            Int(k_shape[2]),
+            Int(k_shape[3]),
         )
-        var combined_v_shape = IndexList[rank](
-            v_shape[0], v_shape[1] + v_cache_shape[3], v_shape[2], v_shape[3]
+        var combined_v_shape = Coord(
+            Int(v_shape[0]),
+            Int(v_shape[1]) + Int(v_cache_shape[3]),
+            Int(v_shape[2]),
+            Int(v_shape[3]),
         )
         _flash_attention(
             input_k_cache_fn_wrapper,
@@ -1482,9 +1467,6 @@ def _flash_attention_kv_cache[
     var num_batches = Int(q.dim[0]())
     comptime num_heads = q.static_shape[2]
     comptime head_size = cache_t.kv_params.head_size
-    comptime output_shape = IndexList[4](
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
-    )
 
     @inline(.always)
     def input_q_ptr_fn(
@@ -1507,7 +1489,7 @@ def _flash_attention_kv_cache[
         return max_seq_len
 
     return _flash_attention_kv_cache[
-        mask_rank=mask_rank, output_shape=output_shape
+        mask_rank=mask_rank, depth_static_dim=head_size
     ](
         input_q_ptr_fn,
         output_ptr_fn,
@@ -1541,7 +1523,7 @@ def _flash_attention_kv_cache[
     //,
     *,
     mask_rank: Int,
-    output_shape: IndexList[4],
+    depth_static_dim: Int,
 ](
     input_q_ptr_fn: InputQPtrFnType,
     output_ptr_fn: OutputPtrFnType,
@@ -1584,7 +1566,7 @@ def _flash_attention_kv_cache[
     def kv_cache_length_fn(batch: Int) {imm} -> Int:
         return k.cache_length(batch)
 
-    _FlashAttention[dtype, 4, mask_rank, output_shape].run(
+    _FlashAttention[dtype, 4, mask_rank, depth_static_dim].run(
         input_q_ptr_fn,
         input_k_fn,
         input_v_fn,
@@ -1804,11 +1786,8 @@ def flash_attention_kv_cache[
     var max_seq_len = k.max_prompt_length()
     comptime num_heads = q.static_shape[q.rank - 2]
     comptime head_size = cache_t.kv_params.head_size
-    comptime output_shape = IndexList[4](
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
-    )
 
-    _flash_attention_kv_cache[mask_rank=mask_rank, output_shape=output_shape](
+    _flash_attention_kv_cache[mask_rank=mask_rank, depth_static_dim=head_size](
         input_q_ptr_fn,
         output_ptr_fn,
         q_length_fn,

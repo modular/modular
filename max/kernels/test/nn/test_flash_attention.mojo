@@ -26,8 +26,9 @@ from layout import (
 from layout.layout import RowMajorLayout
 from layout.coord import coord_to_index_list
 from std.sys import align_of
-from std.utils.type_list import TypeList
+from std.builtin.variadics import TypeList
 from nn.attention.cpu.mha import flash_attention, flash_attention_split_kv
+from nn.attention.mha_mask import MASK_VALUE, CausalMask
 from std.testing import assert_equal
 
 from std.utils import IndexList
@@ -45,7 +46,7 @@ def reference_attention_bshd[
     scale: Float32,
 ) raises:
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
-    comptime Layout4D = RowMajorLayout[Int64, Int64, Int64, Int64]
+    comptime Layout4D = RowMajorLayout[Int, Int, Int, Int]
 
     def reshape_4d(
         buf: TileTensor[dtype, ...]
@@ -122,7 +123,7 @@ def reference_attention_bshd[
     var score_ptr = List(length=seq_len * kv_seq_len, fill=Scalar[dtype](0))
     var score_2d = TileTensor(
         Span(score_ptr), row_major(len(score_ptr))
-    ).reshape(Coord(Int64(seq_len), Int64(kv_seq_len)))
+    ).reshape(Coord(seq_len, kv_seq_len))
 
     for b in range(batch_count):
         for h in range(num_heads):
@@ -187,7 +188,7 @@ def reference_attention_bshd_with_sinks[
     """Reference implementation of attention with sink weights."""
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
 
-    comptime Layout4D = RowMajorLayout[Int64, Int64, Int64, Int64]
+    comptime Layout4D = RowMajorLayout[Int, Int, Int, Int]
 
     def reshape_4d(
         buf: TileTensor[dtype, ...]
@@ -248,7 +249,7 @@ def reference_attention_bshd_with_sinks[
     var score_ptr = List(length=seq_len * kv_seq_len, fill=Scalar[dtype](0))
     var score_2d = TileTensor(
         Span(score_ptr), row_major(len(score_ptr))
-    ).reshape(Coord(Int64(seq_len), Int64(kv_seq_len)))
+    ).reshape(Coord(seq_len, kv_seq_len))
 
     for b in range(batch_count):
         for h in range(num_heads):
@@ -432,13 +433,11 @@ comptime _ShapeMode[
     rank: Int, static_shape: IndexList[rank], i: Int
 ]: CoordLike = ComptimeInt[static_shape[i]] if static_shape[
     i
-] != UNKNOWN_VALUE else Scalar[
-    DType.int64
-]
+] != UNKNOWN_VALUE else Int
 """Maps one entry of a static-shape list to a shape-element type.
 
 Known extents become `ComptimeInt`, `UNKNOWN_VALUE` entries become runtime
-`Scalar[DType.int64]` extents.
+`Int` extents.
 """
 
 
@@ -464,7 +463,7 @@ def build_ndbuffer[
     var native_shape = Coord[*ShapeTypes]()
     comptime for i in range(rank):
         comptime if static_shape[i] == UNKNOWN_VALUE:
-            native_shape[i] = rebind[ShapeTypes[i]](Int64(shape[i]))
+            native_shape[i] = rebind[ShapeTypes[i]](shape[i])
     return TileTensor(ptr, row_major(shape.flattened_length())).reshape(
         native_shape
     )
@@ -524,9 +523,9 @@ def test_case[
         input_v_fn,
         mask_fn,
         q.as_imm(),
-        coord_to_index_list(k.layout.shape_coord()),
-        coord_to_index_list(v.layout.shape_coord()),
-        coord_to_index_list(mask.layout.shape_coord()),
+        k.layout.shape_coord(),
+        v.layout.shape_coord(),
+        mask.layout.shape_coord(),
         output.reshape(output.layout.shape_coord()),
         cfg.scale,
     )
@@ -716,18 +715,18 @@ def test_case_split_kv[
         shape_rank=cfg.kv_cache_rank, is_kv=True
     ](cfg.prev_seq_len(), cfg.depth_dim)
 
-    flash_attention_split_kv[dtype=dtype, rank=batch_rank + 2](
+    flash_attention_split_kv(
         input_k_fn,
         input_v_fn,
         input_k_cache_fn,
         input_v_cache_fn,
         mask_fn,
         q.as_imm(),
-        kv_present_shape,
-        kv_present_shape,
-        rebind[IndexList[cfg.rank + 1]](kv_past_shape),
-        rebind[IndexList[cfg.rank + 1]](kv_past_shape),
-        coord_to_index_list(mask.layout.shape_coord()),
+        Coord(kv_present_shape),
+        Coord(kv_present_shape),
+        Coord(kv_past_shape),
+        Coord(kv_past_shape),
+        mask.layout.shape_coord(),
         output.reshape(output.layout.shape_coord()),
         cfg.scale,
     )
@@ -811,9 +810,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     seed(42)
 
     # Create test tensors in BSHD format
-    var q_shape = (batch_size, seq_len, num_heads, depth_dim)
-    var kv_shape = (batch_size, kv_seq_len, num_heads, depth_dim)
-    var mask_shape = (batch_size, num_heads, seq_len, kv_seq_len)
+    var q_shape = Index(batch_size, seq_len, num_heads, depth_dim)
+    var kv_shape = Index(batch_size, kv_seq_len, num_heads, depth_dim)
+    var mask_shape = Index(batch_size, num_heads, seq_len, kv_seq_len)
 
     var q = build_ndbuffer[dtype](q_shape)
     var k = build_ndbuffer[dtype](kv_shape)
@@ -862,9 +861,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         input_v_fn,
         mask_fn,
         q.as_imm(),
-        coord_to_index_list(k.layout.shape_coord()),
-        coord_to_index_list(v.layout.shape_coord()),
-        coord_to_index_list(mask.layout.shape_coord()),
+        k.layout.shape_coord(),
+        v.layout.shape_coord(),
+        mask.layout.shape_coord(),
         output_no_sinks,
         scale,
     )
@@ -921,9 +920,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         input_v_fn,
         mask_fn,
         q.as_imm(),
-        coord_to_index_list(k.layout.shape_coord()),
-        coord_to_index_list(v.layout.shape_coord()),
-        coord_to_index_list(mask.layout.shape_coord()),
+        k.layout.shape_coord(),
+        v.layout.shape_coord(),
+        mask.layout.shape_coord(),
         output_with_sinks,
         scale,
         sink_weights=sink_weights.as_imm().as_unsafe_any_origin(),
@@ -974,7 +973,82 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     ref_output_with_sinks.ptr.unsafe_free()
 
 
+def test_flash_attention_causal_mask[dtype: DType]() raises:
+    """Checks the `MHAMask` overload against an explicit causal mask, with KV
+    extents passed as a `Coord` that mixes static and dynamic dims."""
+    comptime kv_num_heads = 2
+    comptime depth_dim = 32
+    var cfg = TestCaseConfig(
+        batch_dims=Index(2, 4),
+        seq_len=5,
+        kv_num_heads=kv_num_heads,
+        kv_seq_len=12,
+        depth_dim=depth_dim,
+        scale=0.25,
+    )
+    seed(42)
+
+    var q_shape = cfg.build_shape_bshd(cfg.seq_len, cfg.depth_dim)
+    var kv_shape = cfg.build_shape_bshd[is_kv=True](
+        cfg.kv_seq_len, cfg.depth_dim
+    )
+    comptime kv_static_shape = (
+        UNKNOWN_VALUE,
+        UNKNOWN_VALUE,
+        kv_num_heads,
+        depth_dim,
+    )
+    var q = build_ndbuffer[dtype](q_shape)
+    var k = build_ndbuffer[dtype, static_shape=kv_static_shape](kv_shape)
+    var v = build_ndbuffer[dtype, static_shape=kv_static_shape](kv_shape)
+    var mask = build_ndbuffer[dtype](
+        cfg.build_shape(cfg.seq_len, cfg.kv_seq_len)
+    )
+    var output = build_ndbuffer[dtype](q_shape)
+    var ref_output = build_ndbuffer[dtype](q_shape)
+
+    for i in range(mask.num_elements()):
+        var crd = mask.layout.idx2crd(i)
+        var q_pos = Int(crd[2]) + cfg.prev_seq_len()
+        mask[crd] = 0 if q_pos >= Int(crd[3]) else MASK_VALUE
+
+    reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
+
+    @inline(.always)
+    def input_k_fn[
+        simd_width: Int
+    ](idx: Coord) {imm} -> SIMD[dtype, simd_width]:
+        return k.load[width=simd_width, alignment=align_of[dtype]()](idx)
+
+    @inline(.always)
+    def input_v_fn[
+        simd_width: Int
+    ](idx: Coord) {imm} -> SIMD[dtype, simd_width]:
+        return v.load[width=simd_width, alignment=align_of[dtype]()](idx)
+
+    flash_attention(
+        input_k_fn,
+        input_v_fn,
+        q.as_imm(),
+        k.layout.shape_coord(),
+        v.layout.shape_coord(),
+        output,
+        CausalMask(),
+        cfg.scale,
+    )
+
+    verify_output(output, ref_output, cfg)
+
+    q.ptr.unsafe_free()
+    k.ptr.unsafe_free()
+    v.ptr.unsafe_free()
+    mask.ptr.unsafe_free()
+    output.ptr.unsafe_free()
+    ref_output.ptr.unsafe_free()
+
+
 def main() raises:
     test_flash_attention[.float32]()
     test_flash_attention_split_kv[.float32]()
     test_flash_attention_with_sinks[.float32]()
+    test_flash_attention_causal_mask[.float32]()
