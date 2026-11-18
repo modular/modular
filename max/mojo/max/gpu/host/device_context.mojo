@@ -22,19 +22,34 @@ accelerator, and compile and execute functions on the accelerator."""
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
 )
+
+
+@__doc_inline
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
 )
+
+
+@__doc_inline
 from max._driver.max_license.device_context_dispatch.host_buffer import (
     HostBuffer,
 )
+
+
+@__doc_inline
 from max._driver.max_license.device_context_dispatch.device_pointer import (
     DevicePointer,
 )
+
+
+@__doc_inline
 from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
 )
+
+
+@__doc_inline
 from max._driver.max_license.device_context_dispatch.host_types import (
     CompletionFlag,
     Device,
@@ -43,6 +58,9 @@ from max._driver.max_license.device_context_dispatch.host_types import (
     DeviceMulticastBuffer,
     DeviceStream,
 )
+
+
+@__doc_inline
 from max._driver.max_license.device_context_dispatch.backend_names import (
     DefaultDeviceTypeEncoder,
 )
