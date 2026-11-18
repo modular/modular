@@ -50,6 +50,21 @@
 //     store %y[%i] = mul(%x[%i], %b)       }
 //   }
 //
+// A consumer a later reduction reads is left to it as a producer, so it is
+// never written, unless something outside that reduction also reads it, as a
+// graph output does. Then it is written anyway, so it joins the reduction
+// before it:
+//
+//   %s = map.iter.rowwise {                %h = map.iter.rowwise {
+//     %a = map.iter.reduce ...               %a = map.iter.reduce ...
+//     store %s[%row] = %a          =>        map.iter.map index (%j) {
+//   }                                          store %h[%j] = f(%x[%j], %a)
+//   %h = elementwise (%i) {                  }
+//     store %h[%i] = f(%x[%i], %s[...])    }
+//   }                                      %y = map.iter.rowwise inputs (%h)
+//   %y = map.iter.rowwise inputs (%h)      mo.output %y, %h
+//   mo.output %y, %h
+//
 // A rowwise kernel whose per-row results only a later rowwise kernel over the
 // same rows, with a map phase, reads at its own row runs at the start of that
 // kernel's row:
@@ -78,6 +93,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
@@ -409,16 +425,66 @@ IterMapOp joinedPhase(IterRowwiseOp dst, IterElementwiseOp consumer) {
   return phase;
 }
 
-// Whether `value` reaches a rowwise kernel through kernels over `shape`.
-bool feedsReduction(Value value, MOSH::ShapeAttr shape) {
-  return llvm::any_of(value.getUsers(), [&](Operation *user) {
-    if (isa<IterRowwiseOp>(user))
-      return true;
-    auto kernel = dyn_cast<IterElementwiseOp>(user);
-    return kernel && kernel.getShape() == shape &&
-           llvm::any_of(kernel->getResults(), [&](Value result) {
-             return feedsReduction(result, shape);
-           });
+// Whether `value` is a per-row result of `reduction`, or is computed from one
+// by kernels over its per-row shape, which fuse into it as row-level ops.
+bool derivesFromRows(Value value, IterRowwiseOp reduction) {
+  Operation *def = value.getDefiningOp();
+  if (def == reduction.getOperation())
+    return true;
+  auto kernel = dyn_cast_or_null<IterElementwiseOp>(def);
+  return kernel && isPerRowShape(reduction, kernel.getShape()) &&
+         llvm::any_of(kernel->getOperands(), [&](Value input) {
+           return derivesFromRows(input, reduction);
+         });
+}
+
+// Whether `user` ends up in `reduction`'s kernel. It does when it is that
+// kernel, or a kernel over its rows that:
+//   - reads its per-row results (`derivesFromRows`): an elementwise kernel
+//     joins it as a map phase, as softmax's division joins the sum, and a
+//     rowwise kernel runs it at the start of its row;
+//   - or has readers that all end up there.
+// TODO(GEX-3346): this doesn't check that the reader reads its own row, as the
+// fusers do. A reader through a transpose leaves the consumer as its own
+// kernel, as before.
+bool endsUpIn(Operation *user, IterRowwiseOp reduction) {
+  if (user == reduction)
+    return true;
+  auto kernel = dyn_cast<StructuredIterOpInterface>(user);
+  if (!kernel || kernel.getShape() != reduction.getShape())
+    return false;
+  if (llvm::any_of(kernel->getOperands(), [&](Value input) {
+        return derivesFromRows(input, reduction);
+      }))
+    return true;
+  return isa<IterElementwiseOp>(user) && !user->use_empty() &&
+         llvm::all_of(user->getUsers(), [&](Operation *next) {
+           return endsUpIn(next, reduction);
+         });
+}
+
+// Whether a later reduction may take `consumer` as a producer, so its result
+// is never written: it reaches a reduction through kernels over its rows, and
+// its readers all end up in that reduction's kernel. A graph output or a
+// hand-written kernel reads it from memory, so it is written anyway.
+bool laterReductionTakes(IterElementwiseOp consumer) {
+  SmallVector<IterRowwiseOp> reductions;
+  SmallVector<Value> worklist = {consumer.getResult(0)};
+  DenseSet<Operation *> seen;
+  while (!worklist.empty())
+    for (Operation *user : worklist.pop_back_val().getUsers()) {
+      if (!seen.insert(user).second)
+        continue;
+      if (auto reduction = dyn_cast<IterRowwiseOp>(user))
+        reductions.push_back(reduction);
+      else if (auto kernel = dyn_cast<IterElementwiseOp>(user);
+               kernel && kernel.getShape() == consumer.getShape())
+        llvm::append_range(worklist, kernel->getResults());
+    }
+  return llvm::any_of(reductions, [&](IterRowwiseOp reduction) {
+    return llvm::all_of(consumer->getUsers(), [&](Operation *user) {
+      return endsUpIn(user, reduction);
+    });
   });
 }
 
@@ -453,9 +519,7 @@ bool canFuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
   if (readsElement && !joinedPhase(dst, consumer))
     return false;
 
-  // A later reduction takes the consumer as a producer instead, so its result
-  // is never written.
-  if (feedsReduction(consumer.getResult(0), dst.getShape()))
+  if (laterReductionTakes(consumer))
     return false;
 
   // A per-row output can't stay next to a map phase (`Row.emit` isn't
