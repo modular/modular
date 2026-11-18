@@ -17,14 +17,6 @@ from std.os import abort
 from std.utils import StaticTuple
 
 
-@inline(.always)
-def _strlen(ptr: ImmPointer[Byte, _]) -> Int:
-    var offset = 0
-    while ptr[unsafe_offset=offset]:
-        offset += 1
-    return offset
-
-
 struct _ErasedWriter[origin: MutOrigin](TrivialRegisterPassable, Writer):
     """A type-erased `Writer`."""
 
@@ -104,7 +96,7 @@ struct TString[origins: ImmOrigin, array_origin: ImmOrigin](
     var _values: Self._ArgumentSpan
     """Type-erased references, one per replacement field in the template."""
     var _encoded: ImmPointer[Byte, ImmStaticOrigin]
-    """The template's NUL-separated literal parts, encoded at construction."""
+    """The template's length-prefixed literal parts, encoded at construction."""
 
     @doc_hidden
     @inline(.always)
@@ -129,8 +121,8 @@ struct TString[origins: ImmOrigin, array_origin: ImmOrigin](
 
         @inline(.always)
         def write_string() {mut writer, imm} -> Int:
-            var literal_start = self._encoded.unsafe_offset(offset)
-            var literal_length = _strlen(literal_start)
+            var literal_length = Int(self._encoded[unsafe_offset=offset])
+            var literal_start = self._encoded.unsafe_offset(offset + 1)
             var string_literal = StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=literal_start, length=literal_length
@@ -139,7 +131,7 @@ struct TString[origins: ImmOrigin, array_origin: ImmOrigin](
             writer.write_string(string_literal)
             return literal_length
 
-        # Alternate writing NUL terminated string-literal part, followed
+        # Alternate writing a length-prefixed string-literal part, followed
         # by the interpolated replacement field.
         for argument in self._values:
             var length = write_string()
@@ -175,6 +167,10 @@ struct TString[origins: ImmOrigin, array_origin: ImmOrigin](
         fmt.FormatStruct(writer, "TString").fields()
 
 
+# Each literal segment's length is stored in a single byte.
+comptime _MAX_LITERAL_SEGMENT_LENGTH = Int(Byte.MAX)
+
+
 @inline(.always)
 def __make_tstring[
     format_string: __mlir_type.`!kgen.string`,
@@ -205,7 +201,19 @@ def __make_tstring[
         The constructed TString object.
     """
     comptime fmt_str = StaticString(format_string)
-    comptime length = _count_encoded_bytes(fmt_str)
+    comptime counted = _count_encoded_bytes(fmt_str)
+    comptime too_long_segment = counted[1]
+    comptime assert too_long_segment is None, String(
+        "t-string literal segment is too long; at most ",
+        _MAX_LITERAL_SEGMENT_LENGTH,
+        (
+            " bytes of literal text are supported without a replacement field"
+            ' in between: "'
+        ),
+        too_long_segment.or_else(""),
+        '"',
+    )
+    comptime length = counted[0]
     comptime bytes = _encoded_bytes[length](fmt_str)
 
     ref global_bytes = global_constant[bytes]()
@@ -215,14 +223,18 @@ def __make_tstring[
     }
 
 
-def _count_encoded_bytes(format: StaticString) -> Int:
+def _count_encoded_bytes(
+    format: StaticString,
+) -> Tuple[Int, Optional[StaticString]]:
+    # Returns the encoded length and `_encode_format_string`'s result. If a
+    # segment is too long, encoding stopped there and the count is partial.
     var count = 0
 
     def addone(_byte: Byte) {mut}:
         count += 1
 
-    _encode_format_string(format, addone)
-    return count
+    var too_long_segment = _encode_format_string(format, addone)
+    return count, too_long_segment
 
 
 def _encoded_bytes[
@@ -235,40 +247,93 @@ def _encoded_bytes[
         bytes[index] = byte
         index += 1
 
-    _encode_format_string(format, append)
+    # `__make_tstring` has already rejected a too-long segment.
+    _ = _encode_format_string(format, append)
     return bytes
 
 
-def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
+def _literal_segment(
+    format: StaticString, start: Int
+) -> Tuple[StaticString, Int, Int]:
+    """Finds the literal segment of a format string that starts at `start`.
+
+    Assumes well-formed braces; `_encode_format_string` rejects malformed ones.
+
+    Args:
+        format: The format string.
+        start: The byte offset where the segment starts.
+
+    Returns:
+        The segment as written in `format` (escaped braces not yet resolved),
+        its length in bytes once escaped braces are resolved (`{{` and `}}`
+        count as one byte each), and the byte offset where the segment ends:
+        the `{}` that closes it, or the end of `format`.
+    """
+    comptime LBRACE = Byte(123)  # '{'
+    comptime RBRACE = Byte(125)  # '}'
+
+    var bytes = format.as_bytes()
+    var i = start
+    var length = 0
+    while i < len(bytes):
+        var byte = bytes.unsafe_ptr()[unsafe_offset=i]
+        if byte == LBRACE or byte == RBRACE:
+            if (
+                byte == LBRACE
+                and i + 1 < len(bytes)
+                and bytes.unsafe_ptr()[unsafe_offset=i + 1] == RBRACE
+            ):
+                break
+            i += 2
+        else:
+            i += 1
+        length += 1
+    var end = min(i, len(bytes))
+    var segment = StaticString(
+        unsafe_from_utf8=Span(
+            unsafe_ptr=bytes.unsafe_ptr().unsafe_offset(start),
+            length=end - start,
+        )
+    )
+    return segment, length, i
+
+
+def _encode_format_string(
+    format: StaticString, f: Some[def(Byte)]
+) -> Optional[StaticString]:
     """Encode a format string into a flat byte sequence.
 
-    The output is an alternating sequence of NUL-terminated literal segments
-    and replacement field boundaries. For N replacement fields, there are
-    always N+1 literal segments.
+    The output is a sequence of length-prefixed literal segments: one byte
+    holding the segment's length, followed by that many bytes of literal
+    text. For N replacement fields, there are always N+1 literal segments.
 
-    The replacement fields themselves are not stored — their positions are
-    implied by the NUL boundaries. Escaped braces (`{{`/`}}`) are resolved
-    to `{`/`}` in the literal text.
+    The replacement fields themselves are not stored — each one sits between
+    two consecutive segments. Escaped braces (`{{`/`}}`) are resolved to
+    `{`/`}` in the literal text. Because segments carry their length instead
+    of ending in a NUL byte, the literal text may itself contain NUL bytes.
 
     If the format string starts with `{}`, the first literal segment is
-    empty (a bare NUL byte). Likewise if the format string ends with `{}`,
-    the last literal segment is empty. This means the output always begins
-    and ends with a (possibly empty) NUL-terminated literal segment.
+    empty (a single length byte of 0). Likewise if the format string ends
+    with `{}`, the last literal segment is empty.
 
-    For example, `"result: {} + {} = {}"` encodes as
-    `"result: \0 + \0 = \0\0"`, which we walks through as:
+    A literal segment longer than `_MAX_LITERAL_SEGMENT_LENGTH` bytes does
+    not fit in its length byte. Encoding stops at such a segment and
+    returns it, and `__make_tstring` rejects the template at compile time.
 
-        1. literal: "result: \0"
+    For example, `"result: {} + {} = {}"` encodes as the bytes
+    `[8, "result: ", 3, " + ", 3, " = ", 0]`, which we walk through as:
+
+        1. literal: "result: "  (length 8)
         2. arg: 0
-        3. literal: " + \0"
+        3. literal: " + "       (length 3)
         4. arg: 1
-        5. literal: " = \0"
+        5. literal: " = "       (length 3)
         6. arg: 2
-        7. literal: "\0"      (empty — format ends with {})
+        7. literal: ""          (length 0 — format ends with {})
 
-    At runtime, the we write bytes until NUL to get a literal
-    segment, writes the next interpolated argument, and repeats until
-    the final literal segment (which has no argument after it).
+    At runtime, we read a segment's length byte, write that many bytes,
+    write the next interpolated argument, and repeat until the final literal
+    segment (which has no argument after it).
 
     Args:
         format: The format string to encode.
@@ -276,10 +341,13 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
             buffer directly. This lets callers collect the bytes however
             they need to, for example counting them or writing them into a
             fixed-size buffer.
+
+    Returns:
+        The first literal segment longer than `_MAX_LITERAL_SEGMENT_LENGTH`
+        bytes, as written in `format`, or `None` if every segment fits.
     """
     comptime LBRACE = Byte(123)  # '{'
     comptime RBRACE = Byte(125)  # '}'
-    comptime NUL = Byte(0)
 
     var bytes = format.as_bytes()
     var i = 0
@@ -295,6 +363,11 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
             and bytes.unsafe_ptr()[unsafe_offset=i + 1] == byte
         )
 
+    var first_segment, first_length, _ = _literal_segment(format, 0)
+    if first_length > _MAX_LITERAL_SEGMENT_LENGTH:
+        return first_segment
+    f(Byte(first_length))
+
     while i < len(bytes):
         var byte = bytes.unsafe_ptr()[unsafe_offset=i]
         if byte == LBRACE:
@@ -302,8 +375,13 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
                 # Escaped brace {{ -> {
                 f(LBRACE)
             elif peek_next_is(RBRACE):
-                # Empty replacement field {} -> NUL separator.
-                f(NUL)
+                # Empty replacement field {} -> length of the next segment.
+                var next_segment, next_length, _ = _literal_segment(
+                    format, i + 2
+                )
+                if next_length > _MAX_LITERAL_SEGMENT_LENGTH:
+                    return next_segment
+                f(Byte(next_length))
             else:
                 abort()
 
@@ -320,5 +398,4 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
             f(byte)
             i += 1
 
-    # Terminate the final literal segment with NUL.
-    f(NUL)
+    return None
