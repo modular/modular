@@ -44,6 +44,7 @@ from max.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from max.gpu.sync import syncwarp
 from max.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
+from algorithm.bisect import bisect_right
 from layout import (
     Coord,
     ComptimeInt,
@@ -2307,15 +2308,13 @@ struct GroupedBlockScaledMatmulKernel[
             return GroupedWorkInfo()
 
         # Binary search for group
-        var lo: UInt32 = 0
-        var hi: UInt32 = UInt32(_num_groups)
-        while lo < hi:
-            var mid = (lo + hi) / 2
-            if linear_idx < cumulative[Int(mid + 1)]:
-                hi = mid
-            else:
-                lo = mid + 1
-        var group_idx = lo
+        var group_idx = UInt32(
+            bisect_right(
+                _num_groups,
+                linear_idx,
+                lambda (g: Int) {cumulative} -> UInt32: cumulative[g + 1],
+            )
+        )
 
         var local_idx = linear_idx - cumulative[Int(group_idx)]
         var m = UInt32(Int(problem_sizes[Int(group_idx), 0]))

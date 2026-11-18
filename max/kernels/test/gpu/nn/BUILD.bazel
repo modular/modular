@@ -842,6 +842,7 @@ _FILECHECK_TESTS = [
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
+            "//max:algorithm",
             "//max:internal_utils",
             "//max:linalg",
             "//max:nn",

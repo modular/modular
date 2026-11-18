@@ -35,6 +35,7 @@ from std.memory import bitcast
 from std.random import seed
 from std.testing import assert_equal, assert_true
 
+from algorithm.bisect import bisect_left
 from nn.attention.gpu.nvidia.topk_cluster import (
     _choose_topk_cluster_size,
     _ctopk_max_rows,
@@ -856,19 +857,15 @@ def _expected_topk_set(scores_row: List[Float32], K: Int) -> Set[Int]:
         keys.append(_phi(scores_row[i]))
 
     # Largest threshold `t` whose at-or-above count still reaches `K`.
-    var lo = UInt32(0)
-    var hi = UInt32(0xFFFFFFFF)
-    while lo < hi:
-        var mid = lo + (hi - lo) // 2 + 1
+    @inline(.always)
+    def count_reaches_k(threshold: Int) {imm keys, imm N, imm K} -> Bool:
         var cnt = 0
         for i in range(N):
-            if keys[i] >= mid:
+            if Int(keys[i]) >= threshold:
                 cnt += 1
-        if cnt >= K:
-            lo = mid
-        else:
-            hi = mid - 1
-    var t = lo
+        return cnt >= K
+
+    var t = UInt32(max(bisect_left(0x1_0000_0000, count_reaches_k) - 1, 0))
 
     var res = Set[Int]()
     var n_gt = 0

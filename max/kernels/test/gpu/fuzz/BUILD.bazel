@@ -1105,6 +1105,7 @@ mojo_test(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:algorithm",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -1133,6 +1134,7 @@ mojo_test(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:algorithm",
         "//max:nn",
         "@mojo//:std",
     ],

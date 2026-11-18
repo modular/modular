@@ -44,6 +44,7 @@ from std.collections.string.string_span import get_static_string
 
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
+from algorithm.bisect import bisect_right
 from layout import (
     Coord,
     Idx,
@@ -1686,17 +1687,19 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
             ), "the matmul epilogue contract is rank 2"
             var row = Int(idx[0])
             var col = Int(idx[1])
+
             # Last group whose start is at or before `row`; empty groups share
             # a start with their successor, so this lands on the non-empty one.
-            var lo = 0
-            var hi = num_active_experts - 1
-            while lo < hi:
-                var mid = (lo + hi + 1) // 2
-                if Int(a_offsets[mid]) <= row:
-                    lo = mid
-                else:
-                    hi = mid - 1
-            var expert = Int(expert_ids[lo])
+            var group = max(
+                bisect_right(
+                    num_active_experts,
+                    row,
+                    lambda (i: Int) {a_offsets} -> Int: Int(a_offsets[i]),
+                )
+                - 1,
+                0,
+            )
+            var expert = Int(expert_ids[group])
             if expert < 0:
                 return val
             var a_scale = a_scales.load[width=1]((row, Idx[0])).cast[.float32]()

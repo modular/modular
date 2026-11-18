@@ -30,6 +30,7 @@ the lane functions below.
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv, rsqrt
 
+from algorithm.bisect import bisect_right
 from internal_utils.fp8_utils import cast_saturating
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.host import DeviceContext
@@ -144,15 +145,16 @@ def head_norm(x: Piece, eps: Float32) -> Piece:
 @always_inline
 def _batch_of(offsets: In[DType.uint32], batch: Int, token: Int) -> Int:
     """The sequence holding `token`: the last offset at or below it."""
-    var lo = 0
-    var hi = batch
-    while hi - lo > 1:
-        var mid = (lo + hi) // 2
-        if Int(offsets[unsafe_offset=mid]) <= token:
-            lo = mid
-        else:
-            hi = mid
-    return lo
+
+    return max(
+        bisect_right(
+            batch,
+            token,
+            lambda (i: Int) {offsets} -> Int: Int(offsets[unsafe_offset=i]),
+        )
+        - 1,
+        0,
+    )
 
 
 @always_inline

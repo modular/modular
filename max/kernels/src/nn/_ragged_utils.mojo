@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import simd_width_of
-from std.math.uutils import ufloordiv
 
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
+from algorithm.bisect import bisect_right
 from layout import TileTensor
 from layout import Coord
 from layout.coord import DynamicCoord
@@ -36,17 +36,17 @@ def get_batch_from_row_offsets(
         row_offsets[row_offsets_size - 1]
     ), "tok_idx is out of range of row_offsets"
 
-    var low = 0
-    var high: Int = row_offsets_size - 1
-    while low + 1 != high:
-        var mid = ufloordiv(low + high, 2)
-
-        if tok_idx >= Int(row_offsets[mid]):
-            low = mid
-        else:
-            high = mid
-
-    return low
+    # The last batch whose first row is at or before `tok_idx`; the final
+    # offset is the total, so the search stops before it.
+    return max(
+        bisect_right(
+            row_offsets_size - 1,
+            tok_idx,
+            lambda (i: Int) {row_offsets} -> Int: Int(row_offsets[i]),
+        )
+        - 1,
+        0,
+    )
 
 
 @inline(.always)

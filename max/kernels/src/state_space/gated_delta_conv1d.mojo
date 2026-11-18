@@ -75,6 +75,7 @@ from max.gpu import (
     lane_id,
     thread_idx,
 )
+from algorithm.bisect import bisect_right
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from nn.activations import silu
 from state_space.gated_delta import pdl_enter, pdl_exit
@@ -130,15 +131,17 @@ def _row_of_token[
                 )
             var ballot = warp.vote[.uint32](found)
             return max(0, WARP_SIZE - 1 - Int(count_leading_zeros(ballot)))
-    var lo = 0
-    var hi = batch_size - 1
-    while lo < hi:
-        var mid = (lo + hi + 1) >> 1
-        if Int(input_row_offsets.load[width=1]((mid,))) <= flat_token_idx:
-            lo = mid
-        else:
-            hi = mid - 1
-    return lo
+    return max(
+        bisect_right(
+            batch_size,
+            flat_token_idx,
+            lambda (i: Int) {input_row_offsets} -> Int: Int(
+                input_row_offsets.load[width=1]((i,))
+            ),
+        )
+        - 1,
+        0,
+    )
 
 
 def gated_delta_conv1d_fwd_gpu[

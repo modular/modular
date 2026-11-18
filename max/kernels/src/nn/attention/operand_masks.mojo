@@ -22,6 +22,7 @@ from std.memory import bitcast
 from std.sys import is_gpu, is_nvidia_gpu, llvm_intrinsic
 from std.utils import StaticTuple
 
+from algorithm.bisect import bisect_right
 from extensibility import Fused, Input, LoadAccess, Loadable, TensorTuple
 from layout import Coord
 from nn.attention.mha_mask import (
@@ -348,14 +349,14 @@ struct SegmentMask[
     @inline(.always)
     def _end_of(self, start: Int, length: Int, id: Int32) -> Int:
         """Returns the first position whose id exceeds `id`."""
-        var lo, hi = 0, length
-        while lo < hi:
-            var mid = (lo + hi) // 2
-            if self._id_at(start + mid) <= id:
-                lo = mid + 1
-            else:
-                hi = mid
-        return lo
+
+        return bisect_right(
+            length,
+            id,
+            lambda (offset: Int) {self, start} -> Int32: self._id_at(
+                start + offset
+            ),
+        )
 
     @inline(.always)
     def _key_end(self, start: Int, length: Int, row: Int, rows: Int) -> Int:

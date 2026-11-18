@@ -49,6 +49,7 @@ mojo_library(
     deps = [
         "//max:_cublas",
         "//max:_rocblas",
+        "//max:algorithm",
         "//max:comm",
         "//max:extensibility",
         "//max:internal_utils",

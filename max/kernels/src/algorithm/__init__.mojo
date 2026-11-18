@@ -11,4 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Free-form row-wise reduction library: the `ReduceOp` monoid trait and the
-`rowwise` scaffolder (`Row` / `reduce` / `map` / `emit`)."""
+`rowwise` scaffolder (`Row` / `reduce` / `map` / `emit`).
+
+Also home to `bisect`: binary search over a span, a device load, or a
+caller-supplied comparison (`bisect_left` / `bisect_right` / `bisect`)."""

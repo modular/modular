@@ -63,6 +63,7 @@ from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext
 from std.utils.numerics import isfinite, isnan
+from algorithm.bisect import bisect_left
 from layout import TileTensor, row_major
 from nn.sampling import topk_topp_sampling_from_prob
 
@@ -183,14 +184,12 @@ def _above(
     `sorted_e` is descending and `prefix[i]` holds the mass of its first
     `i + 1` entries, so both come from one binary search.
     """
-    var lo = 0
-    var hi = len(sorted_e)
-    while lo < hi:
-        var mid = (lo + hi) // 2
-        if sorted_e[mid] > threshold:
-            lo = mid + 1
-        else:
-            hi = mid
+    var lo = bisect_left(
+        len(sorted_e),
+        lambda (i: Int) {sorted_e, threshold} -> Bool: (
+            sorted_e[i] > threshold
+        ),
+    )
     return Tuple[Int, Float64](lo, prefix[lo - 1] if lo > 0 else 0.0)
 
 
