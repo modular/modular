@@ -49,7 +49,7 @@ from max.pipelines.context import (
     VLMContextType,
 )
 from max.pipelines.lib.vlm_utils import (
-    compute_multimodal_merge_indices,
+    _compute_selected_merge_indices,
     compute_windowed_merge_indices,
 )
 from max.pipelines.request import RequestID
@@ -1001,10 +1001,14 @@ class VisionEncoderCache(Generic[VLMContextType]):
             self._batch_metrics = None
 
         if not self.enabled:
+            # The encoder ran on the selection alone (in-window images), so
+            # the indices follow the selection, not every image in the batch.
             embeddings = (
                 vision_embeds if uncached_contexts else empty_embeddings
             )
-            indices = compute_multimodal_merge_indices(context_batch)
+            indices = _compute_selected_merge_indices(
+                context_batch, uncached_contexts, uncached_images
+            )
             return embeddings, indices
 
         if not per_image_token_counts:
