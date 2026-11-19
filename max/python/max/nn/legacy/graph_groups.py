@@ -245,27 +245,44 @@ class ItemPositions(GraphGroup[str, TensorValue]):
 class BatchContext(GraphGroup[str, _ContextT]):
     """Host-planned context lengths, token bounds and row selection for a step.
 
-    ``length`` is an ``int32``: the replica's rows' cached and new tokens,
-    each row rounded up to a page, summed. MLA prefill sizes its buffers
-    from it.
+    The engine stages each entry by its name. Host entries, a list of which
+    is indexed by device:
 
-    ``total_length`` is a ``uint32`` bound on the KV positions the step
-    writes: at least the replica's rows' cached and new tokens, summed, plus
-    each decode row's drafts and later steps. A sparse-attention prefill plan
-    sizes its buffers from it with no bounds check.
+    - ``length``, ``int32``: the replica's rows' cached and new tokens, each
+      row rounded up to a page, summed. MLA prefill sizes its buffers from
+      it.
+    - ``total_length``, ``uint32``: a bound on the KV positions the step
+      writes: at least the replica's rows' cached and new tokens, summed,
+      plus each decode row's drafts and later steps. A sparse-attention
+      prefill plan sizes its buffers from it with no bounds check.
 
-    ``window_start`` and ``write_floor`` are per-request token bounds. No
-    request resumes below a window restart, so both are zero, as MAX Serve
-    stages them.
+    Device entries, on the first device unless noted:
 
-    ``lookback_token_ids`` is a host-built window staged on the device;
-    ``lookback_source`` selects it with a negative value, or the request's
-    recurrent live row with a nonnegative value. Persistent bytes remain in
-    the recurrent KV leaf rather than this context group.
-
-    The ``replay_*`` fields describe kept row offsets, front skips, row
-    indices and per-replica longest lengths. Data-parallel graphs also take
-    host kept offsets and each replica's first merged row.
+    - ``window_start`` and ``write_floor``, ``int32 [rows]``: per-request
+      token bounds. No request resumes below a window restart, so both are
+      zero, as MAX Serve stages them.
+    - ``window_rows``, ``uint8``: extent only. Its length is each row's new
+      tokens capped at the shared cache window, summed; its bytes are zero.
+    - ``lookback_tokens``, ``int64 [rows, depth]``: each row's ``depth``
+      tokens before its first new token, newest first, ``-1`` before the
+      sequence start. ``depth`` is static, 1 to 3.
+    - ``lookback_mask``, ``uint8 [rows, depth]``: 1 where that predecessor
+      must not feed token-history features (an image placeholder). It needs
+      ``lookback_tokens``.
+    - ``lookback_source``, ``int64 [rows]``: ``-1`` reads
+      ``lookback_tokens``; a nonnegative value is the row the request sat
+      at in the step still in flight, whose history the graph recorded
+      there. It needs ``lookback_tokens``.
+    - ``image_token_mask``, ``uint8 [merged rows]``: 1 where a token of a
+      row's new tokens, then its verify drafts, sits in an image span.
+    - ``replay_skip``, ``int32 [rows]``: the merged rows dropped from each
+      row's front; none.
+    - ``replay_row_indices``, ``int32``, and ``replay_offsets``,
+      ``uint32``: one per replica, on its first device: its kept rows'
+      merged rows, counted from its first merged row, and the cumulative
+      kept rows over its rows, from 0.
+    - ``replay_longest``, ``uint8``: one per replica, on its first device,
+      extent only: its length is the replica's longest kept span.
     """
 
     kind = "batch_context"

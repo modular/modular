@@ -403,6 +403,7 @@ def test_the_pairing_binds_a_registered_targets_compiled_vision(
     batching._pairing = SimpleNamespace(target=_VISION_TARGET)
     batching._takes_images = True
     batching._prepares_batches = False
+    batching._constant_inputs = None
     model._batch_processor = batching
     session = object()
 

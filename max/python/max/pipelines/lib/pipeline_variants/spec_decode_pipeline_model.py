@@ -1012,6 +1012,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             target
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
         self._ep_comm_initializer: EPCommInitializer | None = None
+        self._constant_inputs: ConstantInputs | None = None
 
     def max_dims(
         self, dims: Iterable[str], kv_params: KVCacheParamInterface
@@ -1042,12 +1043,30 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
     def _target_batching(self) -> Any:
         """The target's batching, where it prepares or encodes any batches."""
         config = self.spec_config
+        if (
+            self._constant_inputs is not None
+            and not self._target_prepares_inputs
+        ):
+            raise ValueError(
+                "the target takes constant inputs, which only its own batching "
+                "passes, but its batching does not prepare the batches"
+            )
         if not (self._target_prepares_inputs or self._takes_images):
             return None
         batching = _batching(self._pairing.target)(config.target, self.runtime)
         if isinstance(batching, ReplayBatching):
             batching.bind_kv_params(config.kv_params)
+        if self._constant_inputs is not None:
+            batching.constant_inputs = self._constant_inputs
         return batching
+
+    def bind_constant_inputs(self, constants: ConstantInputs) -> None:
+        """Hands the target's constant inputs to the target's batching.
+
+        The pipeline model built and initialized them; the target's batching
+        passes those same buffers every step, as standalone serving does.
+        """
+        self._constant_inputs = constants
 
     def bind_ep_comm_initializer(
         self, initializer: EPCommInitializer | None
@@ -1857,6 +1876,10 @@ class SpecDecodePipelineModel(
             else None
         )
         static_modules = initialize_static_inputs(session, constants)
+        if constants is not None:
+            assert isinstance(constants, ConstantInputs)
+            # Serving reads the buffers the initializer just filled.
+            self._batching.bind_constant_inputs(constants)
         self.ep_comm_initializer = ep.initializer
         self.compiled_modules = {
             **self.compiled_modules,
