@@ -23,8 +23,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLRT_LIB_DRIVER_DEVICECONTEXT_ALLOCATORCONTEXT_H
-#define MLRT_LIB_DRIVER_DEVICECONTEXT_ALLOCATORCONTEXT_H
+#ifndef MLRT_LIB_DRIVER_MEMORYMANAGER_ALLOCATORCONTEXT_H
+#define MLRT_LIB_DRIVER_MEMORYMANAGER_ALLOCATORCONTEXT_H
 
 #include "Support/ErrorOr.h"
 #include "Support/RCRef.h"
@@ -127,4 +127,4 @@ public:
 
 } // namespace M::Driver
 
-#endif // MLRT_LIB_DRIVER_DEVICECONTEXT_ALLOCATORCONTEXT_H
+#endif // MLRT_LIB_DRIVER_MEMORYMANAGER_ALLOCATORCONTEXT_H

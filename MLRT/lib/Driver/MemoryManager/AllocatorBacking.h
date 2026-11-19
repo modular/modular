@@ -18,8 +18,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLRT_LIB_DRIVER_DEVICECONTEXT_ALLOCATORBACKING_H
-#define MLRT_LIB_DRIVER_DEVICECONTEXT_ALLOCATORBACKING_H
+#ifndef MLRT_LIB_DRIVER_MEMORYMANAGER_ALLOCATORBACKING_H
+#define MLRT_LIB_DRIVER_MEMORYMANAGER_ALLOCATORBACKING_H
 
 #include "Support/ErrorOr.h"
 
@@ -87,4 +87,4 @@ using AllocatorBacking = std::variant<std::unique_ptr<AllocatorChunks>,
 
 } // namespace M::Driver
 
-#endif // MLRT_LIB_DRIVER_DEVICECONTEXT_ALLOCATORBACKING_H
+#endif // MLRT_LIB_DRIVER_MEMORYMANAGER_ALLOCATORBACKING_H

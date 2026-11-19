@@ -40,7 +40,7 @@ static_assert(
 #include "HIP/HIPCompilationDevice.h"
 #include "HIP/HIPDeviceContext.h"
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
-#include "MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "Metal/MetalDeviceContext.h"
 #include "PinnedCompletionFlag.h"
 #include "Support/AlignedAlloc.h"

@@ -18,9 +18,9 @@
 #ifndef MLRT_LIB_DRIVER_DEVICECONTEXT_DEVICEALLOCATOR_H
 #define MLRT_LIB_DRIVER_DEVICECONTEXT_DEVICEALLOCATOR_H
 
-#include "AllocatorBacking.h"
-#include "AllocatorContext.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "MLRT/lib/Driver/MemoryManager/AllocatorBacking.h"
+#include "MLRT/lib/Driver/MemoryManager/AllocatorContext.h"
 
 #include <memory>
 #include <string>

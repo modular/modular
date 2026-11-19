@@ -13,8 +13,8 @@
 
 #include "MLRT/Driver/DeviceContext/CompilationDevice.h"
 #include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "MLRT/lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "ScopedEnvVar.h"
 #include "TestUtils.h"
 

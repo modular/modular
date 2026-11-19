@@ -969,11 +969,11 @@ modular_cc_library(
 # streams through AllocatorChunks and AllocatorContext.
 modular_cc_library(
     name = "Driver/MemoryManager",
-    srcs = ["lib/Driver/DeviceContext/MemoryManager.cpp"],
+    srcs = ["lib/Driver/MemoryManager/MemoryManager.cpp"],
     hdrs = [
-        "lib/Driver/DeviceContext/AllocatorBacking.h",
-        "lib/Driver/DeviceContext/AllocatorContext.h",
-        "lib/Driver/DeviceContext/MemoryManager.h",
+        "lib/Driver/MemoryManager/AllocatorBacking.h",
+        "lib/Driver/MemoryManager/AllocatorContext.h",
+        "lib/Driver/MemoryManager/MemoryManager.h",
     ],
     visibility = ["//MLRT:__subpackages__"],
     deps = [

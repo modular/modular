@@ -15,8 +15,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
-#define MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
+#ifndef MLRT_LIB_DRIVER_MEMORYMANAGER_MEMORYMANAGER_H
+#define MLRT_LIB_DRIVER_MEMORYMANAGER_MEMORYMANAGER_H
 
 #include "AllocatorBacking.h"
 #include "AllocatorContext.h"
@@ -934,4 +934,4 @@ private:
 
 } // namespace M::Driver
 
-#endif // MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
+#endif // MLRT_LIB_DRIVER_MEMORYMANAGER_MEMORYMANAGER_H

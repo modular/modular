@@ -18,7 +18,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "DeviceAllocator.h"
-#include "MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "Support/StringExtras.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/ErrorHandling.h"

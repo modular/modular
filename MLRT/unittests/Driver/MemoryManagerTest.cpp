@@ -11,7 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
 #include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
 #include "ScopedEnvVar.h"

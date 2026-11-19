@@ -14,7 +14,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "AsyncRT/Runtime/Globals/VirtualDeviceGlobals.h"
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "ScopedEnvVar.h"
 #include "Target/lib/Support/HostMemory.h"
 #include "TestUtils.h"
