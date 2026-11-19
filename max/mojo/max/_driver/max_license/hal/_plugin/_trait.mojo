@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import OptionalReg
-from std.sys.info import CompilationTarget
 
 from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
@@ -300,7 +299,7 @@ trait HalPluginHooks:
 # ===-----------------------------------------------------------------------===#
 
 
-struct DefaultHalPluginHooks[target: CompilationTarget](HalPluginHooks):
+struct DefaultHalPluginHooks(HalPluginHooks):
     comptime ExecutionConfigType[device: DeviceRef] = CPUExecutionConfiguration
 
     comptime extensions = DefaultHALExtensions

@@ -25,7 +25,7 @@ from std._gpu.host.info import (
     TargetAcceleratorType,
 )
 from std._plugin.selector import Plugin
-from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
+from std.sys.info import CompilationTarget, _accelerator_arch
 
 from max.gpu import PDLLevel
 from max.gpu.globals import WARP_SIZE
@@ -74,14 +74,6 @@ trait MaxPlugin(Plugin):
 
 trait MaxPluginHooks:
     """Defines compile-time hooks for target-specific MAX behavior."""
-
-    comptime _raw_mlir_target: _TargetType
-    """The target these hooks are for, as its raw MLIR value."""
-
-    comptime hooks_target = CompilationTarget[
-        _mlir_value=Self._raw_mlir_target
-    ]()
-    """The target these hooks are for."""
 
     @staticmethod
     def elementwise_fn[
@@ -386,10 +378,12 @@ trait MaxPluginHooks:
 
     @staticmethod
     def enqueue_function_fn[
-        *Ts: DevicePassable
+        ctx_target: CompilationTarget,
+        //,
+        *Ts: DevicePassable,
     ](
-        ctx: _LegacyDeviceContext[Self.hooks_target],
-        f: LegacyDeviceFunction,
+        ctx: _LegacyDeviceContext[ctx_target],
+        f: LegacyDeviceFunction[target=ctx_target, ...],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -402,6 +396,7 @@ trait MaxPluginHooks:
         """Per-target plugin hook for launching a compiled `DeviceFunction`.
 
         Parameters:
+            ctx_target: The target of the device context.
             Ts: The argument types.
 
         Args:
@@ -428,14 +423,19 @@ trait MaxPluginHooks:
     """Whether this plugin overrides launching a compiled `DeviceFunction`."""
 
     comptime ClosureKernel[
-        ClosureType: RegisterPassable & def() -> None
+        ClosureType: RegisterPassable & def() -> None,
+        closure_target: CompilationTarget,
     ]: ImplicitlyCopyable & Deinitable = NoneType
     """The compiled form of a closure kernel, from `compile_closure_fn`."""
 
     @staticmethod
     def compile_closure_fn[
-        ClosureType: RegisterPassable & def() -> None
-    ](ctx: _LegacyDeviceContext) raises -> Self.ClosureKernel[ClosureType]:
+        ctx_target: CompilationTarget,
+        //,
+        ClosureType: RegisterPassable & def() -> None,
+    ](ctx: _LegacyDeviceContext[ctx_target]) raises -> Self.ClosureKernel[
+        ClosureType, ctx_target
+    ]:
         """Per-target plugin hook for `DeviceContext.compile_function[ClosureType]`.
 
         Parameters:
@@ -455,10 +455,12 @@ trait MaxPluginHooks:
 
     @staticmethod
     def enqueue_closure_fn[
-        ClosureType: RegisterPassable & def() -> None
+        ctx_target: CompilationTarget,
+        //,
+        ClosureType: RegisterPassable & def() -> None,
     ](
-        ctx: _LegacyDeviceContext,
-        kernel: Self.ClosureKernel[ClosureType],
+        ctx: _LegacyDeviceContext[ctx_target],
+        kernel: Self.ClosureKernel[ClosureType, ctx_target],
         closure: ClosureType,
         grid_dim: Dim,
         block_dim: Dim,
@@ -467,6 +469,7 @@ trait MaxPluginHooks:
         """Per-target plugin hook for launching a closure kernel.
 
         Parameters:
+            ctx_target: The target of the device context.
             ClosureType: The closure's type.
 
         Args:
@@ -535,7 +538,7 @@ trait MaxPluginHooks:
     comptime _handles_graph_blobs: Bool = False
     """Whether this plugin implements the hooks a graph blob's kernel calls."""
 
-    comptime HalHooks: HalPluginHooks = DefaultHalPluginHooks[Self.hooks_target]
+    comptime HalHooks: HalPluginHooks = DefaultHalPluginHooks
     """The HAL backend's hooks for this target.
 
     The HAL `DeviceContext` and the HAL client API read their execution
@@ -548,11 +551,10 @@ struct DefaultMaxPlugin(MaxPlugin):
     """Provides the default MAX plugin behavior."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
-    comptime HookFor = DefaultMaxPluginHooks[_]
+    comptime HookFor[target: CompilationTarget] = DefaultMaxPluginHooks
 
 
-struct DefaultMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
-    comptime _raw_mlir_target = Self.target._mlir_value
+struct DefaultMaxPluginHooks(MaxPluginHooks):
     comptime warp_size = _accelerator_warp_size()
 
 

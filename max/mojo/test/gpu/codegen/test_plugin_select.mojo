@@ -58,11 +58,10 @@ struct PayloadMaxPlugin(MaxPlugin):
     """A MAX plugin that reaches a target only through its payload."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["payload"]()
-    comptime HookFor = PayloadMaxPluginHooks[_]
+    comptime HookFor[target: CompilationTarget] = PayloadMaxPluginHooks
 
 
-struct PayloadMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
-    comptime _raw_mlir_target = Self.target._mlir_value
+struct PayloadMaxPluginHooks(MaxPluginHooks):
     comptime warp_size = 32
     comptime barrier_fn: OptionalReg[_BarrierPluginHookFnType] = _marker_barrier
 
@@ -71,10 +70,10 @@ struct PayloadStdPlugin(StdPlugin):
     """A stdlib plugin whose name no MAX registry lists."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["vendor"]()
-    comptime HookFor = PayloadStdPluginHooks[_]
+    comptime HookFor[target: CompilationTarget] = PayloadStdPluginHooks
 
 
-struct PayloadStdPluginHooks[target: CompilationTarget](PluginHooks):
+struct PayloadStdPluginHooks(PluginHooks):
     comptime device_kind = TargetDeviceKind.gpu
 
 
@@ -165,23 +164,15 @@ def _compile_barrier_kernel[target: CompilationTarget]() raises -> String:
 
 
 def test_payload_names_the_plugin() raises:
-    comptime assert (
-        MaxPluginForTarget[_payload_target]
-        == PayloadMaxPluginHooks[_payload_target]
-    )
+    comptime assert MaxPluginForTarget[_payload_target] == PayloadMaxPluginHooks
     var llvm = _compile_barrier_kernel[_payload_target]()
     assert_true("@llvm.nvvm.membar.gl()" in llvm, llvm)
     assert_false("@llvm.nvvm.barrier" in llvm, llvm)
 
 
 def test_payload_plugins_need_no_registry_entry() raises:
-    comptime assert (
-        _vendor_target.stdlib_plugin == PayloadStdPluginHooks[_vendor_target]
-    )
-    comptime assert (
-        MaxPluginForTarget[_vendor_target]
-        == PayloadMaxPluginHooks[_vendor_target]
-    )
+    comptime assert _vendor_target.stdlib_plugin == PayloadStdPluginHooks
+    comptime assert MaxPluginForTarget[_vendor_target] == PayloadMaxPluginHooks
     assert_true(
         "@llvm.nvvm.membar.gl()" in _compile_barrier_kernel[_vendor_target]()
     )
@@ -189,8 +180,7 @@ def test_payload_plugins_need_no_registry_entry() raises:
 
 def test_payload_default_wins_over_name_list() raises:
     comptime assert (
-        MaxPluginForTarget[_default_payload_target]
-        == DefaultMaxPluginHooks[_default_payload_target]
+        MaxPluginForTarget[_default_payload_target] == DefaultMaxPluginHooks
     )
 
 
@@ -211,9 +201,9 @@ def test_builtin_targets_carry_their_plugin() raises:
         apple._first_conforming_plugin[MaxPlugin, default=DefaultMaxPlugin]
         == MetalMaxPlugin
     )
-    comptime assert MaxPluginForTarget[nvidia] == CudaMaxPluginHooks[nvidia]
+    comptime assert MaxPluginForTarget[nvidia] == CudaMaxPluginHooks
     comptime assert MaxPluginForTarget[amd] == HipMaxPluginHooks[amd]
-    comptime assert MaxPluginForTarget[apple] == MetalMaxPluginHooks[apple]
+    comptime assert MaxPluginForTarget[apple] == MetalMaxPluginHooks
     var llvm = _compile_barrier_kernel[nvidia]()
     assert_true("@llvm.nvvm.barrier" in llvm, llvm)
     assert_false("@llvm.nvvm.membar.gl()" in llvm, llvm)
@@ -236,15 +226,12 @@ def test_builtin_warp_sizes_match_target_tables() raises:
 
 def test_unlisted_stdlib_plugin_gets_default() raises:
     comptime assert (
-        MaxPluginForTarget[_std_only_target]
-        == DefaultMaxPluginHooks[_std_only_target]
+        MaxPluginForTarget[_std_only_target] == DefaultMaxPluginHooks
     )
 
 
 def test_bare_triple_follows_vendor() raises:
-    comptime assert (
-        MaxPluginForTarget[_bare_target] == CudaMaxPluginHooks[_bare_target]
-    )
+    comptime assert MaxPluginForTarget[_bare_target] == CudaMaxPluginHooks
     assert_true("@llvm.nvvm.barrier" in _compile_barrier_kernel[_bare_target]())
     comptime amd = CompilationTarget[
         _mlir_value=__mlir_attr[
@@ -257,7 +244,7 @@ def test_bare_triple_follows_vendor() raises:
         ]
     ]()
     comptime assert MaxPluginForTarget[amd] == HipMaxPluginHooks[amd]
-    comptime assert MaxPluginForTarget[apple] == MetalMaxPluginHooks[apple]
+    comptime assert MaxPluginForTarget[apple] == MetalMaxPluginHooks
 
 
 def main() raises:

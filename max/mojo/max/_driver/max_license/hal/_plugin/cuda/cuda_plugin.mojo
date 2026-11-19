@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.info import CompilationTarget
 from .._trait import HalPluginHooks
 from ..._machine import DeviceRef
 from ...execution_config._nvidia import ExecutionConfigForTarget
 from ...extensions.cuda import CUDAHALExtensions
 
 
-struct CudaHalPluginHooks[target: CompilationTarget](HalPluginHooks):
+struct CudaHalPluginHooks(HalPluginHooks):
     comptime ExecutionConfigType[device: DeviceRef] = ExecutionConfigForTarget[
         device.spec.name
     ]

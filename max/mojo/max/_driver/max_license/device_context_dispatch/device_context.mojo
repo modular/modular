@@ -2396,7 +2396,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             use_legacy_backend()
         ), "closure kernels are only available on the legacy DeviceContext"
         MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
-            self._impl.assert_default_target(),
+            self._impl,
             f.kernel,
             closure,
             grid_dim=grid_dim,
@@ -2579,7 +2579,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         *Ts: DevicePassable
     ](
         self,
-        f: DeviceFunction,
+        f: DeviceFunction[target=Self.target, ...],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -2627,12 +2627,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the launch fails.
         """
         comptime __guard not use_legacy_backend() else:
-            comptime plugin = MaxPluginForTarget[type_of(f._impl).target]
+            comptime plugin = MaxPluginForTarget[Self.target]
             comptime if plugin._handles_enqueue_function:
                 plugin.enqueue_function_fn(
-                    rebind[LegacyDeviceContext[plugin.hooks_target]](
-                        self._impl
-                    ),
+                    self._impl,
                     f._impl,
                     *args,
                     grid_dim=grid_dim,

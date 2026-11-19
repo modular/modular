@@ -4080,7 +4080,9 @@ struct LegacyDeviceClosureFunction[
     # Launches match on `ClosureType` through this wrapper: matching the
     # plugin's kernel type against a launch argument fails to unify for
     # nested captures.
-    var kernel: MaxPluginForTarget[Self.target].ClosureKernel[Self.ClosureType]
+    var kernel: MaxPluginForTarget[Self.target].ClosureKernel[
+        Self.ClosureType, Self.target
+    ]
     """The plugin's compiled kernel."""
 
 
@@ -5031,9 +5033,7 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             plugin._handles_closure_kernels
         ), "compile_function[ClosureType] is not supported on this target"
-        return {
-            plugin.compile_closure_fn[ClosureType](self.assert_default_target())
-        }
+        return {plugin.compile_closure_fn[ClosureType](self)}
 
     @inline(.always)
     def enqueue_function[
@@ -5178,7 +5178,7 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
                 HostArgs.length == 0
             ), "host_args is not supported on this target"
             plugin.enqueue_function_fn(
-                rebind[LegacyDeviceContext[plugin.hooks_target]](self),
+                self,
                 gpu_kernel,
                 *encoded_args,
                 grid_dim=grid_dim,
