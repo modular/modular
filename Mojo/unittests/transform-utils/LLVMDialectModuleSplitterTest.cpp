@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/TransformUtils/SlicingUtils.h"
+#include "Mojo/TransformUtils/SplitPlanner.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -314,6 +315,38 @@ TEST_F(LLVMDialectModuleSplitterTest, RejectsCallToUndefinedFunction) {
                         "in the module"),
             std::string::npos)
       << errors;
+}
+
+using Slices = std::vector<std::vector<unsigned>>;
+
+SplitSymbol makeFunction(SmallVector<unsigned, 4> dependencies) {
+  SplitSymbol symbol;
+  symbol.dependencies = std::move(dependencies);
+  symbol.isFunction = true;
+  symbol.isAnchor = true;
+  return symbol;
+}
+
+SplitSymbol makeMutableGlobal() {
+  SplitSymbol symbol;
+  symbol.tiesUsers = true;
+  return symbol;
+}
+
+TEST(PlanSplitPerFunctionTest, KeepsUserOfMutableGlobalWithItsCaller) {
+  // 1 is a leaf, 2 uses the global 0, and 3 calls both.
+  std::vector<SplitSymbol> symbols = {makeMutableGlobal(), makeFunction({}),
+                                      makeFunction({0}), makeFunction({1, 2})};
+  SplitPlan plan = planSplitPerFunction(symbols);
+  EXPECT_EQ(plan.slices, (Slices{{1}, {0, 2, 3}}));
+  EXPECT_TRUE(plan.outlineRoots.empty());
+}
+
+TEST(PlanSplitPerFunctionTest, GivesRecursiveUserOfMutableGlobalItsOwnSlice) {
+  // 1 uses the global 0 and calls itself.
+  std::vector<SplitSymbol> symbols = {makeMutableGlobal(), makeFunction({0, 1}),
+                                      makeFunction({})};
+  EXPECT_EQ(planSplitPerFunction(symbols).slices, (Slices{{0, 1}, {2}}));
 }
 
 } // namespace
