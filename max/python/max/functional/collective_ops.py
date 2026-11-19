@@ -408,14 +408,14 @@ def _all_to_all_group(
         )
     devices = [v.device for v in values]
     first = _on_devices(values, devices[:1] * len(values))
-    if split_axis != concat_axis:
-        swapped = _split(ops.concat(first, concat_axis), split_axis, len(first))
-    else:
-        chunks = [_split(v, split_axis, len(first)) for v in first]
-        swapped = [
-            ops.concat([chunk[dst] for chunk in chunks], concat_axis)
-            for dst in range(len(first))
-        ]
+    # Split every shard first, then gather chunk ``dst`` of each onto device
+    # ``dst``. Concatenating the shards before splitting them instead builds
+    # a graph that fails to compile when the split extent is symbolic.
+    chunks = [_split(v, split_axis, len(first)) for v in first]
+    swapped = [
+        ops.concat([chunk[dst] for chunk in chunks], concat_axis)
+        for dst in range(len(first))
+    ]
     return _on_devices(swapped, devices)
 
 
