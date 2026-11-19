@@ -1539,12 +1539,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
           return failure();
         if (p.parseRParen())
           return failure();
-        value =
-            BindParamsAttr::get(p.getContext(), generator, params, discharged);
-        if (!isEqualCanon(value.getType(), type))
-          return p.emitError(loc)
-                 << "bind_params result type mismatch: expected " << type
-                 << " but inferred " << value.getType();
+        value = BindParamsAttr::get(p.getContext(), generator, params,
+                                    discharged, type);
         return success();
       }
 

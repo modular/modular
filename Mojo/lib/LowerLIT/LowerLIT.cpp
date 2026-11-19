@@ -868,8 +868,7 @@ static LogicalResult lowerAttributesAndTypes(
                                   ParamsBindingArrayAttr::get(
                                       generator.getContext(),
                                       params.getBoundMask(), boundValues),
-                                  /*discharged=*/{},
-                                  /*evaluationContext=*/nullptr),
+                                  /*discharged=*/{}),
               WalkResult::skip());
         });
 
@@ -1636,7 +1635,7 @@ static void populateTypeDomainRules(StructDecls &decls,
             bindParams.getContext(), cast<TypedAttr>(*generatorOr),
             ParamsBindingArrayAttr::get(bindParams.getContext(),
                                         params.getBoundMask(), loweredParams),
-            bindParams.getDischarged(), evalCtxPtr);
+            bindParams.getDischarged(), /*resultType=*/{}, evalCtxPtr);
         return evaluated;
       });
 

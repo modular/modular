@@ -521,7 +521,8 @@ LogicalResult BindParamsOp::verify() {
   DenseBoolArrayAttr discharged =
       toDenseBoolArrayAttr(getContext(), getDischarged());
   if (failed(BindParamsAttr::verify([&] { return emitOpError(); },
-                                    generatorAttr, getParams(), discharged)))
+                                    generatorAttr, getParams(), discharged,
+                                    getResult().getType())))
     return failure();
 
   Type expectedResult = inferResultType(generator, getParams(), discharged);
@@ -644,7 +645,7 @@ TypedAttr FnOp::getFuncLiteralGenerator(
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       unboundGen.getContext(), dischargedBodyConstraints);
   return BindParamsAttr::get(unboundGen.getContext(), unboundGen, bindings,
-                             discharged, &evalContext);
+                             discharged, /*resultType=*/{}, &evalContext);
 }
 
 bool FnOp::isSynthetic() { return getSynthetic(); }
@@ -1272,7 +1273,8 @@ TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
 
   // TODO: maybe worth a cache here?
   return BindParamsAttr::get(typeExpr.getContext(), typeExpr, paramValues,
-                             /*discharged=*/nullptr, evalCtx);
+                             /*discharged=*/nullptr, /*resultType=*/{},
+                             evalCtx);
 }
 
 LIT::StructType
