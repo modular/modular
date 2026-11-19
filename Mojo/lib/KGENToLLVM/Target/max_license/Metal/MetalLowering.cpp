@@ -75,6 +75,15 @@ static SmallVector<Value> squashOperandCasts(ValueRange args) {
 // doesMetalRequireAIRIntrinsicForCast
 //===----------------------------------------------------------------------===//
 
+/// Returns whether `target` is an Apple M5 GPU.
+static bool isAppleM5(TargetInfoAttr target) {
+  if (!target)
+    return false;
+  StringRef arch = target.getArch();
+  return arch == "5" || arch.starts_with("5-") || arch == "apple-m5" ||
+         arch.starts_with("apple-m5-");
+}
+
 /// Return false if `pop.cast` can be lowered to LLVM instruction. Return true
 /// otherwise, i.e. Metal emits special AIR intrinsic to do conversion from one
 /// type to another.
@@ -85,6 +94,15 @@ bool doesMetalRequireAIRIntrinsicForCast(POP::CastOp cast) {
   // https://linear.app/modularml/issue/MOCO-2875#comment-1b6b887a
   KGENDType inDType = *cast.getInput().getType().getResolvedDType();
   KGENDType outDType = *cast.getOutput().getType().getResolvedDType();
+
+  // AIR's fp8 converts exist only on M5. Elsewhere fp8 goes to the
+  // precompiled snippet, as on any target without a native conversion.
+  auto isFP8 = [](KGENDType dtype) {
+    return dtype.isFloat() && dtype.getWidthInBits() <= 8;
+  };
+  if ((isFP8(inDType) || isFP8(outDType)) && !isAppleM5(lookupTargetInfo(cast)))
+    return false;
+
   const uint64_t size = *cast.getInput().getType().getResolvedSize();
   if (size > 1) {
     // Metal always uses AIR intrinsic to do vector conversion

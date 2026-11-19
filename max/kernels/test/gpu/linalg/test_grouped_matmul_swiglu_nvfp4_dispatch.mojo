@@ -61,7 +61,6 @@ from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import Pointer, alloc
 from std.memory.alloc import unsafe_alloc
 from std.random import random_float64, random_ui64, seed, rand
-from std.simd import _convert_f32_to_float8_scalar
 
 from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -509,9 +508,11 @@ def _test_swiglu_dispatch[
                 0, align_up(K, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
             ):
                 if idx1 < K:
-                    var scale_value = _convert_f32_to_float8_scalar[
-                        scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[.float32]())
+                    var scale_value = (
+                        (1 << random_ui64(0, 2))
+                        .cast[.float32]()
+                        .cast[scales_dtype]()
+                    )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )
