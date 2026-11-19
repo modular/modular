@@ -243,9 +243,7 @@ class ItemPositions(GraphGroup[str, TensorValue]):
 
 
 class BatchContext(GraphGroup[str, _ContextT]):
-    """Host scalars summarizing the batch's context lengths.
-
-    Each field holds one scalar per replica or one per device.
+    """Host-planned context lengths, token bounds and row selection for a step.
 
     ``length`` is an ``int32``: the replica's rows' cached and new tokens,
     each row rounded up to a page, summed. MLA prefill sizes its buffers
@@ -255,6 +253,19 @@ class BatchContext(GraphGroup[str, _ContextT]):
     writes: at least the replica's rows' cached and new tokens, summed, plus
     each decode row's drafts and later steps. A sparse-attention prefill plan
     sizes its buffers from it with no bounds check.
+
+    ``window_start`` and ``write_floor`` are per-request token bounds. No
+    request resumes below a window restart, so both are zero, as MAX Serve
+    stages them.
+
+    ``lookback_token_ids`` is a host-built window staged on the device;
+    ``lookback_source`` selects it with a negative value, or the request's
+    recurrent live row with a nonnegative value. Persistent bytes remain in
+    the recurrent KV leaf rather than this context group.
+
+    The ``replay_*`` fields describe kept row offsets, front skips, row
+    indices and per-replica longest lengths. Data-parallel graphs also take
+    host kept offsets and each replica's first merged row.
     """
 
     kind = "batch_context"
