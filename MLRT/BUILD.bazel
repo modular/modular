@@ -985,6 +985,7 @@ modular_cc_library(
         "include/MLRT/Driver/DeviceContext/DeviceContext.h",
         "include/MLRT/Driver/DeviceContext/DeviceGraphBuilder.h",
         "include/MLRT/Driver/DeviceContext/ErrorMacros.h",
+        "lib/Driver/DeviceContext/AllocatorBacking.h",
         "lib/Driver/DeviceContext/AllocatorContext.h",
         "lib/Driver/DeviceContext/CUDA/CUDADeviceContext.h",
         "lib/Driver/DeviceContext/CUDA/CUDADeviceGraphBuilder.h",

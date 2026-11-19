@@ -98,7 +98,10 @@ The source of the above image is available
 The memory manager operates on a two-level hierarchy:
 
 1. **MemoryManager**: Owns (relatively large) memory chunks allocated from
-   CUDA/HIP
+   CUDA/HIP. It gets them from an `AllocatorChunks`, which also reports the
+   device's free and total memory. A manager that uses VMM instead reserves
+   address space and maps physical pages through an `AllocatorVmm`. A `Device`
+   serves both through `DeviceAllocatorChunks` and `DeviceAllocatorVmm`.
 2. **MemoryManagerFreeList**: Manages free blocks within chunks, with hierarchy:
    - **Parent/Shared**: Global free list accessible to all DeviceContexts
    - **DeviceContext-local**: Stream-specific free lists for better cache

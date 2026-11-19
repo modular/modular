@@ -18,6 +18,7 @@
 #ifndef MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
 #define MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
 
+#include "AllocatorBacking.h"
 #include "AllocatorContext.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/SymbolExport.h"
@@ -362,7 +363,7 @@ public:
   MemoryManagerFreeList *freeList() const;
 
   // Get memory information about the memory manager
-  Device::MemInfo getMemoryInfo() const;
+  AllocatorMemInfo getMemoryInfo() const;
 
   // Test-only: acquire `mu_` and capture the OOM accounting snapshot for
   // `needed`. Production paths compute this inline under the allocation
@@ -445,9 +446,13 @@ private:
   friend class Chunk;
   friend class MemoryManagerFreeList;
 
-  MemoryManager(Device &device, MemoryManagerOptions options);
+  // `backing` holds an `AllocatorVmm` exactly when `options.vmmEnabled` is
+  // true.
+  MemoryManager(MemoryManagerOptions options, AllocatorBacking backing);
 
-  Device &device() const;
+  // The backing, which must be of the kind named.
+  AllocatorChunks &chunkBacking() const;
+  AllocatorVmm &vmmBacking() const;
 
   // Start-address alignment a block of `size` bytes must have, or 0 when the
   // manager-wide `alignment` already suffices. See `largeAllocAlignment_` for
@@ -633,7 +638,9 @@ private:
 
   const MemoryManagerOptions options_;
 
-  Device &device_;
+  // Declared ahead of the free lists and chunks so that they outlive everything
+  // that can call back into the driver while the manager is destroyed.
+  const AllocatorBacking backing_;
 
   // This memory manager is managing "pinned" host memory.
   const bool isHost_;

@@ -18,6 +18,7 @@
 #ifndef MLRT_LIB_DRIVER_DEVICECONTEXT_DEVICEALLOCATOR_H
 #define MLRT_LIB_DRIVER_DEVICECONTEXT_DEVICEALLOCATOR_H
 
+#include "AllocatorBacking.h"
 #include "AllocatorContext.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 
@@ -30,6 +31,38 @@ class MemoryManager;
 class MemoryManagerFreeList;
 
 AllocatorContext::AllocMode toAllocatorAllocMode(Device::AllocMode mode);
+Device::MemInfo toDeviceMemInfo(const AllocatorMemInfo &info);
+
+// Each method forwards to the `Device`.
+class DeviceAllocatorChunks final : public AllocatorChunks {
+public:
+  explicit DeviceAllocatorChunks(Device &device) : device_(device) {}
+
+  ErrorOrSuccess chunkAlloc(void **ptr, size_t byteSize, bool isHost) override;
+  ErrorOrSuccess chunkFree(void *ptr, bool isHost) override;
+  ErrorOr<AllocatorMemInfo> getMemoryInfo() const override;
+
+private:
+  Device &device_;
+};
+
+class DeviceAllocatorVmm final : public AllocatorVmm {
+public:
+  explicit DeviceAllocatorVmm(Device &device) : device_(device) {}
+
+  ErrorOr<void *> vmmAddressReserve(size_t byteSize) override;
+  ErrorOrSuccess vmmAddressFree(void *va, size_t byteSize) override;
+  ErrorOr<uint64_t> vmmCreate(size_t byteSize) override;
+  ErrorOrSuccess vmmRelease(uint64_t handle) override;
+  ErrorOrSuccess vmmMapAndSetAccess(void *va, size_t byteSize,
+                                    uint64_t handle) override;
+  ErrorOrSuccess vmmUnmap(void *va, size_t byteSize) override;
+  ErrorOrSuccess vmmMap(void *va, size_t byteSize, uint64_t handle) override;
+  ErrorOrSuccess vmmSetAccess(void *va, size_t byteSize) override;
+
+private:
+  Device &device_;
+};
 
 // Builds a free list for `context`, with the redzones and poison that its
 // `debug.device_allocator` config asks for.

@@ -464,7 +464,7 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   MemoryManagerFreeList &freeList = *cache.freeList();
 
   // Get initial memory info
-  Device::MemInfo initialInfo = cache.getMemoryInfo();
+  AllocatorMemInfo initialInfo = cache.getMemoryInfo();
   EXPECT_GT(initialInfo.total, 0);
   size_t initialFree = initialInfo.free.value();
 
@@ -479,7 +479,7 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   }
 
   // Get memory info after allocations
-  Device::MemInfo afterAllocInfo = cache.getMemoryInfo();
+  AllocatorMemInfo afterAllocInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterAllocInfo.total,
             initialInfo.total); // Total should remain same
   EXPECT_LE(afterAllocInfo.free.value(),
@@ -491,7 +491,7 @@ TEST_F(GPUMemoryManagerTest, GetMemoryInfoAccuracy) {
   }
 
   // Get memory info after freeing
-  Device::MemInfo afterFreeInfo = cache.getMemoryInfo();
+  AllocatorMemInfo afterFreeInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterFreeInfo.total, initialInfo.total); // Total should remain same
   EXPECT_GE(afterFreeInfo.free.value(),
             afterAllocInfo.free.value()); // Free should increase

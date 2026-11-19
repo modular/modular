@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MemoryManager.h"
+#include "DeviceAllocator.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/StringExtras.h"
 #include "Support/max_license/Profiling/ProfileRange.h"
@@ -38,6 +39,7 @@
 #include <mutex>
 #include <thread>
 #include <tuple>
+#include <variant>
 
 // Helpers for logging.
 #define TWINE(val) (llvm::Twine(val))
@@ -949,8 +951,10 @@ void MemoryManager::logErr(llvm::Twine msg, size_t info, int64_t size,
   }
 }
 
-MemoryManager::MemoryManager(Device &device, MemoryManagerOptions options)
-    : options_(std::move(options)), device_(device), isHost_(options_.isHost),
+MemoryManager::MemoryManager(MemoryManagerOptions options,
+                             AllocatorBacking backing)
+    : options_(std::move(options)), backing_(std::move(backing)),
+      isHost_(options_.isHost),
       useOnlyMemoryManagerMode_(options_.useOnlyMemoryManagerMode),
       vmmEnabled_(options_.vmmEnabled), pageSize_(options_.vmmPageSize),
       maxCacheSize_(options_.maxSize), chunkSize_(options_.chunkSize),
@@ -958,6 +962,9 @@ MemoryManager::MemoryManager(Device &device, MemoryManagerOptions options)
       alignmentMask_(~(effectiveAllocationAlignment(options_.alignment) - 1)),
       largeAllocAlignment_(options_.largeAllocAlignment),
       allocatedMap_(options_.chunkSize == 0 ? 0 : 10) {
+  assert(vmmEnabled_ ==
+         std::holds_alternative<std::unique_ptr<AllocatorVmm>>(backing_));
+  assert(std::visit([](const auto &b) { return b != nullptr; }, backing_));
   // chunks_ will be lazily initialized on the first allocation request.
   // Alignment masking only works with powers of 2.
   assert(llvm::isPowerOf2_64(options_.alignment));
@@ -973,6 +980,18 @@ MemoryManager::MemoryManager(Device &device, MemoryManagerOptions options)
   // Print initial config of memory manager.
   LOG_ERR(llvm::Twine("Memory manager is ") +
           (this->isEnabled() ? "enabled" : "disabled"));
+}
+
+AllocatorChunks &MemoryManager::chunkBacking() const {
+  const auto *chunks = std::get_if<std::unique_ptr<AllocatorChunks>>(&backing_);
+  assert(chunks && "chunk backing on a VMM manager");
+  return **chunks;
+}
+
+AllocatorVmm &MemoryManager::vmmBacking() const {
+  const auto *vmm = std::get_if<std::unique_ptr<AllocatorVmm>>(&backing_);
+  assert(vmm && "VMM backing on a plain manager");
+  return **vmm;
 }
 
 MemoryManager::~MemoryManager() {
@@ -996,8 +1015,8 @@ size_t MemoryManager::startAlignment(size_t size) const {
 
 bool MemoryManager::isHost() const { return isHost_; }
 
-Device::MemInfo MemoryManager::getMemoryInfo() const {
-  Device::MemInfo info;
+AllocatorMemInfo MemoryManager::getMemoryInfo() const {
+  AllocatorMemInfo info;
   std::lock_guard<std::mutex> lock(mu_);
 
   info.total = maxCacheSize_;
@@ -1374,14 +1393,14 @@ bool MemoryManager::allocateVmmArena() {
   if (budget == 0)
     return false;
   size_t vaSize = budget * options_.vmmVaFactor;
-  ErrorOr<void *> vaOr = device().vmmAddressReserve(vaSize);
+  ErrorOr<void *> vaOr = vmmBacking().vmmAddressReserve(vaSize);
   if (vaOr.isError()) {
     // Oversized reservation failed (e.g. VA exhaustion); fall back to a
     // budget-sized arena (loses frontier headroom but still functions).
     LOG_ERR(llvm::Twine("vmmAddressReserve(") + humanMemorySize(vaSize) +
             ") failed, retrying at budget size: " + vaOr.getError());
     vaSize = budget;
-    vaOr = device().vmmAddressReserve(vaSize);
+    vaOr = vmmBacking().vmmAddressReserve(vaSize);
     if (vaOr.isError()) {
       lastChunkAllocFailureDetail_ = "vmmAddressReserve(" +
                                      humanMemorySize(vaSize) +
@@ -1426,7 +1445,7 @@ bool MemoryManager::allocateChunk() {
   std::string currentDeviceTotal = "n/a";
   if (!isHost()) {
     // Limit to available GPU memory.
-    ErrorOr<Device::MemInfo> memInfo = device().getMemoryInfo();
+    ErrorOr<AllocatorMemInfo> memInfo = chunkBacking().getMemoryInfo();
     if (!memInfo.isError()) {
       // Unmeasured free memory caps the chunk at the device's capacity.
       remainingBudget =
@@ -1480,7 +1499,7 @@ bool MemoryManager::acquireChunkBacking(size_t allocSize, void **base,
                                         size_t *pageSize) {
   *pageSize = 0;
   if (!vmmEnabled_) {
-    ErrorOrSuccess err = device().chunkAlloc(base, allocSize, isHost());
+    ErrorOrSuccess err = chunkBacking().chunkAlloc(base, allocSize, isHost());
     if (err.isError()) {
       llvm::raw_string_ostream os(lastChunkAllocFailureDetail_);
       os << "chunkAlloc(" << humanMemorySize(allocSize) << ") failed with "
@@ -1497,7 +1516,7 @@ bool MemoryManager::acquireChunkBacking(size_t allocSize, void **base,
   *pageSize = pageSize_;
   const size_t numPages = allocSize / pageSize_;
 
-  ErrorOr<void *> vaOr = device().vmmAddressReserve(allocSize);
+  ErrorOr<void *> vaOr = vmmBacking().vmmAddressReserve(allocSize);
   if (vaOr.isError()) {
     lastChunkAllocFailureDetail_ = "vmmAddressReserve(" +
                                    humanMemorySize(allocSize) +
@@ -1513,13 +1532,13 @@ bool MemoryManager::acquireChunkBacking(size_t allocSize, void **base,
   auto rollback = [&](const std::string &why) {
     for (size_t i = 0; i < acquired.size(); ++i) {
       void *pageVa = static_cast<char *>(va) + i * pageSize_;
-      ErrorOrSuccess e = device().vmmUnmap(pageVa, pageSize_);
+      ErrorOrSuccess e = vmmBacking().vmmUnmap(pageVa, pageSize_);
       if (e.isError())
         LOG_ERR(llvm::Twine("vmmUnmap during rollback failed: ") +
                 e.getError());
       freeGranulePool_.push_back(acquired[i]);
     }
-    ErrorOrSuccess e = device().vmmAddressFree(va, allocSize);
+    ErrorOrSuccess e = vmmBacking().vmmAddressFree(va, allocSize);
     if (e.isError())
       LOG_ERR(llvm::Twine("vmmAddressFree during rollback failed: ") +
               e.getError());
@@ -1532,7 +1551,7 @@ bool MemoryManager::acquireChunkBacking(size_t allocSize, void **base,
       handle = freeGranulePool_.back();
       freeGranulePool_.pop_back();
     } else {
-      ErrorOr<uint64_t> h = device().vmmCreate(pageSize_);
+      ErrorOr<uint64_t> h = vmmBacking().vmmCreate(pageSize_);
       if (h.isError()) {
         rollback("vmmCreate(" + humanMemorySize(pageSize_) + ") failed with " +
                  h.getError());
@@ -1542,7 +1561,7 @@ bool MemoryManager::acquireChunkBacking(size_t allocSize, void **base,
     }
     void *pageVa = static_cast<char *>(va) + i * pageSize_;
     ErrorOrSuccess mapErr =
-        device().vmmMapAndSetAccess(pageVa, pageSize_, handle);
+        vmmBacking().vmmMapAndSetAccess(pageVa, pageSize_, handle);
     if (mapErr.isError()) {
       // The handle is valid but unmapped; keep it in the pool for reuse.
       freeGranulePool_.push_back(handle);
@@ -1563,7 +1582,7 @@ bool MemoryManager::acquireChunkBacking(size_t allocSize, void **base,
 // the VA reservation. Plain chunks call chunkFree.
 void MemoryManager::releaseChunkBacking(Chunk *chunk, bool releaseToDriver) {
   if (!chunk->vmmBacked_) {
-    ErrorOrSuccess err = device().chunkFree(chunk->base_, isHost());
+    ErrorOrSuccess err = chunkBacking().chunkFree(chunk->base_, isHost());
     if (err.isError()) {
       logErr(err.getError());
       abort();
@@ -1577,11 +1596,11 @@ void MemoryManager::releaseChunkBacking(Chunk *chunk, bool releaseToDriver) {
     if (i < chunk->granuleBacked_.size() && !chunk->granuleBacked_[i])
       continue;
     void *pageVa = static_cast<char *>(chunk->base_) + i * ps;
-    ErrorOrSuccess e = device().vmmUnmap(pageVa, ps);
+    ErrorOrSuccess e = vmmBacking().vmmUnmap(pageVa, ps);
     if (e.isError())
       LOG_ERR(llvm::Twine("vmmUnmap failed: ") + e.getError());
     if (releaseToDriver) {
-      ErrorOrSuccess r = device().vmmRelease(chunk->vmmHandles_[i]);
+      ErrorOrSuccess r = vmmBacking().vmmRelease(chunk->vmmHandles_[i]);
       if (r.isError())
         LOG_ERR(llvm::Twine("vmmRelease failed: ") + r.getError());
     } else {
@@ -1590,7 +1609,7 @@ void MemoryManager::releaseChunkBacking(Chunk *chunk, bool releaseToDriver) {
   }
   chunk->vmmHandles_.clear();
   chunk->granuleBacked_.clear();
-  ErrorOrSuccess e = device().vmmAddressFree(chunk->base_, chunk->size_);
+  ErrorOrSuccess e = vmmBacking().vmmAddressFree(chunk->base_, chunk->size_);
   if (e.isError())
     LOG_ERR(llvm::Twine("vmmAddressFree failed: ") + e.getError());
 }
@@ -2092,7 +2111,7 @@ size_t MemoryManager::reclaimMappedGranules(Chunk *c, size_t count) {
     if (!c->granuleBacked_[i] || unreclaimable[i])
       continue;
     void *pageVa = base + i * ps;
-    ErrorOrSuccess e = device().vmmUnmap(pageVa, ps);
+    ErrorOrSuccess e = vmmBacking().vmmUnmap(pageVa, ps);
     if (e.isError()) {
       LOG_ERR(llvm::Twine("reclaimMappedGranules vmmUnmap failed: ") +
               e.getError());
@@ -2257,7 +2276,8 @@ MemoryManager::remapOwnFreeBlocks(MemoryManagerFreeList *fl, size_t size) {
   llvm::SmallVector<size_t, 16> aliasedSlots;
   auto rollback = [&]() {
     for (size_t g : aliasedSlots) {
-      if (ErrorOrSuccess e = device().vmmUnmap(base + g * ps, ps); e.isError())
+      if (ErrorOrSuccess e = vmmBacking().vmmUnmap(base + g * ps, ps);
+          e.isError())
         logErr("remapOwnFreeBlocks rollback vmmUnmap failed: " +
                llvm::Twine(e.getError()));
       c->vmmHandles_[g] = 0;
@@ -2276,7 +2296,7 @@ MemoryManager::remapOwnFreeBlocks(MemoryManagerFreeList *fl, size_t size) {
     if (c->granuleBacked_[g])
       continue;
     const uint64_t handle = handles[next];
-    if (ErrorOrSuccess e = device().vmmMap(base + g * ps, ps, handle);
+    if (ErrorOrSuccess e = vmmBacking().vmmMap(base + g * ps, ps, handle);
         e.isError()) {
       tlsBackingFailure = VmmBackingFailure::MapRefused;
       LOG_ERR("remapOwnFreeBlocks vmmMapAndSetAccess failed: " +
@@ -2299,8 +2319,8 @@ MemoryManager::remapOwnFreeBlocks(MemoryManagerFreeList *fl, size_t size) {
     while (j < aliasedSlots.size() &&
            aliasedSlots[j] == aliasedSlots[j - 1] + 1)
       ++j;
-    if (ErrorOrSuccess e =
-            device().vmmSetAccess(base + aliasedSlots[i] * ps, (j - i) * ps);
+    if (ErrorOrSuccess e = vmmBacking().vmmSetAccess(
+            base + aliasedSlots[i] * ps, (j - i) * ps);
         e.isError()) {
       tlsBackingFailure = VmmBackingFailure::MapRefused;
       LOG_ERR("remapOwnFreeBlocks vmmSetAccess failed: " +
@@ -2381,7 +2401,8 @@ void MemoryManager::retireRange(RetiringRange &range) {
   for (size_t g : range.granules) {
     // Unmaps only this address; the handle stays mapped (and alive) under the
     // remapped range, or in the pool if that range was reclaimed since.
-    if (ErrorOrSuccess e = device().vmmUnmap(base + g * ps, ps); e.isError())
+    if (ErrorOrSuccess e = vmmBacking().vmmUnmap(base + g * ps, ps);
+        e.isError())
       logErr("retireRange vmmUnmap failed: " + llvm::Twine(e.getError()));
     c->vmmHandles_[g] = 0;
     c->granuleBacked_.reset(g);
@@ -2497,7 +2518,7 @@ ErrorOrSuccess MemoryManager::ensureRegionBacked(Desc *desc) {
   auto rollback = [&]() {
     for (size_t idx : mappedNow) {
       void *pageVa = base + idx * ps;
-      ErrorOrSuccess ue = device().vmmUnmap(pageVa, ps);
+      ErrorOrSuccess ue = vmmBacking().vmmUnmap(pageVa, ps);
       if (ue.isError())
         LOG_ERR(llvm::Twine("ensureRegionBacked rollback vmmUnmap failed: ") +
                 ue.getError());
@@ -2518,7 +2539,7 @@ ErrorOrSuccess MemoryManager::ensureRegionBacked(Desc *desc) {
       handle = freeGranulePool_.back();
       freeGranulePool_.pop_back();
     } else {
-      ErrorOr<uint64_t> h = device().vmmCreate(ps);
+      ErrorOr<uint64_t> h = vmmBacking().vmmCreate(ps);
       if (h.isError()) {
         // The budget said this was creatable, but the driver refused: the
         // physical is held outside this manager.
@@ -2530,7 +2551,7 @@ ErrorOrSuccess MemoryManager::ensureRegionBacked(Desc *desc) {
       handle = *h;
     }
     void *pageVa = base + i * ps;
-    ErrorOrSuccess me = device().vmmMapAndSetAccess(pageVa, ps, handle);
+    ErrorOrSuccess me = vmmBacking().vmmMapAndSetAccess(pageVa, ps, handle);
     if (me.isError()) {
       // Distinct from a refused create: mapping is illegal during a graph
       // capture, so the caller resolves this against the capture state rather
@@ -2578,14 +2599,14 @@ ErrorOrSuccess MemoryManager::preBackForCapture() {
       // Respect the budget: created physical == mapped + pooled handles.
       if (createdPhysicalBytes() + ps > maxCacheSize_)
         break;
-      ErrorOr<uint64_t> h = device().vmmCreate(ps);
+      ErrorOr<uint64_t> h = vmmBacking().vmmCreate(ps);
       if (h.isError())
         return Error(std::string("preBackForCapture vmmCreate failed: ") +
                      h.getError());
       handle = *h;
     }
     void *pageVa = base + i * ps;
-    ErrorOrSuccess me = device().vmmMapAndSetAccess(pageVa, ps, handle);
+    ErrorOrSuccess me = vmmBacking().vmmMapAndSetAccess(pageVa, ps, handle);
     if (me.isError()) {
       freeGranulePool_.push_back(handle);
       return Error(
@@ -2598,8 +2619,6 @@ ErrorOrSuccess MemoryManager::preBackForCapture() {
   }
   return success();
 }
-
-Device &MemoryManager::device() const { return device_; }
 
 void MemoryManager::selfCheck() const {
   if (!options_.selfCheck || chunks_ == nullptr) {
@@ -2697,7 +2716,7 @@ void MemoryManager::growChunkSizeTo(size_t newChunkSize) {
     if (isHost()) {
       logErr("growing_chunk_size_to(" + TWINE(chunkSize_) + ")");
     } else {
-      ErrorOr<Device::MemInfo> memInfo = device().getMemoryInfo();
+      ErrorOr<AllocatorMemInfo> memInfo = chunkBacking().getMemoryInfo();
       logErr("growing_chunk_size_to(" + TWINE(chunkSize_) + ", free: " +
              TWINE((*memInfo).free ? std::to_string(*(*memInfo).free)
                                    : std::string("unknown")) +
@@ -2760,7 +2779,7 @@ void MemoryManager::clear() {
 
   // Release any granules sitting in the free-granule pool back to the driver.
   for (uint64_t handle : freeGranulePool_) {
-    ErrorOrSuccess err = device().vmmRelease(handle);
+    ErrorOrSuccess err = vmmBacking().vmmRelease(handle);
     if (err.isError()) {
       logErr(err.getError());
     }
@@ -3655,7 +3674,8 @@ MemoryManager *MemoryManager::disabled(Device &device, size_t alignment) {
   // TODO (GEX-3475): useOnlyMemoryManagerMode should not be required.
   options.useOnlyMemoryManagerMode = memoryManagerOnlyMode(device);
   options.label = deviceLabel(device, /*isHost=*/false);
-  return new MemoryManager(device, std::move(options));
+  return new MemoryManager(std::move(options),
+                           std::make_unique<DeviceAllocatorChunks>(device));
 }
 
 MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
@@ -3809,7 +3829,11 @@ MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
   options.vmmPageSize = vmmPageSize;
   options.largeAllocAlignment = largeAllocAlignment;
   options.label = deviceLabel(device, /*isHost=*/false);
-  auto result = new MemoryManager(device, std::move(options));
+  auto result = new MemoryManager(
+      std::move(options),
+      vmmEnabled
+          ? AllocatorBacking(std::make_unique<DeviceAllocatorVmm>(device))
+          : AllocatorBacking(std::make_unique<DeviceAllocatorChunks>(device)));
 
   if (result->options_.log) {
     result->logErr("initial memInfo(free: " + humanMemorySize(freeMemory) +
@@ -3856,7 +3880,8 @@ MemoryManager *MemoryManager::onHost(Device &device, size_t alignment) {
   // not useful by bazel to better binpack tests on a runner.
   options.useOnlyMemoryManagerMode = false;
   options.label = deviceLabel(device, /*isHost=*/true);
-  return new MemoryManager(device, std::move(options));
+  return new MemoryManager(std::move(options),
+                           std::make_unique<DeviceAllocatorChunks>(device));
 }
 
 } // namespace M::Driver

@@ -42,6 +42,70 @@ AllocatorContext::AllocMode toAllocatorAllocMode(Device::AllocMode mode) {
   return static_cast<AllocatorContext::AllocMode>(mode);
 }
 
+Device::MemInfo toDeviceMemInfo(const AllocatorMemInfo &info) {
+  Device::MemInfo out;
+  out.total = info.total;
+  out.free = info.free;
+  return out;
+}
+
+static AllocatorMemInfo toAllocatorMemInfo(const Device::MemInfo &info) {
+  AllocatorMemInfo out;
+  out.total = info.total;
+  out.free = info.free;
+  return out;
+}
+
+ErrorOrSuccess DeviceAllocatorChunks::chunkAlloc(void **ptr, size_t byteSize,
+                                                 bool isHost) {
+  return device_.chunkAlloc(ptr, byteSize, isHost);
+}
+
+ErrorOrSuccess DeviceAllocatorChunks::chunkFree(void *ptr, bool isHost) {
+  return device_.chunkFree(ptr, isHost);
+}
+
+ErrorOr<AllocatorMemInfo> DeviceAllocatorChunks::getMemoryInfo() const {
+  ErrorOr<Device::MemInfo> info = device_.getMemoryInfo();
+  if (info.isError())
+    return info.takeError();
+  return toAllocatorMemInfo(*info);
+}
+
+ErrorOr<void *> DeviceAllocatorVmm::vmmAddressReserve(size_t byteSize) {
+  return device_.vmmAddressReserve(byteSize);
+}
+
+ErrorOrSuccess DeviceAllocatorVmm::vmmAddressFree(void *va, size_t byteSize) {
+  return device_.vmmAddressFree(va, byteSize);
+}
+
+ErrorOr<uint64_t> DeviceAllocatorVmm::vmmCreate(size_t byteSize) {
+  return device_.vmmCreate(byteSize);
+}
+
+ErrorOrSuccess DeviceAllocatorVmm::vmmRelease(uint64_t handle) {
+  return device_.vmmRelease(handle);
+}
+
+ErrorOrSuccess DeviceAllocatorVmm::vmmMapAndSetAccess(void *va, size_t byteSize,
+                                                      uint64_t handle) {
+  return device_.vmmMapAndSetAccess(va, byteSize, handle);
+}
+
+ErrorOrSuccess DeviceAllocatorVmm::vmmUnmap(void *va, size_t byteSize) {
+  return device_.vmmUnmap(va, byteSize);
+}
+
+ErrorOrSuccess DeviceAllocatorVmm::vmmMap(void *va, size_t byteSize,
+                                          uint64_t handle) {
+  return device_.vmmMap(va, byteSize, handle);
+}
+
+ErrorOrSuccess DeviceAllocatorVmm::vmmSetAccess(void *va, size_t byteSize) {
+  return device_.vmmSetAccess(va, byteSize);
+}
+
 namespace {
 
 // A `DeviceEvent` as the memory manager sees it.

@@ -1533,7 +1533,7 @@ DeviceContext::getMemoryInfo() const {
   // If we are using the memory manager, get memory information from it.
   MemoryManager &cache = device().memoryManager();
   if (cache.isEnabled()) {
-    return cache.getMemoryInfo();
+    return toDeviceMemInfo(cache.getMemoryInfo());
   }
 
   // Otherwise, go directly to the device.

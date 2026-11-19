@@ -2016,7 +2016,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoDisabledDefaults) {
   CpuDeviceRef device = createTestDevice();
   MemoryManager &cache = device->memoryManager();
 
-  Device::MemInfo memInfo = cache.getMemoryInfo();
+  AllocatorMemInfo memInfo = cache.getMemoryInfo();
 
   EXPECT_EQ(memInfo.total, 0);
   EXPECT_EQ(memInfo.free, 0);
@@ -2028,7 +2028,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   MemoryManagerFreeList &freeList = *cache.freeList();
 
   // Get initial memory info
-  Device::MemInfo initialInfo = cache.getMemoryInfo();
+  AllocatorMemInfo initialInfo = cache.getMemoryInfo();
   EXPECT_GT(initialInfo.total, 0);
   size_t initialFree = initialInfo.free.value();
 
@@ -2043,7 +2043,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   }
 
   // Get memory info after allocations
-  Device::MemInfo afterAllocInfo = cache.getMemoryInfo();
+  AllocatorMemInfo afterAllocInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterAllocInfo.total,
             initialInfo.total); // Total should remain same
   EXPECT_LE(afterAllocInfo.free.value(),
@@ -2055,7 +2055,7 @@ TEST_F(MemoryManagerTest, GetMemoryInfoAccuracy) {
   }
 
   // Get memory info after freeing
-  Device::MemInfo afterFreeInfo = cache.getMemoryInfo();
+  AllocatorMemInfo afterFreeInfo = cache.getMemoryInfo();
   EXPECT_EQ(afterFreeInfo.total, initialInfo.total); // Total should remain same
   EXPECT_GE(afterFreeInfo.free.value(),
             afterAllocInfo.free.value()); // Free should increase
