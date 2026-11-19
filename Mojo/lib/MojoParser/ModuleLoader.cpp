@@ -477,6 +477,8 @@ ModuleLoader::bindPrecompiledPackage(ModuleState &packageState,
                                      ArrayRef<StringRef> importPath) {
   assert(!importPath.empty() && "expected the package's output name");
   ArrayRef<StringRef> namespacePath = importPath.drop_back();
+  cast<PackageASTDecl>(packageState.decl)
+      ->setNamespaceComponents(namespacePath);
   // Search what the package's own imports will, but no buffer is loaded yet to
   // derive the working directory from; derive it from the package instead,
   // as from any of its files.

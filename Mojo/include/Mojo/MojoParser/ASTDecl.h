@@ -776,11 +776,24 @@ public:
   LogicalResult resolveBody(Lexer &lexer) override;
   LogicalResult resolveSyntheticBody() override;
 
+  /// The namespace components, outermost first, that this package is bound
+  /// under while it is parsed as a source package that gets precompiled
+  /// under `--namespace`. Empty otherwise: a loaded precompiled package
+  /// carries its namespace as parent decls instead.
+  ArrayRef<std::string> getNamespaceComponents() const {
+    return namespaceComponents;
+  }
+  void setNamespaceComponents(ArrayRef<StringRef> components) {
+    namespaceComponents.assign(components.begin(), components.end());
+  }
+
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
 
   LogicalResult resolvePackage();
+
+  std::vector<std::string> namespaceComponents;
 
   PackageASTDecl(SharedState &shared, PackageOp packageOp, llvm::SMLoc loc,
                  ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,

@@ -34,6 +34,8 @@ defm docs_base_path : CommandOption<["--", "-"], "docs-base-path",
   HelpText<"Sets the path prefix for generated documentation links.">>,
   MarshallingInfoString<FrontendOpts<"docsBasePath">>;
 
+include "Common/NamespaceOptions.td"
+
 //===----------------------------------------------------------------------===//
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
