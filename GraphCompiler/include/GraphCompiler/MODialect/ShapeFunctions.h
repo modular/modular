@@ -19,6 +19,7 @@
 #include "GraphCompiler/MODialect/MOInterfaces.h"
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "Support/AssertStream.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 
 #ifndef GENERICML_GRAPHCOMPILER_MODIALECT_SHAPE_FUNCTIONS_H
 #define GENERICML_GRAPHCOMPILER_MODIALECT_SHAPE_FUNCTIONS_H
@@ -58,6 +59,10 @@ public:
 
   /// Tracks `kgen.param.declare ... = <...assert(condVar, errorMsg)...>`.
   void createAssert(const Var &condVar, StringRef errorMsg);
+
+  /// Same as above, but `makeErrorMsg` runs only when the assert is emitted.
+  void createAssert(const Var &condVar,
+                    llvm::function_ref<std::string()> makeErrorMsg);
 
   /// Tracks `kgen.param.declare ... = <cond(condV, thenV, elseV)>`.
   Var createCond(const Var &condV, const Var &thenV, const Var &elseV);
