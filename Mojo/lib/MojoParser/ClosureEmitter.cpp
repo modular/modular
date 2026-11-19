@@ -168,11 +168,17 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
   if (!callResult)
     return failure();
   if (!calleeSig.isAsync()) {
-    auto regRet = callResult.getIfSRValue();
-    if (regRet && resultType != regRet.getType())
-      regRet = RebindOp::create(builder, resultType, regRet);
+    Value ret;
+    if (auto regRet = callResult.getIfSRValue()) {
+      ret = regRet;
+      if (ret.getType() != resultType)
+        ret = RebindOp::create(builder, resultType, regRet);
+    } else if (calleeSig.isRefResult()) {
+      ret = callResult.getIfMLValue();
+      assert(ret); // We must be forwarding a MLValue.
+    }
 
-    IREmitter::emitNormalReturn(builder, regRet);
+    IREmitter::emitNormalReturn(builder, ret);
     return success();
   }
 
