@@ -168,7 +168,8 @@ static LogicalResult sinkChainCreateOperands(AsyncRoutineOp op,
   for (OpOperand &operand : op.getOperandsMutable()) {
     BlockArgument bodyArgument = body.getArgument(operand.getOperandNumber());
 
-    auto chainCreateOp = operand.get().getDefiningOp<GRT::ChainCreateOp>();
+    auto chainCreateOp =
+        operand.get().getDefiningOp<MLRT::GRT::ChainCreateOp>();
     // Only remove grt.chain.create operands whose corresponding body
     // argument is unused.
     if (!chainCreateOp || !chainCreateOp.getResult().hasOneUse() ||

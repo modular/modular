@@ -346,7 +346,7 @@ class OutlineModelsToCallablesPass
 
         initArgs.push_back(prefixValue);
 
-        auto initInvokeOp = GRT::InvokeOp::create(
+        auto initInvokeOp = MLRT::GRT::InvokeOp::create(
             initBuilder, call.getLoc(), target.initCallable.getResultTypes(),
             target.initCallable.getName(), initArgs);
 
@@ -395,9 +395,9 @@ class OutlineModelsToCallablesPass
         OpBuilder execBuilder(callContext.call);
 
         auto execInvokeOp =
-            GRT::InvokeOp::create(execBuilder, callContext.call->getLoc(),
-                                  target.execCallable.getResultTypes(),
-                                  target.execCallable.getName(), args);
+            MLRT::GRT::InvokeOp::create(execBuilder, callContext.call->getLoc(),
+                                        target.execCallable.getResultTypes(),
+                                        target.execCallable.getName(), args);
 
         callContext.call->replaceAllUsesWith(execInvokeOp->getResults());
         callContext.call->erase();
@@ -407,7 +407,7 @@ class OutlineModelsToCallablesPass
       // expect that.
       Value parentChain = initOutput.getOperand(0);
       initChains.push_back(parentChain);
-      auto newInitChain = GRT::ChainCreateOp::create(
+      auto newInitChain = MLRT::GRT::ChainCreateOp::create(
           initBuilder, initOutput->getLoc(), initChains);
       initOutput->setOperand(0, newInitChain.getResult());
     }
@@ -510,8 +510,8 @@ class OutlineModelsToCallablesPass
         }
 
         auto invoke =
-            GRT::InvokeOp::create(builder, loc, callable.getResultTypes(),
-                                  callable.getName(), operands);
+            MLRT::GRT::InvokeOp::create(builder, loc, callable.getResultTypes(),
+                                        callable.getName(), operands);
 
         MEF::OutputOp::create(builder, loc, invoke.getResults());
       }

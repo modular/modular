@@ -182,7 +182,7 @@ LogicalResult CompiledLoadOp::lower(MGP::MOGraphLoweringState &loweringState) {
       /*functionSymbols=*/getSymbols(),
       /*constantSymbols=*/{});
   SmallVector<Value> values = {outChain, loweringState.getInitChain()};
-  auto combined = GRT::ChainCreateOp::create(builder, getLoc(), values);
+  auto combined = MLRT::GRT::ChainCreateOp::create(builder, getLoc(), values);
   loweringState.setInitChain(combined);
   return success();
 }

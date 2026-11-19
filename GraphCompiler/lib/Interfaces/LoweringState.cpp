@@ -117,10 +117,11 @@ Value MOGraphLoweringState::joinControlFlowChains(Location loc) {
     chains.push_back(execute.currentChain);
   llvm::append_range(chains, execute.controlFlowChains);
   execute.controlFlowChains.clear();
-  Value joined = chains.size() == 1
-                     ? chains.front()
-                     : GRT::ChainCreateOp::create(execute.builder, loc, chains)
-                           .getResult();
+  Value joined =
+      chains.size() == 1
+          ? chains.front()
+          : MLRT::GRT::ChainCreateOp::create(execute.builder, loc, chains)
+                .getResult();
   setCurrentExecuteChain(joined);
   return joined;
 }
@@ -242,7 +243,7 @@ MOGraphLoweringState::lowerArg(Region *parentRegion, BlockArgument inArg,
 
       if (!assertChains.empty()) {
         auto consolidatedChains =
-            GRT::ChainCreateOp::create(builder, loc, assertChains);
+            MLRT::GRT::ChainCreateOp::create(builder, loc, assertChains);
 
         auto guarded =
             MGP::GuardOp::create(builder, loc, consolidatedChains, outArg);
@@ -775,7 +776,7 @@ Value MOOpLoweringState::getGuardChain(Value chain) {
   }
   if (!inputChains.empty()) {
     inputChains.push_back(chain);
-    chain = create<GRT::ChainCreateOp>(inputChains).getResult();
+    chain = create<MLRT::GRT::ChainCreateOp>(inputChains).getResult();
   }
   return chain;
 }

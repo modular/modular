@@ -130,7 +130,7 @@ def LowerCompiledRoutines: Pass<"mogg-lower-compiled-routines", "ModuleOp"> {
 
   let dependentDialects = ["MEF::MEFDialect",
                           "MGP::MGPDialect",
-                          "GRT::GRTDialect",
+                          "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect"];
 }
 
@@ -144,7 +144,7 @@ def SequenceFusion: Pass<"mogg-sequence-fusion", "MGP::ModelOp"> {
   ];
   let dependentDialects = ["MEF::MEFDialect",
                           "MGP::MGPDialect",
-                          "GRT::GRTDialect",
+                          "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect"];
 }
 
@@ -479,7 +479,7 @@ def EmitMojo: Pass<"mogg-emit-mojo", "ModuleOp"> {
 
   let dependentDialects = ["MEF::MEFDialect",
                           "MGP::MGPDialect",
-                          "GRT::GRTDialect",
+                          "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect",
                           "M::KGEN::KGENDialect",
                           "M::KGEN::LIT::LITDialect",
@@ -500,7 +500,7 @@ def DumpMojo: Pass<"mogg-dump-mojo", "ModuleOp"> {
 
   let dependentDialects = ["MEF::MEFDialect",
                           "MGP::MGPDialect",
-                          "GRT::GRTDialect",
+                          "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect",
                           "M::KGEN::KGENDialect",
                           "M::KGEN::LIT::LITDialect",
@@ -533,7 +533,7 @@ def LoadMojo: Pass<"mogg-load-mojo", "ModuleOp"> {
 
   let dependentDialects = ["MEF::MEFDialect",
                           "MGP::MGPDialect",
-                          "GRT::GRTDialect",
+                          "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect",
                           "M::KGEN::KGENDialect",
                           "M::KGEN::LIT::LITDialect",

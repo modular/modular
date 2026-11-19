@@ -137,7 +137,7 @@ def IfOp : GRTOp<"if",
   let extraClassDefinition = [{
     using BodyBuilder = function_ref<void(OpBuilder &, Location, ValueRange)>;
 
-    GRT::ControlFlowFlavor IfOp::getFlavor() { return GRT::kBranchLike; }
+    MLRT::GRT::ControlFlowFlavor IfOp::getFlavor() { return MLRT::GRT::kBranchLike; }
     llvm::ArrayRef<mlir::OpOperand> IfOp::getInputOpOperands() {
       return getOperation()->getOpOperands().drop_front();
     }
@@ -207,7 +207,7 @@ def WhileOp : GRTOp<"while",
   let hasVerifier = 1;
 
   let extraClassDefinition = [{
-    GRT::ControlFlowFlavor WhileOp::getFlavor() { return GRT::kLoopLike; }
+    MLRT::GRT::ControlFlowFlavor WhileOp::getFlavor() { return MLRT::GRT::kLoopLike; }
     llvm::ArrayRef<mlir::OpOperand> WhileOp::getInputOpOperands() {
       return getOperation()->getOpOperands();
     }
@@ -273,7 +273,7 @@ def RepeatI32Op : GRTOp<"repeat.i32",
   let hasVerifier = 1;
 
   let extraClassDefinition = [{
-    GRT::ControlFlowFlavor RepeatI32Op::getFlavor() { return GRT::kLoopLike; }
+    MLRT::GRT::ControlFlowFlavor RepeatI32Op::getFlavor() { return MLRT::GRT::kLoopLike; }
     llvm::ArrayRef<mlir::OpOperand> RepeatI32Op::getInputOpOperands() {
       return getOperation()->getOpOperands().drop_front();
     }

@@ -31,7 +31,7 @@ def GRTMayAliasInterface : OpInterface<"GRTMayAliasInterface"> {
     to soundly approximate the 'exclusive' relation between SSA values.
   }];
 
-  let cppNamespace = "::M::GRT";
+  let cppNamespace = "::M::MLRT::GRT";
 
   let methods = [
     InterfaceMethod<

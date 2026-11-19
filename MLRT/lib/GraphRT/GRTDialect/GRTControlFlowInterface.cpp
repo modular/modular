@@ -17,8 +17,8 @@
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/STLExtras.h"
 
-mlir::LogicalResult M::GRT::verifyControlFlowInterfaceOp(Operation *op) {
-  auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op);
+mlir::LogicalResult M::MLRT::GRT::verifyControlFlowInterfaceOp(Operation *op) {
+  auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op);
 
   switch (cfOp.getFlavor()) {
   case kLoopLike:

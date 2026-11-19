@@ -323,7 +323,7 @@ TypedValue<MEF::ChainType> MGPBufferBuilder::moduleLoad(
 
 Value MGPBufferBuilder::chainCreate(OpBuilder &builder, Location loc,
                                     ArrayRef<Value> inChains) {
-  return GRT::ChainCreateOp::create(builder, loc, inChains);
+  return MLRT::GRT::ChainCreateOp::create(builder, loc, inChains);
 }
 
 std::pair<TypedValue<MEF::ChainType>, uint64_t>

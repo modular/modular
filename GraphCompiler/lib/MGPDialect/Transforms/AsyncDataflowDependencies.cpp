@@ -31,9 +31,9 @@ using namespace std::placeholders;
 /// lifetime-extension interface relates.
 static bool considerMaybeSameAs(Operation *op, size_t operandIndex,
                                 size_t resultIndex) {
-  if (auto extends = dyn_cast<GRT::GRTExtendsLifetimeInterface>(op))
+  if (auto extends = dyn_cast<MLRT::GRT::GRTExtendsLifetimeInterface>(op))
     return extends.extendsLifetime(operandIndex, resultIndex);
-  else if (auto mayAlias = dyn_cast<GRT::GRTMayAliasInterface>(op))
+  else if (auto mayAlias = dyn_cast<MLRT::GRT::GRTMayAliasInterface>(op))
     return mayAlias.mayAlias(operandIndex, resultIndex);
   else
     return false;
@@ -176,7 +176,7 @@ void AsyncDataflowDependencies::print(llvm::raw_ostream &os) {
 // Rules are just the control flow rules.
 void AsyncDataflowDependencies::flowSameAs(Operation *op,
                                            ValueDomainMap &domainMap) {
-  if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+  if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
     valueAnalysis.flowControlFlow(
         cfOp, domainMap,
         std::bind(&AsyncDataflowDependencies::flowSameAs, this, _1, _2));
@@ -206,12 +206,12 @@ void AsyncDataflowDependencies::setupSameAs() {
 //  - The control flow rules.
 void AsyncDataflowDependencies::flowMaybeSameAs(Operation *op,
                                                 ValueDomainMap &domainMap) {
-  if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+  if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
     valueAnalysis.flowControlFlow(
         cfOp, domainMap,
         std::bind(&AsyncDataflowDependencies::flowMaybeSameAs, this, _1, _2));
-  } else if (isa<GRT::GRTExtendsLifetimeInterface>(op) ||
-             isa<GRT::GRTMayAliasInterface>(op)) {
+  } else if (isa<MLRT::GRT::GRTExtendsLifetimeInterface>(op) ||
+             isa<MLRT::GRT::GRTMayAliasInterface>(op)) {
     // Lifetime extension is approximated as possible aliasing, giving the
     // related results and arguments the same worst-case lifetime.
     for (size_t resultIndex = 0, numResults = op->getNumResults();
@@ -250,7 +250,7 @@ void AsyncDataflowDependencies::setupMaybeSameAs() {
 ///  - The control flow rules.
 void AsyncDataflowDependencies::flowAlwaysReady(Operation *op,
                                                 ValueDomainMap &domainMap) {
-  if (auto chainCreateOp = dyn_cast<GRT::GRTChainCreateOpInterface>(op)) {
+  if (auto chainCreateOp = dyn_cast<MLRT::GRT::GRTChainCreateOpInterface>(op)) {
     // This is equivalent to:
     //   if (isTrue(o) for all o in mergeOp.getOperands())
     //     setTrue(mergeOp.getResult())
@@ -261,7 +261,7 @@ void AsyncDataflowDependencies::flowAlwaysReady(Operation *op,
           set, valueAnalysis.getEntriesAndId(domainMap, operand));
     }
     valueAnalysis.setEntries(domainMap, chainCreateOp.getChainResult(), set);
-  } else if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+  } else if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
     valueAnalysis.flowControlFlow(
         cfOp, domainMap,
         std::bind(&AsyncDataflowDependencies::flowAlwaysReady, this, _1, _2));
@@ -317,7 +317,7 @@ void AsyncDataflowDependencies::setupAlwaysReady() {
 ///    graph.
 void AsyncDataflowDependencies::flowImpliesReady(Operation *op,
                                                  ValueDomainMap &domainMap) {
-  if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+  if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
     valueAnalysis.flowControlFlow(
         cfOp, domainMap,
         std::bind(&AsyncDataflowDependencies::flowImpliesReady, this, _1, _2));
@@ -329,7 +329,7 @@ void AsyncDataflowDependencies::flowImpliesReady(Operation *op,
         domainMap.greatestLowerBound(
             set, valueAnalysis.getEntriesAndId(domainMap, rhs));
       }
-      if (cfOp.getFlavor() == GRT::kLoopLike) {
+      if (cfOp.getFlavor() == MLRT::GRT::kLoopLike) {
         // Loop body outputs are known to be ready.
         Block *lastBlock = &cfOp->getRegions().back().front();
         for (Value rhs : lastBlock->getTerminator()->getOperands()) {
@@ -408,63 +408,66 @@ void AsyncDataflowDependencies::setupStructurallyDisjoint() {
 
   /// The structurallyAtMostOneRelation is just for kBranches.
   structurallyAtMostOneRelation = operationAnalysis.emptyRelation();
-  valueAnalysis.index->model->walk([&](GRT::GRTControlFlowInterface cfOp) {
-    if (cfOp->getNumRegions() <= 1 || cfOp.getFlavor() != GRT::kBranchLike) {
-      // Not a multi-armed kBranch.
-      return;
-    }
-
-    if (!isAtMostOnce(cfOp)) {
-      // kBranch could be executed more than once.
-      return;
-    }
-
-    // Collect ops which can be executed at most once in each of the sub-blocks
-    // (including nested sub-blocks).
-    SmallVector<SmallVector<Operation *>> opsPerBranch;
-    for (Region &region : cfOp->getRegions()) {
-      SmallVector<Operation *> &allOps = opsPerBranch.emplace_back();
-      region.walk([&](Operation *op) {
-        if (getIndicatingResults(op).empty()) {
-          // We are only interested in ops with indicating results since that's
-          // the only way we have to track their execution.
+  valueAnalysis.index->model->walk(
+      [&](MLRT::GRT::GRTControlFlowInterface cfOp) {
+        if (cfOp->getNumRegions() <= 1 ||
+            cfOp.getFlavor() != MLRT::GRT::kBranchLike) {
+          // Not a multi-armed kBranch.
           return;
         }
-        if (!isAtMostOnce(op)) {
-          // Sub-block containing op could be executed more than once.
+
+        if (!isAtMostOnce(cfOp)) {
+          // kBranch could be executed more than once.
           return;
         }
-        allOps.emplace_back(op);
+
+        // Collect ops which can be executed at most once in each of the
+        // sub-blocks (including nested sub-blocks).
+        SmallVector<SmallVector<Operation *>> opsPerBranch;
+        for (Region &region : cfOp->getRegions()) {
+          SmallVector<Operation *> &allOps = opsPerBranch.emplace_back();
+          region.walk([&](Operation *op) {
+            if (getIndicatingResults(op).empty()) {
+              // We are only interested in ops with indicating results since
+              // that's the only way we have to track their execution.
+              return;
+            }
+            if (!isAtMostOnce(op)) {
+              // Sub-block containing op could be executed more than once.
+              return;
+            }
+            allOps.emplace_back(op);
+          });
+        }
+
+        addCrossProduct(structurallyAtMostOneRelation, opsPerBranch);
       });
-    }
-
-    addCrossProduct(structurallyAtMostOneRelation, opsPerBranch);
-  });
 
   structurallyCannotOverlapRelation = operationAnalysis.emptyRelation();
-  valueAnalysis.index->model->walk([&](GRT::GRTControlFlowInterface cfOp) {
-    if (cfOp->getNumRegions() <= 1)
-      // Not a multi-subblock control flow op.
-      return;
-
-    // Collect all the ops from each sub-block (including nested sub-blocks).
-    // We don't care whether these ops can be executed multiple times due to
-    // loops since even if so they cannot overlap in execution.
-    SmallVector<SmallVector<Operation *>> allOpsPerSubBlock;
-    for (Region &region : cfOp->getRegions()) {
-      SmallVector<Operation *> &allOps = allOpsPerSubBlock.emplace_back();
-      region.walk([&](Operation *op) {
-        if (getIndicatingResults(op).empty()) {
-          // We are only interested in ops with indicating results since that's
-          // the only way we have to track their execution.
+  valueAnalysis.index->model->walk(
+      [&](MLRT::GRT::GRTControlFlowInterface cfOp) {
+        if (cfOp->getNumRegions() <= 1)
+          // Not a multi-subblock control flow op.
           return;
-        }
-        allOps.emplace_back(op);
-      });
-    }
 
-    addCrossProduct(structurallyCannotOverlapRelation, allOpsPerSubBlock);
-  });
+        // Collect all the ops from each sub-block (including nested
+        // sub-blocks). We don't care whether these ops can be executed multiple
+        // times due to loops since even if so they cannot overlap in execution.
+        SmallVector<SmallVector<Operation *>> allOpsPerSubBlock;
+        for (Region &region : cfOp->getRegions()) {
+          SmallVector<Operation *> &allOps = allOpsPerSubBlock.emplace_back();
+          region.walk([&](Operation *op) {
+            if (getIndicatingResults(op).empty()) {
+              // We are only interested in ops with indicating results since
+              // that's the only way we have to track their execution.
+              return;
+            }
+            allOps.emplace_back(op);
+          });
+        }
+
+        addCrossProduct(structurallyCannotOverlapRelation, allOpsPerSubBlock);
+      });
 }
 
 AsyncDataflowDependencies::OperationSet
@@ -538,7 +541,7 @@ Operation *
 AsyncDataflowDependencies::getEffectiveOwner(const OpOperand *opOperand) const {
   Operation *op = opOperand->getOwner();
 
-  if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+  if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
     ArrayRef<OpOperand> inputOpOperands = cfOp.getInputOpOperands();
     if (contains_if(inputOpOperands, [&](const OpOperand &inputOpOperand) {
           return &inputOpOperand == opOperand;
@@ -554,8 +557,9 @@ AsyncDataflowDependencies::getEffectiveOwner(const OpOperand *opOperand) const {
       return modelOp;
     }
 
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op->getParentOp())) {
-      if (cfOp.getFlavor() == GRT::kLoopLike) {
+    if (auto cfOp =
+            dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op->getParentOp())) {
+      if (cfOp.getFlavor() == MLRT::GRT::kLoopLike) {
         // The loop op stands for future iterations.
         return cfOp;
       }
@@ -607,8 +611,8 @@ AsyncDataflowDependencies::ValueEquivalence
 AsyncDataflowDependencies::getEquivalenceAtOp(Operation *op) const {
   // 'Fresh' results cannot alias any operand.
   ValueSet freshResultValues = valueAnalysis.index->emptySet();
-  if ((isa<GRT::GRTExtendsLifetimeInterface>(op) ||
-       isa<GRT::GRTMayAliasInterface>(op))) {
+  if ((isa<MLRT::GRT::GRTExtendsLifetimeInterface>(op) ||
+       isa<MLRT::GRT::GRTMayAliasInterface>(op))) {
     for (size_t resultIndex = 0, numResults = op->getNumResults();
          resultIndex < numResults; ++resultIndex) {
       if (!considerMaybeSameAsForAnyOperand(op, resultIndex))

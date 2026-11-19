@@ -136,7 +136,7 @@ static void startVisiting(DenseSet<Operation *> &visited,
   stack.emplace_back(currOp, 0);
 
   // Free values of nested regions are dependencies too.
-  if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(currOp)) {
+  if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(currOp)) {
     mlir::SetVector<Value> freeValues;
     for (Region &region : cfOp->getRegions())
       accumFreeValues(freeValues, &region.front(), &region.front());
@@ -193,7 +193,7 @@ bool M::MGP::isExactlyOnce(Operation *op) {
   while (op) {
     if (auto modelOp = dyn_cast<ModelOp>(op))
       return true;
-    if (isa<GRT::GRTControlFlowInterface>(op))
+    if (isa<MLRT::GRT::GRTControlFlowInterface>(op))
       return false;
     op = op->getParentOp();
   }
@@ -205,8 +205,8 @@ bool M::MGP::isAtMostOnce(Operation *op) {
   while (op) {
     if (auto modelOp = dyn_cast<ModelOp>(op))
       return true;
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
-      if (cfOp.getFlavor() == GRT::kLoopLike)
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
+      if (cfOp.getFlavor() == MLRT::GRT::kLoopLike)
         return false;
     }
     op = op->getParentOp();
@@ -229,8 +229,9 @@ SmallVector<Value> M::MGP::allLoopBoundArgs(Operation *op) {
 SmallVector<Value> M::MGP::allLoopResults(Operation *op) {
   SmallVector<Value> result;
   while (op->getBlock()) {
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op->getParentOp())) {
-      if (cfOp.getFlavor() == GRT::kLoopLike) {
+    if (auto cfOp =
+            dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op->getParentOp())) {
+      if (cfOp.getFlavor() == MLRT::GRT::kLoopLike) {
         for (Value res : cfOp->getResults())
           result.emplace_back(res);
       }
@@ -267,7 +268,7 @@ SmallVector<Value> M::MGP::getGatingOperands(Operation *op) {
 bool M::MGP::isGatingOperand(const OpOperand *opOperand) {
   Operation *op = opOperand->getOwner();
 
-  if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+  if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
     // Only the extra strict operands are gating for control flow ops.
     auto extraOperands = cfOp.getStrictExtraOperands();
     return llvm::is_contained(extraOperands, opOperand->get());
@@ -311,7 +312,7 @@ SmallVector<OpOperand *, 1> M::MGP::getInputChainOpOperands(Operation *op) {
 void M::MGP::accumulatePrimitiveChains(ValueSetVector &primitiveChains,
                                        Value chain) {
   if (auto chainCreateOp =
-          chain.getDefiningOp<GRT::GRTChainCreateOpInterface>()) {
+          chain.getDefiningOp<MLRT::GRT::GRTChainCreateOpInterface>()) {
     for (auto operand : chainCreateOp.getInputChains())
       accumulatePrimitiveChains(primitiveChains, operand);
   } else {
@@ -323,7 +324,7 @@ void M::MGP::accumulatePrimitiveChains(ValueSetVector &primitiveChains,
 static Value waitForChainsReusing(
     OpBuilder &builder, mlir::Location loc, TypedValue<ContextType> context,
     MGPBufferBuilder *optBufferBuilder,
-    GRT::GRTGatedOnChainOpInterface existingUniqueChainCreateOp,
+    MLRT::GRT::GRTGatedOnChainOpInterface existingUniqueChainCreateOp,
     ArrayRef<Value> chains) {
   assert(!chains.empty());
 
@@ -332,11 +333,11 @@ static Value waitForChainsReusing(
 
   if (existingUniqueChainCreateOp) {
     existingUniqueChainCreateOp.setInputChains(chains);
-    return dyn_cast<GRT::GRTChainCreateOpInterface>(
+    return dyn_cast<MLRT::GRT::GRTChainCreateOpInterface>(
                existingUniqueChainCreateOp.getOperation())
         .getChainResult();
   }
-  return GRT::ChainCreateOp::create(builder, loc, chains);
+  return MLRT::GRT::ChainCreateOp::create(builder, loc, chains);
 }
 
 Value M::MGP::waitForChains(OpBuilder &builder, mlir::Location loc,
@@ -400,10 +401,10 @@ M::MGP::alsoWaitForChains(OpBuilder &builder,
       existingPrimitiveChains.insert(newChain);
 
     // A chain.create used only here can be modified in place.
-    GRT::GRTGatedOnChainOpInterface existingUniqueChainCreateOp = nullptr;
+    MLRT::GRT::GRTGatedOnChainOpInterface existingUniqueChainCreateOp = nullptr;
     if (inChain.hasOneUse()) {
       if (auto chainCreateOp =
-              inChain.getDefiningOp<GRT::GRTGatedOnChainOpInterface>())
+              inChain.getDefiningOp<MLRT::GRT::GRTGatedOnChainOpInterface>())
         existingUniqueChainCreateOp = chainCreateOp;
     }
 

@@ -398,7 +398,7 @@ LogicalResult MOGraphLowering::createModelOp() {
   loweringState.getInitOpBuilder().setInsertionPointToEnd(
       loweringState.getModelOp().getInitBlock());
   // Tracks the current init output chain.
-  loweringState.setInitChain(GRT::ChainCreateOp::create(
+  loweringState.setInitChain(MLRT::GRT::ChainCreateOp::create(
       loweringState.getInitOpBuilder(), graph.getLoc()));
 
   // Create the !mgp.context. Its numSlots attribute will be incremented
@@ -904,13 +904,13 @@ LogicalResult MOGraphLowering::lower(MO::ConstantScalarOp constOp) {
   // currently only si32, si64, and i1 constants are supported
   if (auto boolAttr = dyn_cast<mlir::BoolAttr>(constOp.getValue())) {
     IntegerAttr intAttr = boolAttr;
-    auto grtConstOp =
-        opLoweringState.create<GRT::ConstantI1Op>(intAttr.getType(), intAttr);
+    auto grtConstOp = opLoweringState.create<MLRT::GRT::ConstantI1Op>(
+        intAttr.getType(), intAttr);
     loweringState.emplaceExecuteLoweredValue(constOp, grtConstOp);
 
   } else if (auto intAttr = dyn_cast<mlir::IntegerAttr>(constOp.getValue())) {
     if (intAttr.getType().isSignedInteger(32)) {
-      auto grtConstOp = opLoweringState.create<GRT::ConstantSI32Op>(
+      auto grtConstOp = opLoweringState.create<MLRT::GRT::ConstantSI32Op>(
           intAttr.getType(), intAttr);
       loweringState.emplaceExecuteLoweredValue(constOp, grtConstOp);
     } else if (intAttr.getType().isSignedInteger(64)) {
@@ -1208,7 +1208,7 @@ LogicalResult MOGraphLowering::lower(MO::ChainCreateOp chainCreateOp) {
   }
 
   auto grtChainCreateOp =
-      opLoweringState.create<GRT::ChainCreateOp>(loweredOperands);
+      opLoweringState.create<MLRT::GRT::ChainCreateOp>(loweredOperands);
 
   loweringState.emplaceExecuteLoweredValue(chainCreateOp.getResult(),
                                            grtChainCreateOp.getResult());
@@ -1437,7 +1437,8 @@ LogicalResult MOGraphLowering::lower(MO::IfOp ifOp) {
     resultTypes.emplace_back(converted ? converted : declType);
   }
 
-  auto outputIf = opLoweringState.create<GRT::IfOp>(resultTypes, operands);
+  auto outputIf =
+      opLoweringState.create<MLRT::GRT::IfOp>(resultTypes, operands);
 
   size_t paramStartIdx = 1 + ifOp.getNumResults(); // After chain + tensors
   for (auto [decl, result] :
@@ -1524,7 +1525,7 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
     resultTypes.emplace_back(loweredFreeValue.getType());
   }
   auto loweredWhileOp =
-      opLoweringState.create<GRT::WhileOp>(resultTypes, operands);
+      opLoweringState.create<MLRT::GRT::WhileOp>(resultTypes, operands);
 
   auto enterLowerBlock = [&](Region &inputRegion,
                              Region &outputRegion) -> LogicalResult {
@@ -1600,10 +1601,10 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
     Value chain = loweredOutputChain;
     if (Value guardChain =
             loweringState.getChainGuardingValueOrNull(origTensor)) {
-      chain =
-          GRT::ChainCreateOp::create(opLoweringState.builder, whileOp.getLoc(),
-                                     ValueRange{guardChain, chain})
-              .getResult();
+      chain = MLRT::GRT::ChainCreateOp::create(opLoweringState.builder,
+                                               whileOp.getLoc(),
+                                               ValueRange{guardChain, chain})
+                  .getResult();
     }
     Value condBool =
         opLoweringState.bufferToBool(chain, condBuffer, condMoTensorType);
@@ -1719,7 +1720,7 @@ LogicalResult MOGraphLowering::lower(MO::SequenceOp seq) {
       return rootChain;
     if (nonNull.size() == 1)
       return nonNull.front();
-    return GRT::ChainCreateOp::create(b, loc, nonNull).getResult();
+    return MLRT::GRT::ChainCreateOp::create(b, loc, nonNull).getResult();
   };
   // Device of a value, or null for non-tensor (e.g. chain) values: those carry
   // no device and must not fabricate a default one.
@@ -2342,7 +2343,7 @@ static void deferSideStreamJoins(ModuleOp module) {
     // Other joins in the consumer's chain are left out: gating joins on each
     // other would form a cycle.
     SmallVector<Value> chains{join.getInChain()};
-    if (auto create = dyn_cast<GRT::ChainCreateOp>(first))
+    if (auto create = dyn_cast<MLRT::GRT::ChainCreateOp>(first))
       for (Value chain : create->getOperands())
         if (!joinChains.contains(chain) && !llvm::is_contained(chains, chain))
           chains.push_back(chain);
@@ -2353,7 +2354,8 @@ static void deferSideStreamJoins(ModuleOp module) {
     if (chains.size() > 1) {
       OpBuilder b(join);
       join.getInChainMutable().assign(
-          GRT::ChainCreateOp::create(b, join.getLoc(), chains).getResult());
+          MLRT::GRT::ChainCreateOp::create(b, join.getLoc(), chains)
+              .getResult());
     }
   }
 }

@@ -123,8 +123,8 @@ static void fixup(OpBuilder &builder, Block *inBlock,
       }
     }
 
-    if (auto inCfOp = dyn_cast<GRT::GRTControlFlowInterface>(inOp)) {
-      bool subMustAlsoReturn = inCfOp.getFlavor() == GRT::kLoopLike;
+    if (auto inCfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(inOp)) {
+      bool subMustAlsoReturn = inCfOp.getFlavor() == MLRT::GRT::kLoopLike;
 
       SetVector<Value> nestedFreeValues;
       for (Region &region : inCfOp->getRegions())
@@ -165,7 +165,7 @@ static void fixup(OpBuilder &builder, Block *inBlock,
         // Account for last result.
         outResultTypes.emplace_back(inCfOp->getResult(n).getType());
 
-      GRT::GRTControlFlowInterface outCfOp =
+      MLRT::GRT::GRTControlFlowInterface outCfOp =
           cloneWithArgs(builder, inCfOp, outResultTypes, outOperands);
       ASSERT_STREAM(checkRewrite(inCfOp, outCfOp),
                     << "invalid rewrite for control flow op");
@@ -182,7 +182,7 @@ static void fixup(OpBuilder &builder, Block *inBlock,
       for (size_t i = 0, m = inCfOp->getNumRegions(); i < m; ++i) {
         // A grt.while 'cond' block returns the condition last, so new values
         // go before it.
-        bool subBeforeLastOutput = inCfOp.getFlavor() == GRT::kLoopLike &&
+        bool subBeforeLastOutput = inCfOp.getFlavor() == MLRT::GRT::kLoopLike &&
                                    inCfOp->getNumRegions() == 2 && i == 0;
         Block *inSubBlock = &inCfOp->getRegion(i).front();
         Block *outSubBlock = &outCfOp->getRegion(i).emplaceBlock();

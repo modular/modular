@@ -597,7 +597,7 @@ LogicalResult AssertOp::canonicalize(AssertOp op, PatternRewriter &rewriter) {
       if (isInKernel) {
         rewriter.replaceOpWithNewOp<MOGG::ChainDummyOp>(op);
       } else {
-        rewriter.replaceOpWithNewOp<GRT::ChainCreateOp>(op);
+        rewriter.replaceOpWithNewOp<MLRT::GRT::ChainCreateOp>(op);
       }
       return success();
     }

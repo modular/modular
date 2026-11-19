@@ -161,7 +161,7 @@ static bool isLiftableTrivialOp(Operation *op) {
 /// chain must then flow into the 'init' output chain, which feeds the
 /// 'execute' input chain.
 static Value getLiftableChainOp(Operation *op) {
-  if (auto createChainOp = dyn_cast<GRT::ChainCreateOp>(op))
+  if (auto createChainOp = dyn_cast<MLRT::GRT::ChainCreateOp>(op))
     return createChainOp.getResult();
   if (auto regionOp = dyn_cast<MOGG::AsyncRoutineOp>(op)) {
     // TODO(GEX-4344): The 'liftable' interfaces assume an op returns at most
@@ -300,7 +300,7 @@ private:
   void flow(Operation *op, DomainMap &domainMap) {
     bool inInitBlock =
         op->getParentRegion()->isAncestor(&analysis.index->model.getInit());
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       analysis.flowControlFlow(
           cfOp, domainMap,
           std::bind(&DependsOnArgsAnalysis::flow, this, _1, _2));
@@ -413,7 +413,7 @@ private:
   void flow(Operation *op, DomainMap &domainMap) {
     bool inInitBlock =
         op->getParentRegion()->isAncestor(&analysis.index->model.getInit());
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       // Usual control flow rules.
       analysis.flowControlFlow(
           cfOp, domainMap,
@@ -518,7 +518,7 @@ private:
     // A result that may alias an operand (a view, per GRTMayAliasInterface)
     // passes a mutation through to that operand.
     SmallVector<bool> resultMutated(op->getNumResults(), false);
-    auto mayAlias = dyn_cast<GRT::GRTMayAliasInterface>(op);
+    auto mayAlias = dyn_cast<MLRT::GRT::GRTMayAliasInterface>(op);
     if (mayAlias && anyUsesMutatedByUnliftable) {
       for (OpResult result : op->getResults()) {
         Analysis::Set resultSet = domainMap.bottom;
@@ -547,7 +547,7 @@ private:
   void flow(Operation *op, DomainMap &domainMap) {
     bool inInitBlock =
         op->getParentRegion()->isAncestor(&analysis.index->model.getInit());
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       // Usual control flow rules.
       analysis.flowControlFlow(
           cfOp, domainMap,
@@ -658,7 +658,7 @@ private:
   void flow(Operation *op, DomainMap &domainMap) {
     bool inInitBlock =
         op->getParentRegion()->isAncestor(&analysis.index->model.getInit());
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       // Usual control flow rules.
       analysis.flowControlFlow(
           cfOp, domainMap, std::bind(&NeedToCloneAnalysis::flow, this, _1, _2));
@@ -772,7 +772,7 @@ class ExecInvariantCodeMotionPass
     // A host-chain placeholder gating the caching of lifted buffers until all
     // side effects on them complete; replaced once lifting is done.
     auto placeholderBufferCacheInputChain =
-        GRT::ChainCreateOp::create(initState->builder, outputLoc);
+        MLRT::GRT::ChainCreateOp::create(initState->builder, outputLoc);
 
     // TODO(#24751): The following chain dependencies may be too aggressive,
     // relax via some analysis
@@ -926,12 +926,12 @@ class ExecInvariantCodeMotionPass
         initState->getWeightsRegistry(), isInInitBlock);
 
     placeholderBufferCacheInputChain.replaceAllUsesWith(
-        GRT::ChainCreateOp::create(initState->builder, outputLoc,
-                                   potentialBufferActionChains)
+        MLRT::GRT::ChainCreateOp::create(initState->builder, outputLoc,
+                                         potentialBufferActionChains)
             .getResult());
     placeholderBufferCacheInputChain.erase();
 
-    auto mergedFinalOutChain = GRT::ChainCreateOp::create(
+    auto mergedFinalOutChain = MLRT::GRT::ChainCreateOp::create(
         initState->builder, outputLoc, finalOutChains);
     initState->updateFinalChain(mergedFinalOutChain);
   }

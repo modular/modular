@@ -179,8 +179,8 @@ void LowerCompiledRoutinesPass::runOnOperation() {
 
       Value newChain;
       if (moduleLoadChains.size() > 1) {
-        newChain =
-            GRT::ChainCreateOp::create(builder, op.getLoc(), moduleLoadChains);
+        newChain = MLRT::GRT::ChainCreateOp::create(builder, op.getLoc(),
+                                                    moduleLoadChains);
       } else {
         newChain = moduleLoadChains[0];
       }

@@ -27,7 +27,7 @@ def MOGGToMGP : Pass<"mogg-to-mgp", "ModuleOp"> {
       /*default=*/"kPreferredMemoryAlignment",
      "Minimum alignment for all CPU buffers (both constants and allocated)">
   ];
-  let dependentDialects = ["GRT::GRTDialect",
+  let dependentDialects = ["MLRT::GRT::GRTDialect",
                            "KGEN::POP::POPDialect",
                            "MEF::MEFDialect",
                            "MGP::MGPDialect",
@@ -57,7 +57,7 @@ def LowerPrimitives: Pass<"mgp-lower-primitives", "MGP::ModelOp"> {
 
   let dependentDialects = ["MEF::MEFDialect",
                           "MGP::MGPDialect",
-                          "GRT::GRTDialect",
+                          "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect",
                           "M::KGEN::KGENDialect",
                           "M::KGEN::LIT::LITDialect",

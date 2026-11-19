@@ -22,7 +22,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
-using namespace GRT;
+using namespace M::MLRT::GRT;
 
 //===----------------------------------------------------------------------===//
 // Dialect specification.

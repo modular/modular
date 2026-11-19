@@ -25,7 +25,7 @@ void M::MGP::visitValues(IndexSet<Value> &indexSet, Block *block) {
   for (Value arg : block->getArguments())
     indexSet.addV(arg);
   for (Operation &op : block->getOperations()) {
-    if (isa<GRT::GRTControlFlowInterface>(op)) {
+    if (isa<MLRT::GRT::GRTControlFlowInterface>(op)) {
       ASSERT_STREAM(op.hasTrait<mlir::OpTrait::IsIsolatedFromAbove>(),
                     "can only descend into isolated from above regions");
       for (Region &region : op.getRegions())
@@ -63,7 +63,7 @@ void M::MGP::visitOperands(IndexSet<const OpOperand *> &indexSet,
   for (Operation &op : block->getOperations()) {
     for (OpOperand &operand : op.getOpOperands())
       indexSet.addV(&operand);
-    if (isa<GRT::GRTControlFlowInterface>(op))
+    if (isa<MLRT::GRT::GRTControlFlowInterface>(op))
       for (Region &region : op.getRegions())
         visitOperands(indexSet, &region.front());
   }
@@ -107,7 +107,7 @@ void M::MGP::visitOperations(IndexSet<Operation *> &indexSet, Block *block) {
   indexSet.blockIndexMap.insert({block, blockIndex});
   for (Operation *op : getDataflowOrder(block)) {
     indexSet.addV(op);
-    if (isa<GRT::GRTControlFlowInterface>(op))
+    if (isa<MLRT::GRT::GRTControlFlowInterface>(op))
       for (Region &region : op->getRegions())
         visitOperations(indexSet, &region.front());
   }

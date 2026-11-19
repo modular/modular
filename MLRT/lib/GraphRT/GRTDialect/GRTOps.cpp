@@ -26,7 +26,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 
 using namespace M;
-using namespace GRT;
+using namespace M::MLRT::GRT;
 
 //===----------------------------------------------------------------------===//
 // ChainCreateOp
@@ -62,7 +62,7 @@ static LogicalResult eliminateImpliedByChains(ChainCreateOp createOp,
   auto isGatingOperand = [](const OpOperand *opOperand) {
     Operation *op = opOperand->getOwner();
 
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
       // Only the extra strict operands are gating for control flow ops.
       auto extraOperands = cfOp.getStrictExtraOperands();
       return llvm::is_contained(extraOperands, opOperand->get());

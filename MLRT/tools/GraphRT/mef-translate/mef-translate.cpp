@@ -28,7 +28,7 @@ using namespace M::MLRT;
 
 int main(int argc, char **argv) {
   DialectRegistry extraDialectsForMLIRToMEF;
-  extraDialectsForMLIRToMEF.insert<GRT::GRTDialect>();
+  extraDialectsForMLIRToMEF.insert<MLRT::GRT::GRTDialect>();
   extraDialectsForMLIRToMEF.insert<mlir::quant::QuantDialect>();
   registerMLIRToMEFTranslation(extraDialectsForMLIRToMEF);
 
