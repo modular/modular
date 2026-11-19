@@ -134,19 +134,22 @@ public:
   /// Synthesize an unresolved alias into the struct with the specified name .
   AliasASTDecl *synthesizeUnresolvedAlias(StringRef name);
 
-  /// Synthesize the members of an `__enum` from the `lit.enum.case` ops in its
-  /// body: the `EnumLike` case lists, the storage field, a `comptime` member
-  /// per payloadless case, and a static method for each case with a payload.
+  /// Synthesize the members of an `__enum` or a `__union` from the
+  /// `lit.enum.case` ops in its body: the `EnumLike` case lists, the storage
+  /// field, and a static method for each case of a union and each case with a
+  /// payload of an enum, and a `comptime` member for each payloadless case of
+  /// an enum.
   LogicalResult synthesizeEnumMembers();
   /// Synthesize the `EnumLike` aliases `_enum_case_names` and
   /// `_enum_case_types` with the given values, and the enum's only field,
-  /// `__enum_storage`, of type `__EnumStorage[caseTypes]`. All three are
+  /// `__union_storage`, of type `__UnionStorage[caseTypes]`. All three are
   /// registered as resolved declarations and hidden from the docs.
   void synthesizeEnumCaseListsAndStorage(StructDeclOp enumStorageDeclOp,
                                          ParamListAttr caseNames,
                                          ParamListAttr caseTypes);
   /// Synthesize the static method that constructs case `caseName` of an
-  /// `__enum` from its `payload` types, documented by the case's `docString`.
+  /// `__enum` or a `__union` from its `payload` types, documented by the case's
+  /// `docString`.
   LogicalResult synthesizeEnumCaseConstructor(StringRef caseName,
                                               ArrayRef<Type> payload,
                                               SMLoc caseLoc,
@@ -178,9 +181,9 @@ public:
 ASTDecl *lookupEnumSupportDecl(SharedState &shared, StringRef name, SMLoc loc);
 
 /// Report a clash between the member that the case `caseName` of `enumDecl`
-/// generates and a member that every enum gets or one written in `enumDecl`;
-/// failure if there is one.
-LogicalResult checkEnumCaseName(ASTDecl &enumDecl, StringRef caseName,
+/// generates and a member that every enum or union gets or one written in
+/// `enumDecl`; failure if there is one.
+LogicalResult checkEnumCaseName(StructASTDecl &enumDecl, StringRef caseName,
                                 SMLoc caseLoc);
 
 } // namespace M::KGEN::LIT

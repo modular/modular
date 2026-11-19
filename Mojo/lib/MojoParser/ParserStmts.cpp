@@ -119,6 +119,7 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_fn:
   case Token::kw_struct:
   case Token::kw___enum:
+  case Token::kw___union:
   case Token::kw_class:
   case Token::kw_from:
   case Token::kw_import:
@@ -996,6 +997,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return parseDefFnStmt(startCursor, stmtIndent);
   case Token::kw_struct:
   case Token::kw___enum:
+  case Token::kw___union:
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseStructStmt(startCursor, stmtIndent);
   case Token::kw_trait:
@@ -1022,7 +1024,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return parseImportStmt();
   case Token::kw_case:
     if (auto *structDecl = dyn_cast<StructASTDecl>(&getParentDecl());
-        !structDecl || !structDecl->getOp().isEnum())
+        !structDecl || !structDecl->getOp().isEnumOrUnion())
       break;
     rejectDecorator(); // Decorators not allowed.
     return parseEnumCaseStmt(stmtIndent);
@@ -5579,10 +5581,11 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   }
 
   if (auto *structDecl = dyn_cast<StructASTDecl>(&getParentDecl());
-      structDecl && structDecl->getOp().isEnum()) {
+      structDecl && structDecl->getOp().isEnumOrUnion()) {
     rejectDecorator();
-    emitError(loc, "enums do not support 'var' fields; store state in a case "
-                   "payload");
+    emitError(loc, getEnumOrUnionNoun(structDecl->getOp()) +
+                       "s do not support 'var' fields; store state in a case "
+                       "payload");
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     StringRef ignoredDocString;
     parseDocString(ignoredDocString);
@@ -5809,12 +5812,14 @@ ParseResult StmtParser::parseAliasDeclStmtBody(LexerCursor startCursor,
   return success();
 }
 
-/// Parse a `struct` or an `__enum` declaration. An enum is a struct whose
-/// state is declared by its cases.
+/// Parse a `struct`, a `__union` or an `__enum` declaration. Union and enum
+/// cases declare the state of their struct.
 ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
                                         size_t curIndent) {
-  bool isEnum = getToken().is(Token::kw___enum);
-  StringRef kind = isEnum ? "enum" : "struct";
+  Token::Kind keyword = getToken().getKind();
+  bool isEnum = keyword == Token::kw___enum;
+  bool isUnion = keyword == Token::kw___union;
+  StringRef kind = isUnion ? "union" : isEnum ? "enum" : "struct";
 
   // We don't support non-top level structs (yet?).
   bool nestFailure = false;
@@ -5828,7 +5833,7 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
     emitTokenError(kind + " inside a function not supported here");
     nestFailure = true;
   }
-  consumeToken(isEnum ? Token::kw___enum : Token::kw_struct);
+  consumeToken(keyword);
 
   SMLoc smLoc;
   StringAttr nameAttr;
@@ -5849,6 +5854,7 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
 
   auto newStruct = StructDeclOp::create(builder, loc, nameAttr);
   newStruct.setIsEnum(isEnum);
+  newStruct.setIsUnion(isUnion);
 
   // Skip the body of this definition: go to a token the starts a line at the
   // same indent level (or less) as the current definition.
@@ -5876,7 +5882,8 @@ ParseResult StmtParser::parseEnumCaseStmt(size_t stmtIndent) {
 
   if (!getToken().isIdentifier() || getToken().isStartOfLine()) {
     emitError(getTokenLocOrEndOfPreviousLineIfOnNewLine())
-        << "enum case must have the form 'case name' or 'case name(T, ...)'";
+        << getMalformedEnumCaseMessage(
+               cast<StructASTDecl>(getParentDecl()).getOp());
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     StringRef ignoredDocString;
     parseDocString(ignoredDocString);

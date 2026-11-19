@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The runtime half of `__enum`: the compiler declares an enum's members
-against this module, and nothing in it is user-facing.
+"""The runtime half of `__union` and `__enum`: the compiler declares their
+members against this module, and nothing in it is user-facing.
 
 For
 
 ```mojo
-__enum Token:
-    case eof
+__union Token:
+    case eof()
     case ident(String)
     case span(Int, Int)
 ```
@@ -25,12 +25,14 @@ __enum Token:
 the compiler generates, written as Mojo:
 
 ```mojo
-struct Token(__Enum):
+struct Token(__Union):
     comptime _enum_case_names = ["eof", "ident", "span"]
     comptime _enum_case_types = [Tuple[], Tuple[String], Tuple[Int, Int]]
-    var __enum_storage: __EnumStorage[Tuple[], Tuple[String], Tuple[Int, Int]]
+    var __union_storage: __UnionStorage[Tuple[], Tuple[String], Tuple[Int, Int]]
 
-    comptime eof: Token = Token.__enum_init[0]()
+    @staticmethod
+    def eof() -> Token:
+        return Token.__enum_init[0]()
 
     @staticmethod
     def ident(var payload0: String) -> Token:
@@ -41,12 +43,14 @@ struct Token(__Enum):
         return Token.__enum_init[2](payload0^, payload1^)
 ```
 
-`__EnumStorage` holds the active case's payload and its index, and copies,
-moves and destroys the payload; the enum's own copy, move and destructor are
-the ordinary struct ones over that single field. `__Enum`, a trait refining
-`EnumLike`, supplies everything else as defaults: `__get_enum_storage` reaches
-the field, `__enum_init` builds the value of a case, and the two `EnumLike`
-methods read the field. The compiler finds these declarations by module path.
+`__UnionStorage` holds the active payload and tag and supplies its lifecycle.
+The union's lifecycle uses ordinary struct synthesis over that field.
+`__Union` inherits `__Enum`'s initialization and access defaults, exposed
+through `EnumLike`. The compiler finds these declarations by module path.
+
+An `__enum` uses the same declarations through `__Enum`. Its cases without a
+payload take no parentheses and become `comptime` values. For `case eof`, the
+compiler generates `comptime eof: Token = Token.__enum_init[0]()`.
 """
 
 from std.builtin.enum_like import EnumLike
@@ -63,7 +67,7 @@ from std.traits import (
 @always_inline("builtin")
 def __enum_discriminant_dtype(num_cases: Int) -> DType:
     """Returns the discriminant type for `num_cases` cases."""
-    # `__EnumStorage.tag` has the type `Scalar[__enum_discriminant_dtype(n)]`.
+    # `__UnionStorage.tag` has the type `Scalar[__enum_discriminant_dtype(n)]`.
     # In generic code `n` is unknown, so that dtype parameter stays an
     # unevaluated call. Printed IR does not parse such a call back to the same
     # type. The parser inlines a builtin function instead, so the parameter
@@ -79,7 +83,7 @@ def __enum_discriminant_dtype(num_cases: Int) -> DType:
 
 
 @doc_hidden
-struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
+struct __UnionStorage[case_types: _MLIR.KGENParamListType[AnyType]](
     Copyable where TypeList[Trait=AnyType, case_types].all_conforms_to[
         Copyable
     ](),
@@ -96,8 +100,8 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
         RegisterPassable
     ](),
 ):
-    """The storage of an `__enum`: the payload of its active case and the index
-    of that case.
+    """The storage of an `__enum` or a `__union`: the payload of its active case
+    and the index of that case.
 
     Cases are identified by index rather than by payload type, so several cases
     may share a payload type.
@@ -229,19 +233,19 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
 
 
 trait __Enum(EnumLike):
-    """Provides the defaults every `__enum` gets.
+    """Provides the defaults every `__enum` and `__union` gets.
 
-    The compiler generates each enum's only field, `__enum_storage`, an
-    `__EnumStorage` over its case types. `__get_enum_storage` reaches that
+    The compiler generates each one's only field, `__union_storage`, an
+    `__UnionStorage` over its case types. `__get_enum_storage` reaches that
     field; the two `EnumLike` methods read the storage and `__enum_init`
     writes it."""
 
     @inline(.always)
     def __get_enum_storage(
         ref self,
-    ) -> ref[self] __EnumStorage[Self._enum_case_types]:
+    ) -> ref[self] __UnionStorage[Self._enum_case_types]:
         """Returns the storage field, the enum's only field."""
-        comptime Storage = __EnumStorage[Self._enum_case_types]
+        comptime Storage = __UnionStorage[Self._enum_case_types]
         comptime assert (
             size_of[Self]() == size_of[Storage]()
             and align_of[Self]() == align_of[Storage]()
@@ -256,7 +260,7 @@ trait __Enum(EnumLike):
     def __enum_init[id: Int, *Ts: Movable](var *payload: *Ts, out result: Self):
         """Constructs the value of case `id` from its payload's elements. Each
         one is written straight into the storage."""
-        comptime Storage = __EnumStorage[Self._enum_case_types]
+        comptime Storage = __UnionStorage[Self._enum_case_types]
         # The compiler binds `id` and `Ts` from the case it emits the call for;
         # a hand-written call is checked the same way.
         comptime assert (
@@ -308,3 +312,11 @@ trait __Enum(EnumLike):
         id
     ]:
         return self.__get_enum_storage().payload_ptr[id]()[]
+
+
+trait __Union(__Enum):
+    """A `__union`: an `__Enum` whose every case is a constructor and whose
+    every payload is a `Tuple` of the case's arguments, `Tuple[]` for a case
+    without one."""
+
+    pass

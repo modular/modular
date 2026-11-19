@@ -156,6 +156,16 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
 
 bool LIT::isInternalName(StringRef name) { return name.starts_with('_'); }
 
+StringRef LIT::getEnumOrUnionNoun(StructDeclOp structOp) {
+  return structOp.isEnum() ? "enum" : "union";
+}
+
+StringRef LIT::getMalformedEnumCaseMessage(StructDeclOp structOp) {
+  if (structOp.isEnum())
+    return "enum case must have the form 'case name' or 'case name(T, ...)'";
+  return "union case must have the form 'case name()' or 'case name(T, ...)'";
+}
+
 namespace {
 class IndexRefToNamedRefReplacer
     : public IndexParameterReplacer<IndexRefToNamedRefReplacer> {

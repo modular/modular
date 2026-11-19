@@ -510,8 +510,19 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // library wraps as `reflect[T].annotation[index]`.
     DefaultValuedAttr<ArrayAttr, "{}">:$annotations,
     // Present if the struct is declared with `__enum`. Its cases are the
-    // `lit.enum.case` ops in its body.
-    UnitAttr:$isEnum
+    // `lit.enum.case` ops in its body. An enum uses the code of a union, with
+    // one difference: a case without a payload is a value, not a constructor.
+    // For `case red`:
+    //   - The struct gets the `comptime` member `red`. `case red()` is an
+    //     error.
+    //   - A pattern matches it as `.red`. `.red()` is an error.
+    //   - It prints as `Color.red`, without `()`.
+    // An enum conforms to `__Enum`, which `__Union` refines.
+    UnitAttr:$isEnum,
+    // Present if the struct is declared with `__union`. Its cases are the
+    // `lit.enum.case` ops in its body; every case takes parentheses, and its
+    // payload is the `Tuple` of the types in them.
+    UnitAttr:$isUnion
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -577,6 +588,11 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
     /// Return true if this struct is declared with `__enum`.
     bool isEnum() { return getIsEnum(); }
+    /// Return true if this struct is declared with `__union`.
+    bool isUnion() { return getIsUnion(); }
+    /// Return true if this struct is declared with `__enum` or `__union`,
+    /// whose state is declared by its cases.
+    bool isEnumOrUnion() { return isEnum() || isUnion(); }
   }];
 
   let builders = [
@@ -644,8 +660,8 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
 def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
   let summary = "Enum case declaration.";
   let description = [{
-    The `lit.enum.case` operation declares a case of the enum whose
-    `lit.struct.decl` contains it. The cases of an enum are its
+    The `lit.enum.case` operation declares a case of the enum or union whose
+    `lit.struct.decl` contains it. The cases of an enum or union are its
     `lit.enum.case` ops, in declaration order. `payloadTypes` lists the
     case's payload types as written, empty for a case without a payload; it
     is absent until the payload is resolved.

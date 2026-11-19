@@ -13,14 +13,15 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-"""An `__enum` with more than 256 cases: the storage widens its discriminant
-past `UInt8`, as `!kgen.variant` does."""
+# Checks:
+# 1. Widen tags above 256 cases and materialize a wide-tag constant.
+# 2. Copy and format a value with a wide tag.
 
 from std.builtin._enum import __enum_discriminant_dtype
 
 
-# TODO: `ImplicitlyCopyable` only so that the payload-less cases can be used as
-# runtime values; a `comptime` value of another type does not materialize.
+# TODO: `ImplicitlyCopyable` only so that the cases can be used as runtime
+# values. A `comptime` value of another type does not materialize.
 __enum Many(ImplicitlyCopyable, Writable):
     case c0
     case c1
@@ -279,7 +280,7 @@ __enum Many(ImplicitlyCopyable, Writable):
     case c254
     case c255
     case c256
-    case last(String)
+    case c257
 
 
 def describe(value: Many) -> String:
@@ -288,8 +289,8 @@ def describe(value: Many) -> String:
             return "first"
         case .c256:
             return "c256"
-        case .last(text):
-            return "last " + text
+        case .c257:
+            return "last"
         case _:
             return "other"
 
@@ -301,17 +302,25 @@ def main():
     comptime assert __enum_discriminant_dtype(65536) == DType.uint16
     comptime assert __enum_discriminant_dtype(65537) == DType.uint32
     var first: Many = .c0
-    var past_byte: Many = .c256
-    var last: Many = .last("x")
-    # CHECK: 0 256 257
+    comptime wide = Many.c256
+    var past_byte = materialize[wide]()
+    var last: Many = .c257
+    # CHECK: tags: 0 256 257
     print(
+        "tags:",
         first._get_enum_discriminant(),
         past_byte._get_enum_discriminant(),
         last._get_enum_discriminant(),
     )
     var copy = last.copy()
     last = .c255
-    # CHECK-NEXT: first c256 last x other
-    print(describe(first), describe(past_byte), describe(copy), describe(last))
-    # CHECK-NEXT: Many.c256 Many.last(x)
-    print(past_byte, copy)
+    # CHECK-NEXT: values: first c256 last other
+    print(
+        "values:",
+        describe(first),
+        describe(past_byte),
+        describe(copy),
+        describe(last),
+    )
+    # CHECK-NEXT: formatted: Many.c256 Many.c257
+    print("formatted:", past_byte, copy)

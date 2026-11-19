@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Signatures of the `__enum` support in `std.builtin._enum`."""
+"""Signatures of the `__enum` and `__union` support in `std.builtin._enum`."""
 
 from std.builtin.stubs import *
 from std.builtin.stubs import _MLIR
 
 
-struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
+struct __UnionStorage[case_types: _MLIR.KGENParamListType[AnyType]](
     Copyable where conforms_to(case_types, Copyable),
     Deinitable where conforms_to(case_types, Deinitable),
     ImplicitlyCopyable where conforms_to(case_types, ImplicitlyCopyable),
@@ -35,7 +35,7 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
 trait __Enum(EnumLike):
     def __get_enum_storage(
         ref self,
-    ) -> ref[self] __EnumStorage[Self._enum_case_types]:
+    ) -> ref[self] __UnionStorage[Self._enum_case_types]:
         abort()
 
     @staticmethod
@@ -49,3 +49,7 @@ trait __Enum(EnumLike):
         id: Int
     ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
         abort()
+
+
+trait __Union(__Enum):
+    pass

@@ -21,7 +21,8 @@
 #
 # `std.builtin._enum` is written against exactly these members.
 
-from std.builtin._enum import __Enum, __EnumStorage
+from std.builtin._enum import __Enum, __UnionStorage
+from std.builtin.variadics import ParameterList, TypeList
 
 
 struct Token(ImplicitlyCopyable, Writable, __Enum):
@@ -31,7 +32,7 @@ struct Token(ImplicitlyCopyable, Writable, __Enum):
     comptime _enum_case_types = TypeList.of[
         Trait=AnyType, Tuple[], Tuple[String], Tuple[Int, Int]
     ].values
-    var __enum_storage: __EnumStorage[Self._enum_case_types]
+    var __union_storage: __UnionStorage[Self._enum_case_types]
 
     comptime eof: Self = Self.__enum_init[0]()
 

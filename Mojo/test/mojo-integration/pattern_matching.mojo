@@ -13,19 +13,13 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-"""End-to-end pattern matching: literals, tuples, structs, Optional, enums,
-and comptime match."""
+# Checks:
+# 1. Match literal, tuple, struct and EnumLike subjects.
+# 2. Borrow and consume payloads with linear lifecycle methods.
+# 3. Evaluate patterns and matches at compile time.
 
 from std.collections import List, Optional
 from std.os import abort
-
-
-__enum Token(ImplicitlyCopyable):
-    """A tiny lexer token for pattern matching."""
-
-    case eof
-    case identifier(String)
-    case integer(Int)
 
 
 @fieldwise_init
@@ -140,16 +134,6 @@ def take_transferred_linear_payload_pair() -> Int:
     var second = LinearPayload(41)
     var (left, right) = (first^, second^)
     return left^.take() + right^.take()
-
-
-def describe_token(tok: Token) -> String:
-    match tok:
-        case .eof:
-            return "eof"
-        case .identifier(name):
-            return String("id:", name)
-        case .integer(value):
-            return String("int:", value)
 
 
 def classify_int(x: Int) -> String:
@@ -491,27 +475,6 @@ def test_conditional_clauses():
     print(classify_comptime_guard_clauses[String, True]())
 
 
-def test_enum_like_token():
-    # CHECK-LABEL: == test_enum_like_token
-    print("== test_enum_like_token")
-
-    # CHECK: eof
-    print(describe_token(Token.eof))
-    # CHECK: id:main
-    print(describe_token(Token.identifier("main")))
-    # CHECK: int:99
-    print(describe_token(Token.integer(99)))
-
-    match Token.identifier("x"):
-        case Token.eof:
-            print("explicit-eof")
-        case .identifier(var name):
-            # CHECK: explicit-id: x
-            print("explicit-id:", name)
-        case Token.integer(_):
-            print("explicit-int")
-
-
 def test_literals_guards_or():
     # CHECK-LABEL: == test_literals_guards_or
     print("== test_literals_guards_or")
@@ -756,7 +719,6 @@ def main():
     test_optional()
     test_guard()
     test_conditional_clauses()
-    test_enum_like_token()
     test_literals_guards_or()
     test_tuples_and_structs()
     test_lists()

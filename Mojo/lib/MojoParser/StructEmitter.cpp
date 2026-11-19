@@ -1134,73 +1134,48 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
 }
 
 //===----------------------------------------------------------------------===//
-// Enum Synthesis
+// Union synthesis
 //===----------------------------------------------------------------------===//
 //
-// The compiler declares an `__enum`'s members; the actual implementations of
-// their bodies are Mojo code in `std.builtin._enum`. The compiler finds that
-// module's declarations by path (`lookupEnumSupportDecl`) and the enum's
-// inherited `__Enum` members in the enum's own scope, whose names
-// `checkEnumMemberNames` and `checkEnumCaseName` keep free, so user code cannot
-// shadow either. For
+// The compiler declares a union's metadata, storage and case constructors.
+// Their implementations live in `std.builtin._enum`, found by module path.
 //
-//     __enum Token(Copyable):
-//         case eof
+//     __union Token(Copyable):
+//         case eof()
 //         case ident(String)
 //         case span(Int, Int)
 //
-// the generated members are, written as Mojo:
+// generates these members, with `Token` conforming to `__Union`:
 //
 //     comptime _enum_case_names = ["eof", "ident", "span"]
 //     comptime _enum_case_types = [Tuple[], Tuple[String], Tuple[Int, Int]]
-//     var __enum_storage: __EnumStorage[
+//     var __union_storage: __UnionStorage[
 //         Tuple[], Tuple[String], Tuple[Int, Int]
 //     ]
-//
-//     comptime eof: Token = Token.__enum_init[0]()
-//
+//     @staticmethod
+//     def eof() -> Token:
+//         return Token.__enum_init[0]()
 //     @staticmethod
 //     def ident(var payload0: String) -> Token:
 //         return Token.__enum_init[1](payload0^)
-//
 //     @staticmethod
 //     def span(var payload0: Int, var payload1: Int) -> Token:
 //         return Token.__enum_init[2](payload0^, payload1^)
 //
-// and `Token` conforms to `__Enum`, which supplies `__get_enum_storage`,
-// `__enum_init`, `_get_enum_discriminant` and `_unsafe_get_enum_payload`.
-// The parts:
+// `__UnionStorage` holds the tuple payloads in a `!kgen.untagged_union`
+// and the active case's index in a separate `tag` field. Its lifecycle
+// methods operate on the active payload. Ordinary struct synthesis handles
+// the union's lifecycle through that single storage field.
 //
-// - Storage. `__enum_storage` is the enum's only field. `__EnumStorage` holds
-//   the case payloads in a `!kgen.untagged_union` over the case types, and
-//   the active case's index in a separate tag field
-//   (`__enum_discriminant_dtype` sizes the tag to the case count). `Tuple[]`
-//   stands for no payload. `__EnumStorage` copies, moves and destroys the
-//   active payload and carries the conditional conformances (`Copyable` where
-//   every case type is, and so on). The enum's own copy, move and destructor
-//   are nothing enum-specific: the struct machinery synthesizes them
-//   field-wise from the enum's declared conformances, and there is one field.
+// `__Union` inherits `__Enum`'s initialization and access defaults. Both
+// matching and derived traits read the metadata through `EnumLike`.
+// `checkEnumMemberNames` and `checkEnumCaseName` reserve those names.
 //
-// - Construction. `__enum_init[id, Case, *Ts](*payload)`, a static method of
-//   `__Enum` with `id` the case index, `Case` its payload type and `Ts` the
-//   payload's element types, builds the value of that case, writing each
-//   element straight into the storage; it is one ordinary function, and whether
-//   a call of it runs in the comptime interpreter or at run time depends only
-//   on where the call is written. A case without a payload gets a `comptime`
-//   member initialized by a call with no arguments, as `eof` above. A case with
-//   a payload gets a static method that takes the payload's elements as
-//   positional arguments and tail-calls it with them.
-//
-// - Access. `__get_enum_storage` returns the storage field. The enum's
-//   `EnumLike` methods are the other two defaults of `__Enum`, a trait
-//   refining `EnumLike` that every enum conforms to; they read the index and
-//   the active payload from that field.
-//
-// - Case lists. `_enum_case_names` and `_enum_case_types` are `comptime`
-//   members the compiler computes from the `lit.enum.case` ops. Everything
-//   above, and `match`, reads them through `EnumLike`.
+// An `__enum` gets the same members and conforms to `__Enum`. A case without
+// a payload takes no parentheses, and its member is a `comptime` value instead
+// of a constructor.
 
-static constexpr StringLiteral kEnumStorageFieldName = "__enum_storage";
+static constexpr StringLiteral kUnionStorageFieldName = "__union_storage";
 static constexpr StringLiteral kEnumCaseNamesName = "_enum_case_names";
 static constexpr StringLiteral kEnumCaseTypesName = "_enum_case_types";
 static constexpr StringLiteral kEnumDiscriminantName = "_get_enum_discriminant";
@@ -1303,14 +1278,14 @@ LogicalResult StructEmitter::synthesizeEnumCaseConstructor(
   return success();
 }
 
-LogicalResult LIT::checkEnumCaseName(ASTDecl &enumDecl, StringRef caseName,
-                                     SMLoc caseLoc) {
+LogicalResult LIT::checkEnumCaseName(StructASTDecl &enumDecl,
+                                     StringRef caseName, SMLoc caseLoc) {
   SharedState &shared = enumDecl.getShared();
   // The member a case generates must not collide with a synthesized,
   // `__Enum`-provided or `EnumLike` member.
   constexpr StringLiteral synthesizedNames[] = {
-      kEnumStorageFieldName, kEnumCaseNamesName, kEnumCaseTypesName,
-      kEnumDiscriminantName, kEnumPayloadName,   kEnumInitName,
+      kUnionStorageFieldName, kEnumCaseNamesName, kEnumCaseTypesName,
+      kEnumDiscriminantName,  kEnumPayloadName,   kEnumInitName,
       kEnumStorageGetterName};
   ASTDecl *enumLikeDecl = lookupEnumLikeTrait(shared, caseLoc);
   if (!enumLikeDecl ||
@@ -1326,29 +1301,31 @@ LogicalResult LIT::checkEnumCaseName(ASTDecl &enumDecl, StringRef caseName,
   if (existing.empty())
     return success();
   auto diag = shared.emitError(caseLoc)
-              << "enum case '" << caseName
+              << getEnumOrUnionNoun(enumDecl.getOp()) << " case '" << caseName
               << "' conflicts with a member of the same name";
   diag.attachNote(existing.front()->getLoc()) << "member declared here";
   return failure();
 }
 
 /// Report every member written in `enumDecl` whose name is that of a member
-/// synthesized for every enum; failure if there was one.
-static LogicalResult checkEnumMemberNames(ASTDecl &enumDecl) {
+/// synthesized for every enum or union; failure if there was one.
+static LogicalResult checkEnumMemberNames(StructASTDecl &enumDecl) {
   SharedState &shared = enumDecl.getShared();
+  StringRef noun = getEnumOrUnionNoun(enumDecl.getOp());
   // Every synthesized or `__Enum`-provided name must be free: the members a
   // user writes live in the same scope. `_enum_elt_type_for_case` is derived
   // from the case types; `_enum_is_exhaustive` may be declared to open the
   // enum.
   constexpr StringLiteral undeclarableNames[] = {
-      kEnumStorageFieldName, kEnumCaseNamesName,    kEnumCaseTypesName,
-      kEnumDiscriminantName, kEnumPayloadName,      kEnumEltTypeName,
-      kEnumInitName,         kEnumStorageGetterName};
+      kUnionStorageFieldName, kEnumCaseNamesName,    kEnumCaseTypesName,
+      kEnumDiscriminantName,  kEnumPayloadName,      kEnumEltTypeName,
+      kEnumInitName,          kEnumStorageGetterName};
   bool hasConflict = false;
   for (StringRef name : undeclarableNames) {
     for (ASTDecl *existing : enumDecl.lookupInCurrentScope(name)) {
       shared.emitError(existing->getLoc())
-          << "'" << name << "' is synthesized for enums and cannot be declared";
+          << "'" << name << "' is synthesized for " << noun
+          << "s and cannot be declared";
       hasConflict = true;
     }
   }
@@ -1406,19 +1383,20 @@ void StructEmitter::synthesizeEnumCaseListsAndStorage(
   StructType storageType = enumStorageDeclOp.bindAllReferences(
       &shared.getEvaluationContext(), {caseTypes});
   auto storageField =
-      StructFieldOp::create(builder, kEnumStorageFieldName, storageType);
+      StructFieldOp::create(builder, kUnionStorageFieldName, storageType);
   storageField.setIsDocHidden(true);
   getDeclResolver().addFullyResolvedDecl(
       storageField.getOperation(),
-      StringAttr::get(structDecl.getContext(), kEnumStorageFieldName), loc,
+      StringAttr::get(structDecl.getContext(), kUnionStorageFieldName), loc,
       &structDecl);
 }
 
 LogicalResult StructEmitter::synthesizeEnumMembers() {
   SMLoc loc = structDecl.getLoc();
   SmallVector<EnumCaseOp> cases = llvm::to_vector(getEnumCases(structDeclOp));
-  // An enum with errors gets no members: a case that failed to resolve has no
-  // payload types, and the members would only add follow-on errors.
+  // An enum or union with errors gets no members: a case that failed to
+  // resolve has no payload types, and the members would only add follow-on
+  // errors.
   if (structDecl.isErroneous() || llvm::any_of(cases, [](EnumCaseOp caseOp) {
         return !caseOp.getPayloadTypesAttr();
       }))
@@ -1432,13 +1410,13 @@ LogicalResult StructEmitter::synthesizeEnumMembers() {
     return failure();
 
   ASTDecl *enumStorageDecl =
-      lookupEnumSupportDecl(shared, "__EnumStorage", loc);
+      lookupEnumSupportDecl(shared, "__UnionStorage", loc);
   TraitType anyTypeTrait = shared.lookupBuiltinTraitType("AnyType", loc);
   if (!enumStorageDecl || !anyTypeTrait)
     return failure();
   auto *enumStorageStruct = dyn_cast<StructASTDecl>(enumStorageDecl);
   if (!enumStorageStruct) {
-    emitError(loc) << "internal error: '__EnumStorage' in "
+    emitError(loc) << "internal error: '__UnionStorage' in "
                       "'std.builtin._enum' is not a struct";
     return failure();
   }
@@ -1455,7 +1433,7 @@ LogicalResult StructEmitter::synthesizeEnumMembers() {
   for (auto [caseOp, caseLoc] : llvm::zip_equal(cases, caseLocs)) {
     StringRef caseName = caseOp.getName();
     SmallVector<Type> payload = getEnumCasePayload(caseOp);
-    if (payload.empty()) {
+    if (structDeclOp.isEnum() && payload.empty()) {
       // TODO: the member is a `comptime` value, and one whose type is not
       // `ImplicitlyCopyable` does not materialize at run time, although a case
       // without a payload owns nothing.
@@ -1556,7 +1534,7 @@ LogicalResult StructEmitter::populateEnumCaseConstructor(DefASTDecl &fnDecl) {
 
   // The arguments are the payload's elements, then the result slot when the
   // enum is not register passable; the elements are passed on to
-  // `Self.__enum_init[case, Case]`.
+  // `Self.__enum_init[case]`.
   auto argConventions = fn.getFuncTypeGenerator().getArgConventions();
   bool hasResultSlot = !argConventions.empty() &&
                        argConventions.back() == ArgConvention::ByRefResult;
@@ -1599,7 +1577,7 @@ LogicalResult StructEmitter::resolveEnumCaseAlias(AliasASTDecl &aliasDecl) {
     return success();
   }
 
-  // The value is `Self.__enum_init[case, Tuple[]]()`, evaluated at compile
+  // The value is `Self.__enum_init[case]()`, evaluated at compile
   // time.
   ASTType selfType = structDecl.getSelfType();
   IREmitter emitter(structDecl, EC_AliasValue);

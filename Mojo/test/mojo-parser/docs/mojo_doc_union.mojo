@@ -14,16 +14,11 @@
 # RUN: %mojo-docs-isolated --diagnose-missing-doc-strings %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=DIAG
 # RUN: %mojo-docs-isolated %s | FileCheck %s
 
-"""Doc strings on `__enum` cases."""
+"""Checks union constructor documentation and enum value documentation."""
 
-# A case's doc string documents the member synthesized for it: a `comptime`
-# value for a case without a payload, a static constructor for one with a
-# payload.
-
-# DIAG-NOT: 'empty' is missing a doc string
+# DIAG-NOT: is missing a doc string
 # DIAG: warning: public symbol 'undocumented' is missing a doc string
 # DIAG-NOT: is missing a doc string
-
 
 # CHECK-LABEL: "structs": [
 # CHECK: "aliases": [
@@ -33,18 +28,41 @@
 # CHECK: "signature": "comptime undocumented",
 # CHECK-NEXT: "sinceVersion": "",
 # CHECK-NEXT: "summary": "",
-# CHECK: "functions": [
-# CHECK: "signature": "def circle(var payload0: Float64, /) -> Self",
-# CHECK-NEXT: "sinceVersion": "",
-# CHECK-NEXT: "summary": "A circle with the given radius."
-# CHECK: "name": "Shape",
-__enum Shape(ImplicitlyCopyable):
+# CHECK: "name": "EnumShape",
+# CHECK: "signature": "struct EnumShape",
+__enum EnumShape(ImplicitlyCopyable):
     """A shape."""
 
     case empty
     """A shape with no area."""
 
+    case undocumented
+
+
+# CHECK: "functions": [
+# CHECK: "signature": "def empty() -> Self",
+# CHECK-NEXT: "sinceVersion": "",
+# CHECK-NEXT: "summary": "A shape with no area."
+# CHECK: "signature": "def circle(var payload0: Float64, /) -> Self",
+# CHECK-NEXT: "sinceVersion": "",
+# CHECK-NEXT: "summary": "A circle with the given radius."
+# CHECK: "signature": "def rect(var payload0: Float64, var payload1: Float64, /) -> Self",
+# CHECK-NEXT: "sinceVersion": "",
+# CHECK-NEXT: "summary": "A rectangle with the given sides."
+# CHECK-NOT: undocumented
+# CHECK: "name": "UnionShape",
+# CHECK: "name": "__Union"
+# CHECK: "signature": "struct UnionShape",
+__union UnionShape(ImplicitlyCopyable):
+    """A shape."""
+
+    case empty()
+    """A shape with no area."""
+
     case circle(Float64)
     """A circle with the given radius."""
 
-    case undocumented
+    case rect(Float64, Float64)
+    """A rectangle with the given sides."""
+
+    case undocumented()

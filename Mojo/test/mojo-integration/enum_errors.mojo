@@ -15,9 +15,9 @@
 # RUN: not %mojo -D test=2 %s 2>&1 | FileCheck --check-prefix CHECK_2 %s
 # RUN: %mojo -D test=3 %s | FileCheck --check-prefix CHECK_3 %s
 
-# The defaults of `Equatable.__eq__` and `Hashable.__hash__` derive through
-# `EnumLike`, so an enum whose payload does not conform gets an error about
-# the payload, and never about the hidden storage.
+# Checks:
+# 1. Diagnose payload requirements for derived equality and hashing.
+# 2. Format a hand-written tuple payload through EnumLike.
 
 from std.sys import get_defined_int
 
@@ -29,8 +29,8 @@ struct Opaque(Copyable, Movable):
         self.x = x
 
 
-__enum Compared(Equatable, Hashable):
-    case a
+__union Compared(Equatable, Hashable):
+    case a()
     case b(Opaque)
 
 

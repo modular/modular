@@ -13,8 +13,11 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-"""End-to-end `__enum`: construction, `match` over the synthesized
-`EnumLike` conformance, ownership of payloads, and conformances."""
+# Checks:
+# 1. Construct cases and use their constructors as function values.
+# 2. Borrow, mutate, copy and move stored payloads.
+# 3. Derive formatting, equality, hashing and conditional conformances.
+# 4. Instantiate generic and trivial unions, and open and caseless enums.
 
 from std.hash import Hasher
 from std.iter import map
@@ -46,12 +49,8 @@ struct Tracked(ImplicitlyCopyable, Movable, Writable):
         print("destroy", self.id)
 
 
-# TODO: `ImplicitlyCopyable` only so that `Token.eof`, a `comptime` member, can
-# be used as a runtime value: a `comptime` value of a type that is not
-# `ImplicitlyCopyable` does not materialize, although a case without a payload
-# owns nothing. Exempt it, or give cases their own types.
-__enum Token(ImplicitlyCopyable, Writable):
-    case eof
+__union Token(ImplicitlyCopyable, Writable):
+    case eof()
     case identifier(String)
     case integer(Int)
     case span(Int, Int)
@@ -61,7 +60,7 @@ __enum Token(ImplicitlyCopyable, Writable):
 
 def describe(token: Token) -> String:
     match token:
-        case .eof:
+        case .eof():
             return "eof"
         case .identifier(name) | .keyword(name):
             return String("word:", name)
@@ -76,21 +75,31 @@ def describe(token: Token) -> String:
 # CHECK-LABEL: == construction
 def test_construction():
     print("== construction")
-    # CHECK-NEXT: eof 0
-    print(describe(Token.eof), Token.eof._get_enum_discriminant())
-    # CHECK-NEXT: word:main 1
-    var ident: Token = .identifier("main")
-    print(describe(ident), ident._get_enum_discriminant())
-    # CHECK-NEXT: int:42 2
+    # CHECK-NEXT: construction: eof 0
     print(
-        describe(Token.integer(42)), Token.integer(42)._get_enum_discriminant()
+        "construction:",
+        describe(Token.eof()),
+        Token.eof()._get_enum_discriminant(),
     )
-    # CHECK-NEXT: span:3..7 3
-    print(describe(Token.span(3, 7)), Token.span(3, 7)._get_enum_discriminant())
+    # CHECK-NEXT: construction: word:main 1
+    var ident: Token = .identifier("main")
+    print("construction:", describe(ident), ident._get_enum_discriminant())
+    # CHECK-NEXT: construction: int:42 2
+    print(
+        "construction:",
+        describe(Token.integer(42)),
+        Token.integer(42)._get_enum_discriminant(),
+    )
+    # CHECK-NEXT: construction: span:3..7 3
+    print(
+        "construction:",
+        describe(Token.span(3, 7)),
+        Token.span(3, 7)._get_enum_discriminant(),
+    )
     # Two cases may share a payload type.
-    # CHECK-NEXT: word:def 4
+    # CHECK-NEXT: construction: word:def 4
     var kw: Token = .keyword("def")
-    print(describe(kw), kw._get_enum_discriminant())
+    print("construction:", describe(kw), kw._get_enum_discriminant())
 
 
 def take(token: Token) -> String:
@@ -100,8 +109,8 @@ def take(token: Token) -> String:
 # CHECK-LABEL: == contextual
 def test_contextual():
     print("== contextual")
-    # CHECK-NEXT: eof int:1 span:1..2
-    print(take(.eof), take(.integer(1)), take(.span(1, 2)))
+    # CHECK-NEXT: contextual: eof int:1 span:1..2
+    print("contextual:", take(.eof()), take(.integer(1)), take(.span(1, 2)))
 
 
 # CHECK-LABEL: == ref binding
@@ -113,8 +122,8 @@ def test_ref_binding():
             name += "er"
         case _:
             pass
-    # CHECK-NEXT: word:counter
-    print(describe(token))
+    # CHECK-NEXT: ref_binding: word:counter
+    print("ref_binding:", describe(token))
     var copied: Token = .integer(1)
     match copied:
         case .integer(var value):
@@ -123,8 +132,8 @@ def test_ref_binding():
             print("local", value)
         case _:
             pass
-    # CHECK-NEXT: int:1
-    print(describe(copied))
+    # CHECK-NEXT: ref_binding: int:1
+    print("ref_binding:", describe(copied))
 
 
 # CHECK-LABEL: == ownership
@@ -135,34 +144,24 @@ def test_ownership():
     var token: Token = .tracked(Tracked(1))
     # CHECK-NEXT: copy 11
     var copy = token.copy()
-    # A binding without `var` borrows the payload; `copy` ends after its
-    # last use.
+    # The borrowed payload keeps its owner alive through the last use.
     # CHECK-NEXT: destroy 11
-    # CHECK-NEXT: tracked:11
-    print(describe(copy))
+    # CHECK-NEXT: ownership: tracked:11
+    print("ownership:", describe(copy))
     # CHECK-NEXT: move 1
     var moved = token^
     # CHECK-NEXT: destroy 1
-    # CHECK-NEXT: tracked:1
-    print(describe(moved))
+    # CHECK-NEXT: ownership: tracked:1
+    print("ownership:", describe(moved))
     # CHECK-NEXT: init 2
     # CHECK-NEXT: move 2
     var reassigned: Token = .tracked(Tracked(2))
     # CHECK-NEXT: destroy 2
-    # CHECK-NEXT: tracked:2
-    print(describe(reassigned))
-    reassigned = .eof
-    # CHECK-NEXT: eof
-    print(describe(reassigned))
-
-
-# CHECK-LABEL: == writable
-def test_writable():
-    print("== writable")
-    # CHECK-NEXT: Token.eof Token.integer(5) Token.span(1, 2)
-    print(String(Token.eof), String(Token.integer(5)), String(Token.span(1, 2)))
-    # CHECK-NEXT: Token.identifier('x')
-    print(repr(Token.identifier("x")))
+    # CHECK-NEXT: ownership: tracked:2
+    print("ownership:", describe(reassigned))
+    reassigned = .eof()
+    # CHECK-NEXT: ownership: eof
+    print("ownership:", describe(reassigned))
 
 
 # CHECK-LABEL: == function value
@@ -171,11 +170,16 @@ def test_function_value():
     var tokens = List[Token]()
     for token in map([1, 2, 3], Token.integer):
         tokens.append(token.copy())
-    # CHECK-NEXT: 3 int:3
-    print(len(tokens), describe(tokens[2]))
+    # CHECK-NEXT: function_value: 3 int:3
+    print("function_value:", len(tokens), describe(tokens[2]))
+    var generic = List[Result[Int, String]]()
+    for result in map([5, 6], Result[Int, String].success):
+        generic.append(result.copy())
+    # CHECK-NEXT: generic constructor: 6
+    print("generic constructor:", generic[1].value_or(0))
 
 
-__enum Result[T: Copyable & Deinitable, E: Copyable & Deinitable](
+__union Result[T: Copyable & Deinitable, E: Copyable & Deinitable](
     Copyable,
     ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable) and conforms_to(
         E, ImplicitlyCopyable
@@ -201,22 +205,23 @@ def test_generic():
     print("== generic")
     var ok: Result[Int, String] = .success(1)
     var err: Result[Int, String] = .failure("bad")
-    # The enum is `ImplicitlyCopyable` when both payloads are.
+    # The union is `ImplicitlyCopyable` when both payloads are.
     var ok_copy = implicit_copy(ok)
-    # CHECK-NEXT: 1 7
-    print(ok_copy.value_or(7), err.value_or(7))
+    # CHECK-NEXT: generic: 1 7
+    print("generic:", ok_copy.value_or(7), err.value_or(7))
     var list: Result[List[Int], String] = .success([1, 2])
-    # CHECK-NEXT: 2
-    print(len(list.copy().value_or([])))
-    # CHECK-NEXT: 3 8
+    # CHECK-NEXT: generic: 2
+    print("generic:", len(list.copy().value_or([])))
+    # CHECK-NEXT: generic: 3 8
     print(
+        "generic:",
         Result[Int, String].success(3).value_or(7),
         implicit_copy(Result[Int, String].failure("bad")).value_or(8),
     )
 
 
-__enum Shape(ImplicitlyCopyable, RegisterPassable):
-    case empty
+__union Shape(ImplicitlyCopyable, RegisterPassable):
+    case empty()
     case square(Int)
     case rect(Int, Int)
 
@@ -226,7 +231,7 @@ __enum Shape(ImplicitlyCopyable, RegisterPassable):
 
     def area(self) -> Int:
         match self:
-            case .empty:
+            case .empty():
                 return 0
             case .square(side):
                 return side * side
@@ -240,8 +245,8 @@ struct Pixel(TrivialRegisterPassable):
     var y: Int
 
 
-__enum Trivial[T: TrivialRegisterPassable](TrivialRegisterPassable):
-    case none
+__union Trivial[T: TrivialRegisterPassable](TrivialRegisterPassable):
+    case none()
     case some(Self.T)
     case pixel(Pixel)
     case pair(Int, Float64)
@@ -249,7 +254,7 @@ __enum Trivial[T: TrivialRegisterPassable](TrivialRegisterPassable):
 
 def describe_trivial(value: Trivial[Int]) -> String:
     match value:
-        case .none:
+        case .none():
             return "none"
         case .some(x):
             return String("some:", x)
@@ -267,7 +272,7 @@ def twice(x: Int) -> Int:
 
 
 # A payload type that is not a struct is `TrivialRegisterPassable` as well.
-__enum Primitive(TrivialRegisterPassable):
+__union Primitive(TrivialRegisterPassable):
     case index(__mlir_type.index)
     case call(Callback)
 
@@ -300,30 +305,38 @@ def test_trivial_register_passable():
             p.x = 3
         case _:
             pass
-    # CHECK-NEXT: pixel:1,2 pixel:3,2
-    print(describe_trivial(original), describe_trivial(copy))
-    # CHECK-NEXT: some:4 pair:5,0.5 none
+    # CHECK-NEXT: trivial_register_passable: pixel:1,2 pixel:3,2
     print(
+        "trivial_register_passable:",
+        describe_trivial(original),
+        describe_trivial(copy),
+    )
+    # CHECK-NEXT: trivial_register_passable: some:4 pair:5,0.5 none
+    print(
+        "trivial_register_passable:",
         describe_trivial(require_trivial(Trivial[Int].some(4))),
         describe_trivial(.pair(5, 0.5)),
-        describe_trivial(.none),
+        describe_trivial(.none()),
     )
     var call: Primitive = .call(twice)
     var call_copy = call
-    # CHECK-NEXT: index:5 call:42 call:42
+    # CHECK-NEXT: trivial_register_passable: index:5 call:42 call:42
     print(
+        "trivial_register_passable:",
         describe_primitive(.index(Int(5).__mlir_index__())),
         describe_primitive(call_copy),
         describe_primitive(require_trivial(call)),
     )
     comptime constant = Trivial[Int].some(6)
-    # CHECK-NEXT: some:6 some:7
+    # CHECK-NEXT: trivial_register_passable: some:6 some:7
     print(
+        "trivial_register_passable:",
         describe_trivial(constant),
         TrivialHolder[Trivial[Int].some(7)].describe(),
     )
-    # CHECK-NEXT: True True True
+    # CHECK-NEXT: trivial_register_passable: True True True
     print(
+        "trivial_register_passable:",
         IsTriviallyCopyable[Trivial[Pixel]],
         IsTriviallyMovable[Trivial[Pixel]],
         IsTriviallyDeinitable[Trivial[Pixel]],
@@ -333,19 +346,26 @@ def test_trivial_register_passable():
 # CHECK-LABEL: == register passable
 def test_register_passable():
     print("== register passable")
-    var shapes: List[Shape] = [Shape.empty, Shape.rect(2, 3), 4]
-    # CHECK-NEXT: 0 6 16
-    print(shapes[0].area(), shapes[1].area(), shapes[2].area())
-    # Copying, moving and destroying an enum are each trivial when they are for
-    # every payload: `Key` has a `String` payload.
-    # CHECK-NEXT: True True True
+    var shapes: List[Shape] = [Shape.empty(), Shape.rect(2, 3), 4]
+    # CHECK-NEXT: register_passable: 0 6 16
     print(
+        "register_passable:",
+        shapes[0].area(),
+        shapes[1].area(),
+        shapes[2].area(),
+    )
+    # Copying, moving and destroying a union are each trivial when they are for
+    # every payload: `Key` has a `String` payload.
+    # CHECK-NEXT: register_passable: True True True
+    print(
+        "register_passable:",
         IsTriviallyCopyable[Shape],
         IsTriviallyMovable[Shape],
         IsTriviallyDeinitable[Shape],
     )
-    # CHECK-NEXT: False True False
+    # CHECK-NEXT: register_passable: False True False
     print(
+        "register_passable:",
         IsTriviallyCopyable[Key],
         IsTriviallyMovable[Key],
         IsTriviallyDeinitable[Key],
@@ -373,15 +393,15 @@ struct BitwiseTracked(ImplicitlyCopyable, Movable):
         print("move", self.id)
 
 
-__enum Bitwise(ImplicitlyCopyable):
-    case empty
+__union Bitwise(ImplicitlyCopyable):
+    case empty()
     case one(BitwiseTracked)
     case pair(BitwiseTracked, Int)
 
 
 def describe(value: Bitwise) -> String:
     match value:
-        case .empty:
+        case .empty():
             return "empty"
         case .one(t):
             return String("one:", t.id)
@@ -402,8 +422,8 @@ def test_trivial_lifecycle():
     print("moving")
     var one_moved = one_copy^
     var pair_moved = pair_copy^
-    # CHECK-NEXT: one:1 pair:2,3
-    print(describe(one_moved), describe(pair_moved))
+    # CHECK-NEXT: trivial_lifecycle: one:1 pair:2,3
+    print("trivial_lifecycle:", describe(one_moved), describe(pair_moved))
     _ = one
     _ = pair
 
@@ -420,10 +440,10 @@ def test_comptime_match():
             print("other")
 
 
-__enum Key(Equatable, Hashable, ImplicitlyCopyable, Writable):
+__union Key(Equatable, Hashable, ImplicitlyCopyable, Writable):
     case named(String)
     case numbered(Int)
-    case anonymous
+    case anonymous()
 
     def __eq__(self, other: Self) -> Bool:
         return String(self) == String(other)
@@ -432,61 +452,88 @@ __enum Key(Equatable, Hashable, ImplicitlyCopyable, Writable):
         String(self).__hash__(hasher)
 
 
-__enum Derived(Equatable, Hashable):
-    case none
+__union Derived(Copyable, Equatable, Hashable, Writable):
+    case none()
     case one(Int)
     case many(List[Int])
+    case pair(Int, String)
 
 
 # CHECK-LABEL: == derived equality and hashing
 def test_derived_equality_and_hashing() raises:
     print("== derived equality and hashing")
     # The defaults compare and hash the active case and its payload.
-    # TODO(MOCO-5104): plain `Derived.none` once a payload-less case value
-    # materializes in an enum that is not `ImplicitlyCopyable`.
-    # CHECK-NEXT: True True True
+    # Evaluate the empty constructor in a parameter context.
+    # CHECK-NEXT: derived_equality_and_hashing: True True True True
     print(
-        materialize[Derived.none]() == materialize[Derived.none](),
+        "derived_equality_and_hashing:",
+        materialize[Derived.none()]() == materialize[Derived.none()](),
         Derived.one(1) == Derived.one(1),
         Derived.many([1, 2]) == Derived.many([1, 2]),
+        Derived.pair(1, "a") == Derived.pair(1, "a"),
     )
-    # CHECK-NEXT: False False False
+    # CHECK-NEXT: derived_equality_and_hashing: False False False False
     print(
-        materialize[Derived.none]() == Derived.one(1),
+        "derived_equality_and_hashing:",
+        materialize[Derived.none()]() == Derived.one(1),
         Derived.one(1) == Derived.one(2),
         Derived.many([1]) == Derived.many([1, 2]),
+        Derived.pair(1, "a") == Derived.pair(1, "b"),
     )
-    # CHECK-NEXT: True True
+    # CHECK-NEXT: derived_equality_and_hashing: True True True True
     print(
+        "derived_equality_and_hashing:",
         hash(Derived.one(1)) == hash(Derived.one(1)),
         hash(Derived.many([1, 2])) == hash(Derived.many([1, 2])),
+        hash(Derived.none()) == hash(Derived.none()),
+        hash(Derived.pair(1, "a")) == hash(Derived.pair(1, "a")),
+    )
+
+    var counts = Dict[Derived, Int]()
+    counts[Derived.one(1)] = 1
+    counts[Derived.none()] = 2
+    counts[Derived.one(1)] += 10
+    # CHECK-NEXT: derived_equality_and_hashing: 2 11 2
+    print(
+        "derived_equality_and_hashing:",
+        len(counts),
+        counts[Derived.one(1)],
+        counts[Derived.none()],
+    )
+    # CHECK-NEXT: derived_equality_and_hashing: Derived.none() Derived.many([1, 2]) Derived.pair(1, a)
+    print(
+        "derived_equality_and_hashing:",
+        Derived.none(),
+        Derived.many([1, 2]),
+        Derived.pair(1, "a"),
     )
 
 
 # CHECK-LABEL: == user-written equality and hashing
 def test_user_equality_and_hashing() raises:
     print("== user-written equality and hashing")
-    # CHECK-NEXT: True False True
+    # CHECK-NEXT: user_equality_and_hashing: True False True
     print(
+        "user_equality_and_hashing:",
         Key.named("a") == Key.named("a"),
         Key.named("a") == Key.numbered(1),
-        Key.anonymous != Key.numbered(1),
+        Key.anonymous() != Key.numbered(1),
     )
     var counts = Dict[Key, Int]()
     counts[Key.named("a")] = 1
     counts[Key.numbered(2)] = 2
-    counts[Key.anonymous] = 3
+    counts[Key.anonymous()] = 3
     counts[Key.named("a")] += 10
-    # CHECK-NEXT: 3 11 2 3
+    # CHECK-NEXT: user_equality_and_hashing: 3 11 2 3
     print(
+        "user_equality_and_hashing:",
         len(counts),
         counts[Key.named("a")],
         counts[Key.numbered(2)],
-        counts[Key.anonymous],
+        counts[Key.anonymous()],
     )
 
 
-# TODO: `ImplicitlyCopyable` for the same reason as `Token`.
 __enum Level(ImplicitlyCopyable):
     case low
     case high
@@ -507,11 +554,11 @@ def describe_level(level: Level) -> String:
 # CHECK-LABEL: == open enum
 def test_open_enum():
     print("== open enum")
-    # CHECK-NEXT: low high
-    print(describe_level(Level.low), describe_level(Level.high))
+    # CHECK-NEXT: open_enum: low high
+    print("open_enum:", describe_level(Level.low), describe_level(Level.high))
 
 
-# An enum without cases has no values, but its type works like any other.
+# A union without cases has no values, but its type works like any other.
 __enum Uninhabited(Copyable, Writable):
     pass
 
@@ -527,13 +574,13 @@ def test_caseless_enum():
     print("== caseless enum")
     var values = List[Uninhabited]()
     var copies = values.copy()
-    # CHECK-NEXT: 0 []
-    print(len(copies), values)
+    # CHECK-NEXT: caseless_enum: 0 []
+    print("caseless_enum:", len(copies), values)
     var describe = describe_uninhabited
     _ = describe
 
 
-__enum Pair:
+__union Pair:
     case ints(Int, Int)
     case maybe(Optional[Int], Int)
     case tracked(Tracked, Tracked)
@@ -559,15 +606,20 @@ def classify(pair: Pair) -> String:
 def test_elementwise():
     print("== element-wise")
     # A case pattern takes one subpattern per payload element.
-    # CHECK-NEXT: axis:3 axis:4 diagonal:2 ints:5
+    # CHECK-NEXT: elementwise: axis:3 axis:4 diagonal:2 ints:5
     print(
+        "elementwise:",
         classify(Pair.ints(0, 3)),
         classify(Pair.ints(4, 0)),
         classify(Pair.ints(2, 2)),
         classify(Pair.ints(5, 6)),
     )
-    # CHECK-NEXT: some:7,8 none:9
-    print(classify(Pair.maybe(7, 8)), classify(Pair.maybe(None, 9)))
+    # CHECK-NEXT: elementwise: some:7,8 none:9
+    print(
+        "elementwise:",
+        classify(Pair.maybe(7, 8)),
+        classify(Pair.maybe(None, 9)),
+    )
     var pair = Pair.ints(1, 2)
     match pair:
         case .ints(ref a, ref b):
@@ -585,54 +637,77 @@ def test_elementwise():
     # CHECK-NEXT: move 2
     # CHECK-NEXT: destroy 1
     # CHECK-NEXT: destroy 2
-    # CHECK-NEXT: tracked:1,2
-    print(classify(Pair.tracked(Tracked(1), Tracked(2))))
-
-
-# CHECK-LABEL: == consuming payloads
-def test_consuming_payloads():
-    print("== consuming payloads")
-    # TODO(MOCO-5256): The lines below pin a known bug: a one-element payload is
-    # destroyed before the arm uses it, and again after. Once the transfer is
-    # fixed, it is destroyed once, after its use.
-    # CHECK-NEXT: init 7
-    # CHECK-NEXT: move 7
-    # CHECK-NEXT: destroy 7
-    # CHECK-NEXT: enum consumed 7
-    # CHECK-NEXT: destroy 7
-    match Token.tracked(Tracked(7)):
-        case .tracked(var payload):
-            print("enum consumed", payload.id)
+    # CHECK-NEXT: elementwise: tracked:1,2
+    print("elementwise:", classify(Pair.tracked(Tracked(1), Tracked(2))))
+    # A qualified case pattern resolves and runs like its short form.
+    match Token.identifier("x"):
+        case Token.eof():
+            print("explicit-eof")
+        case .identifier(name):
+            # CHECK-NEXT: explicit-id: x
+            print("explicit-id:", name)
+        case Token.integer(_):
+            print("explicit-int")
         case _:
             pass
-    # CHECK-NEXT: init 8
-    # CHECK-NEXT: move 8
-    # CHECK-NEXT: destroy 8
-    # CHECK-NEXT: optional consumed 8
-    # CHECK-NEXT: destroy 8
-    match Optional[Tracked](Tracked(8)):
-        case .Some(var payload):
-            print("optional consumed", payload.id)
-        case .None:
-            pass
-    # TODO(MOCO-5256): Move the elements of a multi-element payload in place.
-    # Until then they are copied, and the subject is destroyed after the copies.
-    # CHECK-NEXT: init 9
-    # CHECK-NEXT: init 10
-    # CHECK-NEXT: move 9
-    # CHECK-NEXT: move 10
-    # CHECK-NEXT: copy 19
-    # CHECK-NEXT: copy 20
-    # CHECK-NEXT: destroy 9
-    # CHECK-NEXT: destroy 10
-    # CHECK-NEXT: pair consumed 19 20
-    # CHECK-NEXT: destroy 20
-    # CHECK-NEXT: destroy 19
-    match Pair.tracked(Tracked(9), Tracked(10)):
-        case .tracked(var a, var b):
-            print("pair consumed", a.id, b.id)
-        case _:
-            pass
+
+
+__union EmptyConstructor(Copyable, Writable):
+    case empty()
+
+
+def test_empty_constructor():
+    var make = EmptyConstructor.empty
+    var inferred: EmptyConstructor = .empty()
+    # CHECK: empty constructor: EmptyConstructor.empty() EmptyConstructor.empty()
+    print("empty constructor:", make(), inferred)
+
+
+__union Action(not Movable):
+    case call(Callback)
+
+    def __deinit__(deinit self):
+        pass
+
+
+def test_callback():
+    var action = Action.call(twice)
+    match action:
+        case .call(f):
+            # CHECK: callback: 42
+            print("callback:", f(21))
+
+
+__union MoveResult[T: Movable & Deinitable](Movable):
+    case value(Self.T)
+
+
+def test_move_bound():
+    var result = MoveResult[Error].value(Error("bad input"))
+    match result:
+        case .value(ref error):
+            # CHECK: move bound: bad input
+            print("move bound:", error)
+
+
+__union Color(ImplicitlyCopyable):
+    case rgb(Int, Int, Int)
+
+    def is_grayscale(self) -> Bool:
+        match self:
+            case .rgb(var r, var g, var b):
+                return r == g == b
+
+
+def test_chain():
+    # CHECK: chain: True False False False
+    print(
+        "chain:",
+        Color.rgb(7, 7, 7).is_grayscale(),
+        Color.rgb(7, 7, 8).is_grayscale(),
+        Color.rgb(8, 7, 7).is_grayscale(),
+        Color.rgb(7, 8, 7).is_grayscale(),
+    )
 
 
 def main() raises:
@@ -640,7 +715,6 @@ def main() raises:
     test_contextual()
     test_ref_binding()
     test_ownership()
-    test_writable()
     test_function_value()
     test_generic()
     test_trivial_register_passable()
@@ -652,4 +726,7 @@ def main() raises:
     test_open_enum()
     test_caseless_enum()
     test_elementwise()
-    test_consuming_payloads()
+    test_empty_constructor()
+    test_callback()
+    test_move_bound()
+    test_chain()

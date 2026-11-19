@@ -112,6 +112,14 @@ void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);
 
+/// Return how diagnostics name `structOp`, a struct declared with `__enum` or
+/// `__union`: "enum" or "union".
+StringRef getEnumOrUnionNoun(StructDeclOp structOp);
+
+/// Return the error for a malformed case of `structOp`, a struct declared with
+/// `__enum` or `__union`, which names the forms a case of it takes.
+StringRef getMalformedEnumCaseMessage(StructDeclOp structOp);
+
 /// Generate the mangled name identifying the thunk that converts a value of
 /// signature `actual` into one of signature `expected`. The AST-level spelling
 /// of both types keeps the name readable, and a hash of the full signatures

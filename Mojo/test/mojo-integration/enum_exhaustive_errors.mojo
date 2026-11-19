@@ -23,10 +23,8 @@
 # CHECK: note: trait 'EnumLike' declared here
 # CHECK-NOT: error:
 # CHECK: error: failed to parse the provided Mojo source module
-# TODO: `ImplicitlyCopyable` only so that `Mistyped.a` can be used as a runtime
-# value; a `comptime` value of another type does not materialize.
-__enum Mistyped(ImplicitlyCopyable, Writable):
-    case a
+__union Mistyped(ImplicitlyCopyable, Writable):
+    case a()
     case b(Int)
 
     comptime _enum_is_exhaustive = 5
@@ -34,4 +32,4 @@ __enum Mistyped(ImplicitlyCopyable, Writable):
 
 def main():
     var value: Mistyped = .b(1)
-    print(value, Mistyped.a)
+    print(value, Mistyped.a())

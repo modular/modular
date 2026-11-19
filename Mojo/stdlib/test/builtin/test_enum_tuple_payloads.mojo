@@ -11,14 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# Checks:
+# 1. Record tuple metadata and derive formatting and equality.
+# 2. Preserve borrowed projections, and print an enum value case without `()`.
+
 from std.builtin.variadics import TypeList
 from std.collections import OptionalReg
 from std.sys import align_of, size_of
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
-__enum Token(ImplicitlyCopyable, Writable):
-    case eof
+__union Token(ImplicitlyCopyable, Writable):
+    case eof()
     case word(String)
     case span(Int, Int)
     case tuple(Tuple[Int])
@@ -37,7 +41,7 @@ struct Compared(Equatable, ImplicitlyCopyable):
         return True
 
 
-__enum Key(Equatable):
+__union Key(Equatable):
     case one(Compared)
     case many(Compared, Compared)
 
@@ -63,7 +67,7 @@ def test_payload_types() raises:
 
 
 def test_printing() raises:
-    assert_equal(String(Token.eof), "Token.eof")
+    assert_equal(String(Token.eof()), "Token.eof()")
     assert_equal(String(Token.word("w")), "Token.word(w)")
     assert_equal(repr(Token.word("w")), "Token.word('w')")
     assert_equal(String(Token.span(1, 2)), "Token.span(1, 2)")
@@ -126,6 +130,16 @@ def test_optional_tuple_projection() raises:
     var reg = OptionalReg[Int](5)
     reg._unsafe_get_enum_payload[1]()[0] = 6
     assert_equal(reg.value(), 6)
+
+
+__enum ValueCase(Copyable, Writable):
+    case empty
+
+
+def test_enum_value_case() raises:
+    comptime value = ValueCase.empty
+    comptime assert type_of(value) == ValueCase
+    assert_equal(String(materialize[value]()), "ValueCase.empty")
 
 
 def main() raises:

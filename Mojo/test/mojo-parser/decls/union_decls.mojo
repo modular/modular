@@ -13,9 +13,9 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# An `__enum` is a struct marked `isEnum` whose cases are `lit.enum.case` ops
-# in its body, in declaration order, each with the payload types written in its
-# parentheses (none for a case without a payload) and its doc string, if any.
+# Checks:
+# 1. Parse headers, forward types, methods and payload spellings.
+# 2. Preserve case order and documentation.
 
 # CHECK-DAG: [[RED_DOC:#doc_string[0-9]*]] = #lit.doc.string<"Red.",
 # CHECK-DAG: [[RGB_DOC:#doc_string[0-9]*]] = #lit.doc.string<"\0A    A color by its components.\0A    ",
@@ -29,10 +29,10 @@
 # CHECK: lit.fn @"is_red(
 # CHECK: lit.fn @"make()"(){{.*}}isStatic
 # CHECK: lit.alias.decl *"N`"
-# CHECK: } <{{.*}}isEnum>
-__enum Color:
-    case red
-    case green
+# CHECK: } <{{.*}}isUnion>
+__union Color:
+    case red()
+    case green()
     case rgb(Int, Int, Int)
 
     def is_red(self) -> Bool:
@@ -49,8 +49,8 @@ __enum Color:
 # CHECK-SAME: T: [[BOUND:!AnyType_Deinitable_Movable]], E: [[BOUND]]>
 # CHECK: lit.enum.case success : [!kgen.param<:[[BOUND]] T>]
 # CHECK-NEXT: lit.enum.case failure : [!kgen.param<:[[BOUND]] E>]
-# CHECK: } <{{.*}}isEnum>
-__enum Result[T: Movable & Deinitable, E: Movable & Deinitable](Movable):
+# CHECK: } <{{.*}}isUnion>
+__union Result[T: Movable & Deinitable, E: Movable & Deinitable](Movable):
     case success(Self.T)
     case failure(Self.E)
 
@@ -59,7 +59,7 @@ __enum Result[T: Movable & Deinitable, E: Movable & Deinitable](Movable):
 # CHECK-LABEL: lit.struct.decl @Forward(
 # CHECK: lit.enum.case a : [!kgen.param<:!mt_Bool sugar_member_alias(!Forward, "Payload", !Bool)>]
 # CHECK-NEXT: lit.alias.decl *"Payload`"
-__enum Forward:
+__union Forward:
     case a(Self.Payload)
 
     comptime Payload = Bool
@@ -70,11 +70,11 @@ __enum Forward:
 # CHECK-LABEL: lit.struct.decl @Bounded<n: !Int, {<
 # CHECK: lit.enum.case a : {{\[}}[[INT]]]{{$}}
 # CHECK-NEXT: lit.enum.case b : []{{$}}
-# CHECK: } <{{.*}}deprecationInfo = <"use Color">{{.*}}isEnum>
+# CHECK: } <{{.*}}deprecationInfo = <"use Color">{{.*}}isUnion>
 @deprecated("use Color")
-__enum Bounded[n: Int](Movable) where n > 0:
+__union Bounded[n: Int](Movable) where n > 0:
     case a(Int)
-    case b
+    case b()
 
 
 # CHECK-LABEL: lit.struct.decl @OneLine(
@@ -97,10 +97,10 @@ __enum Caseless:
 # CHECK: lit.enum.case red : [] <docString = [[RED_DOC]]>
 # CHECK-NEXT: lit.enum.case plain : []{{$}}
 # CHECK-NEXT: lit.enum.case rgb : {{\[}}[[INT]], [[INT]], [[INT]]] <docString = [[RGB_DOC]]>
-__enum Documented:
-    case red
+__union Documented:
+    case red()
     """Red."""
-    case plain
+    case plain()
     case rgb(Int, Int, Int)
     """
     A color by its components.
@@ -120,18 +120,20 @@ __enum AllDocumented:
 # CHECK-NEXT: lit.enum.case trailing_comma : {{\[}}[[INT]], !Bool]{{$}}
 # CHECK-NEXT: lit.enum.case multi_line : {{\[}}[[INT]], !Bool]{{$}}
 # CHECK-NEXT: lit.enum.case tuple : [!lit.struct<#Tuple <:param_list<!AnyType_Movable> [!Int, !Int]{{.*}}>>]{{$}}
+# CHECK-NEXT: lit.enum.case none : [!NoneType]{{$}}
 # CHECK-NEXT: lit.enum.case def : []{{$}}
-__enum Spellings:
-    case a; case b(Int)
+__union Spellings:
+    case a(); case b(Int)
     case trailing_comma(Int, Bool,)
     case multi_line(
         Int,
         Bool,
     )
     case tuple(Tuple[Int, Int])
-    case `def`
+    case none(NoneType)
+    case `def`()
 
 
-# CHECK-LABEL: lit.fn @"take(enum_decls::Color)"
+# CHECK-LABEL: lit.fn @"take(union_decls::Color)"
 def take(c: Color) -> Bool:
     return c.is_red()
