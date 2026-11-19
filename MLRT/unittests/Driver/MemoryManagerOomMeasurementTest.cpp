@@ -27,6 +27,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "TestUtils.h"
 
@@ -88,16 +89,15 @@ TEST_F(MemoryManagerOomMeasurementTest, MixedStateSnapshotIsExact) {
   std::unique_ptr<MemoryManager> cache = makeCache(*device, kBudget);
   ASSERT_NE(cache, nullptr);
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   MemoryManagerFreeList &root = *cache->freeList();
 
   {
     // Child free-list (per-stream): its frees stay pending until an event
     // fires.
     std::unique_ptr<MemoryManagerFreeList> child =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                "child");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false, "child");
 
     // Allocate everything up front, in offset order, from the two free-lists.
     ASSIGN_NO_ERR(void *, a0, root.allocate(kMiB * 3 / 2, mode));   // in-use
@@ -182,22 +182,19 @@ TEST_F(MemoryManagerOomMeasurementTest, DrainableRecoveryCountsWholeGranules) {
   std::unique_ptr<MemoryManager> cache = makeCache(*device, kBudget);
   ASSERT_NE(cache, nullptr);
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   MemoryManagerFreeList &root = *cache->freeList();
 
   {
     std::unique_ptr<MemoryManagerFreeList> child1 =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                "child1");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false, "child1");
     std::unique_ptr<MemoryManagerFreeList> child2 =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                "child2");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false, "child2");
     std::unique_ptr<MemoryManagerFreeList> child3 =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                "child3");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false, "child3");
 
     // Allocated in offset order so the bump layout matches the map above.
     ASSIGN_NO_ERR(void *, q0, child1->allocate(kMiB / 2, mode));

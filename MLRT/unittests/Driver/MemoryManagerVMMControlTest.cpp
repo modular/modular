@@ -61,7 +61,7 @@ protected:
 // Same fragmentation as the VMM test, but with VMM off the 1.5 GiB request
 // cannot be satisfied and must return an error.
 TEST_F(MemoryManagerVMMControlTest, FragmentedRequestFailsWithoutVmm) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const size_t kBudget = 4 * kGiB;
   const size_t kChunk = 1 * kGiB;
   const size_t kBig = 3 * kGiB / 2;

@@ -54,7 +54,7 @@ TEST_F(RedzoneFreeDeadlockTest, FreeValidatesRedzonesWithPendingFlushHandler) {
   // Device memory: host allocations read their redzones directly, never
   // reaching the synchronize this test is about.
   MemoryManagerFreeList &freeList = ctx->freeList();
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Allocating synchronizes to write the guard pattern, which drains pending
   // events, so both allocations must precede either free.

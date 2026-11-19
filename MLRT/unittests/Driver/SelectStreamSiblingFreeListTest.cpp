@@ -106,7 +106,7 @@ TEST_F(SelectStreamSiblingFreeListTest, BaseMissRecoversIdleViewFrees) {
   constexpr size_t kBlockBytes = 32 * kMiB;
   constexpr int kBlocks = 24;
   constexpr size_t kBaseBytes = 640 * kMiB;
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   ASSIGN_NO_ERR(DeviceContextRef, view, base->selectStream(1));
   MemoryManagerFreeList &viewFreeList = view->freeList();
@@ -176,7 +176,7 @@ TEST_F(SelectStreamSiblingFreeListTest,
   std::atomic<bool> stop{false};
   std::thread allocPressure([&]() {
     MemoryManagerFreeList &baseFreeList = base->freeList();
-    const Device::AllocMode mode = Device::AllocMode::SYNC;
+    const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
     std::vector<void *> livePtrs;
     while (!stop.load(std::memory_order_relaxed)) {
       for (int i = 0; i < kHoldBlocks; ++i) {

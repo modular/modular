@@ -36,6 +36,7 @@ static_assert(
 
 #include "CUDA/CUDACompilationDevice.h"
 #include "CUDA/CUDADeviceContext.h"
+#include "DeviceAllocator.h"
 #include "HIP/HIPCompilationDevice.h"
 #include "HIP/HIPDeviceContext.h"
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
@@ -1061,25 +1062,6 @@ ErrorOrSuccess DeviceGraphCollection::debugVerifyReplay(
 }
 
 //
-// ===== MemoryManagerFreeList ===== //
-//
-
-std::unique_ptr<MemoryManagerFreeList> MemoryManagerFreeList::createForContext(
-    DeviceContext &context, MemoryManager &memoryManager,
-    MemoryManagerFreeList *parent, bool disableFlush, std::string label) {
-  bool redzones = context.isDebugAllocatorEnabled("out-of-bounds");
-  // `poison-all` is the allocator-layer counterpart to the graph-driver's
-  // type-aware `uninitialized-poison` (see Device::createDeviceMemory): it has
-  // no dtype information, so it fills *every* allocation body with a raw byte
-  // pattern rather than a type-specific sentinel. See the MemoryManagerOverview
-  // doc (`MODULAR_DEBUG_DEVICE_ALLOCATOR`) for how the two tiers relate.
-  bool poison = context.isDebugAllocatorEnabled("poison-all");
-  return std::make_unique<MemoryManagerFreeList>(
-      &context, memoryManager, parent, disableFlush, std::move(label), redzones,
-      poison);
-}
-
-//
 // ===== DeviceGraphMemoryPool ===== //
 //
 
@@ -1090,13 +1072,13 @@ DeviceGraphMemoryPool::DeviceGraphMemoryPool(DeviceContextRef context)
   static std::atomic<int64_t> counter = 0;
 
   int64_t id = counter.fetch_add(1);
-  deviceFreeList = MemoryManagerFreeList::createForContext(
+  deviceFreeList = createFreeListForContext(
       *context, device.memoryManager(), device.memoryManager().freeList(),
       /*disableFlush=*/true,
       /*label=*/
       (Twine("DeviceGraphMemoryPool(id=") + Twine(id) + ", device)").str());
 
-  hostFreeList = MemoryManagerFreeList::createForContext(
+  hostFreeList = createFreeListForContext(
       *context, device.hostMemoryManager(),
       device.hostMemoryManager().freeList(),
       /*disableFlush=*/true,
@@ -1115,8 +1097,8 @@ ErrorOr<void *> DeviceGraphMemoryPool::allocate(size_t numBytes, bool isHost) {
     return nullptr;
 
   if (isHost)
-    return hostFreeList->allocate(numBytes, Device::AllocMode::HOST);
-  return deviceFreeList->allocate(numBytes, Device::AllocMode::SYNC);
+    return hostFreeList->allocate(numBytes, AllocatorContext::AllocMode::HOST);
+  return deviceFreeList->allocate(numBytes, AllocatorContext::AllocMode::SYNC);
 }
 
 void DeviceGraphMemoryPool::free(void *ptr, bool isHost) {
@@ -1477,14 +1459,14 @@ uint64_t PinnedCompletionFlag::load() const {
 
 DeviceContext::DeviceContext(Device &device, TypeID typeID)
     : device_(DeviceRef::copy(&device)), typeID(typeID),
-      freeList_(MemoryManagerFreeList::createForContext(
+      freeList_(createFreeListForContext(
           *this, device.memoryManager(), device.memoryManager().freeList(),
           /*disableFlush=*/false, /*label=*/"freeList")),
-      hostFreeList_(MemoryManagerFreeList::createForContext(
+      hostFreeList_(createFreeListForContext(
           *this, device.hostMemoryManager(),
           device.hostMemoryManager().freeList(),
           /*disableFlush=*/false, /*label=*/"hostFreeList")),
-      graphFreeList_(MemoryManagerFreeList::createForContext(
+      graphFreeList_(createFreeListForContext(
           *this, device.memoryManager(), device.memoryManager().freeList(),
           /*disableFlush=*/true, /*label=*/"graphFreeList")),
       syncMode_(0) {
@@ -1798,7 +1780,8 @@ ErrorOr<DeviceBufferRef> DeviceContext::allocBuffer(size_t byteSize,
                                      : isGraphCapturing() ? graphFreeList()
                                                           : freeList();
 
-  ErrorOr<void *> errPtr = allocator.allocate(byteSize, mode);
+  ErrorOr<void *> errPtr =
+      allocator.allocate(byteSize, toAllocatorAllocMode(mode));
   if (errPtr.isError())
     return errPtr.takeError();
 

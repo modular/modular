@@ -507,13 +507,11 @@ void MemoryManager::Chunk::selfCheck() const {
 #undef SELF_CHECK
 }
 
-MemoryManagerFreeList::MemoryManagerFreeList(DeviceContext *context,
-                                             MemoryManager &memoryManager,
-                                             MemoryManagerFreeList *parent,
-                                             bool disableFlush,
-                                             std::string label, bool redzones,
-                                             bool poison)
-    : ctx_(context), memoryManager_(memoryManager), parent_(parent),
+MemoryManagerFreeList::MemoryManagerFreeList(
+    std::unique_ptr<AllocatorContext> context, MemoryManager &memoryManager,
+    MemoryManagerFreeList *parent, bool disableFlush, std::string label,
+    bool redzones, bool poison)
+    : ctx_(std::move(context)), memoryManager_(memoryManager), parent_(parent),
       disableFlush_(disableFlush), label_(std::move(label)) {
   // Either parent and context are both null for the free list associated with
   // the MemoryManager or both are set for free lists associated with a
@@ -532,10 +530,6 @@ MemoryManagerFreeList::MemoryManagerFreeList(DeviceContext *context,
     enablePoison();
 }
 
-DeviceContext *MemoryManagerFreeList::context() { return ctx_; }
-
-const DeviceContext *MemoryManagerFreeList::context() const { return ctx_; }
-
 MemoryManagerFreeList::~MemoryManagerFreeList() {
   // flushToParent() migrates every buffer unconditionally, including one still
   // gated on an unfired event, so wait for that work first. Outside `mu_`:
@@ -545,7 +539,7 @@ MemoryManagerFreeList::~MemoryManagerFreeList() {
 }
 
 void MemoryManager::PendingFrees::add(
-    llvm::SmallVector<DeviceEventRef, 2> events, MemoryManagerFreeList *fl,
+    llvm::SmallVector<AllocatorEventRef, 2> events, MemoryManagerFreeList *fl,
     int bufferId) {
   records_.push_back({++nextSeq_, std::move(events), fl, bufferId});
   syncCount();
@@ -568,12 +562,12 @@ MemoryManager::PendingFrees::take(uint64_t seq) {
   return record;
 }
 
-llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>>
+llvm::SmallVector<std::pair<uint64_t, AllocatorEventRef>>
 MemoryManager::PendingFrees::collect(const MemoryManagerFreeList *fl) const {
-  llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>> out;
+  llvm::SmallVector<std::pair<uint64_t, AllocatorEventRef>> out;
   for (const Record &record : records_) {
     if (fl == nullptr || record.fl == fl)
-      for (const DeviceEventRef &event : record.events)
+      for (const AllocatorEventRef &event : record.events)
         out.emplace_back(record.seq, event);
   }
   return out;
@@ -583,7 +577,7 @@ void MemoryManager::waitForPendingFrees(const MemoryManagerFreeList *fl) {
   if (!pendingFrees_.mayHaveRecords())
     return;
 
-  llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>> records;
+  llvm::SmallVector<std::pair<uint64_t, AllocatorEventRef>> records;
   {
     std::lock_guard<std::mutex> lock(mu_);
     records = pendingFrees_.collect(fl);
@@ -624,7 +618,7 @@ MemoryManager::drainPendingFrees(const MemoryManagerFreeList *only) {
   // Collect the candidates' events, then query them with `mu_` released:
   // isReady() is a driver call (cuEventQuery), and holding the manager lock
   // across it would stall every concurrent allocation on this device.
-  llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>> candidates;
+  llvm::SmallVector<std::pair<uint64_t, AllocatorEventRef>> candidates;
   {
     std::lock_guard<std::mutex> lock(mu_);
     candidates = pendingFrees_.collect(only);
@@ -695,9 +689,9 @@ bool MemoryManagerFreeList::deferCachedToParent() {
     return false;
   // Recorded under `mu_`, so they follow the device work of every free made so
   // far, even one racing this call.
-  ErrorOr<DeviceEventRef> event = ctx_->enqueueEvent();
-  ErrorOr<DeviceEventRef> baseEvent =
-      event.isError() ? DeviceEventRef() : ctx_->enqueueBaseStreamEvent();
+  ErrorOr<AllocatorEventRef> event = ctx_->enqueueEvent();
+  ErrorOr<AllocatorEventRef> baseEvent =
+      event.isError() ? AllocatorEventRef() : ctx_->enqueueBaseStreamEvent();
   if (event.isError() || baseEvent.isError())
     return false;
   // Gather both lists into the non-primary one under a single record, which
@@ -714,7 +708,7 @@ bool MemoryManagerFreeList::deferCachedToParent() {
   }
   primaryFreeBuffers_ = primary;
   memoryManager_.pendingFrees_.cancel(this);
-  llvm::SmallVector<DeviceEventRef, 2> events = {event.takeValue()};
+  llvm::SmallVector<AllocatorEventRef, 2> events = {event.takeValue()};
   if (*baseEvent)
     events.push_back(baseEvent.takeValue());
   memoryManager_.pendingFrees_.add(std::move(events), this, gated);
@@ -2331,16 +2325,16 @@ MemoryManager::remapOwnFreeBlocks(MemoryManagerFreeList *fl, size_t size) {
   // its later work by stream order. A side-stream view's frees may still be
   // read by its base stream, so the view waits on the base stream, on the
   // device. Retirement waits for both.
-  DeviceContext &ctx = *fl->ctx_;
-  ErrorOr<DeviceEventRef> event = ctx.enqueueEvent();
-  ErrorOr<DeviceEventRef> baseEvent =
-      event.isError() ? DeviceEventRef() : ctx.enqueueBaseStreamEvent();
+  AllocatorContext &ctx = *fl->ctx_;
+  ErrorOr<AllocatorEventRef> event = ctx.enqueueEvent();
+  ErrorOr<AllocatorEventRef> baseEvent =
+      event.isError() ? AllocatorEventRef() : ctx.enqueueBaseStreamEvent();
   if (event.isError() || baseEvent.isError()) {
     LOG_ERR("remapOwnFreeBlocks: could not record the gating events");
     rollback();
     return nullptr;
   }
-  DeviceEventRef baseRef = baseEvent.takeValue();
+  AllocatorEventRef baseRef = baseEvent.takeValue();
   if (baseRef) {
     if (ErrorOrSuccess w = ctx.enqueueWaitFor(*baseRef); w.isError()) {
       LOG_ERR("remapOwnFreeBlocks: base-stream wait failed: " +
@@ -2406,11 +2400,11 @@ ErrorOrSuccess MemoryManager::retireCompletedRanges(bool wait) {
 
   // Query (or wait on) the events with `mu_` released, as drainPendingFrees
   // does: they are driver calls.
-  llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>> candidates;
+  llvm::SmallVector<std::pair<uint64_t, AllocatorEventRef>> candidates;
   {
     std::lock_guard<std::mutex> lock(mu_);
     for (const RetiringRange &range : retiring_)
-      for (const DeviceEventRef &event : range.events)
+      for (const AllocatorEventRef &event : range.events)
         candidates.emplace_back(range.seq, event);
   }
   llvm::SmallDenseSet<uint64_t> blocked;
@@ -2878,8 +2872,8 @@ ErrorOr<void *> MemoryManagerFreeList::finalizeDebugAlloc(void *unwrappedPtr,
   return wrappedPtr;
 }
 
-ErrorOr<void *> MemoryManagerFreeList::allocate(size_t size,
-                                                Device::AllocMode mode) {
+ErrorOr<void *>
+MemoryManagerFreeList::allocate(size_t size, AllocatorContext::AllocMode mode) {
   assert(size != 0);
   M_PROFILE_RANGE_TEXT("MemoryManagerFreeList::allocate",
                        M_PROFILE_COLOR_PURPLE, "size: " + std::to_string(size));
@@ -3542,8 +3536,9 @@ ErrorOrSuccess MemoryManagerFreeList::free(void *ptr) {
   }
 
   LOG_MSG("free_buffer(" + TWINE_PTR(ptr) + ")");
-  return ctx_->memFree(ptr, memoryManager_.isHost() ? Device::FreeKind::HOST
-                                                    : Device::FreeKind::DEVICE);
+  return ctx_->memFree(ptr, memoryManager_.isHost()
+                                ? AllocatorContext::FreeKind::HOST
+                                : AllocatorContext::FreeKind::DEVICE);
 }
 
 void MemoryManagerFreeList::freeDesc(MemoryManager::Desc *desc) {
@@ -3579,11 +3574,11 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
     assert(freeBuffers_[primaryFreeBuffers_] == nullptr);
     handlerPending_ = true;
 
-    ErrorOr<DeviceEventRef> event = ctx_->enqueueEvent();
+    ErrorOr<AllocatorEventRef> event = ctx_->enqueueEvent();
     // A side-stream view's results are read on the base stream after the
     // region joins it, so the base stream gates their reuse too.
-    ErrorOr<DeviceEventRef> baseEvent =
-        event.isError() ? DeviceEventRef() : ctx_->enqueueBaseStreamEvent();
+    ErrorOr<AllocatorEventRef> baseEvent =
+        event.isError() ? AllocatorEventRef() : ctx_->enqueueBaseStreamEvent();
     if (event.isError() || baseEvent.isError()) {
       // Undo the rotation: `handlerPending_` is only cleared by a completed
       // drain, so leaving it set would stop this freelist deferring for the
@@ -3594,7 +3589,7 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
       handlerPending_ = false;
       return event.isError() ? event.takeError() : baseEvent.takeError();
     }
-    llvm::SmallVector<DeviceEventRef, 2> events = {event.takeValue()};
+    llvm::SmallVector<AllocatorEventRef, 2> events = {event.takeValue()};
     if (*baseEvent)
       events.push_back(baseEvent.takeValue());
     memoryManager_.pendingFrees_.add(std::move(events), this, toFreeId);

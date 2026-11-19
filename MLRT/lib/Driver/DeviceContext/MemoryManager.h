@@ -18,6 +18,7 @@
 #ifndef MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
 #define MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
 
+#include "AllocatorContext.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/BitVector.h"
@@ -27,6 +28,7 @@
 #include <atomic>
 #include <cstdint>
 #include <list>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -561,7 +563,7 @@ private:
   // them.
   struct RetiringRange {
     uint64_t seq = 0;
-    llvm::SmallVector<DeviceEventRef, 2> events;
+    llvm::SmallVector<AllocatorEventRef, 2> events;
     // Retired descs over the old VA: in use so nothing allocates or reclaims
     // them, and skipped by the in-use physical accounting.
     llvm::SmallVector<Desc *, 4> descs;
@@ -662,14 +664,14 @@ private:
       // Identity that outlives the unlocked window in drainCompletedFrees().
       uint64_t seq;
       // Device work that must complete before the buffer can migrate.
-      llvm::SmallVector<DeviceEventRef, 2> events;
+      llvm::SmallVector<AllocatorEventRef, 2> events;
       // Free list owning the buffer; cancels its records when destroyed.
       MemoryManagerFreeList *fl;
       // Which of that free list's double-buffered lists to flush.
       int bufferId;
     };
 
-    void add(llvm::SmallVector<DeviceEventRef, 2> events,
+    void add(llvm::SmallVector<AllocatorEventRef, 2> events,
              MemoryManagerFreeList *fl, int bufferId);
     // Drop every record naming `fl`.
     void cancel(const MemoryManagerFreeList *fl);
@@ -679,7 +681,7 @@ private:
     std::optional<Record> take(uint64_t seq);
     // The (seq, event) of every event of every record naming `fl`, or of all
     // of them when `fl` is null.
-    llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>>
+    llvm::SmallVector<std::pair<uint64_t, AllocatorEventRef>>
     collect(const MemoryManagerFreeList *fl) const;
     bool empty() const { return records_.empty(); }
     // Lock-free fast path: false only when there is certainly nothing queued.
@@ -784,23 +786,16 @@ class MODULAR_CXX_EXPORT MemoryManagerFreeList {
 public:
   // `context` and `parent` are both null for a manager's root free list, and
   // both set for every other list.
-  MemoryManagerFreeList(DeviceContext *context, MemoryManager &memoryManager,
+  MemoryManagerFreeList(std::unique_ptr<AllocatorContext> context,
+                        MemoryManager &memoryManager,
                         MemoryManagerFreeList *parent, bool disableFlush,
                         std::string label, bool redzones, bool poison);
   ~MemoryManagerFreeList();
 
-  // Builds a free list for `context`, with the redzones and poison that its
-  // `debug.device_allocator` config asks for.
-  static std::unique_ptr<MemoryManagerFreeList>
-  createForContext(DeviceContext &context, MemoryManager &memoryManager,
-                   MemoryManagerFreeList *parent, bool disableFlush,
-                   std::string label);
-
   // Allocate and free memory by using the `MemoryManager`. If the allocation
   // cannot be serviced by the `MemoryManager` due to allocation size or cache
-  // capacity, then the allocation request gets transparently forwarded to the
-  // associated `DeviceContext`.
-  ErrorOr<void *> allocate(size_t size, Device::AllocMode mode);
+  // capacity, then the request is forwarded to the list's `AllocatorContext`.
+  ErrorOr<void *> allocate(size_t size, AllocatorContext::AllocMode mode);
   ErrorOrSuccess free(void *buf);
 
   // Queue every cached free buffer for the parent behind the work enqueued so
@@ -862,9 +857,6 @@ private:
   void selfCheck() const;
   bool contains(MemoryManager::Desc *desc) const;
 
-  DeviceContext *context();
-  const DeviceContext *context() const;
-
   MemoryManager::Desc *allocateDesc(size_t size);
   // Re-drain completed frees and retry `wrappedSize`, up to
   // `memory_manager_vmm_drain_retries` times, returning the descriptor or null.
@@ -911,7 +903,7 @@ private:
   ErrorOrSuccess validateRedzones(void *wrappedPtr, const RedzoneInfo &size);
   void printRedzone(const uint8_t *dataPtr, const uint8_t *displayPtr);
 
-  DeviceContext *ctx_;
+  std::unique_ptr<AllocatorContext> ctx_;
 
   MemoryManager &memoryManager_;
   MemoryManagerFreeList *parent_;

@@ -48,7 +48,7 @@ TEST_F(GPUMemoryManagerOnlyTest, RejectsAllocationLargerThanMaxCacheSize) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, createTestDeviceContext());
   MemoryManagerFreeList &freeList = ctx->freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   constexpr size_t kMaxCacheSize = 16 * 1024 * 1024;
 
   EXPECT_ERR_MSG(freeList.allocate(kMaxCacheSize + 1024, mode),
@@ -73,8 +73,9 @@ TEST_F(GPUMemoryManagerOnlyTest, RejectsWhenGpuMemoryManagerIsDisabled) {
       MemoryManager::onDevice(*device, memInfo, device->allocationAlignment(),
                               /*memoryLimit=*/0));
 
-  EXPECT_ERR_MSG(cache->freeList()->allocate(64, Device::AllocMode::SYNC),
-                 "memory manager is disabled");
+  EXPECT_ERR_MSG(
+      cache->freeList()->allocate(64, AllocatorContext::AllocMode::SYNC),
+      "memory manager is disabled");
 }
 
 } // namespace

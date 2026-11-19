@@ -152,8 +152,9 @@ TEST(MemoryManagerChunkGrowthTest, CapsChunkGrowthToCurrentFreeMemory) {
   device->reserveExternalPressure(kExternalPressure);
 
   MemoryManagerFreeList &freeList = *manager->freeList();
-  ASSIGN_NO_ERR(void *, ptr,
-                freeList.allocate(kRequestSize, Device::AllocMode::SYNC));
+  ASSIGN_NO_ERR(
+      void *, ptr,
+      freeList.allocate(kRequestSize, AllocatorContext::AllocMode::SYNC));
 
   ASSERT_EQ(device->chunkAllocRequests().size(), 1u);
   EXPECT_EQ(device->chunkAllocRequests().front(), kExpectedChunkSize);
@@ -179,7 +180,7 @@ TEST(MemoryManagerChunkGrowthTest, ReportsChunkAllocFailureDetails) {
   device->failNextChunkAlloc("fake oom");
 
   MemoryManagerFreeList &freeList = *manager->freeList();
-  auto err = freeList.allocate(/*size=*/512, Device::AllocMode::SYNC);
+  auto err = freeList.allocate(/*size=*/512, AllocatorContext::AllocMode::SYNC);
   ASSERT_TRUE(err.isError());
   EXPECT_THAT(err.getError(),
               testing::HasSubstr("last_chunk_alloc_failure: chunkAlloc("));

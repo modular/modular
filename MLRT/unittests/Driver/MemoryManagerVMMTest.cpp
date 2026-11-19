@@ -24,6 +24,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "TestUtils.h"
 
@@ -110,8 +111,9 @@ TEST_F(MemoryManagerVMMTest, Phase0ChunkIsVmmBacked) {
   MemoryManagerFreeList &freeList = *cache->freeList();
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
 
-  ASSIGN_NO_ERR(void *, ptr,
-                freeList.allocate(256 * kMiB, Device::AllocMode::SYNC));
+  ASSIGN_NO_ERR(
+      void *, ptr,
+      freeList.allocate(256 * kMiB, AllocatorContext::AllocMode::SYNC));
   EXPECT_NE(ptr, nullptr);
   EXPECT_NO_ERR(writeAndVerify(*ctx, ptr, 256 * kMiB, 256 * kMiB));
   EXPECT_NO_ERR(freeList.free(ptr));
@@ -124,7 +126,7 @@ TEST_F(MemoryManagerVMMTest, Phase0ChunkIsVmmBacked) {
 // request can succeed is VMM defrag assembling it from scattered free granules.
 TEST_F(MemoryManagerVMMTest,
        DefragSatisfiesRequestExceedingLargestContiguousBlock) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const size_t kBudget = 4 * kGiB;  // pool == 4 chunks of chunk_percent=25
   const size_t kChunk = 1 * kGiB;   // 1 GiB chunks (largest contiguous block)
   const size_t kBig = 3 * kGiB / 2; // 1.5 GiB > any single chunk
@@ -164,7 +166,7 @@ TEST_F(MemoryManagerVMMTest,
 // surviving record would have it reach through a dangling pointer on the next
 // allocation miss.
 TEST_F(MemoryManagerVMMTest, PendingFreeCancelledWhenFreeListDestroyed) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   ASSIGN_NO_ERR(DeviceRef, device, dev());
   std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
   ASSERT_NE(cache, nullptr);
@@ -173,9 +175,9 @@ TEST_F(MemoryManagerVMMTest, PendingFreeCancelledWhenFreeListDestroyed) {
   {
     // Deferral is on, so freeing through this child parks a record.
     std::unique_ptr<MemoryManagerFreeList> child =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                /*label=*/"cancel");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false,
+                                 /*label=*/"cancel");
     ASSIGN_NO_ERR(void *, ptr, child->allocate(256 * kMiB, mode));
     EXPECT_NE(ptr, nullptr);
     EXPECT_NO_ERR(child->free(ptr));
@@ -200,7 +202,7 @@ TEST_F(MemoryManagerVMMTest, PendingFreeCancelledWhenFreeListDestroyed) {
 // created during capture and the block stays put until a later free or
 // teardown.
 TEST_F(MemoryManagerVMMTest, NoDeferredFreeRecordedDuringGraphCapture) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   ASSIGN_NO_ERR(DeviceRef, device, dev());
   std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
   ASSERT_NE(cache, nullptr);
@@ -208,9 +210,9 @@ TEST_F(MemoryManagerVMMTest, NoDeferredFreeRecordedDuringGraphCapture) {
 
   {
     std::unique_ptr<MemoryManagerFreeList> child =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                /*label=*/"capture");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false,
+                                 /*label=*/"capture");
     ASSIGN_NO_ERR(void *, ptr, child->allocate(256 * kMiB, mode));
     EXPECT_NE(ptr, nullptr);
 
@@ -237,7 +239,7 @@ TEST_F(MemoryManagerVMMTest, NoDeferredFreeRecordedDuringGraphCapture) {
 // of `recoverable_by_sync`: counting them there made DRIV-690 read as
 // `avoidable` and offer a synchronize against ~50 GB no wait could free.
 TEST_F(MemoryManagerVMMTest, GraphPoolFreesAreRetainedNotSyncRecoverable) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const size_t kBudget = 4 * kGiB;
   ASSIGN_NO_ERR(DeviceRef, device, dev());
   std::unique_ptr<MemoryManager> cache = makeCache(*device, kBudget);
@@ -246,9 +248,9 @@ TEST_F(MemoryManagerVMMTest, GraphPoolFreesAreRetainedNotSyncRecoverable) {
 
   {
     std::unique_ptr<MemoryManagerFreeList> pool =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/true,
-                                                /*label=*/"graphPool");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/true,
+                                 /*label=*/"graphPool");
     std::vector<void *> bufs;
     for (int i = 0; i < 3; ++i) {
       ASSIGN_NO_ERR(void *, p, pool->allocate(1 * kGiB, mode));
@@ -290,7 +292,7 @@ TEST_F(MemoryManagerVMMTest, GraphPoolFreesAreRetainedNotSyncRecoverable) {
 // DeviceContextRef. Were it to hold one, a context whose gating event cannot
 // fire -- a trapped kernel, say -- would never be destroyed.
 TEST_F(MemoryManagerVMMTest, PendingFreeDoesNotKeepContextAlive) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
   MemoryManagerFreeList &fl = ctx->freeList();
@@ -310,7 +312,7 @@ TEST_F(MemoryManagerVMMTest, PendingFreeDoesNotKeepContextAlive) {
 // view's free list, but it must stay out of the reclaim set until the base
 // stream has run past that read, or defrag remaps the granules under it.
 TEST_F(MemoryManagerVMMTest, ViewFreeStaysUnreclaimableWhileBaseReadQueued) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   ASSIGN_NO_ERR(DeviceRef, device, dev());
   std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
   ASSERT_NE(cache, nullptr);
@@ -324,10 +326,9 @@ TEST_F(MemoryManagerVMMTest, ViewFreeStaysUnreclaimableWhileBaseReadQueued) {
 
   {
     std::unique_ptr<MemoryManagerFreeList> sideList =
-        MemoryManagerFreeList::createForContext(*side, *cache,
-                                                cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                /*label=*/"side");
+        createFreeListForContext(*side, *cache, cache->freeList(),
+                                 /*disableFlush=*/false,
+                                 /*label=*/"side");
     ASSIGN_NO_ERR(void *, result, sideList->allocate(1 * kGiB, mode));
 
     flag->reset();
@@ -350,7 +351,7 @@ TEST_F(MemoryManagerVMMTest, ViewFreeStaysUnreclaimableWhileBaseReadQueued) {
 // A capturing base stream cannot gate a view's free either, so the free is not
 // deferred, as when the view's own stream captures.
 TEST_F(MemoryManagerVMMTest, NoDeferredViewFreeWhileBaseCaptures) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   ASSIGN_NO_ERR(DeviceRef, device, dev());
   std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
   ASSERT_NE(cache, nullptr);
@@ -362,10 +363,9 @@ TEST_F(MemoryManagerVMMTest, NoDeferredViewFreeWhileBaseCaptures) {
 
   {
     std::unique_ptr<MemoryManagerFreeList> sideList =
-        MemoryManagerFreeList::createForContext(*side, *cache,
-                                                cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                /*label=*/"side");
+        createFreeListForContext(*side, *cache, cache->freeList(),
+                                 /*disableFlush=*/false,
+                                 /*label=*/"side");
     ASSIGN_NO_ERR(void *, ptr, sideList->allocate(256 * kMiB, mode));
     EXPECT_NO_ERR(stream->beginCapture());
     EXPECT_NO_ERR(sideList->free(ptr));
@@ -388,7 +388,7 @@ TEST_F(MemoryManagerVMMTest, NoDeferredViewFreeWhileBaseCaptures) {
 // returning while the flag is still shut is the proof. The old range retires
 // on the regular drain once the stream has run past it.
 TEST_F(MemoryManagerVMMTest, LargerRequestRemapsTheStreamsOwnFreePages) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const size_t kPage = 256 * kMiB; // the target's VMM page
   const size_t kSmall = 2 * kPage; // A
   const size_t kLarge = 3 * kPage; // B > A; A + the budget's rest covers it
@@ -402,9 +402,9 @@ TEST_F(MemoryManagerVMMTest, LargerRequestRemapsTheStreamsOwnFreePages) {
 
   {
     std::unique_ptr<MemoryManagerFreeList> child =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                /*label=*/"remap");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false,
+                                 /*label=*/"remap");
     ASSIGN_NO_ERR(void *, small, child->allocate(kSmall, mode));
     EXPECT_EQ(cache->createdPhysicalBytesForTesting(), kSmall);
     EXPECT_EQ(cache->getAllocationStats().liveBytes, kSmall);
@@ -452,7 +452,7 @@ TEST_F(MemoryManagerVMMTest, LargerRequestRemapsTheStreamsOwnFreePages) {
 // Steady state does not remap: a request that fits a block the stream freed
 // reuses it in place.
 TEST_F(MemoryManagerVMMTest, RequestThatFitsTheStreamsFreeBlockDoesNotRemap) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const size_t kPage = 256 * kMiB;
   ASSIGN_NO_ERR(DeviceRef, device, dev());
   std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kPage);
@@ -460,9 +460,9 @@ TEST_F(MemoryManagerVMMTest, RequestThatFitsTheStreamsFreeBlockDoesNotRemap) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
   {
     std::unique_ptr<MemoryManagerFreeList> child =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                /*label=*/"steady");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false,
+                                 /*label=*/"steady");
     for (int i = 0; i < 4; ++i) {
       ASSIGN_NO_ERR(void *, big, child->allocate(3 * kPage, mode));
       EXPECT_NO_ERR(child->free(big));
@@ -479,7 +479,7 @@ TEST_F(MemoryManagerVMMTest, RequestThatFitsTheStreamsFreeBlockDoesNotRemap) {
 // live and peak bytes, the largest request and the distinct large request
 // sizes, all restartable.
 TEST_F(MemoryManagerVMMTest, AllocationStatsTrackPeaksAndLargeRequests) {
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const size_t kPage = 256 * kMiB;
   ASSIGN_NO_ERR(DeviceRef, device, dev());
   std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
@@ -487,9 +487,9 @@ TEST_F(MemoryManagerVMMTest, AllocationStatsTrackPeaksAndLargeRequests) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
   {
     std::unique_ptr<MemoryManagerFreeList> child =
-        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
-                                                /*disableFlush=*/false,
-                                                /*label=*/"stats");
+        createFreeListForContext(*ctx, *cache, cache->freeList(),
+                                 /*disableFlush=*/false,
+                                 /*label=*/"stats");
     ASSIGN_NO_ERR(void *, small, child->allocate(kPage, mode));
     ASSIGN_NO_ERR(void *, large, child->allocate(kGiB + kPage, mode));
     MemoryManager::AllocationStats s = cache->getAllocationStats();
