@@ -117,6 +117,23 @@ This version is still a work in progress.
           return None
   ```
 
+- The error for converting a function to an invalid function type now explains
+  why the conversion cannot be made, such as a mismatch in argument counts,
+  argument conventions, effects, etc:
+
+  ```mojo
+  def takes_read(f: def(Int) thin -> None):
+      pass
+
+  def mut_arg(mut x: Int):
+      pass
+
+  # error: ... cannot be converted from 'def mut_arg(mut x: Int) thin -> None'
+  # to 'def(Int) thin -> None', argument 'x': expected 'imm' convention,
+  # found 'mut'
+  takes_read(mut_arg)
+  ```
+
 ## Language changes
 
 - `@explicit_destroy("<message>")` on a struct is deprecated and now emits a
