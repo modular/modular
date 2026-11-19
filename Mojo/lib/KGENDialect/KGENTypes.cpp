@@ -244,12 +244,40 @@ LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value,
 // TypeValueType
 //===----------------------------------------------------------------------===//
 
+/// Returns true if `type` is `__MLIRType[T]`, the stub struct that provides the
+/// witness tables of a non-struct type `T`.
+static bool isMLIRTypeStub(Type type) {
+  auto ref = dyn_cast<TypeValueType>(type);
+  if (!ref)
+    return false;
+  SymbolRefAttr symbol;
+  if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(ref.getTypeValue()))
+    symbol = genRef.getSymbol();
+  else if (auto instRef = dyn_cast<TypeInstanceRefAttr>(ref.getTypeValue()))
+    symbol = instRef.getSymbol();
+  else
+    return false;
+
+  // TODO: We don't have a good way to see whether we are handling __MLIRType at
+  // this stage, hard code it here :(
+  constexpr StringLiteral stubName = "std::builtin::_stubs::__MLIRType";
+  return symbol.getRootReference().getValue().starts_with(stubName);
+}
+
 Type TypeValueType::get(TypedAttr typeValue) {
   // Strip extension to reveal the actual underlying type.
   typeValue = ExtensionAttr::strip(typeValue);
   // Simply forward the value domain type from a TypeParamAttr.
-  if (auto constant = dyn_cast<TypeParamAttr>(typeValue))
+  if (auto constant = dyn_cast<TypeParamAttr>(typeValue)) {
+    // Look through MLIRStubs, this mirrors what we do in parser when creating
+    // `ParamType` from a `__MLIRType` type value. This make evaluation result
+    // consistent between parser and elaborator.
+    //
+    // FIXME: Fix `__MLIRType`!
+    if (isMLIRTypeStub(constant.getTypeValue()))
+      return constant.getMlirType();
     return constant.getTypeValue();
+  }
 
   // Otherwise, form the TypeValueType like normal.
   return Base::get(typeValue.getContext(), typeValue);
