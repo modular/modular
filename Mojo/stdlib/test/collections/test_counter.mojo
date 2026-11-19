@@ -363,6 +363,29 @@ def test_most_common_clamps() raises:
 #     assert_true(c2.ge(c1))
 
 
+def test_comparisons_with_keys_missing_on_one_side() raises:
+    var empty = Counter[Int]()
+    var negative = Counter[Int]()
+    negative[7] = -1
+
+    # A key missing from `empty` counts as zero, and 0 > -1.
+    assert_false(empty.le(negative))
+    assert_false(empty.lt(negative))
+    assert_true(empty.ge(negative))
+    assert_true(empty.gt(negative))
+    assert_true(negative.le(empty))
+    assert_true(negative.lt(empty))
+    assert_false(negative.ge(empty))
+    assert_false(negative.gt(empty))
+
+    var zero = Counter[Int]()
+    zero[7] = 0
+    assert_false(empty.lt(zero))
+    assert_false(zero.lt(empty))
+    assert_true(empty.le(zero))
+    assert_true(zero.le(empty))
+
+
 # def test_elements() raises:
 #     var c = Counter[String]()
 #     c["a"] = 1
