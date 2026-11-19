@@ -418,7 +418,7 @@ void MEFExecutor::execute(const MEFInvokableImpl &invokable,
                           MutableArrayRef<AnyAsyncValueRef> arguments,
                           MutableArrayRef<AnyAsyncValueRef> results,
                           ArrayRef<unsigned> resultRegIndex) {
-  M_PROFILE_RANGE("MEFExecutor::execute", M_PROFILE_COLOR_RED);
+  M_PROFILE_SPAN("MEFExecutor::execute", M_PROFILE_COLOR_RED);
   // Now that the executor is all set up and ready to go, kick off the ready
   // primitives.
 
@@ -558,8 +558,8 @@ void MEFExecutor::processArgumentsPseudo(
 /// from the end of the vector to the start - worklist style.
 void MEFExecutor::decrementOperandsNotReadyCounts(
     SmallVectorImpl<uint32_t> &primitiveIDWorklist) {
-  M_PROFILE_RANGE("MEFExecutor::decrementOperandsNotReadyCounts",
-                  M_PROFILE_COLOR_RED);
+  M_PROFILE_SPAN("MEFExecutor::decrementOperandsNotReadyCounts",
+                 M_PROFILE_COLOR_RED);
 
   RunnablePrimitiveDescriptorBuilder frame(cpuDevice, mefFile->attributes,
                                            *this);
@@ -699,7 +699,8 @@ void MEFExecutor::processUsedByRecords(
     AnyAsyncValueRef result, AsyncValue *registerVal, ArrayRef<uint32_t> users,
     uint32_t totalUserRefCount,
     SmallVectorImpl<uint32_t> &primitiveIDWorklist) {
-  M_PROFILE_RANGE("MEFExecutor::processUsedByRecords", M_PROFILE_COLOR_RED);
+  M_PROFILE_TRACY_ZONE("MEFExecutor::processUsedByRecords",
+                       M_PROFILE_COLOR_RED);
 
   assert(users.size() <= totalUserRefCount &&
          "totalUserRefCount is primitive users + mef.output");
@@ -809,7 +810,7 @@ MEFInvokableImpl::decode(const EncodedLocation &loc) const {
 void MEFInvokableImpl::invoke(MutableArrayRef<AnyAsyncValueRef> arguments,
                               MutableArrayRef<AnyAsyncValueRef> results,
                               CPUDevice &cpuDevice) const {
-  M_PROFILE_RANGE("MEFInvokableImpl::invoke", M_PROFILE_COLOR_RED);
+  M_PROFILE_SPAN("MEFInvokableImpl::invoke", M_PROFILE_COLOR_RED);
 
   ASSERT_STREAM(arguments.size() == getNumArgs(),
                 << "incorrect number of argument to an invokable. "

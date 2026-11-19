@@ -2887,8 +2887,8 @@ ErrorOr<void *> MemoryManagerFreeList::finalizeDebugAlloc(void *unwrappedPtr,
 ErrorOr<void *>
 MemoryManagerFreeList::allocate(size_t size, AllocatorContext::AllocMode mode) {
   assert(size != 0);
-  M_PROFILE_RANGE_TEXT("MemoryManagerFreeList::allocate",
-                       M_PROFILE_COLOR_PURPLE, "size: " + std::to_string(size));
+  M_PROFILE_SPAN_TEXT("MemoryManagerFreeList::allocate", M_PROFILE_COLOR_PURPLE,
+                      "size: " + std::to_string(size));
 
   size_t wrappedSize = size;
   if (redzoneEnable_) {
@@ -3243,8 +3243,8 @@ MemoryManager::Desc *MemoryManagerFreeList::allocateDesc(size_t size) {
 
 MemoryManager::Desc *
 MemoryManagerFreeList::allocateDescAligned(size_t size, size_t startAlign) {
-  M_PROFILE_RANGE_TEXT("MemoryManagerFreeList::allocateDescAligned",
-                       M_PROFILE_COLOR_PURPLE, "size: " + std::to_string(size));
+  M_PROFILE_SPAN_TEXT("MemoryManagerFreeList::allocateDescAligned",
+                      M_PROFILE_COLOR_PURPLE, "size: " + std::to_string(size));
   assert((size & memoryManager_.alignmentMask_) == size);
   LOG_MSG("In allocateDescAligned with size " + TWINE(size) +
           " and primary free buffer id: " + TWINE(primaryFreeBuffers_));
@@ -3489,7 +3489,7 @@ void MemoryManagerFreeList::printRedzone(const uint8_t *dataPtr,
 }
 
 ErrorOrSuccess MemoryManagerFreeList::free(void *ptr) {
-  M_PROFILE_RANGE("MemoryManagerFreeList::free", M_PROFILE_COLOR_PURPLE);
+  M_PROFILE_SPAN("MemoryManagerFreeList::free", M_PROFILE_COLOR_PURPLE);
   if (ptr == nullptr)
     return success();
 

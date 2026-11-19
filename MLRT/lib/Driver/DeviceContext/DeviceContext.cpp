@@ -427,7 +427,7 @@ std::string Device::FunctionCacheKey::moduleCacheName(StringRef moduleName,
 
 DeviceFunctionCacheEntryRef
 Device::findInFunctionCache(const FunctionCacheKey &key) const {
-  M_PROFILE_SPAN("Device::findInFunctionCache", M_PROFILE_COLOR_PURPLE);
+  M_PROFILE_TRACY_ZONE("Device::findInFunctionCache", M_PROFILE_COLOR_PURPLE);
   std::scoped_lock<std::mutex> lock(mu_);
   return funcMap_.lookup(key);
 }
@@ -435,7 +435,7 @@ Device::findInFunctionCache(const FunctionCacheKey &key) const {
 DeviceFunctionCacheEntryRef
 Device::insertInFunctionCache(const FunctionCacheKey &key,
                               const DeviceFunctionCacheEntry &entry) {
-  M_PROFILE_SPAN("Device::insertInFunctionCache", M_PROFILE_COLOR_PURPLE);
+  M_PROFILE_TRACY_ZONE("Device::insertInFunctionCache", M_PROFILE_COLOR_PURPLE);
   {
     std::scoped_lock<std::mutex> lock(mu_);
     auto iter = funcMap_.find(key);
@@ -1620,7 +1620,8 @@ void DeviceContext::setPendingEventHandler(PendingEventHandler *h) {
 }
 
 ErrorOrSuccess DeviceContext::checkPendingError() {
-  M_PROFILE_SPAN("DeviceContext::checkPendingError", M_PROFILE_COLOR_PURPLE);
+  M_PROFILE_TRACY_ZONE("DeviceContext::checkPendingError",
+                       M_PROFILE_COLOR_PURPLE);
 
   // Quickly check if we should check for a pending error.
   if (hasPendingError_.load(std::memory_order_acquire) == 0) {

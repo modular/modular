@@ -34,7 +34,7 @@ struct PrimitiveRegistry::Impl {
 //===----------------------------------------------------------------------===//
 
 static void mef_model() {
-  M_PROFILE_RANGE("mef_model", M_PROFILE_COLOR_TEAL);
+  M_PROFILE_SPAN("mef_model", M_PROFILE_COLOR_TEAL);
 
   ASSERT_STREAM(false, << "mef.model should never be invoked");
 }
