@@ -71,6 +71,10 @@ from max.gpu.host import (
     ClusterLaunchConfig,
     GridBlockLaunchConfig,
 )
+from max.gpu.host.nvidia.launch_config import (
+    _CLUSTER_DIM_ATTRIBUTE_ERROR,
+    _holds_cluster_dim_attribute,
+)
 from max.gpu.host.nvidia import (
     ClusterAttributeLaunchConfig,
     GridBlockAttributeLaunchConfig,
@@ -98,6 +102,7 @@ from max.gpu.host.info import default_accelerator, get_gpu_info
 from max.gpu.host.launch_config import (
     ExecutionConfig,
     GridBlockExecutionConfig,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
 from .host_types import (
     CompletionFlag,
@@ -2780,25 +2785,60 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the compilation or the launch fails.
         """
         comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_function[
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
+                grid_dim, location=call_location()
+            )
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
+                block_dim, location=call_location()
+            )
+            comptime plugin = MaxPluginForTarget[Self.target]
+            var gpu_kernel = self._impl.compile_function[
                 func,
-                link_options=link_options,
                 dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
+                link_options=link_options,
                 _dump_sass=_dump_sass,
                 _ptxas_info_verbose=_ptxas_info_verbose,
             ](
-                *encoded_args,
-                host_args=host_args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                func_attribute=func_attribute,
-                location=location,
+                func_attribute=self._impl._func_attribute_for_launch(
+                    func_attribute, shared_mem_bytes
+                )
             )
+            comptime if plugin._handles_enqueue_function:
+                comptime assert (
+                    HostArgs.length == 0
+                ), "host_args is not supported on this target"
+                plugin.enqueue_function_fn(
+                    self,
+                    DeviceFunction[
+                        func,
+                        Self._Legacy.FunctionWrapper,
+                        target=Self.target,
+                        link_options=link_options,
+                        _ptxas_info_verbose=_ptxas_info_verbose,
+                    ](_legacy=gpu_kernel),
+                    *encoded_args,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    cluster_dim=cluster_dim,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=attributes^,
+                    constant_memory=constant_memory^,
+                    location=location.or_else(call_location()),
+                )
+            else:
+                gpu_kernel._call_with_pack_checked(
+                    self._impl,
+                    *encoded_args,
+                    host_args=host_args,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    cluster_dim=cluster_dim,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=attributes^,
+                    constant_memory=constant_memory^,
+                    location=location.or_else(call_location()),
+                )
             return
 
         comptime if Self._HALHooks.Enqueuer.overrides:
@@ -3186,16 +3226,60 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime __guard not use_legacy_backend() else:
             # The legacy backend doesn't support the full
             # `DeviceContext.ExecutionConfigType`, so the legacy
-            # context's grid and block requirement is asserted here.
+            # context's launch configurations are asserted here.
             comptime assert conforms_to(ConfigType, GridBlockExecutionConfig), (
                 "the legacy DeviceContext launches only grid and block"
                 " configurations"
             )
-            self._impl.enqueue_function[func](
+            comptime assert (
+                ConfigType == GridBlockLaunchConfig
+                or ConfigType == ClusterLaunchConfig
+                or ConfigType == GridBlockAttributeLaunchConfig
+                or ConfigType == ClusterAttributeLaunchConfig
+            ), (
+                "this DeviceContext launches only a GridBlockLaunchConfig,"
+                " ClusterLaunchConfig, GridBlockAttributeLaunchConfig, or"
+                " ClusterAttributeLaunchConfig"
+            )
+
+            var cluster_dim = OptionalReg[Dim](None)
+            comptime if conforms_to(ConfigType, ClusterExecutionConfig):
+                comptime assert conforms_to(
+                    Self.ExecutionConfigType, ClusterExecutionConfig
+                ), "this target does not support thread block cluster launch"
+                cluster_dim = execution_config.get_cluster_dim()
+
+            var shared_mem_bytes = OptionalReg[Int](None)
+            comptime if conforms_to(
+                ConfigType, NearComputeGeneralPurposeScratchpadExecutionConfig
+            ):
+                shared_mem_bytes = (
+                    execution_config.get_near_compute_scratchpad_usage()
+                )
+
+            var attributes = List[LaunchAttribute]()
+            comptime if conforms_to(
+                ConfigType, LaunchAttributeHolderExecutionConfig
+            ):
+                comptime assert conforms_to(
+                    Self.ExecutionConfigType,
+                    LaunchAttributeHolderExecutionConfig,
+                ), "this target does not support launch attributes"
+                if _holds_cluster_dim_attribute(
+                    execution_config.get_launch_attributes()
+                ):
+                    raise Error(_CLUSTER_DIM_ATTRIBUTE_ERROR)
+                attributes = List(execution_config.get_launch_attributes())
+
+            self.enqueue_function[func](
                 *encoded_args,
-                execution_config=execution_config,
                 host_args=host_args,
-                location=location,
+                grid_dim=execution_config.get_grid_dim(),
+                block_dim=execution_config.get_block_dim(),
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                location=location.or_else(call_location()),
             )
             return
 

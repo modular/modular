@@ -77,13 +77,6 @@ from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
 from ..info import _device_type_encoder_target
-from max._driver.max_license.device_context_dispatch.device_context import (
-    DeviceContext,
-    use_legacy_backend,
-)
-from max._driver.max_license.device_context_dispatch.device_function import (
-    DeviceFunction,
-)
 from max._plugin import MaxPluginForTarget
 
 from ..info import get_gpu_info, default_accelerator
@@ -106,19 +99,14 @@ from .._launch_args import DeviceFunctionWrapper, _IdentityWrapper, DenseArgs
 
 from ..launch_config import (
     ClusterExecutionConfig,
-    ClusterLaunchConfig,
     ExecutionConfig,
     GridBlockExecutionConfig,
     GridBlockLaunchConfig,
-    NearComputeGeneralPurposeScratchpadExecutionConfig,
     _supports_cluster_launch,
 )
 from ..nvidia.launch_config import (
     ClusterAttributeLaunchConfig,
     GridBlockAttributeLaunchConfig,
-    LaunchAttributeHolderExecutionConfig,
-    _CLUSTER_DIM_ATTRIBUTE_ERROR,
-    _holds_cluster_dim_attribute,
 )
 
 from max.gpu.host._driver_handles import (
@@ -142,7 +130,6 @@ from max.gpu.host._driver_common import (
     _string_from_owned_charptr,
     _DumpPath,
     _checked,
-    _check_dim_in_range,
     StreamPriorityRange,
 )
 
@@ -5041,286 +5028,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             plugin._handles_closure_kernels
         ), "compile_function[ClosureType] is not supported on this target"
         return {plugin.compile_closure_fn[ClosureType](self)}
-
-    @inline(.always)
-    def enqueue_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        HostArgs: TypeList[Trait=RegisterPassable, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *encoded_types: DevicePassable,
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *encoded_args: *encoded_types,
-        host_args: Tuple[*HostArgs] = (),
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Compiles and enqueues a kernel for execution on this device, encoding
-        `DevicePassable` args and passing the trailing host arguments by host
-        layout.
-
-        You can pass the function directly to `enqueue_function`
-        without compiling it first:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        Put capturing closures in `host_args`. The named kernel is compiled
-        against those host callables; encoding them would rewrite captures to a
-        synthesized `device_type` the kernel cannot read. Kernel parameters
-        must be encoded args first, then the host arguments.
-
-        When this target's MAX plugin handles launches, `host_args` must be
-        empty.
-
-        Build `host_args` inline in the call with a tuple:
-
-        ```mojo
-        ctx.enqueue_function[kernel](
-            buffer,
-            host_args=(epilogue_fn,),
-            grid_dim=1,
-            block_dim=1,
-        )
-        ```
-
-        Parameters:
-            declared_arg_types: Types of the arguments to pass to the device function.
-            HostArgs: The host-layout types of the trailing arguments.
-            func: The function to compile and launch.
-            encoded_types: The `DevicePassable` argument types encoded to
-                device layout.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            encoded_args: The variadic `DevicePassable` arguments encoded to
-                device layout.
-            host_args: The trailing arguments passed by host layout.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            cluster_dim: The cluster dimensions.
-            shared_mem_bytes: Per-block memory shared between blocks.
-            attributes: A `List` of launch attributes.
-            constant_memory: A `List` of constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-            location: Source location for the function call.
-
-        Raises:
-            If the operation fails.
-        """
-        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-        comptime plugin = MaxPluginForTarget[Self.target]
-        var inferred_func_attribute = self._func_attribute_for_launch(
-            func_attribute, shared_mem_bytes
-        )
-        var gpu_kernel = self.compile_function[
-            func,
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            link_options=link_options,
-            _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=inferred_func_attribute)
-        comptime if plugin._handles_enqueue_function:
-            comptime assert (
-                HostArgs.length == 0
-            ), "host_args is not supported on this target"
-            comptime assert (
-                use_legacy_backend()
-            ), "the legacy compile-and-enqueue path needs the legacy backend"
-            plugin.enqueue_function_fn(
-                DeviceContext[Self.target](_legacy=self),
-                DeviceFunction[
-                    func,
-                    Self.FunctionWrapper,
-                    target=Self.target,
-                    link_options=link_options,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](_legacy=gpu_kernel),
-                *encoded_args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
-        else:
-            gpu_kernel._call_with_pack_checked(
-                self,
-                *encoded_args,
-                host_args=host_args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
-
-    @inline(.always)
-    def enqueue_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        ConfigType: GridBlockExecutionConfig,
-        HostArgs: TypeList[Trait=RegisterPassable, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *encoded_types: DevicePassable,
-    ](
-        self,
-        *encoded_args: *encoded_types,
-        execution_config: ConfigType,
-        host_args: Tuple[*HostArgs] = (),
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Compiles and enqueues a kernel with a capability-typed launch
-        configuration.
-
-        `execution_config` must be a `GridBlockLaunchConfig`, a
-        `ClusterLaunchConfig`, or, on NVIDIA targets, a
-        `GridBlockAttributeLaunchConfig` or a `ClusterAttributeLaunchConfig`
-        from `max.gpu.host.nvidia`. A capability this target lacks, such as
-        clusters or launch attributes, fails to compile:
-
-        ```mojo
-        from max.gpu.host import ClusterLaunchConfig, DeviceContext, Dim
-
-        def kernel():
-            pass
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](
-                execution_config=ClusterLaunchConfig(
-                    grid_dim=4, block_dim=128, cluster_dim=Dim(2, 1, 1)
-                ),
-            )
-        ```
-
-        Put capturing closures in `host_args`, after `execution_config`, as
-        for the keyword overload.
-
-        Parameters:
-            declared_arg_types: Types of the arguments to pass to the device
-                function.
-            ConfigType: The launch configuration type.
-            HostArgs: The host-layout types of the trailing arguments.
-            func: The function to compile and launch.
-            encoded_types: The `DevicePassable` argument types encoded to
-                device layout.
-
-        Args:
-            encoded_args: The variadic `DevicePassable` arguments encoded to
-                device layout.
-            execution_config: The launch configuration.
-            host_args: The trailing arguments passed by host layout.
-            location: Source location for the function call.
-
-        Raises:
-            If the operation fails.
-        """
-        comptime assert (
-            ConfigType == GridBlockLaunchConfig
-            or ConfigType == ClusterLaunchConfig
-            or ConfigType == GridBlockAttributeLaunchConfig
-            or ConfigType == ClusterAttributeLaunchConfig
-        ), (
-            "this DeviceContext launches only a GridBlockLaunchConfig,"
-            " ClusterLaunchConfig, GridBlockAttributeLaunchConfig, or"
-            " ClusterAttributeLaunchConfig"
-        )
-
-        var cluster_dim = OptionalReg[Dim](None)
-        comptime if conforms_to(ConfigType, ClusterExecutionConfig):
-            comptime assert conforms_to(
-                Self.ExecutionConfigType, ClusterExecutionConfig
-            ), "this target does not support thread block cluster launch"
-            cluster_dim = execution_config.get_cluster_dim()
-
-        var shared_mem_bytes = OptionalReg[Int](None)
-        comptime if conforms_to(
-            ConfigType, NearComputeGeneralPurposeScratchpadExecutionConfig
-        ):
-            shared_mem_bytes = (
-                execution_config.get_near_compute_scratchpad_usage()
-            )
-
-        var attributes = List[LaunchAttribute]()
-        comptime if conforms_to(
-            ConfigType, LaunchAttributeHolderExecutionConfig
-        ):
-            comptime assert conforms_to(
-                Self.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
-            ), "this target does not support launch attributes"
-            if _holds_cluster_dim_attribute(
-                execution_config.get_launch_attributes()
-            ):
-                raise Error(_CLUSTER_DIM_ATTRIBUTE_ERROR)
-            attributes = List(execution_config.get_launch_attributes())
-
-        self.enqueue_function[func](
-            *encoded_args,
-            host_args=host_args,
-            grid_dim=execution_config.get_grid_dim(),
-            block_dim=execution_config.get_block_dim(),
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            location=location.or_else(call_location()),
-        )
 
     @inline(.always)
     def enqueue_cpu_function[
