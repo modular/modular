@@ -284,16 +284,16 @@ LogicalResult Decorators::handleMessageDecorator(
       return success();
     }
 
-    // If the decorated decl is a method, look for a sibling member in the
-    // same struct/trait/extension. For non-methods (top-level functions,
-    // structs, aliases), use the standard lookup with searchParentScopes=true.
-    auto *defDecl = dyn_cast<DefASTDecl>(&decl);
-    ASTDecl *methodParent =
-        defDecl ? defDecl->tryGetMethodParentDecl() : nullptr;
-    ASTDecl *scope = methodParent ? methodParent : decl.getParentDecl();
+    // A member of a struct, trait, or extension, such as a method or a
+    // `comptime` member, names a sibling member: the fix-it rewrites only the
+    // member name at the use site. Unqualified lookup skips type bodies, so
+    // members look in the type itself. Other decls use unqualified lookup.
+    ASTDecl *memberParent =
+        dyn_cast_if_present<TypeScopeASTDecl>(decl.getParentDecl());
+    ASTDecl *scope = memberParent ? memberParent : decl.getParentDecl();
     LookupResult lookup = shared.lookupAndResolveDecl(
         target->spelling, target->getLoc(), *scope,
-        /*searchParentScopes=*/methodParent == nullptr);
+        /*searchParentScopes=*/memberParent == nullptr);
 
     if (lookup.isErroneous())
       return success();
