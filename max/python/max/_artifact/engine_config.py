@@ -40,6 +40,25 @@ AcceptanceMode: TypeAlias = Literal["greedy", "stochastic"]
 DraftProposal: TypeAlias = Literal["argmax", "sampled"]
 """How a speculative draft proposes its tokens."""
 
+CaptureCacheBound: TypeAlias = Literal["live", "context", "bucketed"]
+"""The host cache bound a captured decode bakes in: the batch's own (no
+capture pin), the context limit, or the batch's power-of-two bucket."""
+
+
+@dataclass(frozen=True)
+class EngineCaptureConfig:
+    """How an engine may capture the decode graph.
+
+    Args:
+        mla_decode: Whether the MLA decode is qualified for capture: its
+            launch shape follows only what a capture key holds.
+        cache_bound: The host cache bound a captured decode bakes in, for a
+            graph whose kernels size launches from it.
+    """
+
+    mla_decode: bool = False
+    cache_bound: CaptureCacheBound = "live"
+
 
 @dataclass(frozen=True)
 class EngineSamplingConfig:
@@ -157,6 +176,7 @@ class EngineConfig:
         sampling: The sampling graphs' optional inputs.
         speculative: The speculative-decoding settings, or ``None`` for a
             pipeline that doesn't decode speculatively.
+        capture: How an engine may capture the decode graph.
         device_graph_capture: Whether the architecture supports device graph
             capture of its decode steps: the graph makes no host call inside
             a step, its expert-parallel arm included.
@@ -173,6 +193,7 @@ class EngineConfig:
     ep_size: int
     sampling: EngineSamplingConfig
     speculative: EngineSpeculativeConfig | None
+    capture: EngineCaptureConfig = EngineCaptureConfig()
     device_graph_capture: bool = False
     prefill_context_parallel: EnginePrefillContextParallel | None = None
 
@@ -213,6 +234,10 @@ class EngineConfig:
                 ),
                 "successor_replay": speculative.successor_replay,
             },
+            "capture": {
+                "mla_decode": self.capture.mla_decode,
+                "cache_bound": self.capture.cache_bound,
+            },
             "device_graph_capture": self.device_graph_capture,
             "prefill_context_parallel": None
             if (pcp := self.prefill_context_parallel) is None
@@ -250,6 +275,11 @@ class EngineConfig:
             speculative=decode_field(
                 value, "speculative", decode_optional(_speculative)
             ),
+            # An artifact written before the field existed captures nothing
+            # the engine would not.
+            capture=decode_field(value, "capture", _capture)
+            if "capture" in value
+            else EngineCaptureConfig(),
             # An artifact written before the field existed reads as one
             # whose decode MAX does not capture.
             device_graph_capture=expect(
@@ -321,6 +351,26 @@ def _draft_proposal(value: ArtifactType) -> DraftProposal:
             return "sampled"
         case other:
             raise ValueError(f"unknown draft proposal {other!r}")
+
+
+def _cache_bound(value: ArtifactType) -> CaptureCacheBound:
+    match expect(value, str):
+        case "live":
+            return "live"
+        case "context":
+            return "context"
+        case "bucketed":
+            return "bucketed"
+        case other:
+            raise ValueError(f"unknown capture cache bound {other!r}")
+
+
+def _capture(value: ArtifactType) -> EngineCaptureConfig:
+    obj = decode_object(value, EngineCaptureConfig)
+    return EngineCaptureConfig(
+        mla_decode=expect(obj["mla_decode"], bool),
+        cache_bound=_cache_bound(obj["cache_bound"]),
+    )
 
 
 def _speculative(value: ArtifactType) -> EngineSpeculativeConfig:

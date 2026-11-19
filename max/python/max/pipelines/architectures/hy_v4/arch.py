@@ -36,6 +36,12 @@ hy_v4_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     requires_max_batch_context_length=True,
+    # The DSA indexer picks its scorer and top-k arms from the host cache
+    # bound, so a capture keys and pins the bound's power-of-two bucket.
+    mla_decode_capture=True,
+    capture_cache_bound="bucketed",
+    # The indexer kernels size their own launches.
+    unread_dispatch_caches=("indexer",),
     checkpoint_drafts={"mtp": "MTPHYV4DraftModel"},
     weight_rules=hy_v4_weight_rules,
     use_weight_rules=True,

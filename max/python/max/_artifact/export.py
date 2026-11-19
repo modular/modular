@@ -17,7 +17,8 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -72,6 +73,7 @@ from max.tensor.sharding import BufferLayout, TensorLayout
 from .batch_processor import BatchProcessorDims
 from .block_diffusion import BlockDiffusionMetadata
 from .engine_config import (
+    EngineCaptureConfig,
     EngineConfig,
     EnginePrefillContextParallel,
     EngineSamplingConfig,
@@ -435,6 +437,7 @@ def pipeline_engine_config(
     memory_plan: MemoryPlan,
     *,
     verify_facts: SpecGraphFacts | None = None,
+    capture: EngineCaptureConfig | None = None,
     device_graph_capture: bool = False,
     prefill_context_parallel: EnginePrefillContextParallel | None = None,
 ) -> EngineConfig:
@@ -449,6 +452,8 @@ def pipeline_engine_config(
         memory_plan: The memory plan the pipeline is built with.
         verify_facts: The fused graph's verify facts, read off the built
             spec-decode pipeline model; ``None`` for a pipeline without one.
+        capture: How an engine may capture the decode graph, from the
+            architecture; ``None`` for no qualification.
         device_graph_capture: Whether the architecture supports device graph
             capture of its decode steps.
         prefill_context_parallel: When a prefill step takes the PCP path,
@@ -502,6 +507,7 @@ def pipeline_engine_config(
             enable_penalties=sampling.enable_penalties,
         ),
         speculative=spec_config,
+        capture=EngineCaptureConfig() if capture is None else capture,
         device_graph_capture=device_graph_capture,
         prefill_context_parallel=prefill_context_parallel,
     )
@@ -566,7 +572,9 @@ _SPARSE_KV_FORMS: dict[MLASparseKVForm, SparseKVForm] = {
 }
 
 
-def pipeline_kv_cache(params: CacheLeafParamInterface) -> KVCacheLayout:
+def pipeline_kv_cache(
+    params: CacheLeafParamInterface, unread_dispatch: Collection[str] = ()
+) -> KVCacheLayout:
     """Returns the KV cache a pipeline's graphs are built for, for its artifact.
 
     Each cache in the tree is recorded with every parameter its graphs are
@@ -575,6 +583,8 @@ def pipeline_kv_cache(params: CacheLeafParamInterface) -> KVCacheLayout:
 
     Args:
         params: The pipeline's KV cache parameters.
+        unread_dispatch: The last path keys of the MLA caches whose kernels
+            never read their dispatch record.
 
     Returns:
         The artifact's ``kv_cache`` component.
@@ -583,7 +593,13 @@ def pipeline_kv_cache(params: CacheLeafParamInterface) -> KVCacheLayout:
         ArtifactError: If the tree holds a cache of a type the component
             doesn't record.
     """
-    caches = tuple(_caches(params, ""))
+    caches = tuple(
+        replace(cache, dispatch_unread=True)
+        if isinstance(cache, MLAKVCache)
+        and cache.name.rpartition(".")[2] in unread_dispatch
+        else cache
+        for cache in _caches(params, "")
+    )
     recorded = {leaf.leaf_id for cache in caches for leaf in cache.leaves}
     assert recorded == set(params.leaves()), (
         "each cache's pool leaves must be the tree's"
@@ -759,6 +775,25 @@ def checkpoint_format_spec(
     if callable(arch.format_spec):
         return arch.format_spec(repo)
     return arch.format_spec
+
+
+def architecture_capture(
+    arch: SupportedArchitecture | None,
+) -> EngineCaptureConfig | None:
+    """Returns the decode capture settings an architecture declares.
+
+    Args:
+        arch: The pipeline's architecture.
+
+    Returns:
+        The settings, or ``None`` without an architecture.
+    """
+    if arch is None:
+        return None
+    return EngineCaptureConfig(
+        mla_decode=arch.mla_decode_capture,
+        cache_bound=arch.capture_cache_bound,
+    )
 
 
 def checkpoint_tokenizer(
@@ -974,7 +1009,13 @@ def export_pipeline(
             sorted(overlap_helpers.files),
             time.monotonic() - started,
         )
-    kv_cache = pipeline_kv_cache(kv_params) if kv_params is not None else None
+    kv_cache = (
+        pipeline_kv_cache(
+            kv_params, arch.unread_dispatch_caches if arch is not None else ()
+        )
+        if kv_params is not None
+        else None
+    )
     _warn_unhonored_context_parallel(pipeline_config, architecture, kv_cache)
     artifact = model_artifact(
         model,
@@ -984,6 +1025,7 @@ def export_pipeline(
             pipeline_config,
             retrieved.memory_plan,
             verify_facts=_verify_facts(pipeline),
+            capture=architecture_capture(arch),
             device_graph_capture=arch is not None
             and arch.supports_device_graph_capture,
             prefill_context_parallel=_prefill_context_parallel(

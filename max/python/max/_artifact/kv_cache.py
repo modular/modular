@@ -219,6 +219,8 @@ class MLAKVCache:
         sparse_kv_form: The form sparse MLA decode dispatches on, or ``None``
             for dense MLA. An indexer cache records its MLA cache's form,
             whose capture key it follows.
+        dispatch_unread: Whether the kernels reading the cache never read
+            its dispatch record, so an engine need not key a capture on it.
         context_parallel: How the cache splits token positions across a
             decode context parallel group, or ``None`` when every rank of a
             replica holds them all.
@@ -243,6 +245,7 @@ class MLAKVCache:
     num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
     sparse_kv_form: SparseKVForm | None = None
+    dispatch_unread: bool = False
     context_parallel: ContextParallel | None = None
 
 
@@ -379,6 +382,7 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
                 "num_q_heads": cache.num_q_heads,
                 "sparse_indices_stride": cache.sparse_indices_stride,
                 "sparse_kv_form": cache.sparse_kv_form,
+                "dispatch_unread": cache.dispatch_unread,
             }
         )
     return (
@@ -525,6 +529,7 @@ def _mla(value: dict[str, ArtifactType]) -> MLAKVCache:
         sparse_kv_form=decode_optional(_sparse_kv_form)(
             obj.get("sparse_kv_form")
         ),
+        dispatch_unread=_bool(obj.get("dispatch_unread", False)),
         # An artifact exported before the field reads as unsplit.
         context_parallel=decode_optional(_context_parallel)(
             obj.get("context_parallel")

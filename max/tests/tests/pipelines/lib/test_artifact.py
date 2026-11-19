@@ -36,6 +36,7 @@ from max._artifact.batch_processor import BatchProcessorDims
 from max._artifact.block_diffusion import BlockDiffusionMetadata
 from max._artifact.codec import encode, prefix_files
 from max._artifact.engine_config import (
+    EngineCaptureConfig,
     EngineConfig,
     EnginePrefillContextParallel,
     EngineSamplingConfig,
@@ -619,6 +620,7 @@ ENGINE_CONFIG = EngineConfig(
         verify_commits_long_rows=False,
         successor_replay=True,
     ),
+    capture=EngineCaptureConfig(mla_decode=True, cache_bound="bucketed"),
     device_graph_capture=True,
     prefill_context_parallel=EnginePrefillContextParallel(
         min_step_tokens=7168,
@@ -655,6 +657,7 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
                 "verify_commits_long_rows": False,
                 "successor_replay": True,
             },
+            "capture": {"mla_decode": True, "cache_bound": "bucketed"},
             "device_graph_capture": True,
             "prefill_context_parallel": {
                 "min_step_tokens": 7168,
@@ -664,6 +667,27 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
         }
     }
     assert deserialize(dest).engine_config == ENGINE_CONFIG
+
+
+def test_an_artifact_before_the_capture_record_qualifies_nothing(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    del sections["engine_config"]["capture"]
+    _rewrite_sections(dest, sections)
+    engine_config = deserialize(dest).engine_config
+    assert engine_config is not None
+    assert engine_config.capture == EngineCaptureConfig()
+
+
+def test_an_unknown_capture_cache_bound_is_rejected(tmp_path: Path) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    sections["engine_config"]["capture"]["cache_bound"] = "sometimes"
+    _rewrite_sections(dest, sections)
+    with pytest.raises(ArtifactError, match="component 'engine_config'"):
+        deserialize(dest)
 
 
 def test_an_artifact_before_device_graph_capture_reads_false(
@@ -803,6 +827,7 @@ KV_CACHE = KVCacheLayout(
             **_attention_fields("latent", "full_group"),
             num_q_heads=16,
             sparse_indices_stride=2048,
+            dispatch_unread=True,
             sparse_kv_form="plain",
             context_parallel=ContextParallel(degree=4, interleave=128),
         ),
