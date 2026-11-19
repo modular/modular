@@ -29,7 +29,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 
@@ -170,7 +171,7 @@ class FeedForward(Module[..., Tensor]):
     layer pays one cross-GPU barrier instead of two, and the result is
     rounded to bf16 once.
 
-    With an ``ep_batch_manager`` (expert parallelism, which always comes
+    With an ``ep_config`` (expert parallelism, which always comes
     with data-parallel attention) there is no barrier at all: the routed
     experts dispatch/combine through the P2P EP buffers, the shared
     expert runs whole on each rank's own rows, and the output is complete
@@ -183,12 +184,18 @@ class FeedForward(Module[..., Tensor]):
         mesh: DeviceMesh,
         *,
         data_parallel: bool = False,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
+        if ep_config is not None and not data_parallel:
+            raise ValueError(
+                "expert parallelism without data-parallel attention is "
+                "not wired in this model (tokens would need the "
+                "TP-sharded P2P dispatch layout)"
+            )
         self.mesh = mesh
         self.data_parallel = data_parallel
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
         h, ffn = config.hidden_size, config.moe_intermediate_size
         self.gate = Router(
             h,
@@ -222,7 +229,7 @@ class FeedForward(Module[..., Tensor]):
             config.n_routed_experts,
             mesh=mesh,
             swiglu_limit=config.swiglu_limit,
-            ep_batch_manager=ep_batch_manager,
+            ep_config=ep_config,
             expert_format=config.routed_expert_format,
             raw_checkpoint_weights=config.raw_checkpoint_weights,
         )
@@ -231,7 +238,7 @@ class FeedForward(Module[..., Tensor]):
         self,
         x: Tensor,
         image_token_mask: Tensor,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         total_rows: Tensor | None = None,
         x_rows: Mxfp8Rows | None = None,
     ) -> Tensor:
@@ -244,25 +251,9 @@ class FeedForward(Module[..., Tensor]):
             image_token_mask,
             mapping=x.mapping,
         )
-        if self.ep_batch_manager is not None:
-            if not self.data_parallel:
-                raise ValueError(
-                    "expert parallelism without data-parallel attention is "
-                    "not wired in this model (tokens would need the "
-                    "TP-sharded P2P dispatch layout)"
-                )
-            if comm_buffers is None:
-                raise ValueError(
-                    "the EP feed-forward requires the EP comm buffers"
-                )
-            if total_rows is None:
-                raise ValueError(
-                    "the EP feed-forward requires the host-resident total "
-                    "row count (the grouped kernels' tile-regime estimate)"
-                )
-            routed = self.routed.ep_forward(
-                x, ids, weights, comm_buffers, total_rows
-            )
+        if self.ep_config is not None:
+            assert ep is not None and total_rows is not None
+            routed = self.routed.ep_forward(x, ids, weights, ep, total_rows)
             shared = self.shared_experts.partial(x, x_rows)
             # The combine rounds the routed sum to bf16 (combine_dtype);
             # add the shared expert in float32 and round once, as the TP
@@ -407,7 +398,7 @@ class DecoderLayer(Module[..., Any]):
         engram: The layer's Engram module on ``engram_layer_ids``.
         data_parallel: Whether the mesh axis is a data-parallel axis (the
             attention and the shared expert run whole per rank, TP=1).
-        ep_batch_manager: The EP batch manager when the routed experts run
+        ep_config: The exchange's configuration when the routed experts run
             expert-parallel; ``None`` keeps the tensor-parallel MoE.
     """
 
@@ -422,7 +413,7 @@ class DecoderLayer(Module[..., Any]):
         candidate_block_size: int,
         engram: Module[..., Any] | None = None,
         data_parallel: bool = False,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
         layer = info.layer_id
@@ -495,7 +486,7 @@ class DecoderLayer(Module[..., Any]):
             config,
             mesh,
             data_parallel=data_parallel,
-            ep_batch_manager=ep_batch_manager,
+            ep_config=ep_config,
         )
         if engram is not None:
             self.engram = engram
@@ -616,7 +607,7 @@ class DecoderLayer(Module[..., Any]):
         kv: list[PagedCacheValues],
         slots: list[Tensor],
         routed: list[Tensor],
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         total_rows: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, list[Tensor]]:
         """Run one shared layer body and return its stream, gates, and selections."""
@@ -662,7 +653,7 @@ class DecoderLayer(Module[..., Any]):
             norm_eps=self.norm_eps,
             mxfp8=True,
         )
-        y = self.ffn(x, s.image_token_mask, comm_buffers, total_rows, x_rows)
+        y = self.ffn(x, s.image_token_mask, ep, total_rows, x_rows)
         return stream, pre, y, post, comb, entry, produced
 
 

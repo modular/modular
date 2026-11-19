@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from types import SimpleNamespace
 from typing import Any, cast
@@ -142,7 +142,7 @@ def test_trunk_tap_captures_the_layer_entry_stream(
         global_write_floor=None,
         image_token_mask=None,
         kv={},
-        comm=None,
+        ep=None,
     )
     model = SimpleNamespace(
         config=SimpleNamespace(hc_mult=hc, engram_layer_ids=()),
@@ -453,6 +453,10 @@ class _RecordingTarget:
         self.draft_width: Tensor | None = None
         self.vision: VisionInputs[Tensor] | None = None
         self.history: Any = None
+        self.ep_config = None
+
+    def ep_buffers(self, values: Sequence[Tensor]) -> None:
+        assert not values
 
     def batch_from_parts(
         self,
@@ -463,7 +467,7 @@ class _RecordingTarget:
         *,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
-        comm_buffers: Any = None,
+        ep: Any = None,
         draft_width: Tensor | None = None,
         history: Any = None,
         vision: VisionInputs[Tensor] | None = None,

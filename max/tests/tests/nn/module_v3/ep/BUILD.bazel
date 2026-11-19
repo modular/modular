@@ -1,0 +1,79 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test")
+load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_eager_py_test(
+    name = "tests",
+    srcs = glob(
+        ["test_*.py"],
+        exclude = ["test_no_legacy_ep_imports.py"],
+    ) + ["conftest.py"],
+    cpu_only = True,
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+    ],
+)
+
+modular_py_library(
+    name = "legacy_ep_scan",
+    testonly = True,
+    srcs = ["legacy_ep_scan.py"],
+    imports = ["."],
+)
+
+# Reads source files only: the architectures and family tests are data.
+modular_py_test(
+    name = "test_no_legacy_ep_imports",
+    srcs = ["test_no_legacy_ep_imports.py"],
+    data = ALL_ARCHITECTURES + [
+        "//max/tests/integration/architectures/beam_modulev3:py_srcs",
+        "//max/tests/integration/architectures/deepseekV3:py_srcs",
+        "//max/tests/integration/architectures/deepseekV3_2:py_srcs",
+        "//max/tests/integration/architectures/deepseekV41_modulev3:py_srcs",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/assembly:py_srcs",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/cache:py_srcs",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/dspark:py_srcs",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/layers:py_srcs",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/parallelism:py_srcs",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/serve:py_srcs",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/small_ops:py_srcs",
+        "//max/tests/integration/architectures/dflash2_beam_modulev3:py_srcs",
+        "//max/tests/integration/architectures/dflash_mimo_v2_modulev3:py_srcs",
+        "//max/tests/integration/architectures/glm5_1:py_srcs",
+        "//max/tests/integration/architectures/glm5_next:py_srcs",
+        "//max/tests/integration/architectures/glm5_next/activation:py_srcs",
+        "//max/tests/integration/architectures/glm5_next/config:py_srcs",
+        "//max/tests/integration/architectures/glm5_next/indexer:py_srcs",
+        "//max/tests/integration/architectures/glm5_next/kda:py_srcs",
+        "//max/tests/integration/architectures/glm5_next/parallelism:py_srcs",
+        "//max/tests/integration/architectures/glm5_next/processor:py_srcs",
+        "//max/tests/integration/architectures/kimi_k3_modulev3:py_srcs",
+        "//max/tests/integration/architectures/kimi_k3_modulev3/dspark:py_srcs",
+        "//max/tests/integration/architectures/kimi_k3_modulev3/spec:py_srcs",
+        "//max/tests/integration/architectures/kimi_k3_modulev3/tools:py_srcs",
+        "//max/tests/integration/architectures/kimik2_5_modulev3:py_srcs",
+        "//max/tests/integration/architectures/mimo_v2_modulev3:py_srcs",
+        "//max/tests/integration/architectures/mistral_large4:py_srcs",
+        "//max/tests/integration/architectures/mtp_deepseekV3:py_srcs",
+        "//max/tests/integration/architectures/mtp_glm5_next:py_srcs",
+        "//max/tests/integration/architectures/muse_spark:py_srcs",
+    ],
+    deps = [
+        ":legacy_ep_scan",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)

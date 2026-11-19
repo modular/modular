@@ -21,7 +21,6 @@ from collections.abc import Sequence
 from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import TensorValue
 from max.nn import Module
 from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
@@ -37,12 +36,13 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
     QuantAwareTensor,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.ep import EPBuffers, combine, dispatch
+from max.nn.ep_config import EPConfig
 from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.nn.transparent_module import TransparentModule
 from max.tensor import Tensor, default_device, defaults
-from max.tensor.sharding import DeviceMapping, DeviceMesh, Partial
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Partial, Replicated
 from max.tensor.sharding.action import PerShard
 
 from ..model_config import RoutedExpertFormat
@@ -91,7 +91,7 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         num_experts: Global expert count (384 for the full checkpoint).
         mesh: One-dimensional tensor-parallel mesh; defaults to the context.
         swiglu_limit: Asymmetric clamp limit from training.
-        ep_batch_manager: The EP batch manager when the routed experts run
+        ep_config: The exchange's configuration when the routed experts run
             expert-parallel; ``None`` keeps the tensor-parallel path.
         expert_format: How the checkpoint quantizes the experts.
     """
@@ -106,7 +106,7 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         *,
         mesh: DeviceMesh | None = None,
         swiglu_limit: float | None = 10.0,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
         expert_format: RoutedExpertFormat = RoutedExpertFormat.NVFP4,
         raw_checkpoint_weights: bool = False,
     ) -> None:
@@ -116,7 +116,7 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         self.raw_checkpoint_weights = raw_checkpoint_weights
         self.hidden_dim = hidden_dim
         self.moe_dim = moe_dim
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
         if self.mesh.ndim != 1 or num_experts % self.mesh.num_devices:
             raise ValueError("Experts must divide evenly across a 1-D mesh")
         if hidden_dim % 32 or moe_dim % 32:
@@ -188,7 +188,7 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         x: Tensor,
         topk_ids: Tensor,
         topk_weights: Tensor,
-        comm: EPCommBuffers,
+        ep: EPBuffers,
         total_rows: Tensor,
     ) -> Tensor:
         """The EP forward over per-rank rows: dispatch, compute, combine.
@@ -204,8 +204,7 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         compiler fuses into one MegaFFN launch. The result is each rank's
         own rows, complete: bf16 in ``x``'s placement.
 
-        ``comm`` must be the buffers bound from the EP graph inputs; see
-        :meth:`~max.nn.legacy.comm.ep.EPBatchManager.bind_comm_buffers`.
+        ``ep`` holds the exchange's buffers.
 
         ``total_rows`` is the batch's total token rows as a host-resident
         scalar (the sum of every rank's shard rows, which the trunk reads
@@ -215,13 +214,11 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         per-consuming-op device-to-host materialization the in-graph
         estimate used to cost.
         """
-        mgr = self.ep_batch_manager
-        if mgr is None:
-            raise ValueError("ep_forward requires an EP batch manager")
+        config = self.ep_config
+        if config is None:
+            raise ValueError("ep_forward requires an EP config")
         if topk_ids.dtype != DType.int32 or topk_weights.dtype != DType.float32:
             raise ValueError("Routing requires int32 ids and float32 weights")
-        mgr.bind_comm_buffers(comm)
-        config = mgr.config
         quant_config = config.dispatch_quant_config
         if quant_config is None or not quant_config.can_use_fused_swiglu:
             raise ValueError(
@@ -229,13 +226,8 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
                 "SwiGLU kernel reads"
             )
 
-        x_shards = list(x.local_shards)
-        ids_shards = list(topk_ids.local_shards)
-        weight_shards = list(topk_weights.local_shards)
-        device_ids = [d.id for d in self.mesh.devices]
-
         global_scales: list[Tensor] | None = None
-        input_scales: list[Tensor] | None = None
+        input_scales: Tensor | None = None
         if ep_requires_dispatch_scales(quant_config):
             # One replicated [1] leaf; ``local_shards`` is per rank, in mesh
             # order, exactly where the dispatch and the activation payloads
@@ -256,17 +248,18 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
                 ]
             else:
                 global_scales = list(self.global_input_scale.local_shards)
-            input_scales = [
-                F.broadcast_to(scale, [self.num_experts])
-                for scale in global_scales
-            ]
+            input_scales = Tensor.from_shard_values(
+                [
+                    F.broadcast_to(scale, [self.num_experts])
+                    for scale in global_scales
+                ],
+                DeviceMapping(self.mesh, (Replicated(),)),
+            )
 
-        dispatch_results = mgr.ep_dispatch_all(
-            x_shards, ids_shards, device_ids, input_scales=input_scales
+        grouped, route = dispatch(
+            config, ep, x, topk_ids, input_scales=input_scales
         )
-        payload = EPDispatchPayload.from_dispatch(
-            dispatch_results, quant_config, config
-        )
+        payload = EPDispatchPayload.from_grouped(grouped, quant_config, config)
         assert payload.scales is not None and payload.scales_offset is not None
         tokens: Sequence[QuantAwareTensor]
         if global_scales is None:
@@ -316,13 +309,15 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
             )
             for rank in range(self.mesh.num_devices)
         ]
-        combine_results = mgr.ep_combine_all(
-            down_bundle, weight_shards, device_ids
+        combined = combine(
+            config,
+            ep,
+            Tensor.from_shard_values(down_bundle, grouped.tokens.mapping),
+            route,
+            x,
+            topk_weights,
         )
-        out = Tensor.from_shard_values(
-            [TensorValue(shard) for shard in combine_results], x.mapping
-        )
-        return out.cast(DType.bfloat16)
+        return combined.cast(DType.bfloat16)
 
     def dispatched(
         self,

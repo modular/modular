@@ -28,9 +28,6 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     spec_decode_cache_slack,
 )
-from max.nn.legacy.comm.ep import (
-    EPBatchManager,
-)
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import ImageMetadata, TextAndVisionContext
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
@@ -266,7 +263,7 @@ class MistralLarge4Model(DeepseekV3Model):
         assert model_config.mesh is not None
         with default_device(model_config.mesh):
             module = MistralLarge4(
-                model_config, self.kv_params, self._ep_batch_manager
+                model_config, self.kv_params, model_config.ep_config
             )
         # The output modes are the caller's, not the module's: a verify asks
         # for every row's logits and, with taps declared, for the drafter's
@@ -473,7 +470,6 @@ class MistralLarge4Model(DeepseekV3Model):
         # through one collective group, so the fused graph takes the same
         # buffers the base graph does. The config's own decision table sizes
         # it, so the two graphs cannot disagree about the group.
-        ep_batch_manager: EPBatchManager | None = None
         if ep_size > 1:
             if ep_size % len(devices) != 0:
                 raise ValueError(
@@ -493,14 +489,13 @@ class MistralLarge4Model(DeepseekV3Model):
                     ep_use_allreduce=pipeline_config.runtime.ep_use_allreduce,
                 )
             )
-            context.start_ep(config.ep_config)
-            ep_batch_manager = EPBatchManager(config.ep_config)
+            config.ep_config = context.start_ep(config.ep_config)
         with (
             F.lazy(),
             default_dtype(DType.bfloat16),
             default_device(config.mesh),
         ):
-            module = MistralLarge4(config, config.kv_params, ep_batch_manager)
+            module = MistralLarge4(config, config.kv_params, config.ep_config)
         module.language_model.return_logits = context.return_logits
         module.language_model.return_hidden_states = (
             context.return_hidden_states

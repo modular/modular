@@ -19,13 +19,16 @@ from typing import Any
 
 from max import functional as F
 from max.nn import Module
-from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.ep_config import EPConfig
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor, defaults
 from max.tensor.sharding import DeviceMapping, Sharded
 
 from . import quant_ops
-from .quant_moe import ExpertParallelMoE, QuantizedMoE
+from .quant_moe import (
+    ExpertParallelMoE,
+    QuantizedMoE,
+)
 from .quant_tensor import NVFP4Tensor, QuantAwareTensor
 
 
@@ -151,13 +154,16 @@ class StackedExpertParallelMoE(ExpertParallelMoE):
     experts: StackedExperts  # type: ignore[assignment]
 
     def __init__(
-        self, *args, ep_batch_manager: EPBatchManager, **kwargs
+        self,
+        *args,
+        ep_config: EPConfig,
+        **kwargs,
     ) -> None:
-        if ep_batch_manager.config.fused_shared_expert:
+        if ep_config.fused_shared_expert:
             raise ValueError(
                 "Stacked experts do not take a fused shared expert yet"
             )
-        super().__init__(*args, ep_batch_manager=ep_batch_manager, **kwargs)
+        super().__init__(*args, ep_config=ep_config, **kwargs)
 
     def _init_experts(self) -> StackedExperts:  # type: ignore[override]
         _, mesh = defaults()

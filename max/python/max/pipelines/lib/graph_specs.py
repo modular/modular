@@ -22,14 +22,14 @@ role.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from max import tree
 from max._artifact.value_types import ArtifactError, treedef_to_json
@@ -38,7 +38,6 @@ from max.engine import CompiledModel, InferenceSession, Model
 from max.graph import Graph, Type
 from max.graph import Module as GraphModule
 from max.nn import Module as ModuleV3
-from max.nn.legacy import Module
 from max.nn.legacy.graph_groups import HiddenStates, Logits, TPSignals
 from max.nn.module import InputType
 from max.pipelines.modeling.eager_validation import eager_validator
@@ -46,6 +45,29 @@ from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable, StagedGraph
 from max.tensor.sharding import BufferLayout, TensorLayout
 from max.tensor.sharding.types import as_layout
+
+
+class _GraphTracer(Protocol):
+    """Traces a graph that is not a module's.
+
+    :class:`~max.nn.ep.init.EPInitGraph` is one, and so is a
+    :class:`~max.nn.legacy.Module`.
+    """
+
+    def trace(
+        self,
+        *input_types: Type[Any],
+        name: str | None = None,
+        module: GraphModule | None = None,
+        custom_extensions: Iterable[Path] = (),
+        is_device_graph: bool = False,
+    ) -> Graph:
+        """Traces the graph over ``input_types``."""
+        ...
+
+    def state_dict(self) -> Mapping[str, DLPackArray]:
+        """Returns the graph's weights, keyed by name."""
+        ...
 
 
 class GraphRole(str, Enum):
@@ -112,7 +134,8 @@ class GraphSpec:
 
     Args:
         module: The module whose ``__call__`` (``forward`` for a ModuleV3
-            module) the graph traces.
+            module) the graph traces, or an object with a ``trace`` method,
+            such as :class:`~max.nn.ep.init.EPInitGraph`.
         name: The graph's name. Graphs in one group need distinct names.
         input_types: The graph's input types: a sequence, or a named tree
             such as a module's ``input_tree`` whose leaves are the inputs in
@@ -134,7 +157,7 @@ class GraphSpec:
             a graph that runs on several devices.
     """
 
-    module: Module | ModuleV3[..., Any]
+    module: _GraphTracer | ModuleV3[..., Any]
     name: str
     input_types: Sequence[tree.Tree[InputType]] | Mapping[str, object]
     weights: Mapping[str, DLPackArray] | None = None

@@ -123,6 +123,7 @@ from max.graph import BufferType, DeviceRef, TensorType, Type
 from max.graph.weights import WeightsAdapter
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
+from max.nn.ep import init as ep_init
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.graph_groups import (
     BatchContext,
@@ -187,7 +188,6 @@ from .registration_runtime import (
     ModuleRuntime,
     batch_context_length_types,
     ep_input_tree,
-    initialize_ep_comm_buffers,
     prepare_weights,
     role_weights,
     uses_expert_parallel_exchange,
@@ -543,7 +543,9 @@ def decoder_input_types(
     )
 
 
-def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
+def _decoder_fields(
+    inputs: Mapping[str, Any], ep_mesh: DeviceMesh | None = None
+) -> OrderedDict[str, Any]:
     """Returns a decoder graph's named inputs as its role's fields.
 
     The graph takes ``vision`` as a ``vision_merge`` group, which the decoder
@@ -551,8 +553,12 @@ def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
     It takes ``batch_context_lengths``, ``scratch`` and multi-axis
     ``token_positions`` as ``batch_context``, ``decoder_scratch`` and
     ``mrope_positions`` groups, which it reads as their tensors alone.
+    Given ``ep_mesh``, the decoder reads ``ep`` as
+    :class:`~max.nn.ep.EPBuffers` over it.
     """
     fields = OrderedDict(inputs)
+    if (ep := fields.get("ep")) is not None and ep_mesh is not None:
+        fields["ep"] = ep_init.payload_buffers(ep, ep_mesh)
     if isinstance(positions := fields.get("token_positions"), MRoPEPositions):
         fields["token_positions"] = positions["position_ids"]
     if (vision := fields.get("vision")) is not None:
@@ -961,6 +967,7 @@ class _DecoderGraph(
         lora_manager: LoRAManagerV3 | None = None,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         last_stage: bool = True,
+        ep_mesh: DeviceMesh | None = None,
     ) -> None:
         super().__init__()
         # The LoRA weight adapter nests every checkpoint key under `model.`.
@@ -969,12 +976,13 @@ class _DecoderGraph(
         self.lora_manager = lora_manager
         self.return_hidden_states = return_hidden_states
         self.last_stage = last_stage
+        self.ep_mesh = ep_mesh
 
     def forward(
         self, inputs: DecoderGraphInputs
     ) -> _GroupedOutputs | DecoderOutputs:
         """Groups the graph's inputs into fields and runs the decoder."""
-        fields = DecoderInputs(**_decoder_fields(inputs))
+        fields = DecoderInputs(**_decoder_fields(inputs, self.ep_mesh))
         if fields.lora is not None:
             assert self.lora_manager is not None
             self.lora_manager.bind_inputs(self.model, fields.lora)
@@ -1341,10 +1349,15 @@ class ModuleV3DecoderPipelineModel(
                     f"{type(config).__qualname__} doesn't support expert "
                     "parallelism"
                 )
-            runtime, self.ep_comm_initializer, ep_init = (
-                initialize_ep_comm_buffers(config, runtime, self._session)
+            ep, self.ep_comm_initializer, modules = (
+                config.expert_parallel_inputs.initialize(
+                    self._session,
+                    config.expert_parallel_config(runtime),
+                    runtime.mesh,
+                )
             )
-            self.compiled_modules = {**self.compiled_modules, **ep_init}
+            runtime = dataclasses.replace(runtime, ep=ep)
+            self.compiled_modules = {**self.compiled_modules, **modules}
         self._runtime = runtime
         if isinstance(config, DeploymentConfig):
             config = config.apply_runtime(runtime)
@@ -1669,6 +1682,7 @@ class ModuleV3DecoderPipelineModel(
             lora_manager=lora_manager,
             return_hidden_states=self.return_hidden_states,
             last_stage=stage is None or stage.is_last,
+            ep_mesh=self._runtime.mesh,
         )
         if stage is not None:
             # A stage holds only its own layers.
@@ -2113,8 +2127,7 @@ class RegisteredDecoderBuilder:
                     f"{type(config).__qualname__} doesn't support expert "
                     "parallelism"
                 )
-            ep = config.expert_parallel_config(runtime)
-            context.start_ep(ep)
+            ep = context.start_ep(config.expert_parallel_config(runtime))
             runtime = dataclasses.replace(runtime, ep=ep)
         if isinstance(config, DeploymentConfig):
             config = config.apply_runtime(runtime)

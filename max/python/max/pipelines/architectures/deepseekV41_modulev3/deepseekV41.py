@@ -33,13 +33,15 @@ from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.ep import EPBuffers
+from max.nn.ep import init as ep_init
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MultiKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
@@ -348,8 +350,8 @@ class Batch:
 
     Under data parallelism (``dp > 1``) the per-row and per-request fields
     hold each rank's own shard: its requests' token rows, rebased row
-    offsets and request-sliced extras. ``comm`` carries the EP communication
-    buffers the MoE dispatch/combine reads, and the ``tokens_full`` /
+    offsets and request-sliced extras. ``ep`` holds the expert-parallel
+    exchange's buffers the MoE dispatch/combine reads, and the ``tokens_full`` /
     ``row_offsets_full`` pair keeps the pre-split replicated batch the
     vocab-parallel embedding reads before the split.
 
@@ -374,7 +376,7 @@ class Batch:
     lookback_dead: Tensor
     tables: list[Tensor]
     kv: dict[str, PagedCacheValues]
-    comm: EPCommBuffers | None = None
+    ep: EPBuffers | None = None
     tokens_full: Tensor | None = None
     row_offsets_full: Tensor | None = None
     data_parallel_splits: Tensor | None = None
@@ -422,28 +424,27 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         text_config: AutoConfig,
         token_map: np.ndarray,
         data_parallel_degree: int = 1,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
         self.config = config
         self.kv_params = kv_params
         self.mesh = mesh
         self.dp = data_parallel_degree
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
         if self.dp > 1 and mesh.num_devices != self.dp:
             raise ValueError(
                 f"data_parallel_degree {self.dp} must equal the mesh size "
                 f"({mesh.num_devices}); DP attention runs TP=1 per rank."
             )
-        if self.dp > 1 and ep_batch_manager is None:
+        if self.dp > 1 and ep_config is None:
             # The routed experts shard over the same DP mesh, so a
             # tensor-parallel MoE would reduce across ranks that hold
             # different requests. DP attention is only wired with the
             # expert-parallel MoE.
             raise ValueError(
                 "data-parallel attention requires the expert-parallel MoE: "
-                "pass the EP batch manager (ep_size must equal the device "
-                "count)."
+                "pass the EP config (ep_size must equal the device count)."
             )
         if self.dp > 1 and (
             config.return_logits != ReturnLogits.LAST_TOKEN
@@ -513,7 +514,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                         max_position=position_capacity(config),
                         candidate_block_size=config.candidate_block_size,
                         engram=engram,
-                        ep_batch_manager=ep_batch_manager,
+                        ep_config=ep_config,
                         data_parallel=self.dp > 1,
                     )
                 )
@@ -545,7 +546,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         *,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         draft_width: Tensor | None = None,
         history: RecurrentLeafInputs[Tensor, Tensor] | None = None,
         vision: VisionInputs[Tensor] | None = None,
@@ -718,7 +719,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             lookback_dead=lookback_dead,
             tables=tables,
             kv=dict(kv),
-            comm=comm_buffers,
+            ep=ep,
             tokens_full=(tokens_full if self.dp > 1 else None),
             row_offsets_full=(offsets_full if self.dp > 1 else None),
             data_parallel_splits=data_parallel_splits,
@@ -1102,7 +1103,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 leaf_values(layer.plan, b.kv),
                 slot_constants(layer.plan),
                 [] if routed is None else [routed],
-                b.comm,
+                b.ep,
                 total_rows,
             )
             if taps is not None and layer.layer_id in tap_set:
@@ -1268,6 +1269,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *rest: Tensor,
         vision: VisionInputs[Tensor] | None = None,
+        ep: EPBuffers | None = None,
     ) -> ModuleV3Outputs:
         """Runs the model over its graph inputs, and the batch's image rows."""
         data_parallel_splits: Tensor | None = None
@@ -1305,17 +1307,15 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         )
         consumed = n_kv + len(names)
         extras = dict(zip(names, rest[n_kv:consumed], strict=True))
-        comm_buffers: EPCommBuffers | None = None
-        ep_rest = list(rest[consumed:])
-        if self.ep_batch_manager is not None:
-            # Whatever trails the extras is the EP tail the compile input
-            # list appended (the batch manager's own input types).
-            comm_buffers = self.ep_batch_manager.comm_buffers(ep_rest)
-        elif ep_rest:
-            raise ValueError(
-                f"{len(ep_rest)} inputs after the extras, but the trunk "
-                "holds no EP batch manager to bind them."
+        # The pipeline model's graph takes the EP inputs flat after the
+        # extras; the registered decoder passes ``ep``.
+        ep = (
+            ep
+            if ep is not None
+            else ep_init.flat_buffers(
+                self.ep_config, rest[consumed:], self.mesh
             )
+        )
         b = self.batch_from_parts(
             tokens,
             input_row_offsets,
@@ -1323,7 +1323,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             extras,
             data_parallel_splits=data_parallel_splits,
             input_row_offsets_i64=input_row_offsets_i64,
-            comm_buffers=comm_buffers,
+            ep=ep,
             vision=vision,
             history=(
                 distributed_history(

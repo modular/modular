@@ -518,7 +518,6 @@ def _dp_context(monkeypatch: pytest.MonkeyPatch) -> Any:
         ),
         "engram_static_inputs": lambda tables, token_map, device: {},
         "build_ep_config": lambda *args: Mock(),
-        "EPBatchManager": lambda ep_config: Mock(),
     }.items():
         monkeypatch.setattr(model_module, name, value)
     return SimpleNamespace(
@@ -540,7 +539,7 @@ def _dp_context(monkeypatch: pytest.MonkeyPatch) -> Any:
         # ModelLoadContext always carries its adapter, including no adapter.
         adapter=None,
         weights={},
-        start_ep=lambda ep_config: None,
+        start_ep=lambda ep_config: ep_config,
     )
 
 

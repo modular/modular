@@ -31,8 +31,8 @@ this step -- see ``mla_attention.py``'s ``kimi_k3_mla_prefill_plan`` and
 Under tensor parallelism both attention forms and the dense MLP return
 partial sums, which ``forward`` reduces. ``KimiK3LatentMoE`` reduces
 internally, so its output is used as is. Under expert parallelism,
-``forward`` takes an ``ep_config``/``ep_buffers`` pair and passes them to
-the FFN; nothing else in the layer changes.
+``forward`` takes the exchange's buffers and passes them to the FFN; nothing
+else in the layer changes.
 """
 
 from __future__ import annotations
@@ -44,12 +44,11 @@ from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.nn.ep_config import EPConfig
+from max.nn.ep import EPBuffers
 from max.nn.kv_cache import MLAKVCacheParams
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 
-from . import ep
 from .attn_residual import (
     PendingAttnResStream,
     kimi_k3_attn_res_post_attention,
@@ -125,8 +124,7 @@ class KimiK3DecoderLayer(
         state_pool: Tensor | None = None,
         recurrent_row_id: Tensor | None = None,
         input_row_offsets: Tensor | None = None,
-        ep_config: EPConfig | None = None,
-        ep_buffers: ep.EPBuffers | None = None,
+        ep: EPBuffers | None = None,
         kv_collection: PagedCacheValues | None = None,
         mla_prefill_plan: MLAPrefillMetadata | None = None,
         mla_freqs_cis: Tensor | None = None,
@@ -147,11 +145,8 @@ class KimiK3DecoderLayer(
             recurrent_row_id: The recurrent-state row of each sequence.
             input_row_offsets: The batch's ragged metadata. An MLA layer
             reads only this, and only when serving over ``kv_collection``.
-            ep_config: The FFN's expert-parallel exchange setup; only
-            meaningful when the FFN is an expert-parallel
+            ep: The exchange's buffers when the FFN is an expert-parallel
             ``KimiK3LatentMoE``, unused otherwise.
-            ep_buffers: The exchange's graph buffers, passed whenever
-            ``ep_config`` is.
             kv_collection: An MLA layer's paged cache handle for this batch.
             ``None`` runs the padded/parity form instead -- unused for KDA.
             mla_prefill_plan: The compressed latent cache's prefill plan,
@@ -224,14 +219,10 @@ class KimiK3DecoderLayer(
             self.post_attention_layernorm_weight,
             self.rms_norm_eps,
         )
-        if isinstance(self.ffn, KimiK3LatentMoE) and ep_config is None:
+        if isinstance(self.ffn, KimiK3LatentMoE):
             # Every MoE block shares one subgraph, so its per-expert weight
             # stacking compiles once rather than once per layer.
-            ffn_out = as_subgraph(self.ffn, name="moe_block")(normed2)
-        elif isinstance(self.ffn, KimiK3LatentMoE):
-            ffn_out = self.ffn(
-                normed2, ep_config=ep_config, ep_buffers=ep_buffers
-            )
+            ffn_out = as_subgraph(self.ffn, name="moe_block")(normed2, ep)
         else:
             ffn_out = self.ffn(normed2)
             if isinstance(self.ffn, KimiK3DenseMLP) and _tp_active(
@@ -271,7 +262,7 @@ def expert_parallel_decoder_layer(
 
     A dense layer's MLP stays replicated. Call
     :meth:`KimiK3DecoderLayer.forward` with this layer's
-    ``ep_config``/``ep_buffers`` to use the sharded experts.
+    ``ep`` to use the sharded experts.
     """
     if isinstance(layer.ffn, KimiK3LatentMoE):
         expert_parallel_latent_moe(layer.ffn, mesh)

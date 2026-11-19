@@ -41,9 +41,9 @@ from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.ep import EPBuffers
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.graph_groups import BatchContext, StaticBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (
@@ -658,9 +658,7 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
                 text_config=config.text_config,
                 token_map=config.token_map,
                 data_parallel_degree=config.data_parallel_degree,
-                ep_batch_manager=EPBatchManager(config.ep)
-                if config.ep is not None
-                else None,
+                ep_config=config.ep,
             )
 
     @classmethod
@@ -718,12 +716,18 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
         input_row_offsets: Tensor | None = None,
         *rest: Tensor,
         vision: VisionInputs[Tensor] | None = None,
+        ep: EPBuffers | None = None,
     ) -> DecoderOutputs:
         """Reconstructs the original trunk call from the shared role fields."""
         if isinstance(tokens, Tensor):
             assert return_n_logits is not None and input_row_offsets is not None
             return super().forward(
-                tokens, return_n_logits, input_row_offsets, *rest, vision=vision
+                tokens,
+                return_n_logits,
+                input_row_offsets,
+                *rest,
+                vision=vision,
+                ep=ep,
             )
         inputs = tokens
         names = extra_input_names(
@@ -754,8 +758,8 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
             *dp_inputs,
             *tree.leaves(inputs.kv),
             *extras,
-            *tree.leaves(inputs.ep),
             vision=inputs.vision,
+            ep=inputs.ep,
         )
 
 

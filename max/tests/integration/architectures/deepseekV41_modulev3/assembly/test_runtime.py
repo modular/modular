@@ -37,7 +37,6 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.graph_groups import BatchContext, StaticBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures import register_all_models
@@ -918,11 +917,9 @@ def test_real_fused_dspark_named_history_virtual_sm100(
                 max_batch_input_tokens=64,
             ),
         )
-        ep = (
-            EPBatchManager(
-                build_ep_config(
-                    pipeline, config, devices_count, config.routed_expert_format
-                )
+        ep_config = (
+            build_ep_config(
+                pipeline, config, devices_count, config.routed_expert_format
             )
             if dp > 1
             else None
@@ -935,7 +932,7 @@ def test_real_fused_dspark_named_history_virtual_sm100(
                 text_config=text,
                 token_map=np.arange(128, dtype=np.int32),
                 data_parallel_degree=dp,
-                ep_batch_manager=ep,
+                ep_config=ep_config,
             )
             draft = DSparkDrafter(
                 config,

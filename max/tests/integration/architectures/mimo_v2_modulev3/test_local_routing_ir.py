@@ -47,8 +47,8 @@ from max.graph import DeviceRef, Graph
 from max.graph.weights import SafetensorWeights, WeightData
 from max.nn import Module
 from max.nn import _graph_ops as kernels
+from max.nn.ep.init import payload_types
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import (
     MiMoV2Decoder,
@@ -92,7 +92,7 @@ def _device_mesh(num_devices: int = NUM_DEVICES) -> DeviceMesh:
     )
 
 
-def _ep_manager(config: MiMoV2Config) -> EPBatchManager:
+def _set_ep_config(config: MiMoV2Config) -> EPConfig:
     config.ep_config = EPConfig(
         dispatch_dtype=DType.float8_e4m3fn,
         dispatch_quant_config=MXFP8_DISPATCH_QUANT_CONFIG,
@@ -105,7 +105,7 @@ def _ep_manager(config: MiMoV2Config) -> EPBatchManager:
         n_nodes=1,
         use_allreduce=True,
     )
-    return EPBatchManager(config.ep_config)
+    return config.ep_config
 
 
 def _post_fusion_ir(
@@ -132,7 +132,7 @@ def _post_fusion_ir(
     if verify:
         config.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
         config.target_layer_ids = [1, 3]
-    ep_batch_manager = _ep_manager(config) if layout == "tp_ep" else None
+    ep_config = _set_ep_config(config) if layout == "tp_ep" else None
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
     adapted = convert_safetensor_state_dict(dict(weights.items()))
     mesh = _device_mesh()
@@ -151,13 +151,11 @@ def _post_fusion_ir(
                 config.kv_params,
                 refs[0],
                 ep=(
-                    ep_batch_manager.input_tree()
-                    if ep_batch_manager is not None
-                    else None
+                    payload_types(ep_config) if ep_config is not None else None
                 ),
                 input_layout=MiMoV2Decoder.input_layout,
             )
-            forward_graph, registry = _DecoderGraph(model).stage(
+            forward_graph, registry = _DecoderGraph(model, ep_mesh=mesh).stage(
                 inputs,
                 weights=adapted,
                 name=MiMoV2Decoder.graph_name,

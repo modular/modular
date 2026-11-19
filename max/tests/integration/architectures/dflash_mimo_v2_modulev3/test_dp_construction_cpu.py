@@ -31,6 +31,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from max import tree
 from max.driver import (
     CPU,
     Buffer,
@@ -41,9 +42,9 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn import _graph_ops as kernels
+from max.nn.ep.init import payload_types
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
@@ -188,10 +189,10 @@ def test_the_dp_signature_declares_the_distributed_group(dp_built: Any) -> None:
     assert types[4] == TensorType(
         DType.int64, shape=[N_DEVICES + 1], device=DeviceRef.CPU()
     )
-    # The tail's EP count is the batch manager's own, pinned as the base
+    # The tail's EP count is the standard input tree's own, pinned as the base
     # graph's EP gate pins it: the atomic counters plus three pointer
     # tables per buffer group.
-    n_ep = len(EPBatchManager(_p2p_ep_config(N_DEVICES)).input_types())
+    n_ep = len(tree.leaves(payload_types(_p2p_ep_config(N_DEVICES))))
     assert n_ep == 2 * N_DEVICES + 3 * 2
     # The declared count is exactly the batch side, the KV tree, one
     # context length per device, the EP tail and the spec tail -- no
@@ -381,13 +382,13 @@ def test_the_packed_inputs_fill_the_dp_slots(dp_built: Any) -> None:
 
 
 def test_dp_without_ep_is_refused() -> None:
-    """DP attention without an EP batch manager is a wiring error, not a
+    """DP attention without an EP config is a wiring error, not a
     silent tensor-parallel build -- the base target's own rule, reached
     through the spec target."""
     config, draft, kv_tree = build_parts(
         _gpu_refs(), data_parallel_degree=N_DEVICES
     )
-    with pytest.raises(ValueError, match="no EP batch manager"):
+    with pytest.raises(ValueError, match="no EP config"):
         build_module(config, draft, kv_tree, structured_output=False)
 
 

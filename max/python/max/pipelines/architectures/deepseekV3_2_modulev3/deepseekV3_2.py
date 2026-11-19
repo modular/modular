@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from itertools import islice
 from typing import ClassVar
 
 from max import functional as F
@@ -32,9 +31,11 @@ from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.multi_latent_attention import MLAPrefillMetadata
 from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.ep import EPBuffers
+from max.nn.ep import init as ep_init
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import mla_sparse_selection_rows
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.lib import ModuleV3Outputs
@@ -198,9 +199,9 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
     def __init__(
         self,
         config: DeepseekV3_2Config,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
 
         self.rope = rotary_embedding(config)
 
@@ -248,7 +249,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 config=config,
                 layer_idx=i,
                 attention_scale=scale,
-                ep_batch_manager=ep_batch_manager
+                ep_config=ep_config
                 if i >= config.first_k_dense_replace
                 else None,
             )
@@ -287,7 +288,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         batch_context_length: Tensor,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         hisparse: HiSparseInputs | None = None,
         boundary: Sequence[Tensor] | None = None,
     ) -> tuple[Tensor, ...]:
@@ -366,7 +367,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
             input_row_offsets,
             freqs_cis,
             mla_prefill_metadata,
-            comm_buffers,
+            ep,
         )
         pcp: PrefillContextParallelStep | None = None
         if self.config.prefill_context_parallel:
@@ -432,7 +433,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None,
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
         pcp: PrefillContextParallelStep | None = None,
         hisparse: HiSparseInputs | None = None,
         carried: Tensor | None = None,
@@ -515,7 +516,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 input_row_offsets,
                 freqs_cis,
                 mla_prefill_metadata,
-                comm_buffers,
+                ep,
                 topk_indices,
                 False,
                 indexer_slot_tensor,
@@ -692,13 +693,12 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         self,
         config: DeepseekV3_2Config,
         kv_params: KVCacheParamInterface,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
-        self.language_model = DeepseekV3_2TextModel(config, ep_batch_manager)
+        self.language_model = DeepseekV3_2TextModel(config, ep_config)
         self.config = config
         self.kv_params = kv_params
-        self.ep_batch_manager = ep_batch_manager
 
     def forward(
         self,
@@ -750,15 +750,10 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         kv_collection = collection("mla")
         indexer_kv_collection = collection("indexer")
 
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            # The variadic graph values between the KV cache and the HiSparse
-            # tail are the EP communication buffers. Wrap them as an explicit
-            # forward argument so they thread through each MoE block's
-            # subgraph boundary.
-            n_ep = len(self.ep_batch_manager.input_types())
-            ep_buffers = list(islice(kv_inputs, n_ep))
-            comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
+        # The EP inputs sit between the KV cache and the HiSparse tail.
+        ep = ep_init.flat_buffers(
+            self.language_model.ep_config, kv_inputs, mesh
+        )
         hisparse = self._hisparse_inputs(list(kv_inputs))
         outputs = self.language_model(
             tokens,
@@ -769,7 +764,7 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
             batch_context_lengths_tensor,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            ep,
             hisparse,
         )
         return self.language_model.module_outputs(outputs)
@@ -809,18 +804,13 @@ class DeepseekV3_2Decoder(
             raise ValueError(
                 "DeepSeek-V3.2 needs a mesh: apply the runtime first"
             )
-        self.ep_batch_manager = (
-            None
-            if config.ep_config is None
-            else EPBatchManager(config.ep_config)
-        )
         # Quantized checkpoints keep norms, biases and embeddings in bf16.
         dtype = (
             DType.bfloat16 if config.quant_config is not None else config.dtype
         )
         with default_dtype(dtype):
             self.language_model = DeepseekV3_2TextModel(
-                config, self.ep_batch_manager
+                config, config.ep_config
             )
         self.config = config
         self.kv_params = config.kv_params
@@ -871,12 +861,6 @@ class DeepseekV3_2Decoder(
             leaves = tree.leaves(kv_tree[name], leaf=KVCacheInputsPerDevice)
             return PagedCacheValues.from_upstream(leaves, kv_mapping)
 
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            assert inputs.ep is not None
-            comm_buffers = self.ep_batch_manager.comm_buffers(
-                [x._graph_value for x in tree.leaves(inputs.ep)]
-            )
         outputs = self.language_model(
             inputs.tokens,
             collection("mla"),
@@ -886,7 +870,7 @@ class DeepseekV3_2Decoder(
             batch_context_length,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            inputs.ep,
             boundary=(
                 None
                 if inputs.stage_boundary is None

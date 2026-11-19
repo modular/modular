@@ -25,9 +25,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
+from max.nn.ep import init as ep_init
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     CheckpointRole,
@@ -360,7 +360,7 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
         self._input_tree = nn_model.input_tree(
             kv_params,
             ep=(
-                EPBatchManager(model_config.ep_config).input_tree()
+                ep_init.payload_types(model_config.ep_config)
                 if model_config.ep_config is not None
                 else None
             ),

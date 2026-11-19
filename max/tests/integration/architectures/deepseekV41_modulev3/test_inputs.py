@@ -76,9 +76,9 @@ def test_buffers_order_without_dp_pair() -> None:
 def test_buffers_appends_ep_tail_after_extras() -> None:
     kv_cache_inputs, kv_leaves = _kv_tree()
     inputs = _inputs(kv_cache_inputs, None, None, ep_inputs=(_buf(), _buf()))
-    # The EP comm buffers trail the extras, where the compile input list
-    # appends ``EPBatchManager.input_types`` -- the forward's variadic
-    # tail the batch processor binds from the EPCommInitializer.
+    # The EP buffers trail the extras, where the compile input list
+    # appends the standard EP inputs -- the forward's variadic tail the
+    # batch processor binds from the EP exchange.
     assert inputs.buffers == (
         inputs.tokens,
         inputs.return_n_logits,

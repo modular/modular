@@ -24,7 +24,6 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPCommInitializer
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
     EngramLookbackBatchState,
 )
@@ -33,6 +32,7 @@ from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
 )
 from max.pipelines.architectures.deepseekV41.replay import ReplayPlan
 from max.pipelines.context import TextContext
+from max.pipelines.lib.ep_initializer import EPInitializerLike
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -134,7 +134,7 @@ class DeepseekV41BatchProcessor(
             self._verifies = bool(config.dspark_trailing_inputs)
             self._image_token_id = config.image_token_id
         self._dp_degree = runtime.pipeline_config.model.data_parallel_degree
-        self._ep_comm_initializer: EPCommInitializer | None = None
+        self._ep_comm_initializer: EPInitializerLike | None = None
         self._lookback = EngramLookbackBatchState()
 
     def bind_engram(self, static_inputs: Mapping[str, Buffer]) -> None:
@@ -142,13 +142,13 @@ class DeepseekV41BatchProcessor(
         self._engram_static = dict(static_inputs)
 
     def bind_ep_comm_initializer(
-        self, initializer: EPCommInitializer | None
+        self, initializer: EPInitializerLike | None
     ) -> None:
         """Wires the EP buffers the model's load created, if it did."""
         self._ep_comm_initializer = initializer
 
     def _ep_inputs(self) -> tuple[Buffer, ...]:
-        """The EP comm buffers, in ``EPBatchManager.input_types`` order."""
+        """The EP buffers, in the leaf order of the decoder's ``ep`` tree."""
         if self._ep_comm_initializer is None:
             return ()
         return tuple(self._ep_comm_initializer.model_inputs())

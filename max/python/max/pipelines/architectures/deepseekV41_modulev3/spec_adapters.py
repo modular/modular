@@ -52,6 +52,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, Dim, TensorType, TensorValue, Value, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.ep import init as ep_init
 from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
 from max.nn.outputs import ReturnHiddenStates
@@ -393,15 +394,10 @@ class DeepseekV41BlockTarget:
     """
 
     def __init__(
-        self,
-        target: DeepseekV41,
-        kv_params: MultiKVCacheParams,
-        *,
-        ep_batch_manager: Any | None = None,
+        self, target: DeepseekV41, kv_params: MultiKVCacheParams
     ) -> None:
         self.target = target
         self.kv_params = kv_params
-        self.ep_batch_manager = ep_batch_manager
         self.takes_distributed_inputs = target.dp > 1
         self.replica_logits = False
 
@@ -412,16 +408,16 @@ class DeepseekV41BlockTarget:
         assert isinstance(batch, BlockBatch)
         target = self.target
         dp = target.dp
-        comm_buffers = None
-        if self.ep_batch_manager is not None:
-            if batch.ep_inputs is None:
-                raise ValueError(
-                    "the trunk runs expert-parallel but the batch carries "
-                    "no EP collective inputs"
-                )
-            comm_buffers = self.ep_batch_manager.comm_buffers(
-                [as_tensors(value) for value in batch.ep_inputs]
+        if target.ep_config is not None and batch.ep_inputs is None:
+            raise ValueError(
+                "the trunk runs expert-parallel but the batch carries "
+                "no EP collective inputs"
             )
+        ep = ep_init.flat_buffers(
+            target.ep_config,
+            [as_tensors(value) for value in batch.ep_inputs or ()],
+            target.mesh,
+        )
         input_row_offsets_i64 = None
         if dp > 1:
             if batch.host_merged_offsets is None:
@@ -453,7 +449,7 @@ class DeepseekV41BlockTarget:
                 else None
             ),
             input_row_offsets_i64=input_row_offsets_i64,
-            comm_buffers=comm_buffers,
+            ep=ep,
             history=(
                 distributed_history(
                     batch.passthrough_kv["lookback_history"],
@@ -971,9 +967,7 @@ def verify(
             f" read selected layers. Got {hidden_states.value}."
         )
     assert isinstance(target, DeepseekV41)
-    return DeepseekV41BlockTarget(
-        target, target.kv_params, ep_batch_manager=target.ep_batch_manager
-    )
+    return DeepseekV41BlockTarget(target, target.kv_params)
 
 
 def block_proposer(
@@ -999,9 +993,9 @@ def block_proposer(
 def ep_input_tree(target: Any) -> object | None:
     """Returns the group that names the routed experts' EP inputs, if any."""
     assert isinstance(target, DeepseekV41)
-    if target.ep_batch_manager is None:
+    if target.ep_config is None:
         return None
-    return target.ep_batch_manager.input_tree()
+    return ep_init.payload_types(target.ep_config)
 
 
 def trailing_input_types(

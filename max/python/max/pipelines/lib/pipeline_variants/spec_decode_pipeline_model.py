@@ -105,6 +105,7 @@ from max.profiler import traced
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable
 from max.tensor.realization_context import current_realization_context
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture
@@ -149,6 +150,8 @@ from ..registration_draft import (
 from ..registration_runtime import (
     BatchContextLengths,
     ConstantInputs,
+    ExpertParallelExchange,
+    ExpertParallelInputs,
     initialize_static_inputs,
 )
 from ..utils import CompilationTimer, start_checkpoint_prefetch
@@ -307,6 +310,39 @@ def _builds_modulev3(arch: SupportedArchitecture) -> bool:
             ModuleV3MultiGraphPipelineModelWithKVCache,
         ),
     )
+
+
+_EPStarted = tuple[
+    EPConfig,
+    ExpertParallelExchange | None,
+    dict[str, CompiledCallable[..., Any]],
+]
+
+
+def _start_graph_api_ep(
+    session: InferenceSession, ep_config: EPConfig, mesh: DeviceMesh
+) -> _EPStarted:
+    """Starts a graph-API target's exchange.
+
+    It sets ``ep_config``'s node ID in place.
+    """
+    del mesh
+    if is_virtual_device_mode():
+        # An export still records the init graph, which nothing can run.
+        _, modules = compile_ep_init(session, ep_config, EPCommInitializer)
+        return ep_config, None, modules
+    initializer, modules = init_ep_comm(session, ep_config, EPCommInitializer)
+    return initializer.config, initializer, modules
+
+
+_EP_STARTS: dict[
+    bool, Callable[[InferenceSession, EPConfig, DeviceMesh], _EPStarted]
+] = {
+    True: ExpertParallelInputs().initialize,
+    False: _start_graph_api_ep,
+}
+"""Starts the exchange, keyed by whether the target builds a ModuleV3
+module (:func:`_builds_modulev3`)."""
 
 
 def _draft_architecture(
@@ -1011,7 +1047,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._prepares_batches = _encodes_in_batching(
             target
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
-        self._ep_comm_initializer: EPCommInitializer | None = None
+        self._ep_comm_initializer: ExpertParallelExchange | None = None
         self._constant_inputs: ConstantInputs | None = None
 
     def max_dims(
@@ -1069,7 +1105,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._constant_inputs = constants
 
     def bind_ep_comm_initializer(
-        self, initializer: EPCommInitializer | None
+        self, initializer: ExpertParallelExchange | None
     ) -> None:
         """Hands expert parallelism's buffers to the target's batching.
 
@@ -1399,7 +1435,7 @@ class SpecDecodePipelineModel(
     batch_processor_cls: ClassVar[type[Any]] = _BatchProcessor
 
     model: Model
-    ep_comm_initializer: EPCommInitializer | None = None
+    ep_comm_initializer: ExpertParallelExchange | None = None
     """Expert parallelism's runtime, which the target and the draft share."""
     drafter_export: object | None = None
     """What the graph bakes in of a draft that records it, which an export's
@@ -1810,7 +1846,13 @@ class SpecDecodePipelineModel(
         assert speculative is not None
         pairing = self.pairing
 
-        ep = _EPRuntime(session)
+        ep = _EPRuntime(
+            session,
+            lambda: DeviceMesh(
+                tuple(self.devices), (len(self.devices),), ("ep",)
+            ),
+            _EP_STARTS[_builds_modulev3(pairing.target)],
+        )
         self._weight_loads = []
         context = replace(
             ModelLoadContext.from_pipeline_model(self),
@@ -1880,7 +1922,7 @@ class SpecDecodePipelineModel(
             assert isinstance(constants, ConstantInputs)
             # Serving reads the buffers the initializer just filled.
             self._batching.bind_constant_inputs(constants)
-        self.ep_comm_initializer = ep.initializer
+        self.ep_comm_initializer = ep.exchange
         self.compiled_modules = {
             **self.compiled_modules,
             **ep.modules,
@@ -2904,27 +2946,27 @@ class _EPRuntime:
     """
 
     session: InferenceSession
-    initializer: EPCommInitializer | None = None
+    mesh: Callable[[], DeviceMesh]
+    """Returns the mesh of the pipeline's devices."""
+    start_exchange: Callable[
+        [InferenceSession, EPConfig, DeviceMesh], _EPStarted
+    ]
+    """Starts the exchange of the target's module API."""
+    config: EPConfig | None = None
+    """The config the exchange started with."""
+    exchange: ExpertParallelExchange | None = None
     modules: dict[str, CompiledCallable[..., Any]] = field(default_factory=dict)
     """The init graph, by role, for ``compiled_modules``."""
 
-    def start(self, ep_config: EPConfig) -> None:
+    def start(self, ep_config: EPConfig) -> EPConfig:
         """Starts the runtime once, and gives ``ep_config`` its node ID."""
-        if is_virtual_device_mode():
-            # An export still records the init graph, which nothing can run.
-            if not self.modules:
-                _, self.modules = compile_ep_init(self.session, ep_config)
-            return
-        if self.initializer is None:
-            self.initializer, self.modules = init_ep_comm(
-                self.session, ep_config
+        if self.config is None:
+            self.config, self.exchange, self.modules = self.start_exchange(
+                self.session, ep_config, self.mesh()
             )
-        ep_config.node_id = self.initializer.config.node_id
-        if ep_config.node_id == -1:
-            raise ValueError(
-                "EP node ID is not set. Please check if the EP initialization"
-                " is successful."
-            )
+            return self.config
+        ep_config.node_id = self.config.node_id
+        return ep_config
 
 
 def _named_leaves(node: Any) -> dict[str, list[Any]]:

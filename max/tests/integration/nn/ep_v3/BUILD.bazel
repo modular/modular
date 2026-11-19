@@ -1,0 +1,39 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "ep_moe_parity_gpu",
+    size = "large",
+    srcs = ["test_ep_moe_parity_gpu.py"],
+    env = {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+    exec_properties = {
+        "test.resources:gpu-memory": "12",
+    },
+    # The NVFP4 dispatch is NVIDIA-only.
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    mojo_deps = ["//max:shmem"],
+    precompile_device_count = 2,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

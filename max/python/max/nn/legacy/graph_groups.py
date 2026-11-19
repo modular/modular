@@ -23,11 +23,11 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
-from max import tree
 from max.graph import BufferType, TensorType, TensorValue
-from typing_extensions import Self, TypeVar
+from max.nn._graph_group import EPPayload, GraphGroup
+from typing_extensions import TypeVar
 
 __all__ = [
     "BatchContext",
@@ -62,7 +62,6 @@ __all__ = [
     "vision_outputs",
 ]
 
-_K = TypeVar("_K", bound=str)
 _V = TypeVar("_V")
 # A ModuleV3 graph's groups hold tensor layouts and tensors in place of
 # graph-API types and values, and a step packs some groups with its buffers.
@@ -76,44 +75,6 @@ _ScratchT = TypeVar("_ScratchT", default=tuple[BufferType, ...])
 _ContextT = TypeVar("_ContextT", default=tuple[TensorType, ...])
 _SpecT = TypeVar("_SpecT", default=TensorType | tuple[TensorType, ...])
 _BitmaskT = TypeVar("_BitmaskT", default=TensorType | BufferType)
-
-
-class GraphGroup(OrderedDict[_K, _V]):
-    """The named graph inputs or outputs of one feature, in graph order.
-
-    An ``OrderedDict`` keeps insertion order when flattened, where a plain
-    ``dict`` would sort its keys. Each subclass fixes the names and values it
-    holds.
-    """
-
-    kind: ClassVar[str | None] = None
-    """Identifies the feature wherever the group sits in a tree."""
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        super().__init_subclass__(**kwargs)
-        # A kind names one class, so a subclass that inherits its base's kind
-        # leaves the registration to the base.
-        if "kind" in cls.__dict__ and cls.kind is not None:
-            tree.kind(cls.kind)(cls)
-
-    def __new__(cls, *args: object, **kwargs: object) -> Self:
-        """Creates the group, rejecting a subclass with no ``kind``."""
-        if cls.kind is None:
-            raise TypeError(
-                f"{cls.__qualname__} has no kind, so an exported graph could"
-                " not name it: subclass GraphGroup with a kind"
-            )
-        return super().__new__(cls)
-
-    def __tree_flatten__(self) -> tuple[Mapping[_K, _V], None]:
-        return self, None
-
-    @classmethod
-    def __tree_unflatten__(cls, meta: None, children: Mapping[_K, _V]) -> Self:
-        # Not through ``__init__``, which a subclass may make keyword-only.
-        group = cls.__new__(cls)
-        OrderedDict.update(group, children)
-        return group
 
 
 class RaggedBatch(GraphGroup[str, TensorType | tuple[TensorType, ...]]):
@@ -307,12 +268,6 @@ class StaticBuffers(GraphGroup[str, Any]):
     """
 
     kind = "static_buffers"
-
-
-class EPPayload(GraphGroup[str, tuple[TensorType | BufferType, ...]]):
-    """Expert-parallel communication state, built once at startup."""
-
-    kind = "ep_payload"
 
 
 class EPLBProfile(GraphGroup[str, tuple[BufferType, ...]]):

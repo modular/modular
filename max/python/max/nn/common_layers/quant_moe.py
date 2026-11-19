@@ -35,6 +35,19 @@ from max.nn._graph_ops.ep import _SHARED_EXPERT_STREAM_ID
 from max.nn.activation import GatedActivation
 from max.nn.common_layers._sharding import shard_and_stack
 from max.nn.common_layers.moe import MoEGate
+from max.nn.ep import (
+    EPBuffers,
+    Grouped,
+    Route,
+    combine,
+    combine_local,
+    dispatch,
+    dispatch_finish,
+    dispatch_local,
+    dispatch_start,
+    grouped_matmul_bounds,
+)
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import (
     grouped_quantize_dynamic_block_scaled,
     moe_create_indices,
@@ -42,7 +55,6 @@ from max.nn.kernels import (
     moe_finalize,
 )
 from max.nn.kernels.quant import moe_fp8_host_usage_stats
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.quant_config import QuantConfig, QuantFormat
 from max.nn.sequential import ModuleList
 from max.tensor import (
@@ -56,6 +68,7 @@ from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
+    Replicated,
     Sharded,
 )
 from typing_extensions import Self
@@ -139,6 +152,121 @@ def _on_device(module: _M, device: int) -> _M:
     return tree.map(
         lambda t: t.local_shards[device], module, leaf=Tensor, shared=True
     )
+
+
+class _EPExchange:
+    """The :mod:`max.nn.ep` exchange, over the buffers of one forward.
+
+    Each dispatch returns the tokens each device received, and each combine
+    returns one result per device, in mesh order.
+    """
+
+    def __init__(self, layer: ExpertParallelMoE, buffers: EPBuffers) -> None:
+        self._config = layer.ep_config
+        self._quant_config = layer.quant_config
+        self._buffers = buffers
+        self._mesh = layer.mesh
+        self._grouped: Grouped | None = None
+        self._route: Route | None = None
+
+    def _scales(self, input_scales: list[Tensor] | None) -> Tensor | None:
+        replicated = DeviceMapping(
+            self._mesh, (Replicated(),) * self._mesh.ndim
+        )
+        return (
+            Tensor.from_shard_values(input_scales, replicated)
+            if input_scales is not None
+            else None
+        )
+
+    def _received(self, grouped: Grouped, route: Route) -> EPDispatchPayload:
+        self._grouped, self._route = grouped, route
+        return EPDispatchPayload.from_grouped(
+            grouped, self._quant_config, self._config
+        )
+
+    def _sent(self, outputs: list[Tensor]) -> tuple[Tensor, Route]:
+        assert self._grouped is not None and self._route is not None
+        return (
+            Tensor.from_shard_values(outputs, self._grouped.tokens.mapping),
+            self._route,
+        )
+
+    def dispatch(
+        self,
+        x: Tensor,
+        ids: Tensor,
+        input_scales: list[Tensor] | None,
+        layer_idx: Tensor | None,
+    ) -> EPDispatchPayload:
+        return self._received(
+            *dispatch(
+                self._config,
+                self._buffers,
+                x,
+                ids,
+                input_scales=self._scales(input_scales),
+                layer_idx=layer_idx,
+            )
+        )
+
+    def dispatch_local(
+        self,
+        x: Tensor,
+        ids: Tensor,
+        input_scales: list[Tensor] | None,
+        layer_idx: Tensor | None,
+    ) -> EPDispatchPayload:
+        return self._received(
+            *dispatch_local(
+                self._config,
+                self._buffers,
+                x,
+                ids,
+                input_scales=self._scales(input_scales),
+                layer_idx=layer_idx,
+            )
+        )
+
+    def dispatch_start(
+        self, x: Tensor, ids: Tensor, input_scales: list[Tensor] | None
+    ) -> None:
+        dispatch_start(
+            self._config,
+            self._buffers,
+            x,
+            ids,
+            input_scales=self._scales(input_scales),
+        )
+
+    def dispatch_finish(
+        self, x: Tensor, layer_idx: Tensor | None
+    ) -> EPDispatchPayload:
+        return self._received(
+            *dispatch_finish(
+                self._config, self._buffers, x, layer_idx=layer_idx
+            )
+        )
+
+    def combine(
+        self, outputs: list[Tensor], x: Tensor, weights: Tensor
+    ) -> list[Tensor]:
+        sent, route = self._sent(outputs)
+        return list(
+            combine(
+                self._config, self._buffers, sent, route, x, weights
+            ).local_shards
+        )
+
+    def combine_local(
+        self, outputs: list[Tensor], weights: Tensor, ids: Tensor
+    ) -> list[Tensor]:
+        sent, route = self._sent(outputs)
+        return list(
+            combine_local(
+                self._config, self._buffers, sent, route, weights, ids
+            ).local_shards
+        )
 
 
 def _mesh(target: Device | DeviceMesh | DeviceMapping) -> DeviceMesh:
@@ -728,11 +856,15 @@ class ExpertParallelMoE(QuantizedMoE):
 
     Places the experts round-robin across the mesh from
     :func:`~max.tensor.default_device` at construction; the
-    gate and shared experts are replicated.
+    gate and shared experts are replicated. ``ep_config`` configures the
+    exchange.
     """
 
     def __init__(
-        self, *args, ep_batch_manager: EPBatchManager, **kwargs
+        self,
+        *args,
+        ep_config: EPConfig,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         if self.activation is not None:
@@ -747,7 +879,7 @@ class ExpertParallelMoE(QuantizedMoE):
             raise ValueError(
                 "ExpertParallelMoE does not support MXFP8 weights yet"
             )
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
 
     @property
     def _num_local_experts(self) -> int:
@@ -813,7 +945,7 @@ class ExpertParallelMoE(QuantizedMoE):
             [] for _ in self.mesh.devices
         ]
 
-        config = self.ep_batch_manager.config
+        config = self.ep_config
         if config.fused_shared_expert and self.shared_experts is not None:
             gate_w = self.shared_experts.gate_proj.weight
             up_w = self.shared_experts.up_proj.weight
@@ -836,7 +968,7 @@ class ExpertParallelMoE(QuantizedMoE):
         per_device: list[list[list[QuantAwareTensor]]] = [
             [] for _ in self.mesh.devices
         ]
-        if self.ep_batch_manager.config.fused_shared_expert:
+        if self.ep_config.fused_shared_expert:
             assert self.shared_experts is not None, (
                 "Shared experts must present if fused shared expert is enabled"
             )
@@ -898,7 +1030,7 @@ class ExpertParallelMoE(QuantizedMoE):
         only with the closed-source kernels, so the weight stacking and the
         expert compute both fall back to the chain where it is not registered.
         """
-        config = self.ep_batch_manager.config
+        config = self.ep_config
         quant_config = self.quant_config
         accum = self.gate_up_accum_dtype
         return (
@@ -943,9 +1075,7 @@ class ExpertParallelMoE(QuantizedMoE):
                     for (g, d), s in zip(pairs, global_scale, strict=True)
                 ]
         if self.quant_config is None:
-            stats = Tensor.from_graph_value(
-                self.ep_batch_manager._common_grouped_matmul_metadata()
-            )
+            stats = grouped_matmul_bounds(self.ep_config)
             usage_stats = [stats.to(d) for d in devices]
         return ExpertStacks(
             gate_up,
@@ -977,7 +1107,7 @@ class ExpertParallelMoE(QuantizedMoE):
                 nvfp4_global_scale=global_scales or global_scale
             )
             usage_stats = stats or usage_stats
-        config = self.ep_batch_manager.config
+        config = self.ep_config
         if self._blockwise_mega_ffn_amd_eligible():
             assert usage_stats is not None
             first = gate_up[0]
@@ -1102,7 +1232,7 @@ class ExpertParallelMoE(QuantizedMoE):
         bound as ``max_rows``, so the NVFP4 gate/up and down matmuls can fuse
         into one MegaFFN launch.
         """
-        config = self.ep_batch_manager.config
+        config = self.ep_config
         if config.fused_shared_expert:
             raise ValueError(
                 "local_expert_partial_sums does not run a fused shared expert"
@@ -1200,44 +1330,36 @@ class ExpertParallelMoE(QuantizedMoE):
     def forward(
         self,
         x: Tensor,
-        comm: EPCommBuffers | None = None,
         layer_idx: Tensor | None = None,
         stacks: ExpertStacks | None = None,
+        *,
+        ep: EPBuffers | None = None,
     ) -> Tensor:
         """Expert-parallel forward: gate -> dispatch -> local compute -> combine.
 
-        ``comm`` is optional only to keep the override compatible with the base
-        ``forward(self, x)``; the EP path always supplies it. ``layer_idx`` is
-        the int32 ``[1]`` MoE layer index, one shard per device; it is required
-        when the EP config counts expert load, and it is an operand rather than
-        a constant because layers can share one subgraph body. ``stacks`` are
-        the :meth:`expert_stacks` a caller built outside control flow, so a
-        cond whose other branch also reads them stacks the experts once.
+        ``ep`` holds the exchange's buffers. It is optional only to keep the
+        override compatible with the base ``forward(self, x)``, and the layer
+        raises without it.
+        ``layer_idx`` is the int32 ``[1]`` MoE layer index, one shard per
+        device; it is required when the EP config counts expert load, and it
+        is an operand rather than a constant because layers can share one
+        subgraph body. ``stacks`` are the :meth:`expert_stacks` a caller built
+        outside control flow, so a cond whose other branch also reads them
+        stacks the experts once.
+
+        The layer does not remap router ids by the EPLB placement in
+        ``ep.eplb``: its router emits the ids that the exchange dispatches.
         """
-        assert comm is not None, (
-            "ExpertParallelMoE.forward requires comm buffers"
-        )
-        batch_mgr = self.ep_batch_manager
-        batch_mgr.bind_comm_buffers(comm)
-        config = batch_mgr.config
+        if ep is None:
+            raise ValueError("ExpertParallelMoE.forward needs the ep buffers")
+        exchange = _EPExchange(self, ep)
+        config = self.ep_config
 
         # Per-device gate computation (replicated router scores).
         router_idx, router_weight = self.gate(x)
         router_idx = router_idx.cast(DType.int32)
 
         x_shards = list(x.local_shards)
-        topk_id_shards = list(router_idx.local_shards)
-        router_weight_shards = list(router_weight.local_shards)
-        device_ids = [d.id for d in self.mesh.devices]
-        layer_idx_per_device = (
-            [TensorValue(shard) for shard in layer_idx.local_shards]
-            if layer_idx is not None
-            else None
-        )
-
-        def device_layer_idx(i: int) -> TensorValue | None:
-            return layer_idx_per_device[i] if layer_idx_per_device else None
-
         global_scale: Tensor | None = None
         input_scales: list[Tensor] | None = None
         if ep_requires_dispatch_scales(self.quant_config):
@@ -1270,24 +1392,11 @@ class ExpertParallelMoE(QuantizedMoE):
         # Dispatch tokens to the device owning each routed expert.
         shared_by_device: dict[int, Tensor] = {}
         if config.use_allreduce:
-            dispatch_results = [
-                batch_mgr.ep_dispatch(
-                    x_shards[i],
-                    topk_id_shards[i],
-                    device_ids[i],
-                    input_scales=input_scales[i] if input_scales else None,
-                    layer_idx=device_layer_idx(i),
-                )
-                for i in range(self.mesh.num_devices)
-            ]
+            payload = exchange.dispatch_local(
+                x, router_idx, input_scales, layer_idx
+            )
         elif overlap_shared_expert:
-            for i in range(self.mesh.num_devices):
-                batch_mgr.ep_dispatch_async(
-                    x_shards[i],
-                    topk_id_shards[i],
-                    device_ids[i],
-                    input_scales=input_scales[i] if input_scales else None,
-                )
+            exchange.dispatch_start(x, router_idx, input_scales)
             all_devices = range(self.mesh.num_devices)
             shared_by_device = dict(
                 zip(
@@ -1296,23 +1405,9 @@ class ExpertParallelMoE(QuantizedMoE):
                     strict=True,
                 )
             )
-            dispatch_results = [
-                tuple(
-                    Tensor.from_graph_value(value)
-                    for value in batch_mgr.ep_dispatch_wait(
-                        device_ids[i], device_layer_idx(i)
-                    )
-                )
-                for i in range(self.mesh.num_devices)
-            ]
+            payload = exchange.dispatch_finish(x, layer_idx)
         else:
-            dispatch_results = batch_mgr.ep_dispatch_all(
-                x_shards,
-                topk_id_shards,
-                device_ids,
-                input_scales=input_scales,
-                layer_idx_per_device=layer_idx_per_device,
-            )
+            payload = exchange.dispatch(x, router_idx, input_scales, layer_idx)
 
         # Under allreduce, combine outputs are per-device partial sums that get
         # summed later, so add the replicated shared expert on one device only.
@@ -1335,38 +1430,26 @@ class ExpertParallelMoE(QuantizedMoE):
         ).cast(DType.uint32)
 
         # Now each device runs its own experts on the tokens it was sent.
-        payload = EPDispatchPayload.from_dispatch(
-            dispatch_results, self.quant_config, config
-        )
         down_bundle = self._local_compute(
             payload, global_scale, estimated_total_m, stacks
         )
 
         # Combine expert outputs back to their source devices.
         if config.use_allreduce:
-            combine_results = [
-                batch_mgr.ep_combine(
-                    down_bundle[i],
-                    router_weight_shards[i],
-                    device_ids[i],
-                    topk_id_shards[i],
-                )
-                for i in range(self.mesh.num_devices)
-            ]
+            combine_results = exchange.combine_local(
+                down_bundle, router_weight, router_idx
+            )
         else:
             # Fused combine: one launch per device instead of the async/wait
             # pair's two. The split's only benefit is an interleaving window
             # for work issued before it, and the shared expert it exists for
             # was issued back before dispatch.
-            combine_results = batch_mgr.ep_combine_all(
-                down_bundle, router_weight_shards, device_ids
-            )
+            combine_results = exchange.combine(down_bundle, x, router_weight)
 
-        # ``ep_combine`` returns each device exactly the tokens it dispatched,
+        # The combine returns each device exactly the tokens it dispatched,
         # so the output placement matches the input's.
         outputs: list[Tensor] = []
-        for i in range(self.mesh.num_devices):
-            out = combine_results[i]
+        for i, out in enumerate(combine_results):
             if i in shared_by_device:
                 out = out + shared_by_device[i]
             outputs.append(out.cast(x_shards[i].dtype))

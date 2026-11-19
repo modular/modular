@@ -24,11 +24,11 @@ os.environ.setdefault("MODULAR_DEBUG", "source-tracebacks")
 
 import numpy as np
 import pytest
+from _ep_test_utils import allocate_ep_buffers
 from _moe_test_utils import assign_experts
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.pipelines.architectures.kimi_k3_modulev3.layers import ep
 from max.pipelines.architectures.kimi_k3_modulev3.layers.decoder_layer import (
     KimiK3DecoderLayer,
     expert_parallel_decoder_layer,
@@ -230,15 +230,15 @@ def test_decoder_layer_mla_moe_single_device_matches_ep2() -> None:
         config = expert_parallel_config(
             layer2.ffn, mesh, max_tokens_per_rank=64
         )
-        buffers = ep.allocate_ep_buffers(config, mesh, session)
+        layer2.ffn.ep_config = config
+        buffers = allocate_ep_buffers(config, mesh, session)
         out2, _ = layer2(
             Tensor(x_np, dtype=DType.float32).cast(DType.bfloat16),
             [
                 Tensor(c, dtype=DType.float32).cast(DType.bfloat16)
                 for c in block_residual_np
             ],
-            ep_config=config,
-            ep_buffers=buffers,
+            ep=buffers,
         )
         assert isinstance(out2, Tensor)
         out2_np = out2.cast(DType.float32).to_numpy()

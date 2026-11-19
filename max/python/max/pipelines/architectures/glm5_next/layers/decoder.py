@@ -30,8 +30,8 @@ from max.dtype import DType
 from max.nn import HyperConnection, Module, RMSNorm
 from max.nn._graph_ops import _is_sm10x_gpu, mhc_post_supports
 from max.nn.common_layers.quant_moe import ExpertParallelMoE
+from max.nn.ep import EPBuffers
 from max.nn.kernels import mega_mhc, mhc_post
-from max.nn.legacy.comm.ep import EPCommBuffers
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Sharded
 
@@ -67,24 +67,30 @@ def write_back(
 
 
 def feed_forward(
-    mlp: Module[..., Tensor], h: Tensor, comm_buffers: EPCommBuffers | None
+    mlp: Module[..., Tensor], h: Tensor, ep: EPBuffers | None
 ) -> Tensor:
-    """Runs a feed-forward block on the normalized ``h``, replicated out."""
+    """Runs a feed-forward block on the normalized ``h``, replicated out.
+
+    Args:
+        mlp: The feed-forward block, dense or MoE.
+        h: The normalized hidden states.
+        ep: The exchange's buffers, for an expert-parallel MoE.
+
+    Returns:
+        The block's output, replicated over the mesh.
+    """
     replicated = DeviceMapping.replicated(h.mesh)
     if isinstance(mlp, Glm5NextTensorParallelMoE):
         # Its experts are split by columns, so every device needs every row.
         # It all-reduces its float32 combine before rounding to bfloat16, so
         # this transfer moves nothing.
         return mlp(h).to(replicated)
-    if (
-        isinstance(mlp, ExpertParallelMoE)
-        and mlp.ep_batch_manager.config.use_allreduce
-    ):
+    if isinstance(mlp, ExpertParallelMoE) and mlp.ep_config.use_allreduce:
         # Every device already holds every row, so each one routes all of
         # them to its own experts and returns their partial sums. One
         # all-reduce completes them, in place of the P2P exchange and the
         # gather.
-        return F.allreduce_sum(mlp(h, comm_buffers))
+        return F.allreduce_sum(mlp(h, ep=ep))
     # The other feed-forward blocks are per token, so each device runs
     # them over its own share of the rows rather than every device over
     # all of them. That is also what keeps a device's EP dispatch under
@@ -92,7 +98,7 @@ def feed_forward(
     rows = h.shape[0]
     h = h.to(DeviceMapping(h.mesh, (Sharded(0),)))
     if isinstance(mlp, ExpertParallelMoE):
-        y = mlp(h, comm_buffers)
+        y = mlp(h, ep=ep)
     else:
         y = mlp(h)
     # Gathering the shards back gives a row count the compiler cannot
@@ -195,7 +201,7 @@ class Glm5NextDecoderLayer(Module[..., tuple[Tensor, Pending]]):
         self,
         streams: Tensor,
         attn_args: tuple[object, ...],
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
         pending: Pending | None = None,
     ) -> tuple[Tensor, Pending]:
         """Runs the layer's attention, then its MLP.
@@ -203,7 +209,8 @@ class Glm5NextDecoderLayer(Module[..., tuple[Tensor, Pending]]):
         Args:
             streams: The residual streams.
             attn_args: The attention sublayer's inputs after ``h``.
-            comm_buffers: The expert-parallel buffers, or ``None``.
+            ep: The exchange's buffers, for an expert-parallel MoE, or
+                ``None``.
             pending: The previous layer's feed-forward output, not yet
                 written back into ``streams``; ``None`` for the first layer.
 
@@ -220,4 +227,4 @@ class Glm5NextDecoderLayer(Module[..., tuple[Tensor, Pending]]):
         streams, post, comb, h = _site(
             streams, (y, post, comb), self.hc_ffn, self.post_attention_layernorm
         )
-        return streams, (feed_forward(self.mlp, h, comm_buffers), post, comb)
+        return streams, (feed_forward(self.mlp, h, ep), post, comb)

@@ -35,11 +35,11 @@ accounting that's inseparable from it.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
-from max.driver import Buffer, accelerator_api
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.mesh_axis import EP, TP
@@ -51,7 +51,6 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
@@ -63,8 +62,6 @@ from max.pipelines.lib.interfaces.arch_config import (
 )
 from max.pipelines.lib.registration_runtime import (
     ExpertParallelDeploymentConfig,
-    ExpertParallelExchange,
-    ExpertParallelInputs,
     ModuleRuntime,
 )
 from max.pipelines.lib.utils import upper_bounded_default
@@ -92,69 +89,11 @@ from .state_cache import (
 __all__ = ["KimiK3Config"]
 
 
-class _KimiK3Exchange:
-    """The exchange buffers in :class:`KimiK3ExpertParallelInputs`' order."""
-
-    def __init__(self, initializer: EPCommInitializer) -> None:
-        n_devices = initializer.config.n_gpus_per_node
-        self._buffers = [
-            *initializer.atomic_counters[:n_devices],
-            *(
-                group[i]
-                for i in range(2)
-                for group in (
-                    initializer.send_buf_ptrs,
-                    initializer.recv_buf_ptrs,
-                    initializer.recv_count_ptrs,
-                )
-            ),
-        ]
-
-    def model_inputs(self) -> Sequence[Buffer]:
-        """Returns the counters, then the dispatch and combine tables."""
-        return self._buffers
-
-
-class KimiK3ExpertParallelInputs(ExpertParallelInputs):
-    """Kimi K3's expert-parallel exchange inputs.
-
-    One set of atomic counters per device, which both directions share, then
-    the dispatch direction's send, receive and count tables and the combine
-    direction's (:class:`~.layers.ep.EPBuffers`).
-    """
-
-    def input_tree(self, ep: EPConfig) -> object:
-        """Returns the graph's ``ep`` input types."""
-        full = EPBatchManager(ep).input_tree()
-        n_devices = ep.n_gpus_per_node
-        return (
-            full["atomic_counters"][:n_devices],
-            *(
-                full[name][i]
-                for i in range(2)
-                for name in (
-                    "send_buf_ptrs",
-                    "recv_buf_ptrs",
-                    "recv_count_ptrs",
-                )
-            ),
-        )
-
-    def exchange(
-        self, initializer: EPCommInitializer
-    ) -> ExpertParallelExchange:
-        """Returns the buffers of ``initializer`` the graph takes."""
-        return _KimiK3Exchange(initializer)
-
-
 @dataclass(kw_only=True)
 class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     """Registry configuration for Kimi K3's text tower. See the module docstring."""
 
     takes_batch_context_lengths: ClassVar[bool] = True
-    expert_parallel_inputs: ClassVar[ExpertParallelInputs] = (
-        KimiK3ExpertParallelInputs()
-    )
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {

@@ -22,8 +22,9 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import mtp_eh_norm
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 
@@ -45,7 +46,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Selection]]):
         self,
         config: DeepseekV3_2Config,
         attention_scale: float,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         super().__init__()
         if config.indexer_types:
@@ -54,7 +55,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Selection]]):
                 " config must leave indexer_types empty."
             )
         self.config = config
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = ep_config
         self.enorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.hnorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.eh_proj = Linear(
@@ -67,7 +68,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Selection]]):
                 config.num_hidden_layers, config.first_k_dense_replace
             ),
             attention_scale=attention_scale,
-            ep_batch_manager=ep_batch_manager,
+            ep_config=ep_config,
         )
         self.shared_head_norm = RMSNorm(
             config.hidden_size, eps=config.rms_norm_eps
@@ -82,7 +83,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Selection]]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         prev_topk_indices: Tensor | None = None,
         reuse_prev_topk: bool = False,
         selection_lag: int = 0,
@@ -99,7 +100,8 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Selection]]):
             freqs_cis: The rotary embedding table.
             mla_prefill_metadata: The MLA prefill plan, or ``None`` in
                 decode.
-            comm_buffers: The expert-parallel buffers, or ``None``.
+            ep: The exchange's buffers, or ``None`` without expert
+                parallelism.
             prev_topk_indices: A top-k selection to reuse, or ``None``.
             reuse_prev_topk: Whether to reuse ``prev_topk_indices`` rather
                 than run the indexer.
@@ -126,7 +128,7 @@ class DeepseekV3_2NextN(Module[..., tuple[Tensor, Selection]]):
             input_row_offsets,
             freqs_cis,
             mla_prefill_metadata,
-            comm_buffers,
+            ep,
             prev_topk_indices,
             reuse_prev_topk,
             selection_lag=selection_lag,

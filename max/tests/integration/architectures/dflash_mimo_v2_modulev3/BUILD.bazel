@@ -76,6 +76,8 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tree",
+        "//max/python/max/nn",
         ":mimo_dflash_v3_fixtures",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
@@ -84,7 +86,6 @@ modular_py_test(
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/kv_cache",
-        "//max/python/max/nn/legacy",
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
@@ -217,4 +218,10 @@ modular_py_test(
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
     ],
+)
+
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
 )

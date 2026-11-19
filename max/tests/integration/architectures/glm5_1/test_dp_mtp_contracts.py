@@ -137,6 +137,7 @@ def _text_model(mesh: DeviceMesh) -> DeepseekV3_2TextModel:
     model = object.__new__(DeepseekV3_2TextModel)
     model.mesh = mesh
     model.config = _config(mesh)
+    model.ep_config = None
     return model
 
 
@@ -271,7 +272,7 @@ def test_verify_preserves_host_offsets_contexts_and_cache_ownership(
         context: Tensor,
         boundaries: Tensor,
         host: Tensor,
-        comm: object,
+        ep: object,
         hisparse: object,
         boundary: object,
     ) -> tuple[Tensor, Tensor, Tensor]:
@@ -305,7 +306,7 @@ def test_verify_preserves_host_offsets_contexts_and_cache_ownership(
     language_model = _text_model(mesh)
     target = object.__new__(Glm5_1Decoder)
     target.language_model = language_model
-    target.ep_batch_manager = None
+    target.ep_config = None
     batch = _batch(mesh, counts, width=1)
     with patch.object(language_model, "forward", side_effect=forward):
         spec_adapters.Glm5_1Target(target)._verify(batch)
@@ -383,7 +384,7 @@ def test_decode_splits_embeddings_and_preserves_local_carries(
         query: Tensor,
         freqs: Tensor,
         plan: SimpleNamespace,
-        comm: object,
+        ep: object,
         prev: Tensor | None,
         reuse: bool,
         **kwargs: object,
@@ -410,7 +411,7 @@ def test_decode_splits_embeddings_and_preserves_local_carries(
     proposer.language_model = _text_model(mesh)
     proposer.draft = object.__new__(DeepseekV3_2NextN)
     proposer.draft.config = _config(mesh)
-    proposer.draft.ep_batch_manager = None
+    proposer.draft.ep_config = None
     with (
         patch.object(
             proposer.language_model,
@@ -477,7 +478,7 @@ def test_prefill_predicates_the_draft_rows_under_pcp() -> None:
     proposer.language_model = _text_model(mesh)
     proposer.draft = object.__new__(DeepseekV3_2NextN)
     proposer.draft.config = config
-    proposer.draft.ep_batch_manager = None
+    proposer.draft.ep_config = None
     with (
         patch.object(
             proposer.language_model,

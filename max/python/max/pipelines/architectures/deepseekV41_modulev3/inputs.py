@@ -62,10 +62,8 @@ class DeepseekV41Inputs(ModelInputs):
     """The forward inputs after the KV leaves, in ``interface.extra_input_names`` order."""
 
     ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
-    """The EP comm buffers trailing the extras, in
-    ``EPBatchManager.input_types`` order; empty without expert
-    parallelism. The batch processor binds them from the model's
-    ``EPCommInitializer``."""
+    """The EP buffers trailing the extras, in the leaf order of the
+    decoder's ``ep`` tree; empty without expert parallelism."""
 
     data_parallel_splits: Buffer | None = field(default=None, kw_only=True)
     """CPU int64 ``[dp + 1]`` request-index split boundaries."""
