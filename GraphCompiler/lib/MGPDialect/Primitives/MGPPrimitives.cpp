@@ -143,19 +143,20 @@ llvm::SmallVector<void *> getKernelInputs(OperandTy &operands,
         const_cast<void *>(reinterpret_cast<const void *>(attr.get())));
 
     size_t byteCount = 1;
-    if (attr.getAttrKind() == MEF::AttributeKind::kString) {
+    if (attr.getAttrKind() == MLRT::MEF::AttributeKind::kString) {
       byteCount = M::MLRT::decodeMEFArrayLength(attr.get());
     } else if (((uint8_t)attr.getAttrKind()) &
-               ((uint8_t)MEF::AttributeKind::mArrayType)) {
+               ((uint8_t)MLRT::MEF::AttributeKind::mArrayType)) {
       byteCount = M::MLRT::decodeMEFArrayLength(attr.get()) *
-                  M::MEF::getWidthInBits(attr.getAttrKind()) / 8;
+                  M::MLRT::MEF::getWidthInBits(attr.getAttrKind()) / 8;
     } else {
-      ASSERT_STREAM(attr.getAttrKind() != MEF::AttributeKind::kBool &&
-                        attr.getAttrKind() != MEF::AttributeKind::kDictionary &&
-                        attr.getAttrKind() != MEF::AttributeKind::kList &&
-                        attr.getAttrKind() != MEF::AttributeKind::kType &&
-                        attr.getAttrKind() != MEF::AttributeKind::kSymbolRef,
-                    "unhandled type of resources.");
+      ASSERT_STREAM(
+          attr.getAttrKind() != MLRT::MEF::AttributeKind::kBool &&
+              attr.getAttrKind() != MLRT::MEF::AttributeKind::kDictionary &&
+              attr.getAttrKind() != MLRT::MEF::AttributeKind::kList &&
+              attr.getAttrKind() != MLRT::MEF::AttributeKind::kType &&
+              attr.getAttrKind() != MLRT::MEF::AttributeKind::kSymbolRef,
+          "unhandled type of resources.");
     }
     kernelInputs.push_back(reinterpret_cast<void *>(byteCount));
   }

@@ -486,7 +486,7 @@ void BackwardsRelationDataflowAnalysis::flowControlFlow(
 
 void BackwardsRelationDataflowAnalysis::flowDefault(Operation *op,
                                                     DomainMap &domainMap) {
-  if (isa<MEF::OutputOp>(op))
+  if (isa<MLRT::MEF::OutputOp>(op))
     // entries for the output op operands are established from the outer block.
     return;
 

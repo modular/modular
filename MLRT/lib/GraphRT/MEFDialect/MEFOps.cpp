@@ -24,7 +24,7 @@
 #include "mlir/Interfaces/FunctionImplementation.h"
 
 using namespace M;
-using namespace MEF;
+using namespace M::MLRT::MEF;
 
 //===----------------------------------------------------------------------===//
 // ModelOp
@@ -212,7 +212,7 @@ LogicalResult CallableOp::verifyRegions() {
 //===----------------------------------------------------------------------===//
 
 void OutputOp::build(OpBuilder &odsBuilder, OperationState &odsState) {
-  build(odsBuilder, odsState, odsBuilder.getType<MEF::ChainType>(), {});
+  build(odsBuilder, odsState, odsBuilder.getType<MLRT::MEF::ChainType>(), {});
 }
 
 //===----------------------------------------------------------------------===//

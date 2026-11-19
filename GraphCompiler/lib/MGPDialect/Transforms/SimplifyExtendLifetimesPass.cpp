@@ -37,7 +37,7 @@ struct SimplifyExtendLifetimesPass
 
   void runOnOperation() override {
     getOperation()->walk([&](MGP::ExtendLifetimeOp extend) {
-      TypedValue<MEF::ChainType> chain = extend.getGate();
+      TypedValue<MLRT::MEF::ChainType> chain = extend.getGate();
       MOGG::AsyncRoutineOp kernel = chain.getDefiningOp<MOGG::AsyncRoutineOp>();
       if (!kernel)
         return;

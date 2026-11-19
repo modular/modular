@@ -243,14 +243,14 @@ SmallVector<Value> M::MGP::allLoopResults(Operation *op) {
 
 SmallVector<Value> M::MGP::getIndicatingResults(Operation *op) {
   // A control flow op is finished when any of its results is ready.
-  if (!isa<MEF::ChainIndicatesFinishedInterface>(op))
+  if (!isa<MLRT::MEF::ChainIndicatesFinishedInterface>(op))
     // All results are indicating.
     return op->getResults();
 
   // Only chain results, if any, are indicating.
   SmallVector<Value> results;
   for (Value result : op->getResults()) {
-    if (isa<MEF::MEFChainTypeInterface>(result.getType()))
+    if (isa<MLRT::MEF::MEFChainTypeInterface>(result.getType()))
       results.emplace_back(result);
   }
   return results;
@@ -274,11 +274,11 @@ bool M::MGP::isGatingOperand(const OpOperand *opOperand) {
     return llvm::is_contained(extraOperands, opOperand->get());
   }
 
-  if (isa<MEF::OutputOp>(op))
+  if (isa<MLRT::MEF::OutputOp>(op))
     // Nothing gates a mef.output.
     return false;
 
-  if (!isa<MEF::NonStrictInterface>(op))
+  if (!isa<MLRT::MEF::NonStrictInterface>(op))
     // All operands are gating for strict ops.
     return true;
 
@@ -302,7 +302,7 @@ OpOperand *M::MGP::getUniqueMutator(Value value) {
 SmallVector<OpOperand *, 1> M::MGP::getInputChainOpOperands(Operation *op) {
   SmallVector<OpOperand *, 1> result;
   for (auto &operand : op->getOpOperands()) {
-    if (isa<MEF::MEFChainTypeInterface>(operand.get().getType()))
+    if (isa<MLRT::MEF::MEFChainTypeInterface>(operand.get().getType()))
       result.emplace_back(&operand);
   }
   return result;
@@ -433,8 +433,8 @@ InitState::InitState(ModelOp model)
   builder.setInsertionPoint(&init->back());
 }
 
-TypedValue<MEF::ChainType> InitState::getFinalChain() {
-  return cast<TypedValue<MEF::ChainType>>(init->back().getOperand(0));
+TypedValue<MLRT::MEF::ChainType> InitState::getFinalChain() {
+  return cast<TypedValue<MLRT::MEF::ChainType>>(init->back().getOperand(0));
 }
 
 void InitState::updateFinalChain(Value newChain) {
@@ -451,14 +451,14 @@ TypedValue<ContextType> InitState::getContext() {
 
 ExecuteState::ExecuteState(MLIRContext *context, ModelOp model)
     : execute(model.getExecuteBlock()), model(model), builder(context) {
-  assert(isa<MEF::ChainType>(execute->getArgument(0).getType()));
+  assert(isa<MLRT::MEF::ChainType>(execute->getArgument(0).getType()));
   assert(isa<ContextType>(execute->getArgument(1).getType()));
 }
 
 /// The 'execute' block's first argument. It is ready whenever any other chain
 /// is, so it can be ignored.
-TypedValue<MEF::ChainType> ExecuteState::getRootChain() const {
-  return cast<TypedValue<MEF::ChainType>>(execute->getArgument(0));
+TypedValue<MLRT::MEF::ChainType> ExecuteState::getRootChain() const {
+  return cast<TypedValue<MLRT::MEF::ChainType>>(execute->getArgument(0));
 }
 
 TypedValue<ContextType> ExecuteState::getContext() const {

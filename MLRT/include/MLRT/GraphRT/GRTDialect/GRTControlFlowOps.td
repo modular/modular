@@ -89,7 +89,7 @@ def InvokeOp : GRTOp<"invoke", [DeclareOpInterfaceMethods<SymbolUserOpInterface>
 //===----------------------------------------------------------------------===//
 
 def IfOp : GRTOp<"if",
-          [IsolatedFromAbove, SingleBlockImplicitTerminator<"MEF::OutputOp">,
+          [IsolatedFromAbove, SingleBlockImplicitTerminator<"MLRT::MEF::OutputOp">,
            NonStrictInterface, RegionKindInterface, HasOnlyGraphRegion,
            DeclareOpInterfaceMethods<GRTControlFlowInterface>]> {
   let summary = "if control flow operation";
@@ -156,7 +156,7 @@ def IfOp : GRTOp<"if",
 //===----------------------------------------------------------------------===//
 
 def WhileOp : GRTOp<"while",
-          [IsolatedFromAbove, SingleBlockImplicitTerminator<"MEF::OutputOp">,
+          [IsolatedFromAbove, SingleBlockImplicitTerminator<"MLRT::MEF::OutputOp">,
            NonStrictInterface, RegionKindInterface, HasOnlyGraphRegion,
            DeclareOpInterfaceMethods<GRTControlFlowInterface>]> {
   let summary = "while control flow operation";
@@ -223,8 +223,8 @@ def WhileOp : GRTOp<"while",
   }];
 
   let extraClassDeclaration = [{
-    MEF::OutputOp getCondTerminator();
-    MEF::OutputOp getBodyTerminator();
+    MLRT::MEF::OutputOp getCondTerminator();
+    MLRT::MEF::OutputOp getBodyTerminator();
   }];
 }
 
@@ -233,7 +233,7 @@ def WhileOp : GRTOp<"while",
 //===----------------------------------------------------------------------===//
 
 def RepeatI32Op : GRTOp<"repeat.i32",
-         [IsolatedFromAbove, SingleBlockImplicitTerminator<"MEF::OutputOp">,
+         [IsolatedFromAbove, SingleBlockImplicitTerminator<"MLRT::MEF::OutputOp">,
           NonStrictInterface, RegionKindInterface, HasOnlyGraphRegion,
           DeclareOpInterfaceMethods<GRTControlFlowInterface>]> {
   let summary = "Repeat a body N times";

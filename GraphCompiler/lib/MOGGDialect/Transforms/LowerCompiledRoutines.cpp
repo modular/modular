@@ -248,7 +248,7 @@ void LowerCompiledRoutinesPass::runOnOperation() {
     init.walk([&](MGP::ExecuteGenericOp exec) {
       // Already ordered after the load through a chain operand: leave it alone.
       if (llvm::any_of(exec->getOperands(), [](Value v) {
-            return isa<MEF::ChainType>(v.getType());
+            return isa<MLRT::MEF::ChainType>(v.getType());
           }))
         return;
       // A chain-less execute resolved its callee to a loaded module above,

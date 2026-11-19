@@ -73,9 +73,9 @@ static llvm::SmallVector<Value> getLiftableIndexOutputs(Operation *op) {
   return res;
 }
 
-static std::pair<TypedValue<MEF::ChainType>, uint64_t>
+static std::pair<TypedValue<MLRT::MEF::ChainType>, uint64_t>
 cacheIntValue(OpBuilder &builder, Location loc,
-              TypedValue<MEF::ChainType> inChain,
+              TypedValue<MLRT::MEF::ChainType> inChain,
               ContextCreateOp contextCreateOp, Value intValue) {
   intValue = dimensionToIndex(builder, loc, intValue);
   uint64_t intSlot = contextCreateOp.getNumSlots();
@@ -90,7 +90,7 @@ cacheIntValue(OpBuilder &builder, Location loc,
 
 static Value getCachedIntValue(OpBuilder &builder, Location loc,
                                TypedValue<ContextType> context,
-                               TypedValue<MEF::ChainType> inChain,
+                               TypedValue<MLRT::MEF::ChainType> inChain,
                                uint64_t intSlot, Type resultType) {
   auto parentOp = builder.getBlock()->getParentOp();
   if (!isa<ModelOp>(parentOp))
@@ -119,7 +119,7 @@ static Value getCachedIntValue(OpBuilder &builder, Location loc,
 static void
 cacheLiftedIndexResults(InitState &initState, ExecuteState &executeState,
                         Operation *liftedOp,
-                        TypedValue<MEF::ChainType> cacheInputChain,
+                        TypedValue<MLRT::MEF::ChainType> cacheInputChain,
                         SmallVectorImpl<Value> &finalOutChains,
                         function_ref<bool(const OpOperand &)> isUnliftable) {
   for (Value oldIndexOut : getLiftableIndexOutputs(liftedOp)) {
@@ -172,7 +172,7 @@ static Value getLiftableChainOp(Operation *op) {
     // index and restores a dimension, so a plain integer result would change
     // type on the way back.
     if (regionOp->getNumResults() > 1) {
-      if (!isa<MEF::ChainType>(regionOp->getResult(0).getType()))
+      if (!isa<MLRT::MEF::ChainType>(regionOp->getResult(0).getType()))
         return nullptr;
       for (Value result : llvm::drop_begin(regionOp->getResults()))
         if (!MOSH::ShapeAttr::isDimType(result.getType()))
@@ -310,7 +310,7 @@ private:
         for (Value result : op->getResults())
           analysis.setTrue(domainMap, result);
       }
-    } else if (isa<MEF::OutputOp>(op)) {
+    } else if (isa<MLRT::MEF::OutputOp>(op)) {
       if (!inInitBlock) {
         operationIndex->addToSet(unliftableOps, op);
       }
@@ -423,7 +423,7 @@ private:
         for (const OpOperand &opOperand : op->getOpOperands())
           analysis.setTrue(domainMap, &opOperand);
       }
-    } else if (isa<MEF::OutputOp>(op)) {
+    } else if (isa<MLRT::MEF::OutputOp>(op)) {
       // Ignore 'plumbing'.
     } else if (inInitBlock) {
       // Ignore the 'init' block ops.
@@ -552,7 +552,7 @@ private:
       analysis.flowControlFlow(
           cfOp, domainMap,
           std::bind(&SuppressMutatedAnalysis::flow, this, _1, _2));
-    } else if (isa<MEF::OutputOp>(op)) {
+    } else if (isa<MLRT::MEF::OutputOp>(op)) {
       // Ignore 'plumbing'.
     } else if (inInitBlock) {
       // Ignore the 'init' block ops.
@@ -667,7 +667,7 @@ private:
         for (OpOperand &opOperand : op->getOpOperands())
           analysis.setTrue(domainMap, &opOperand);
       }
-    } else if (isa<MEF::OutputOp>(op)) {
+    } else if (isa<MLRT::MEF::OutputOp>(op)) {
       // Ignore 'plumbing'.
     } else if (inInitBlock) {
       // Ignore 'init' block ops.
@@ -764,7 +764,7 @@ class ExecInvariantCodeMotionPass
       return unliftableOps.contains(operand.getOwner());
     };
 
-    auto initOutputOp = cast<MEF::OutputOp>(*initState->init->rbegin());
+    auto initOutputOp = cast<MLRT::MEF::OutputOp>(*initState->init->rbegin());
     Value initOriginalChain = initState->getFinalChain();
     Location outputLoc = initOutputOp.getLoc();
     initState->builder.setInsertionPoint(initOutputOp);
@@ -856,7 +856,7 @@ class ExecInvariantCodeMotionPass
                             << ") which will be further mutated "
                                "in the 'execute' block");
               for (Value res : use.getOwner()->getResults()) {
-                if (isa<MEF::MEFChainTypeInterface>(res.getType()))
+                if (isa<MLRT::MEF::MEFChainTypeInterface>(res.getType()))
                   potentialBufferActionChains.push_back(res);
               }
             }

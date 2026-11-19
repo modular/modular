@@ -34,11 +34,11 @@ using namespace M::MLRT::GRT;
 
 void ChainCreateOp::build(::mlir::OpBuilder &odsBuilder,
                           ::mlir::OperationState &odsState) {
-  build(odsBuilder, odsState, odsBuilder.getType<MEF::ChainType>(), {});
+  build(odsBuilder, odsState, odsBuilder.getType<MLRT::MEF::ChainType>(), {});
 }
 
 ParseResult ChainCreateOp::parse(OpAsmParser &parser, OperationState &result) {
-  auto chainType = MEF::ChainType::get(parser.getContext());
+  auto chainType = MLRT::MEF::ChainType::get(parser.getContext());
 
   if (parseParenOperandListWithDefaultType(parser, result, chainType) ||
       parser.parseOptionalAttrDictWithKeyword(result.attributes))
@@ -51,7 +51,7 @@ ParseResult ChainCreateOp::parse(OpAsmParser &parser, OperationState &result) {
 }
 
 void ChainCreateOp::print(OpAsmPrinter &p) {
-  auto chainType = MEF::ChainType::get(getContext());
+  auto chainType = MLRT::MEF::ChainType::get(getContext());
   p << ' ';
   printParenOperandListWithDefaultType(p, getOperands(), chainType);
   p.printOptionalAttrDictWithKeyword(getOperation()->getAttrs());
@@ -68,7 +68,7 @@ static LogicalResult eliminateImpliedByChains(ChainCreateOp createOp,
       return llvm::is_contained(extraOperands, opOperand->get());
     }
 
-    return !isa<MEF::NonStrictInterface>(op);
+    return !isa<MLRT::MEF::NonStrictInterface>(op);
   };
 
   llvm::SmallDenseSet<Value> impliedByOperand;
@@ -135,8 +135,9 @@ LogicalResult ChainCreateOp::canonicalize(ChainCreateOp createOp,
 
 LogicalResult InvokeOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   // Check that the target attribute was specified.
-  MEF::CallableOp fn = symbolTable.lookupNearestSymbolFrom<MEF::CallableOp>(
-      *this, getTargetAttr());
+  MLRT::MEF::CallableOp fn =
+      symbolTable.lookupNearestSymbolFrom<MLRT::MEF::CallableOp>(
+          *this, getTargetAttr());
   if (!fn)
     return emitOpError() << "'" << getTargetAttr()
                          << "' does not reference a valid invokable";
@@ -283,7 +284,7 @@ void WhileOp::print(OpAsmPrinter &p) {
 LogicalResult WhileOp::verify() {
   // The 'cond' block should return an additional i1.
   Block *condBlock = &getCondRegion().front();
-  auto condOutput = cast<MEF::OutputOp>(condBlock->getTerminator());
+  auto condOutput = cast<MLRT::MEF::OutputOp>(condBlock->getTerminator());
   if (condOutput->getNumOperands() != getInputs().size() + 1 ||
       condOutput->getOperand(getInputs().size()).getType() !=
           IntegerType::get(getContext(), 1))
@@ -299,12 +300,12 @@ LogicalResult WhileOp::verify() {
   return success();
 }
 
-MEF::OutputOp WhileOp::getCondTerminator() {
-  return cast<MEF::OutputOp>(getCondRegion().front().getTerminator());
+MLRT::MEF::OutputOp WhileOp::getCondTerminator() {
+  return cast<MLRT::MEF::OutputOp>(getCondRegion().front().getTerminator());
 }
 
-MEF::OutputOp WhileOp::getBodyTerminator() {
-  return cast<MEF::OutputOp>(getBodyRegion().front().getTerminator());
+MLRT::MEF::OutputOp WhileOp::getBodyTerminator() {
+  return cast<MLRT::MEF::OutputOp>(getBodyRegion().front().getTerminator());
 }
 
 //===----------------------------------------------------------------------===//

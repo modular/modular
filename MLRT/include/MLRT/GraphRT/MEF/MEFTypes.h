@@ -38,7 +38,7 @@ public:
   MEFType(const MEFType &) = default;
   MEFType &operator=(const MEFType &) = default;
 
-  MEF::TypeKind getKind() const { return MEF::TypeKind(*pointer); }
+  MLRT::MEF::TypeKind getKind() const { return MLRT::MEF::TypeKind(*pointer); }
 
   /// All MEFType's are MEFType's!
   static bool classof(const MEFType *type) { return true; }
@@ -115,7 +115,7 @@ public:
 
   static bool classof(const MEFType *type) {
     assert(type != nullptr);
-    return type->getKind() == MEF::TypeKind::function;
+    return type->getKind() == MLRT::MEF::TypeKind::function;
   }
 };
 
@@ -138,7 +138,7 @@ public:
 
   static bool classof(const MEFType *type) {
     assert(type != nullptr);
-    return type->getKind() == MEF::TypeKind::tensor;
+    return type->getKind() == MLRT::MEF::TypeKind::tensor;
   }
 };
 
@@ -160,7 +160,7 @@ public:
 
   static bool classof(const MEFType *type) {
     assert(type != nullptr);
-    return type->getKind() == MEF::TypeKind::quantized;
+    return type->getKind() == MLRT::MEF::TypeKind::quantized;
   }
 };
 
@@ -184,7 +184,7 @@ public:
 
   static bool classof(const MEFType *type) {
     assert(type != nullptr);
-    return type->getKind() == MEF::TypeKind::quantizedPerAxis;
+    return type->getKind() == MLRT::MEF::TypeKind::quantizedPerAxis;
   }
 };
 

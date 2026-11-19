@@ -23,17 +23,17 @@ size_t MEFType::getEncodedSizeInBytes() const {
   auto typeID = getKind().stripComplex();
 
   switch (typeID.getValue()) {
-  case MEF::TypeKind::invalid:
-  case MEF::TypeKind::kBool:
+  case MLRT::MEF::TypeKind::invalid:
+  case MLRT::MEF::TypeKind::kBool:
     // Primitive types all have a single-byte encoding.
     return 1;
-  case MEF::TypeKind::function:
+  case MLRT::MEF::TypeKind::function:
     return cast<MEFFunctionType>(this)->getEncodedSizeInBytes();
-  case MEF::TypeKind::tensor:
+  case MLRT::MEF::TypeKind::tensor:
     return cast<MEFTensorType>(this)->getEncodedSizeInBytes();
-  case MEF::TypeKind::quantized:
+  case MLRT::MEF::TypeKind::quantized:
     return cast<MEFQuantizedType>(this)->getEncodedSizeInBytes();
-  case MEF::TypeKind::quantizedPerAxis:
+  case MLRT::MEF::TypeKind::quantizedPerAxis:
     return cast<MEFQuantizedPerAxisType>(this)->getEncodedSizeInBytes();
   default:
     // All signed/unsigned integers are single-byte encoding.
@@ -58,13 +58,13 @@ static size_t decodeFunctionType(const uint8_t *pointer, const uint8_t *attrEnd,
   auto *dataPtr = pointer;
   assert(pointer <= attrEnd &&
          "MEF datum not within bounds of the MEF Attribute Section");
-  assert(MEF::TypeKind(dataPtr[0]) == MEF::TypeKind::function);
+  assert(MLRT::MEF::TypeKind(dataPtr[0]) == MLRT::MEF::TypeKind::function);
 
   // Skip past the type kind (which is one byte) to parse the number of inputs.
   dataPtr += 1;
 
-  size_t numInputs = MEF::parseVBR(dataPtr);
-  size_t numResults = MEF::parseVBR(dataPtr);
+  size_t numInputs = MLRT::MEF::parseVBR(dataPtr);
+  size_t numResults = MLRT::MEF::parseVBR(dataPtr);
 
   while (numInputs--) {
     size_t attrSize = MEFType(dataPtr, attrEnd).getEncodedSizeInBytes();
@@ -104,7 +104,7 @@ static size_t decodeTensorType(const uint8_t *pointer, const uint8_t *attrEnd,
   assert(pointer <= attrEnd &&
          "MEF datum not within bounds of the MEF Attribute Section");
   // Tensor type tag.
-  assert(MEF::TypeKind(dataPtr[0]) == MEF::TypeKind::tensor);
+  assert(MLRT::MEF::TypeKind(dataPtr[0]) == MLRT::MEF::TypeKind::tensor);
   ++dataPtr;
   // Element type.
   size_t attrSize = MEFType(dataPtr, attrEnd).getEncodedSizeInBytes();
@@ -120,7 +120,7 @@ static size_t decodeTensorType(const uint8_t *pointer, const uint8_t *attrEnd,
     hasRank = true;
     // Dimensions.
     while (rank--)
-      dims.push_back(MEF::parseVBR(dataPtr));
+      dims.push_back(MLRT::MEF::parseVBR(dataPtr));
   }
   return dataPtr - pointer;
 }
@@ -166,14 +166,14 @@ static size_t decodeQuantizedType(const uint8_t *pointer,
   auto *dataPtr = pointer;
   assert(pointer <= attrEnd &&
          "MEF datum not within bounds of the MEF Attribute Section");
-  assert(MEF::TypeKind(dataPtr[0]) == MEF::TypeKind::quantized);
+  assert(MLRT::MEF::TypeKind(dataPtr[0]) == MLRT::MEF::TypeKind::quantized);
   decodeStorageAndExpressedType(++dataPtr, attrEnd, storageType, expressedType);
 
   // The float type is aligned to 4 bytes.
   dataPtr = (uint8_t *)llvm::alignTo((uintptr_t)dataPtr, 4);
 
-  scale = MEF::parseFloat(dataPtr);
-  zeroPoint = MEF::parseSignedVBR(dataPtr);
+  scale = MLRT::MEF::parseFloat(dataPtr);
+  zeroPoint = MLRT::MEF::parseSignedVBR(dataPtr);
 
   return dataPtr - pointer;
 }
@@ -209,19 +209,20 @@ static size_t decodeQuantizedPerAxisType(
   auto *dataPtr = pointer;
   assert(pointer <= attrEnd &&
          "MEF datum not within bounds of the MEF Attribute Section");
-  assert(MEF::TypeKind(dataPtr[0]) == MEF::TypeKind::quantizedPerAxis);
+  assert(MLRT::MEF::TypeKind(dataPtr[0]) ==
+         MLRT::MEF::TypeKind::quantizedPerAxis);
   decodeStorageAndExpressedType(++dataPtr, attrEnd, storageType, expressedType);
 
   quantizedDim = *dataPtr++;
-  auto numParams = MEF::parseVBR(dataPtr);
+  auto numParams = MLRT::MEF::parseVBR(dataPtr);
 
   // Decode the scales, then the zero points, and push them into their vectors.
   // Note that these two loops cannot be merged, because dataPtr is incremented
   // every time we decode an element.
   for (size_t j = 0; j < numParams; ++j)
-    scales.push_back(MEF::parseFloat(dataPtr));
+    scales.push_back(MLRT::MEF::parseFloat(dataPtr));
   for (size_t j = 0; j < numParams; ++j)
-    zeroPoints.push_back(MEF::parseSignedVBR(dataPtr));
+    zeroPoints.push_back(MLRT::MEF::parseSignedVBR(dataPtr));
 
   return dataPtr - pointer;
 }

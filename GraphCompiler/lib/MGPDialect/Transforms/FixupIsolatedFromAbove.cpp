@@ -89,7 +89,7 @@ static void fixup(OpBuilder &builder, Block *inBlock,
 
   for (Operation *inOp : getDataflowOrder(inBlock)) {
     LLVM_DEBUG(llvm::dbgs() << "looking at op " << *inOp << "\n");
-    if (auto inOutputOp = dyn_cast<MEF::OutputOp>(inOp)) {
+    if (auto inOutputOp = dyn_cast<MLRT::MEF::OutputOp>(inOp)) {
       if (mustAlsoReturn) {
         SmallVector<Value> outOperands;
         // Rewrite existing operands (possibly excluding last).
@@ -116,7 +116,7 @@ static void fixup(OpBuilder &builder, Block *inBlock,
           outOperands.emplace_back(outOperand);
         }
         [[maybe_unused]] Operation *outOutputOp =
-            MEF::OutputOp::create(builder, inOp->getLoc(), outOperands);
+            MLRT::MEF::OutputOp::create(builder, inOp->getLoc(), outOperands);
         ASSERT_STREAM(checkRewrite(inOutputOp, outOutputOp),
                       << "invalid rewrite for output op");
         continue;

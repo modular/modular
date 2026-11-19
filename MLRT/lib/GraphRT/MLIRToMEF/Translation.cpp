@@ -44,7 +44,7 @@ void M::MLRT::registerMLIRToMEFTranslation(DialectRegistry &otherDialects) {
         return success();
       },
       [&](DialectRegistry &registry) {
-        registry.insert<MEF::MEFDialect, MDialect>();
+        registry.insert<MLRT::MEF::MEFDialect, MDialect>();
         // If the caller provided any other dialects, add them.
         otherDialects.appendTo(registry);
       });

@@ -128,7 +128,7 @@ def LowerCompiledRoutines: Pass<"mogg-lower-compiled-routines", "ModuleOp"> {
     compiled code.
   }];
 
-  let dependentDialects = ["MEF::MEFDialect",
+  let dependentDialects = ["MLRT::MEF::MEFDialect",
                           "MGP::MGPDialect",
                           "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect"];
@@ -142,7 +142,7 @@ def SequenceFusion: Pass<"mogg-sequence-fusion", "MGP::ModelOp"> {
     Option<"enableTransitiveFusion", "enable-transitive-fusion", "bool", "false",
       "Flag to allow control of fusion pass">
   ];
-  let dependentDialects = ["MEF::MEFDialect",
+  let dependentDialects = ["MLRT::MEF::MEFDialect",
                           "MGP::MGPDialect",
                           "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect"];
@@ -477,7 +477,7 @@ def EmitMojo: Pass<"mogg-emit-mojo", "ModuleOp"> {
       "Flag to add prints for the fused tensor specs in the lambdas">
   ];
 
-  let dependentDialects = ["MEF::MEFDialect",
+  let dependentDialects = ["MLRT::MEF::MEFDialect",
                           "MGP::MGPDialect",
                           "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect",
@@ -498,7 +498,7 @@ def DumpMojo: Pass<"mogg-dump-mojo", "ModuleOp"> {
     Dumps the emitted Mojo to stderr.
   }];
 
-  let dependentDialects = ["MEF::MEFDialect",
+  let dependentDialects = ["MLRT::MEF::MEFDialect",
                           "MGP::MGPDialect",
                           "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect",
@@ -531,7 +531,7 @@ def LoadMojo: Pass<"mogg-load-mojo", "ModuleOp"> {
       "The label for resulting MGP graph. Default is mof.">
   ];
 
-  let dependentDialects = ["MEF::MEFDialect",
+  let dependentDialects = ["MLRT::MEF::MEFDialect",
                           "MGP::MGPDialect",
                           "MLRT::GRT::GRTDialect",
                           "MOGG::MOGGDialect",

@@ -25,7 +25,7 @@
 namespace M::MLRT {
 // Add all the MLIR dialects to the provided registry.
 inline void registerAllGraphRTDialects(DialectRegistry &registry) {
-  registry.insert<MEF::MEFDialect, MLRT::GRT::GRTDialect>();
+  registry.insert<MLRT::MEF::MEFDialect, MLRT::GRT::GRTDialect>();
 }
 
 } // namespace M::MLRT

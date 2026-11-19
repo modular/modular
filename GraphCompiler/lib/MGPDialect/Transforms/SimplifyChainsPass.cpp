@@ -58,7 +58,7 @@ class SimplifyChainsPass
       // Only the extra strict operands are gating for control flow ops.
       return cfOp.getStrictExtraOperands();
 
-    if (isa<MEF::NonStrictInterface>(op))
+    if (isa<MLRT::MEF::NonStrictInterface>(op))
       return ValueRange{};
     return op->getOperands();
   }

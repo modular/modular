@@ -170,7 +170,7 @@ public:
     while (uintptr_t(contents.data()) & (uintptr_t(alignment) - 1)) {
       if (parseByte(padding))
         return true;
-      if (padding != MEF::kAlignmentByte)
+      if (padding != MLRT::MEF::kAlignmentByte)
         return emitError("expected alignment byte, got '" +
                          Twine(int(padding)) + "' instead");
     }
@@ -234,7 +234,7 @@ public:
     size_t length;
     if (parseByte(sectionID) || parseVBR(length))
       return true;
-    if (sectionID == (unsigned)MEF::SectionID::kInvalid)
+    if (sectionID == (unsigned)MLRT::MEF::SectionID::kInvalid)
       return emitError("invalid section ID");
 
     // The low bit of the size is a boolean indicating whether there is an

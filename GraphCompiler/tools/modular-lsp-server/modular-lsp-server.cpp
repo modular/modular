@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
       index::IndexDialect, LLVM::LLVMDialect, quant::QuantDialect,
       mlir::ub::UBDialect,
       // Modular.
-      MEF::MEFDialect, DebugInfo::DebugInfoDialect, MLRT::GRT::GRTDialect,
+      MLRT::MEF::MEFDialect, DebugInfo::DebugInfoDialect, MLRT::GRT::GRTDialect,
       MDialect, MGP::MGPDialect, RMO::RMODialect, MOSH::MOSHDialect,
       MO::MODialect, MOGG::MOGGDialect, MAP::MAPDialect>();
   registerAllKGENDialects(registry);

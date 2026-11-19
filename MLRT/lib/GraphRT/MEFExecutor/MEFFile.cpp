@@ -150,43 +150,43 @@ bool MEFFileReader::readNextSection() {
   // Remember the sections we care about either in MEFFileInfo (if they get
   // decoded lazily by the invokable executor) or in MEFFileReader (if they're
   // decoded eagerly at file load time).  Ignore sections we don't care about.
-  switch (static_cast<MEF::SectionID>(sectionID)) {
+  switch (static_cast<MLRT::MEF::SectionID>(sectionID)) {
   default: // Ignore unknown section.
     return false;
 
-  case MEF::SectionID::kLocationFilenames:
+  case MLRT::MEF::SectionID::kLocationFilenames:
     mefFile.locationFilenames = sectionContents;
     return false;
 
   // We just remember the locations of the kLocationPositions section - it is
   // directly indexed with a byte offset.
-  case MEF::SectionID::kLocationPositions:
+  case MLRT::MEF::SectionID::kLocationPositions:
     mefFile.locationPositions = sectionContents;
     return false;
 
   // We just remember the locations of the kStrings section - it is directly
   // indexed with a byte offset.
-  case MEF::SectionID::kStrings:
+  case MLRT::MEF::SectionID::kStrings:
     mefFile.strings = sectionContents;
     return false;
 
   // We just remember the locations of the kAttributes section - it is directly
   // indexed with a byte offset.
-  case MEF::SectionID::kAttributes:
+  case MLRT::MEF::SectionID::kAttributes:
     mefFile.attributes = sectionContents;
     return false;
 
-  case MEF::SectionID::kPrimitiveNames:
+  case MLRT::MEF::SectionID::kPrimitiveNames:
     mefFile.primitiveNames = sectionContents;
     return false;
 
   // We just remember the locations of the kInvokablesBodies section - it is
   // directly indexed with a byte offset from the kInvokablesIndex section.
-  case MEF::SectionID::kTopLevelOpBodies:
+  case MLRT::MEF::SectionID::kTopLevelOpBodies:
     mefFile.invokableBodies = sectionContents;
     return false;
 
-  case MEF::SectionID::kTopLevelOpIndex:
+  case MLRT::MEF::SectionID::kTopLevelOpIndex:
     invokableIndex = sectionContents;
     return false;
   }
@@ -259,7 +259,7 @@ MEFInvokable *MEFFileImpl::getInvokableByID(size_t number) const {
 /// Return true if the specified file contents look like it is a MEF file, by
 /// checking the magic number.
 bool M::MLRT::isMEFFile(llvm::StringRef contents) {
-  return MEF::hasMEFMagicNumber(contents);
+  return MLRT::MEF::hasMEFMagicNumber(contents);
 }
 
 /// Home the vtable in a .cpp file.
@@ -291,7 +291,7 @@ ErrorOr<RCRef<MEFFile>> MEFFile::open(BufferRef buffer) {
                  Twine(") must be aligned to: 0x") +
                  Twine::utohexstr(maxAttrAlign.value()));
 
-  if (!MEF::hasMEFMagicNumber(file))
+  if (!MLRT::MEF::hasMEFMagicNumber(file))
     return Error("not a MEF file");
   file = file.drop_front(2); // Drop the magic number.
 

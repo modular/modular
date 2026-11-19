@@ -140,7 +140,7 @@ LogicalResult MGPCallGraphNode::inlineSubgraph(MGPCallGraphNode::EdgeT edge,
       continue;
 
     // The parent's init terminator waits on the subgraph's init chain.
-    if (isa<MEF::OutputOp>(subOp)) {
+    if (isa<MLRT::MEF::OutputOp>(subOp)) {
       Value subgraphOutputChain = initMap.lookup(subOp->getOperand(0));
       assert(subgraphOutputChain &&
              "Subgraph init block is missing an output chain");
@@ -190,7 +190,8 @@ LogicalResult MGPCallGraphNode::inlineSubgraph(MGPCallGraphNode::EdgeT edge,
     offsetRuntimeSlot(clonedOp, slotOffset);
   }
 
-  auto subgraphTerminator = cast<MEF::OutputOp>(subgraphExec->getTerminator());
+  auto subgraphTerminator =
+      cast<MLRT::MEF::OutputOp>(subgraphExec->getTerminator());
 
   auto newResults =
       llvm::map_range(subgraphTerminator.getOperands(),

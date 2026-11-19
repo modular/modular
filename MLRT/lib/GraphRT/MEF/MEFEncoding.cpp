@@ -13,10 +13,10 @@
 
 #include "MLRT/GraphRT/MEF/MEFEncoding.h"
 #include "llvm/Support/raw_ostream.h"
-using namespace M::MEF;
+using namespace M::MLRT::MEF;
 
 /// Provides a way to get a MEF attribute kind as a string.
-std::string M::MEF::getAsString(AttributeKind kind) {
+std::string M::MLRT::MEF::getAsString(AttributeKind kind) {
   // If it's one of these then we can just use a constant string. The containers
   // support multiple different kinds of attribute, so we can't necessarily say
   // what the actual type is.

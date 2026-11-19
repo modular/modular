@@ -145,7 +145,7 @@ static ParseResult parseBufferTypeToDeviceImpl(OpAsmParser &p, Type &buffer,
     return p.emitError(loc) << "expected an !mgp.buffer type.";
   device = bufferType.getDevice();
   for (Type *chain : chains)
-    *chain = MEF::ChainType::get(p.getContext());
+    *chain = MLRT::MEF::ChainType::get(p.getContext());
   return success();
 }
 
@@ -168,7 +168,7 @@ static ParseResult parseBufferTypeToDevice(OpAsmParser &p, Type &buffer,
 static void printBufferTypeToDevice(OpAsmPrinter &p, Operation *op,
                                     DeviceBufferType buffer,
                                     DeviceRefAttr device,
-                                    MEF::ChainType chain) {
+                                    MLRT::MEF::ChainType chain) {
   p << buffer;
 }
 
@@ -180,7 +180,7 @@ static ParseResult parseBufferTypeToChain(OpAsmParser &p, Type &buffer,
 
 static void printBufferTypeToChain(OpAsmPrinter &p, Operation *op,
                                    DeviceBufferType buffer,
-                                   MEF::ChainType chain) {
+                                   MLRT::MEF::ChainType chain) {
   p << buffer;
 }
 
@@ -201,7 +201,7 @@ static ParseResult parseTensorTypeToDeviceBufferSpecImpl(
   tensorSpec = tensorType.getTensorSpec();
   buffer = DeviceBufferType::get(tensorType);
   for (Type *chain : chains)
-    *chain = MEF::ChainType::get(p.getContext());
+    *chain = MLRT::MEF::ChainType::get(p.getContext());
   return success();
 }
 
@@ -218,7 +218,7 @@ static void printTensorTypeToDeviceBufferSpec(OpAsmPrinter &p, Operation *op,
                                               DeviceTensorType tensorType,
                                               DeviceBufferType buffer,
                                               TensorSpecType tensorSpec,
-                                              MEF::ChainType chain) {
+                                              MLRT::MEF::ChainType chain) {
   p << tensorType;
 }
 
@@ -244,7 +244,7 @@ parseSrcDstBufferTypesToDevices(OpAsmParser &p, Type &srcBuffer,
     return p.emitError(loc, "expected an !mgp.buffer type");
   srcDevice = srcBufferType.getDevice();
   dstDevice = dstBufferType.getDevice();
-  inChain = MEF::ChainType::get(p.getContext());
+  inChain = MLRT::MEF::ChainType::get(p.getContext());
   return success();
 }
 
@@ -253,7 +253,7 @@ static void printSrcDstBufferTypesToDevices(OpAsmPrinter &p, Operation *op,
                                             DeviceBufferType dstBuffer,
                                             DeviceRefAttr srcDevice,
                                             DeviceRefAttr dstDevice,
-                                            MEF::ChainType inChain) {
+                                            MLRT::MEF::ChainType inChain) {
   p << srcBuffer;
   p << " -> ";
   p << dstBuffer;
@@ -880,7 +880,7 @@ CallOp::verifySymbolUses(mlir::SymbolTableCollection &symbolTable) {
     }
   }
 
-  auto outputOp = dyn_cast<MEF::OutputOp>(executeBlock->getTerminator());
+  auto outputOp = dyn_cast<MLRT::MEF::OutputOp>(executeBlock->getTerminator());
   if (!outputOp) {
     return emitOpError() << "execute block of " << getCalleeAttr()
                          << " does not end with an mef.output op.";
@@ -962,7 +962,7 @@ static FunctionType implicitInitSignature(Builder &builder,
   SmallVector<Type> inputs;
   appendInitExecImplicitArgs(inputs, builder.getContext(), devices);
 
-  SmallVector<Type> outputs = {builder.getType<MEF::ChainType>(),
+  SmallVector<Type> outputs = {builder.getType<MLRT::MEF::ChainType>(),
                                builder.getType<MGP::ContextType>()};
   appendInitExecImplicitArgs(outputs, builder.getContext(), devices);
 
@@ -973,13 +973,13 @@ static FunctionType implicitInitSignature(Builder &builder,
 /// any explicit inputs and results have been included.
 static FunctionType implicitExecuteSignature(Builder &builder,
                                              ArrayRef<DeviceRef> devices) {
-  SmallVector<Type> inputs = {builder.getType<MEF::ChainType>(),
+  SmallVector<Type> inputs = {builder.getType<MLRT::MEF::ChainType>(),
                               builder.getType<MGP::ContextType>()};
 
   appendInitExecImplicitArgs(inputs, builder.getContext(), devices);
 
   return builder.getFunctionType(
-      inputs, /*results=*/{builder.getType<MEF::ChainType>()});
+      inputs, /*results=*/{builder.getType<MLRT::MEF::ChainType>()});
 }
 
 /// Returns true if requiredTypes is a prefix of actualTypes, in which case
@@ -1150,7 +1150,7 @@ LogicalResult ModelOp::verifyRegions() {
   //  () -> (!mef.chain, !mgp.context)
   Block *initBlock = getInitBlock();
   BlockArgTypeRange initArgTypes = initBlock->getArgumentTypes();
-  if (auto output = dyn_cast<MEF::OutputOp>(initBlock->getTerminator())) {
+  if (auto output = dyn_cast<MLRT::MEF::OutputOp>(initBlock->getTerminator())) {
     FunctionType implicitInitSig = implicitInitSignature(builder, devices);
 
     // One arg per device plus the weights registry.
@@ -1189,7 +1189,7 @@ LogicalResult ModelOp::verifyRegions() {
   // where the ModelOp's inputOutputTypes are:
   //   (arg_1, ... arg_n) -> (res_1, ... res_m)
   Block *execBlock = getExecuteBlock();
-  if (auto output = dyn_cast<MEF::OutputOp>(execBlock->getTerminator())) {
+  if (auto output = dyn_cast<MLRT::MEF::OutputOp>(execBlock->getTerminator())) {
     FunctionType implicitExecSig = implicitExecuteSignature(builder, devices);
     ArrayRef<Type> modelArgTypes = getInputOutputTypes().getInputs();
     SmallVector<Type> expectedArgTypes(implicitExecSig.getInputs());

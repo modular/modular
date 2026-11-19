@@ -551,7 +551,7 @@ AsyncDataflowDependencies::getEffectiveOwner(const OpOperand *opOperand) const {
     }
   }
 
-  if (isa<MEF::OutputOp>(op)) {
+  if (isa<MLRT::MEF::OutputOp>(op)) {
     if (auto modelOp = dyn_cast<ModelOp>(op->getParentOp())) {
       // The model op stands for the caller of the entry point.
       return modelOp;

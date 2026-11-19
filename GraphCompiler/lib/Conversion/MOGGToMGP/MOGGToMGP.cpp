@@ -268,7 +268,7 @@ CompileDiagnosticOrSuccess MOGraphLowering::setupBufferBuildersForAllDevices() {
       hostBufferBuilder = &loweringState.getBufferBuilder(hostDevice);
     }
     auto inChain =
-        cast<TypedValue<MEF::ChainType>>(loweringState.getInitChain());
+        cast<TypedValue<MLRT::MEF::ChainType>>(loweringState.getInitChain());
     auto chain = bufferBuilder->setupForModel(
         loweringState.getModelOp(), hostBufferBuilder,
         loweringState.getInitOpBuilder(), loweringState.getGraph()->getLoc(),
@@ -464,8 +464,8 @@ LogicalResult MOGraphLowering::lower(MO::OutputOp output) {
   for (auto dev : loweringState.getModelOp().getDevices())
     outputs.push_back(
         loweringState.getInitDevice(dyn_cast<DeviceRefAttr>(dev)));
-  MEF::OutputOp::create(loweringState.getInitOpBuilder(), output.getLoc(),
-                        outputs);
+  MLRT::MEF::OutputOp::create(loweringState.getInitOpBuilder(), output.getLoc(),
+                              outputs);
 
   // Execute phase. Always returns a chain.
   SmallVector<Value> operands;
@@ -493,8 +493,8 @@ LogicalResult MOGraphLowering::lower(MO::OutputOp output) {
     operands.push_back(loweredValue);
   }
 
-  MEF::OutputOp::create(loweringState.getExecuteOpBuilder(), output.getLoc(),
-                        operands);
+  MLRT::MEF::OutputOp::create(loweringState.getExecuteOpBuilder(),
+                              output.getLoc(), operands);
   return success();
 }
 
@@ -514,8 +514,8 @@ LogicalResult MOGraphLowering::lower(MO::YieldOp yield) {
     operands.push_back(*valueOr);
   }
 
-  MEF::OutputOp::create(loweringState.getExecuteOpBuilder(), yield.getLoc(),
-                        operands);
+  MLRT::MEF::OutputOp::create(loweringState.getExecuteOpBuilder(),
+                              yield.getLoc(), operands);
   return success();
 }
 
@@ -527,8 +527,8 @@ LogicalResult MOGraphLowering::lower(MO::WhileConditionOp condition) {
   for (Value operand : condition.getOperands())
     operands.push_back(loweringState.lookupExecuteLoweredValue(operand));
 
-  MEF::OutputOp::create(loweringState.getExecuteOpBuilder(), condition.getLoc(),
-                        operands);
+  MLRT::MEF::OutputOp::create(loweringState.getExecuteOpBuilder(),
+                              condition.getLoc(), operands);
   return success();
 }
 
@@ -788,12 +788,11 @@ LogicalResult MOGraphLowering::lower(MO::RebindOp rebindOp) {
 /// - copies from host to device, then,
 /// - creates the output tensor.
 /// If the target device is host, then just creates the output tensor.
-static LogicalResult
-constHostBufferToTarget(MGP::MOOpLoweringState &opLoweringState,
-                        MGP::MOGraphLoweringState &graphLoweringState,
-                        Value hostBuffer, TypedValue<MEF::ChainType> chain,
-                        TypedValue<MO::TensorType> opResult,
-                        std::optional<uint64_t> maybeAlignment = std::nullopt) {
+static LogicalResult constHostBufferToTarget(
+    MGP::MOOpLoweringState &opLoweringState,
+    MGP::MOGraphLoweringState &graphLoweringState, Value hostBuffer,
+    TypedValue<MLRT::MEF::ChainType> chain, TypedValue<MO::TensorType> opResult,
+    std::optional<uint64_t> maybeAlignment = std::nullopt) {
   MO::TensorType moTensorType = opResult.getType();
   FailureOr<TypedValue<MGP::TensorSpecType>> tensorSpecOr =
       opLoweringState.createTensorSpec(moTensorType);
@@ -837,7 +836,7 @@ LogicalResult MOGraphLowering::lower(MO::ConstantOp constOp) {
     return constOp->emitOpError(elementsOr.getError());
 
   TypedValue<MO::TensorType> opResult = constOp.getResult();
-  TypedValue<MEF::ChainType> chain = loweringState.getExecuteChain();
+  TypedValue<MLRT::MEF::ChainType> chain = loweringState.getExecuteChain();
 
   Value hostBuffer = opLoweringState.hostBufferConstant(chain, *elementsOr,
                                                         opResult.getType());
@@ -850,7 +849,7 @@ LogicalResult MOGraphLowering::lower(MO::ConstantExternalOp constExternalOp) {
   OpBuilder &builder = opLoweringState.builder;
   Location loc = constExternalOp.getLoc();
 
-  TypedValue<MEF::ChainType> chain = loweringState.getExecuteChain();
+  TypedValue<MLRT::MEF::ChainType> chain = loweringState.getExecuteChain();
   TypedValue<MO::TensorType> opResult = constExternalOp.getResult();
   uint64_t sizeInBytes = opResult.getType().getDtype().getSizeInBytes() *
                          (*opResult.getType().getNumElements());
@@ -988,7 +987,7 @@ LogicalResult MOGraphLowering::lower(MO::DebugPrintOp printOp) {
       loweringState.lookupExecuteLoweredValue(printOp.getInChain()));
 
   auto outChain =
-      cast<TypedValue<MEF::ChainType>>(opLoweringState.hostDebugPrint(
+      cast<TypedValue<MLRT::MEF::ChainType>>(opLoweringState.hostDebugPrint(
           chain, printOp.getValueAttr(), printOp.getLabelAttr()));
 
   chain = opLoweringState.sync(chain);
@@ -1039,7 +1038,7 @@ LogicalResult MOGraphLowering::lower(MO::DebugTensorPrintOp printOp) {
   else
     bufferSize = opLoweringState.bufferSizeBytes(tensorSpec, moTensorType);
   Value hostBuffer = opLoweringState.hostBufferAlloc(
-      cast<TypedValue<MEF::ChainType>>(chain), bufferSize,
+      cast<TypedValue<MLRT::MEF::ChainType>>(chain), bufferSize,
       M::Driver::getPreferredAlignment(hostDevice.getLabel().str()));
   auto transferChain = opLoweringState.bufferTransferToHost(
       chain, buffer, cast<TypedValue<MGP::DeviceBufferType>>(hostBuffer),
@@ -1315,7 +1314,7 @@ LogicalResult MOGraphLowering::lower(MO::BufferCreateOp bufferCreateOp) {
   TypedValue<MGP::DeviceContextType> initDevCtx =
       loweringState.getInitDevice(device);
   auto initChain =
-      cast<TypedValue<MEF::ChainType>>(loweringState.getInitChain());
+      cast<TypedValue<MLRT::MEF::ChainType>>(loweringState.getInitChain());
 
   // Match the alignment logic in MOOpLoweringState::createBuffer.
   uint64_t alignment =
@@ -1350,7 +1349,7 @@ LogicalResult MOGraphLowering::lower(MO::BufferCreateOp bufferCreateOp) {
 
   Value cachedBuffer = bufferBuilder.getCached(
       execBuilder, loc, /*context=*/loweringState.getExecuteMgpContext(),
-      /*inChain=*/cast<TypedValue<MEF::ChainType>>(execChain), slot,
+      /*inChain=*/cast<TypedValue<MLRT::MEF::ChainType>>(execChain), slot,
       /*expectedBufferType=*/allocBuffer.getType());
 
   auto tensorSpecOr = opLoweringState.createTensorSpec(resTensorType);
@@ -1484,7 +1483,7 @@ LogicalResult MOGraphLowering::lower(MO::IfOp ifOp) {
                                                      outChain);
     } else {
       loweringState.emplaceExecuteLoweredValue(origResult, loweredResult);
-      if (!isa<MEF::ChainType>(loweredResult.getType()))
+      if (!isa<MLRT::MEF::ChainType>(loweredResult.getType()))
         loweringState.guardValueWithChain(origResult, outChain);
     }
   }
@@ -1576,7 +1575,8 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
     Value origTensor = origYieldOp.getCondition();
     Type condMoTensorType = origTensor.getType();
 
-    MEF::OutputOp loweredCondOutputOp = loweredWhileOp.getCondTerminator();
+    MLRT::MEF::OutputOp loweredCondOutputOp =
+        loweredWhileOp.getCondTerminator();
 
     // At this point, the lowered OutputOp operands are the form:
     // 1. the execute chain
@@ -1632,7 +1632,7 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
                                                      outChain);
     } else {
       loweringState.emplaceExecuteLoweredValue(origResult, loweredResult);
-      if (!isa<MEF::ChainType>(loweredResult.getType()))
+      if (!isa<MLRT::MEF::ChainType>(loweredResult.getType()))
         loweringState.guardValueWithChain(origResult, outChain);
     }
   }
@@ -2269,7 +2269,7 @@ LogicalResult MOGraphLowering::lower(MO::CallOp callOp) {
 
   // The chain, then the explicit results.
   SmallVector<Type> resultTypes;
-  resultTypes.push_back(b.getType<MEF::ChainType>());
+  resultTypes.push_back(b.getType<MLRT::MEF::ChainType>());
   for (auto result : callOp.getResults()) {
     Type loweredType =
         loweringState.getTypeConverter().convertType(result.getType());

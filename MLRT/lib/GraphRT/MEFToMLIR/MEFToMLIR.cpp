@@ -94,7 +94,7 @@ public:
   }
 
   bool resolveMetadataString(size_t offset, Location loc, StringAttr &result) {
-    MEFReader stringReader = getSectionReader(MEF::SectionID::kStringsMD);
+    MEFReader stringReader = getSectionReader(MLRT::MEF::SectionID::kStringsMD);
     return parseNULTerminatedStringAt(offset, stringReader, result);
   }
 
@@ -133,7 +133,7 @@ private:
     return false;
   }
 
-  MEFReader getSectionReader(MEF::SectionID ID) {
+  MEFReader getSectionReader(MLRT::MEF::SectionID ID) {
     ArrayRef<uint8_t> data;
     if (unsigned(ID) < sections.size())
       data = sections[unsigned(ID)];
@@ -180,7 +180,8 @@ bool MEFToMLIRConverter::parseHeader(MEFReader &reader) {
   if (reader.parseByte(byte1) || reader.parseByte(byte2))
     return true;
 
-  if (byte1 != MEF::kMagic1 || byte2 != MEF::kMagic2 + MEF::kVersion0)
+  if (byte1 != MLRT::MEF::kMagic1 ||
+      byte2 != MLRT::MEF::kMagic2 + MLRT::MEF::kVersion0)
     return reader.emitError("missing MEF magic number");
 
   return false;
@@ -210,8 +211,8 @@ bool MEFToMLIRConverter::findSections(MEFReader &reader) {
 
 bool MEFToMLIRConverter::parseLocationPositions() {
   MEFReader filenameReader =
-      getSectionReader(MEF::SectionID::kLocationFilenames);
-  MEFReader reader = getSectionReader(MEF::SectionID::kLocationPositions);
+      getSectionReader(MLRT::MEF::SectionID::kLocationFilenames);
+  MEFReader reader = getSectionReader(MLRT::MEF::SectionID::kLocationPositions);
 
   const uint8_t *sectionStart = reader.data();
 
@@ -238,30 +239,31 @@ bool MEFToMLIRConverter::parseLocationPositions() {
 }
 
 /// Return the MLIR type for the specified attribute or null if invalid.
-static Type getTypeForAttributeKind(MEF::AttributeKind kind, MLIRContext *ctx) {
+static Type getTypeForAttributeKind(MLRT::MEF::AttributeKind kind,
+                                    MLIRContext *ctx) {
   switch (kind) {
   default:
     return Type();
-  case MEF::AttributeKind::kBool:
+  case MLRT::MEF::AttributeKind::kBool:
     return IntegerType::get(ctx, 1);
-  case MEF::AttributeKind::kS8:
-  case MEF::AttributeKind::kU8:
-  case MEF::AttributeKind::kS16:
-  case MEF::AttributeKind::kU16:
-  case MEF::AttributeKind::kS32:
-  case MEF::AttributeKind::kU32:
-  case MEF::AttributeKind::kS64:
-  case MEF::AttributeKind::kU64: {
+  case MLRT::MEF::AttributeKind::kS8:
+  case MLRT::MEF::AttributeKind::kU8:
+  case MLRT::MEF::AttributeKind::kS16:
+  case MLRT::MEF::AttributeKind::kU16:
+  case MLRT::MEF::AttributeKind::kS32:
+  case MLRT::MEF::AttributeKind::kU32:
+  case MLRT::MEF::AttributeKind::kS64:
+  case MLRT::MEF::AttributeKind::kU64: {
     IntegerType::SignednessSemantics signedness;
-    if (MEF::getCategory(kind) == MEF::AttrCategory::Signed)
+    if (MLRT::MEF::getCategory(kind) == MLRT::MEF::AttrCategory::Signed)
       signedness = IntegerType::Signed;
     else
       signedness = IntegerType::Unsigned;
-    return IntegerType::get(ctx, MEF::getWidthInBits(kind), signedness);
+    return IntegerType::get(ctx, MLRT::MEF::getWidthInBits(kind), signedness);
   }
-  case MEF::AttributeKind::kF32:
+  case MLRT::MEF::AttributeKind::kF32:
     return mlir::Float32Type::get(ctx);
-  case MEF::AttributeKind::kF64:
+  case MLRT::MEF::AttributeKind::kF64:
     return mlir::Float64Type::get(ctx);
   }
 }
@@ -318,10 +320,10 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
     uint8_t typeValue = 0;
     if (attrReader.parseByte(typeValue))
       return {};
-    MEF::TypeKind typeKind = MEF::TypeKind(typeValue);
+    MLRT::MEF::TypeKind typeKind = MLRT::MEF::TypeKind(typeValue);
 
     bool isComplex = typeKind.isComplex();
-    typeKind = MEF::TypeKind(typeKind.stripComplex().getValue());
+    typeKind = MLRT::MEF::TypeKind(typeKind.stripComplex().getValue());
 
     // Helper for quantized type parsing.
     auto parseStorageAndExpressedType =
@@ -349,17 +351,17 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
     Type resultType;
     switch (typeKind.getValue()) {
 #define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, ...)           \
-  case MEF::TypeKind::SHORT_NAME:                                              \
+  case MLRT::MEF::TypeKind::SHORT_NAME:                                        \
     resultType = MLIR_TYPE::get(getContext());                                 \
     break;
 #include "Support/ML/FloatTypes.def"
 #undef DECLARE_FLOAT
 
-    case MEF::TypeKind::kBool:
+    case MLRT::MEF::TypeKind::kBool:
       resultType = IntegerType::get(getContext(), 1);
       break;
 
-    case MEF::TypeKind::tensor: {
+    case MLRT::MEF::TypeKind::tensor: {
       auto eltType = parseTypeAttr();
       uint8_t rank;
       if (!eltType || attrReader.parseByte(rank))
@@ -374,7 +376,7 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
       return RankedTensorType::get(shape, eltType);
     }
 
-    case MEF::TypeKind::function: {
+    case MLRT::MEF::TypeKind::function: {
       uint8_t numInputs, numResults;
       if (attrReader.parseByte(numInputs) || attrReader.parseByte(numResults))
         return {};
@@ -393,7 +395,7 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
       return FunctionType::get(getContext(), inputs, results);
     }
 
-    case MEF::TypeKind::quantized: {
+    case MLRT::MEF::TypeKind::quantized: {
       auto storageAndExpressedTypeOr = parseStorageAndExpressedType();
       if (!storageAndExpressedTypeOr)
         return {};
@@ -412,7 +414,7 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
                                        (int64_t)zeroPoint, sTypeMin, sTypeMax);
     }
 
-    case MEF::TypeKind::quantizedPerAxis: {
+    case MLRT::MEF::TypeKind::quantizedPerAxis: {
       auto storageAndExpressedTypeOr = parseStorageAndExpressedType();
       if (!storageAndExpressedTypeOr)
         return {};
@@ -446,8 +448,8 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
           (int32_t)quantizedDim, sTypeMin, sTypeMax);
     }
 
-    case MEF::TypeKind::chain:
-      return MEF::ChainType::get(getContext());
+    case MLRT::MEF::TypeKind::chain:
+      return MLRT::MEF::ChainType::get(getContext());
 
     default:
       // Check for signed/unsigned integer.
@@ -475,11 +477,11 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
 
   // Parse a single attribute value from attrReader and return it, or null on
   // an error.
-  auto parseAttribute = [&](MEF::AttributeKind attrKind) -> Attribute {
+  auto parseAttribute = [&](MLRT::MEF::AttributeKind attrKind) -> Attribute {
     // Handle strings here. They aren't bitwidth-encoded, so we can just deal
     // with them up front.
-    if (attrKind == MEF::AttributeKind::kString ||
-        attrKind == MEF::AttributeKind::kSymbolRef) {
+    if (attrKind == MLRT::MEF::AttributeKind::kString ||
+        attrKind == MLRT::MEF::AttributeKind::kSymbolRef) {
       size_t length;
       ArrayRef<uint8_t> result;
       if (attrSection.parseInvertedVBRAt(offset - 1, length) ||
@@ -488,19 +490,19 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
 
       StringAttr out = StringAttr::get(
           getContext(), StringRef((const char *)result.data(), result.size()));
-      if (attrKind == MEF::AttributeKind::kSymbolRef)
+      if (attrKind == MLRT::MEF::AttributeKind::kSymbolRef)
         return FlatSymbolRefAttr::get(out);
 
       return out;
     }
 
-    if (attrKind == MEF::AttributeKind::kDictionary)
+    if (attrKind == MLRT::MEF::AttributeKind::kDictionary)
       return parseDictionaryAttr();
 
-    if (attrKind == MEF::AttributeKind::kList)
+    if (attrKind == MLRT::MEF::AttributeKind::kList)
       return parseListAttr();
 
-    if (attrKind == MEF::AttributeKind::kType) {
+    if (attrKind == MLRT::MEF::AttributeKind::kType) {
       auto type = parseTypeAttr();
       if (!type)
         return {};
@@ -510,14 +512,14 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
     uint8_t byte = 0;
     // I1 attrs are a single byte in the MEF format, but are also a separate
     // attribute type, and so are special-cased here.
-    if (attrKind == MEF::AttributeKind::kBool) {
+    if (attrKind == MLRT::MEF::AttributeKind::kBool) {
       if (attrReader.parseByte(byte))
         return {};
       return BoolAttr::get(getContext(), byte);
     }
 
     // Calculate the number of bytes the read.
-    auto sizeInBits = MEF::getWidthInBits(attrKind);
+    auto sizeInBits = MLRT::MEF::getWidthInBits(attrKind);
 
     // If the bitwidth is not a power of 2 and it's not less than 64, then it's
     // not a valid size. This is very unlikely to happen unless there's a logic
@@ -538,11 +540,11 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
     }
     auto resultInt = APInt(sizeInBytes * 8, result);
 
-    if (attrKind == MEF::AttributeKind::kF32)
+    if (attrKind == MLRT::MEF::AttributeKind::kF32)
       return FloatAttr::get(mlir::Float32Type::get(getContext()),
                             APFloat(resultInt.bitsToFloat()));
 
-    if (attrKind == MEF::AttributeKind::kF64)
+    if (attrKind == MLRT::MEF::AttributeKind::kF64)
       return FloatAttr::get(mlir::Float64Type::get(getContext()),
                             APFloat(resultInt.bitsToDouble()));
 
@@ -558,8 +560,8 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
     return true;
 
   // If this is a scalar attribute value, just parse the single attribute.
-  if ((attrKind & (uint8_t)MEF::AttributeKind::mArrayType) == 0) {
-    resultAttr = parseAttribute(MEF::AttributeKind(attrKind));
+  if ((attrKind & (uint8_t)MLRT::MEF::AttributeKind::mArrayType) == 0) {
+    resultAttr = parseAttribute(MLRT::MEF::AttributeKind(attrKind));
     return resultAttr == Attribute();
   }
 
@@ -568,12 +570,12 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
   size_t length;
   if (attrSection.parseInvertedVBRAt(offset - 1, length))
     return true;
-  attrKind &= ~(uint8_t)MEF::AttributeKind::mArrayType;
+  attrKind &= ~(uint8_t)MLRT::MEF::AttributeKind::mArrayType;
 
-  auto mefKind = MEF::AttributeKind(attrKind);
+  auto mefKind = MLRT::MEF::AttributeKind(attrKind);
   size_t dataElementSize = 1;
-  if (mefKind != MEF::AttributeKind::kBool)
-    dataElementSize = (MEF::getWidthInBits(mefKind) / 8);
+  if (mefKind != MLRT::MEF::AttributeKind::kBool)
+    dataElementSize = (MLRT::MEF::getWidthInBits(mefKind) / 8);
 
   // Parse the raw data of the attribute.
   ArrayRef<uint8_t> data;
@@ -599,9 +601,9 @@ bool MEFToMLIRConverter::parseAttribute(size_t offset,
 }
 
 bool MEFToMLIRConverter::parseAttributes() {
-  MEFReader attrReader = getSectionReader(MEF::SectionID::kAttributes);
+  MEFReader attrReader = getSectionReader(MLRT::MEF::SectionID::kAttributes);
   MEFReader attrIndexMDReader =
-      getSectionReader(MEF::SectionID::kAttributeIndexMD);
+      getSectionReader(MLRT::MEF::SectionID::kAttributeIndexMD);
 
   // Read until we run out of attribute offsets.
   while (!attrIndexMDReader.empty()) {
@@ -617,7 +619,8 @@ bool MEFToMLIRConverter::parseAttributes() {
 }
 
 bool MEFToMLIRConverter::parseTypes() {
-  MEFReader section = getSectionReader(MEF::SectionID::kMLIRTypeStringsMD);
+  MEFReader section =
+      getSectionReader(MLRT::MEF::SectionID::kMLIRTypeStringsMD);
 
   // Read until we run out of type strings.
   while (!section.empty()) {
@@ -635,8 +638,8 @@ bool MEFToMLIRConverter::parseTypes() {
 /// Build the "primitiveNames" array by parsing the kPrimitiveNames section,
 /// resolving them all to StringAttr's.
 bool MEFToMLIRConverter::parsePrimitiveNames() {
-  MEFReader reader = getSectionReader(MEF::SectionID::kPrimitiveNames);
-  MEFReader stringReader = getSectionReader(MEF::SectionID::kStrings);
+  MEFReader reader = getSectionReader(MLRT::MEF::SectionID::kPrimitiveNames);
+  MEFReader stringReader = getSectionReader(MLRT::MEF::SectionID::kStrings);
 
   // Read the count of primitive names, and verify it later.
   size_t numPrimitives;
@@ -664,12 +667,14 @@ bool MEFToMLIRConverter::parsePrimitiveNames() {
 }
 
 bool MEFToMLIRConverter::parseTopLevelOps() {
-  MEFReader reader = getSectionReader(MEF::SectionID::kTopLevelOpIndex);
-  MEFReader stringReader = getSectionReader(MEF::SectionID::kStrings);
+  MEFReader reader = getSectionReader(MLRT::MEF::SectionID::kTopLevelOpIndex);
+  MEFReader stringReader = getSectionReader(MLRT::MEF::SectionID::kStrings);
   MEFReader attrNameReader =
-      getSectionReader(MEF::SectionID::kAttributeNamesMD);
-  MEFReader mlirTypesReader = getSectionReader(MEF::SectionID::kMLIRTypeMD);
-  MEFReader bodyReader = getSectionReader(MEF::SectionID::kTopLevelOpBodies);
+      getSectionReader(MLRT::MEF::SectionID::kAttributeNamesMD);
+  MEFReader mlirTypesReader =
+      getSectionReader(MLRT::MEF::SectionID::kMLIRTypeMD);
+  MEFReader bodyReader =
+      getSectionReader(MLRT::MEF::SectionID::kTopLevelOpBodies);
 
   size_t numRegions;
   if (reader.parseVBR(numRegions))
@@ -682,7 +687,7 @@ bool MEFToMLIRConverter::parseTopLevelOps() {
   SmallVector<Type> inputTypes;
   auto builder = OpBuilder::atBlockBegin(module->getBody());
   Location loc = builder.getUnknownLoc();
-  Type unknownType = builder.getType<MEF::UnknownType>();
+  Type unknownType = builder.getType<MLRT::MEF::UnknownType>();
 
   // Provides everything we need to create a symbol-having op. Since we want to
   // allow multiple regions per symbol, we have to go through the index section
@@ -841,7 +846,7 @@ bool RegionParser::parsePrimitiveList() {
   Block &block = region->front();
   auto bodyBuilder = OpBuilder::atBlockBegin(&block);
   Location loc = region->getLoc();
-  Type unknownType = MEF::UnknownType::get(bodyBuilder.getContext());
+  Type unknownType = MLRT::MEF::UnknownType::get(bodyBuilder.getContext());
   bool hasMLIRTypes = !mlirTypesReader.empty();
 
   // This is a table of the SSA values that make up the register table.  MEF
@@ -850,7 +855,7 @@ bool RegionParser::parsePrimitiveList() {
 
   // Read the primitive records.
   for (size_t i = 0, e = primitiveTable.size(); i != e; ++i) {
-    if (bodyReader.alignTo(MEF::kPrimitiveEntryAlignment))
+    if (bodyReader.alignTo(MLRT::MEF::kPrimitiveEntryAlignment))
       return true;
 
     bool isOpaqueOp = false;
@@ -913,7 +918,7 @@ bool RegionParser::parsePrimitiveList() {
         // If we see a !mef.unknown type, then we assume this operation lacks
         // type information, and therefore needs to be constructed as a
         // mef.opaque operation.
-        isOpaqueOp |= isa<MEF::UnknownType>(type);
+        isOpaqueOp |= isa<MLRT::MEF::UnknownType>(type);
       }
     }
 
@@ -992,10 +997,10 @@ bool RegionParser::parsePrimitiveList() {
       // If we lack type information, create a mef.opaque operation.  We
       // cannot necessarily create the correct operation when we're lacking
       // type info and attribute names because we'll trip the op verifier.
-      resultOp =
-          MEF::OpaqueOp::create(bodyBuilder, loc, resultTypes, primitiveName,
-                                bodyBuilder.getArrayAttr(attrs), nonStrict,
-                                operandValues, regions.size());
+      resultOp = MLRT::MEF::OpaqueOp::create(
+          bodyBuilder, loc, resultTypes, primitiveName,
+          bodyBuilder.getArrayAttr(attrs), nonStrict, operandValues,
+          regions.size());
       // Clone all the region bodies.
       for (auto [index, region] : llvm::enumerate(regions))
         region->cloneInto(&resultOp->getRegion(index), map);
@@ -1028,7 +1033,7 @@ bool RegionParser::parsePrimitiveList() {
       return bodyReader.emitError("invalid result register #");
     operandValues.push_back(registerValues[resultReg]);
   }
-  MEF::OutputOp::create(bodyBuilder, loc, operandValues);
+  MLRT::MEF::OutputOp::create(bodyBuilder, loc, operandValues);
 
   return false;
 }
@@ -1051,7 +1056,7 @@ bool MEFToMLIRConverter::parseRegionBody(Region *region, size_t numResults,
 /// returning the created module on success.  On failure, report an error at the
 /// specified location and return null.
 ModuleOp M::MLRT::translateMEFToMLIR(ArrayRef<uint8_t> buffer, Location loc) {
-  loc.getContext()->loadDialect<MEF::MEFDialect>();
+  loc.getContext()->loadDialect<MLRT::MEF::MEFDialect>();
 
   // Check if the buffer is already 64-byte aligned
   bool isAligned = (uintptr_t(buffer.data()) & kMEFBufferAlignmentMask) == 0;

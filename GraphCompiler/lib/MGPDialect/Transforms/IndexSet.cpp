@@ -134,7 +134,7 @@ void M::MGP::printVImpl(IndexSet<Operation *> &indexSet, llvm::raw_ostream &os,
   auto itr = indexSet.blockIndexMap.find(op->getBlock());
   assert(itr != indexSet.blockIndexMap.end());
   if (op->getNumResults() == 0) {
-    if (isa<MEF::OutputOp>(op))
+    if (isa<MLRT::MEF::OutputOp>(op))
       os << "out";
     else
       // Possibly ambiguous within the block.

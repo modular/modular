@@ -377,7 +377,7 @@ static ErrorOrSuccess decodePrimitiveTables(
   }
 
   // Align to where the invokable body is.
-  if (decoder.bodyReader.alignTo(MEF::kPrimitiveEntryAlignment))
+  if (decoder.bodyReader.alignTo(MLRT::MEF::kPrimitiveEntryAlignment))
     return std::move(*decoder.mefFormatError);
 
   body = ArrayRef((const uint32_t *)decoder.bodyReader.data(),
@@ -583,11 +583,11 @@ void MEFExecutor::decrementOperandsNotReadyCounts(
 
     // Decode the primitive record.
     static_assert(
-        MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
+        MLRT::MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
         "size of uint32_t must evenly divide kPrimitiveEntryAlignment");
     PrimitiveDecoder decoder(
         &funcBody[primitives[primitiveID].offset *
-                  (MEF::kPrimitiveEntryAlignment / sizeof(uint32_t))]);
+                  (MLRT::MEF::kPrimitiveEntryAlignment / sizeof(uint32_t))]);
 
     // Find the implementation of this primitive.
     auto invokableImpl = mefFile->primitives[decoder.opcode];
@@ -908,10 +908,11 @@ ErrorOrSuccess MEFInvokableImpl::walkPrimitives(
       owner->attributes, const_cast<MEFInvokableImpl &>(*this));
   for (auto offset : primitiveOffsets) {
     static_assert(
-        MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
+        MLRT::MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
         "size of uint32_t must evenly divide kPrimitiveEntryAlignment");
     PrimitiveDecoder primDecoder(
-        &funcBody[offset * (MEF::kPrimitiveEntryAlignment / sizeof(uint32_t))]);
+        &funcBody[offset *
+                  (MLRT::MEF::kPrimitiveEntryAlignment / sizeof(uint32_t))]);
 
     // Pull out the primitive name.
     StringRef primitiveName;
