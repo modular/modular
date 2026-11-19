@@ -71,6 +71,23 @@ createFreeListForContext(DeviceContext &context, MemoryManager &memoryManager,
                          MemoryManagerFreeList *parent, bool disableFlush,
                          std::string label);
 
+// These factories configure a memory manager from defaults and the driver
+// config. `memInfo` holds the device's total and free memory; an unset
+// `memInfo.free` sizes the manager against `memInfo.total`. `memoryLimit`
+// (bytes) caps the manager; -1 uses the default limit.
+// `largeAllocAlignmentOverride` (bytes) is the start alignment given to large
+// blocks, rounded up to a power of 2; 0 disables it and -1 takes the value
+// from the config.
+std::unique_ptr<MemoryManager>
+createDeviceMemoryManager(Device &device, Device::MemInfo memInfo,
+                          size_t alignment, int64_t memoryLimit = -1,
+                          int64_t largeAllocAlignmentOverride = -1);
+std::unique_ptr<MemoryManager> createHostMemoryManager(Device &device,
+                                                       size_t alignment);
+// A device memory manager with no budget, for devices that run without one.
+std::unique_ptr<MemoryManager> createDisabledMemoryManager(Device &device,
+                                                           size_t alignment);
+
 } // namespace M::Driver
 
 #endif // MLRT_LIB_DRIVER_DEVICECONTEXT_DEVICEALLOCATOR_H

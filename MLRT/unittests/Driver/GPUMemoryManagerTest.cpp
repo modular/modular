@@ -11,6 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "ScopedEnvVar.h"
 #include "TestUtils.h"
@@ -63,7 +64,7 @@ protected:
       return nullptr;
     }
     DeviceRef device = deviceOr.takeValue();
-    return std::unique_ptr<MemoryManager>(MemoryManager::onHost(*device, 64));
+    return createHostMemoryManager(*device, 64);
   }
 };
 
@@ -117,7 +118,7 @@ TEST_F(GPUMemoryManagerTest, MemoryManagerCreation) {
     ASSIGN_NO_ERR(Device::MemInfo, memInfo, device->getMemoryInfo());
 
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 128));
+        createDeviceMemoryManager(*device, memInfo, 128));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());

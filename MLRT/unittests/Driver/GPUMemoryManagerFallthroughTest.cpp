@@ -28,6 +28,7 @@
 // pool and are never reclaimed. We detect this by counting unique pointers
 // across repeated alloc/free cycles.
 
+#include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "TestUtils.h"
 

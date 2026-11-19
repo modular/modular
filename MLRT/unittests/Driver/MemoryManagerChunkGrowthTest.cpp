@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/Driver/DeviceContext/CompilationDevice.h"
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "MLRT/lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.h"
 #include "ScopedEnvVar.h"
@@ -145,8 +146,8 @@ TEST(MemoryManagerChunkGrowthTest, CapsChunkGrowthToCurrentFreeMemory) {
   auto device =
       M::RCRef<TestMemoryPressureDevice>::create(kInitialFree, kTotalMemory);
   ASSIGN_NO_ERR(Device::MemInfo, initialMemInfo, device->getMemoryInfo());
-  auto manager = std::unique_ptr<MemoryManager>(MemoryManager::onDevice(
-      *device, initialMemInfo, device->allocationAlignment(), kMaxCacheSize));
+  auto manager = createDeviceMemoryManager(
+      *device, initialMemInfo, device->allocationAlignment(), kMaxCacheSize);
 
   // Simulate unrelated allocations after the memory manager is created.
   device->reserveExternalPressure(kExternalPressure);
@@ -174,8 +175,8 @@ TEST(MemoryManagerChunkGrowthTest, ReportsChunkAllocFailureDetails) {
   auto device =
       M::RCRef<TestMemoryPressureDevice>::create(kInitialFree, kTotalMemory);
   ASSIGN_NO_ERR(Device::MemInfo, initialMemInfo, device->getMemoryInfo());
-  auto manager = std::unique_ptr<MemoryManager>(MemoryManager::onDevice(
-      *device, initialMemInfo, device->allocationAlignment(), kMaxCacheSize));
+  auto manager = createDeviceMemoryManager(
+      *device, initialMemInfo, device->allocationAlignment(), kMaxCacheSize);
 
   device->failNextChunkAlloc("fake oom");
 

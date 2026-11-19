@@ -48,7 +48,8 @@ against the components and behaviors enumerated below.
 
 #### `MemoryManagerCreation`
 
-- Test factory methods (`onDevice`, `onHost`) with various configurations
+- Test the factories (`createDeviceMemoryManager`, `createHostMemoryManager`)
+  with various configurations
 - Verify proper initialization of cache parameters
 - Test configuration parsing from environment variables
 - Edge cases: zero sizes, invalid configurations

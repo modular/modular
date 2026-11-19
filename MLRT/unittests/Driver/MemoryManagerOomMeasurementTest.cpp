@@ -62,9 +62,9 @@ protected:
     ErrorOr<Device::MemInfo> memInfo = device.getMemoryInfo();
     if (memInfo.isError())
       return nullptr;
-    return std::unique_ptr<MemoryManager>(
-        MemoryManager::onDevice(device, *memInfo, device.allocationAlignment(),
-                                static_cast<int64_t>(budgetBytes)));
+    return createDeviceMemoryManager(device, *memInfo,
+                                     device.allocationAlignment(),
+                                     static_cast<int64_t>(budgetBytes));
   }
 };
 

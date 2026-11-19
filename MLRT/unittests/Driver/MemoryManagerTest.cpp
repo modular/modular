@@ -67,7 +67,7 @@ protected:
     memInfo.total = 256 * maxCacheSize; // Needs to be larger than 256 * KB
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
-    return std::unique_ptr<MemoryManager>(MemoryManager::onHost(*device, 64));
+    return createHostMemoryManager(*device, 64);
   }
 
   // Helper to create a device memory manager with an explicit large-block
@@ -80,9 +80,9 @@ protected:
     memInfo.free = 16 * 1024 * 1024;
     memInfo.total = 32 * 1024 * 1024;
 
-    return std::unique_ptr<MemoryManager>(MemoryManager::onDevice(
-        device, memInfo, /*alignment=*/64, /*memoryLimit=*/8 * 1024 * 1024,
-        static_cast<int64_t>(largeAllocAlignment)));
+    return createDeviceMemoryManager(device, memInfo, /*alignment=*/64,
+                                     /*memoryLimit=*/8 * 1024 * 1024,
+                                     static_cast<int64_t>(largeAllocAlignment));
   }
 };
 
@@ -104,7 +104,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
     memInfo.total = 2 * 1024 * 1024;
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
-    std::unique_ptr<MemoryManager> cache(MemoryManager::onHost(*device, 64));
+    std::unique_ptr<MemoryManager> cache(createHostMemoryManager(*device, 64));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_TRUE(cache->isHost());
@@ -119,7 +119,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 128));
+        createDeviceMemoryManager(*device, memInfo, 128));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());
@@ -134,7 +134,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 128, memInfo.total / 2));
+        createDeviceMemoryManager(*device, memInfo, 128, memInfo.total / 2));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());
@@ -150,7 +150,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 128, 0));
+        createDeviceMemoryManager(*device, memInfo, 128, 0));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());
@@ -166,7 +166,7 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
 
     CpuDeviceRef device = CpuDeviceRef::create(memInfo);
     std::unique_ptr<MemoryManager> cache(
-        MemoryManager::onDevice(*device, memInfo, 64));
+        createDeviceMemoryManager(*device, memInfo, 64));
 
     EXPECT_TRUE(cache != nullptr);
     EXPECT_FALSE(cache->isHost());

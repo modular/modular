@@ -20,12 +20,13 @@
 
 #include "AllocatorBacking.h"
 #include "AllocatorContext.h"
-#include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MathExtras.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <list>
@@ -376,7 +377,7 @@ public:
 
   // Whether the VMM defragmenting allocator is active on this manager. Reflects
   // both the `memory_manager_vmm` config request and the device's
-  // vmmSupported() result, as resolved by onDevice().
+  // vmmSupported() result, as resolved by createDeviceMemoryManager().
   bool isVmmEnabled() const;
 
   // Migrate to the parent free list every per-stream free buffer whose gating
@@ -425,22 +426,20 @@ public:
     return drainRetryRecoveries_.load(std::memory_order_relaxed);
   }
 
-  // Factory methods configure the memory manager based on defaults or the
-  // environment.
-  // `memInfo` contains the total and free memory of the device.
-  // Unset memInfo.free sizes the memory manager against memInfo.total.
-  // `memoryLimit` (bytes) is the maximum memory limit for the memory manager.
-  // If -1, then the memory manager will use the default memory limit.
-  // Note that MEMORY_MANAGER_SIZE_LIMIT environment variable overrides this.
-  // `largeAllocAlignment` (bytes) is the start alignment given to large
-  // blocks, rounded up to a power of 2; 0 disables it and -1 takes the value
-  // from the config.
-  static MemoryManager *onDevice(Device &device, Device::MemInfo memInfo,
-                                 size_t alignment, int64_t memoryLimit = -1,
-                                 int64_t largeAllocAlignment = -1);
-  static MemoryManager *onHost(Device &device, size_t alignment);
-  // A device memory manager with no budget, for devices that run without one.
-  static MemoryManager *disabled(Device &device, size_t alignment);
+  // A manager built from `options` exactly as given, with no config reads,
+  // over the backing the caller supplies. `backing` holds an `AllocatorVmm`
+  // exactly when `options.vmmEnabled` is true. Backing-specific factories,
+  // such as `createDeviceMemoryManager`, call this.
+  static std::unique_ptr<MemoryManager> create(MemoryManagerOptions options,
+                                               AllocatorBacking backing);
+
+  // Logs `msg` with the manager's description prefix, only when
+  // `memory_manager_log` is on. Public so that a factory can log what it
+  // sized the manager against.
+  void logIfEnabled(llvm::Twine msg) const {
+    if (options_.log)
+      logErr(msg);
+  }
 
 private:
   friend class Chunk;

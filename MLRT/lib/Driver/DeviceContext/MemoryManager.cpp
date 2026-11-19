@@ -16,8 +16,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "MemoryManager.h"
-#include "DeviceAllocator.h"
-#include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/StringExtras.h"
 #include "Support/max_license/Profiling/ProfileRange.h"
 #include "llvm/ADT/DenseMap.h"
@@ -26,6 +24,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Alignment.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
@@ -56,12 +55,6 @@
 #define LOG_MSG(...)                                                           \
   if (memoryManager_.options_.log)                                             \
   logMsg(__VA_ARGS__)
-
-static constexpr int KB = 1024;                  // NOLINT
-static constexpr size_t GB = 1024 * 1024 * 1024; // NOLINT
-
-// Ceiling on memory_manager_vmm_drain_budget_ms; see where it is read.
-static constexpr int64_t kMaxDrainBudgetMs = 60 * 1000;
 
 namespace M::Driver {
 
@@ -3621,267 +3614,10 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
   return success();
 }
 
-static bool memoryManagerOnlyMode(const Device &device) {
-  return (device.api() != Device::cpuAPI) &&
-         DeviceContext::configAsBool("memory_manager_only", false);
-}
-
-static std::string deviceLabel(const Device &device, bool isHost) {
-  return (device.api() + "[" + llvm::Twine(device.id()) +
-          (isHost ? " - host]" : "]"))
-      .str();
-}
-
-// The options every factory takes from the config. The factory fills in the
-// geometry and the label.
-static MemoryManagerOptions readOptionsFromConfig(size_t alignment) {
-  MemoryManagerOptions options;
-  options.alignment = alignment;
-
-  // Zero disables the drain retry; anything else is a pass count.
-  options.drainRetries = std::max<int64_t>(
-      0, DeviceContext::configAsInt("memory_manager_vmm_drain_retries",
-                                    options.drainRetries));
-  // Converting to the clock's nanoseconds overflows a signed 64-bit count
-  // somewhere past 9.2e12 ms, and a wrapped deadline lands in the past, so an
-  // operator setting a huge budget to mean "no time limit" would silently get
-  // a single pass. A minute is already far past anything useful here.
-  options.drainBudgetMs = std::clamp<int64_t>(
-      DeviceContext::configAsInt("memory_manager_vmm_drain_budget_ms",
-                                 options.drainBudgetMs),
-      1, kMaxDrainBudgetMs);
-
-  options.log = DeviceContext::configAsBool("memory_manager_log", options.log);
-  options.selfCheck = DeviceContext::configAsBool("memory_manager_self_check",
-                                                  options.selfCheck);
-
-  options.redzoneSize = static_cast<size_t>(DeviceContext::configAsInt(
-      "memory_manager_redzone_size", options.redzoneSize));
-  options.redzonePattern = static_cast<uint8_t>(DeviceContext::configAsInt(
-      "memory_manager_redzone_pattern", options.redzonePattern));
-  options.poisonPattern = static_cast<uint8_t>(DeviceContext::configAsInt(
-      "memory_manager_poison_pattern", options.poisonPattern));
-
-  options.vmmVaFactor = static_cast<size_t>(std::max<int64_t>(
-      1,
-      DeviceContext::configAsInt("memory_manager_vmm_va_factor",
-                                 static_cast<int64_t>(options.vmmVaFactor))));
-  return options;
-}
-
-MemoryManager *MemoryManager::disabled(Device &device, size_t alignment) {
-  MemoryManagerOptions options = readOptionsFromConfig(alignment);
-  // TODO (GEX-3475): useOnlyMemoryManagerMode should not be required.
-  options.useOnlyMemoryManagerMode = memoryManagerOnlyMode(device);
-  options.label = deviceLabel(device, /*isHost=*/false);
-  return new MemoryManager(std::move(options),
-                           std::make_unique<DeviceAllocatorChunks>(device));
-}
-
-MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
-                                       size_t alignment, int64_t memoryLimit,
-                                       int64_t largeAllocAlignmentOverride) {
-  auto disabledMemoryManager = [&device, alignment]() {
-    return disabled(device, alignment);
-  };
-
-  if (memoryLimit == 0)
-    return disabledMemoryManager();
-
-  if (!memInfo.free)
-    llvm::errs() << "DeviceContext.MemoryManager: free device memory is "
-                    "unknown, sizing against total memory ("
-                 << humanMemorySize(memInfo.total) << ").\n";
-  size_t freeMemory = memInfo.free.value_or(memInfo.total);
-
-  // Determine cache size
-  bool isDefaultCacheSize = false;
-  size_t maxCacheSize;
-  if (memoryLimit > 0) // Try to use parameter value first
-    maxCacheSize = static_cast<size_t>(memoryLimit);
-  else // memoryLimit is < 0: look in the config
-    maxCacheSize = static_cast<size_t>(DeviceContext::configAsInt(
-        "memory_manager_size", 0, &isDefaultCacheSize));
-
-  // Disable the memory manager if the requested cache size is 0
-  if (maxCacheSize == 0 && !isDefaultCacheSize) // User has explicitly set to 0
-    return disabledMemoryManager();
-
-  // If there's no provided size or if the provided size is larger than
-  // the free memory, use a percentage of the available memory
-  if (isDefaultCacheSize || maxCacheSize > freeMemory) {
-    // By default use 95% of the available memory. The serving memory ledgers
-    // measure what forwards allocate, so they need less unmanaged headroom.
-    int64_t percentMemoryLimit =
-        DeviceContext::configAsInt("memory_manager_size_percent", 95);
-    if (percentMemoryLimit == 0) // User has explicitly set to 0 => disable
-      return disabledMemoryManager();
-
-    if (maxCacheSize > freeMemory)
-      llvm::errs() << "DeviceContext.MemoryManager: Requested maximum memory "
-                      "manager size ("
-                   << humanMemorySize(maxCacheSize)
-                   << ") does not fit into available free memory ("
-                   << humanMemorySize(freeMemory) << "), using "
-                   << percentMemoryLimit << "% of all free memory instead.\n";
-
-    maxCacheSize = (freeMemory * percentMemoryLimit) / 100;
-  }
-
-  // Ensure the cache size is aligned
-  // TODO: Check that freeMemory is not violated by this alignment.
-  maxCacheSize = llvm::alignToPowerOf2(maxCacheSize, 256 * KB);
-
-  // Get chunk size as percentage of max cache size. Limit to between 1 and 100.
-  // GEX-3330
-  size_t defaultChunkSizePercent = 100;
-  size_t chunkSizePercent = std::max(
-      static_cast<size_t>(1),
-      std::min(static_cast<size_t>(100),
-               static_cast<size_t>(DeviceContext::configAsInt(
-                   "memory_manager_chunk_percent", defaultChunkSizePercent))));
-
-  size_t chunkSize = std::min(
-      maxCacheSize,
-      llvm::alignToPowerOf2((maxCacheSize * chunkSizePercent) / 100, 256 * KB));
-
-  // VMM (CUDA Virtual Memory Management) defragmenting allocator. The default
-  // is per-backend (device.vmmEnabledByDefault()); set
-  // `memory_manager_vmm=0`/`1` to override, and it auto-disables where
-  // vmmSupported() is false. When enabled we serve from a single oversized VA
-  // arena backed by remappable physical granules, so a large contiguous
-  // allocation can be assembled from physically-scattered free memory
-  // (ensureRegionBacked / reclaimMappedGranules). Granule (page) size is
-  // rounded up from `memory_manager_vmm_page_mb` (default 256 MiB) to the
-  // device VMM granularity, and all VMM sizes are rounded to it.
-  // Check vmmSupported() first so we skip the config lookup on backends that
-  // cannot use VMM at all.
-  bool vmmEnabled = device.vmmSupported() &&
-                    DeviceContext::configAsBool("memory_manager_vmm",
-                                                device.vmmEnabledByDefault());
-  // On AMD (HIP) VMM is opt-in: hipEnabledByDefault() is false, so it takes an
-  // explicit `memory_manager_vmm=1`. HIP caps how much memory a process may
-  // have VMM-mapped at once -- past roughly 1.7 TiB summed across devices (8x
-  // MI355X, ROCm 7.2.4) hipMemSetAccess starts returning hipErrorInvalidValue,
-  // and the ceiling falls further as more access descriptors are granted per
-  // mapping, since every P2P peer gets access to every granule. Four GPUs at
-  // the default budget stay under it; eight do not, and need
-  // `memory_manager_size` clamped to roughly 192 GiB per device. GEX-4056 has
-  // the measurements and a standalone reproducer for re-measuring the ceiling
-  // on a given node.
-  //
-  // Enabling it was previously refused outright, on the belief that VMM leaked
-  // VRAM until the node was rebooted. That does not reproduce: on ROCm 7.2.4 /
-  // amdgpu 6.16.13, SIGKILLing both a standalone VMM workload (1.6 TiB across 8
-  // GPUs) and a VMM-enabled MAX serve returns every byte within seconds.
-  if (vmmEnabled && device.api() == Device::hipAPI) {
-    llvm::errs() << "DeviceContext.MemoryManager: VMM is enabled on an AMD GPU "
-                    "via memory_manager_vmm. HIP limits total VMM-mapped "
-                    "memory per process; if mapping fails with "
-                    "hipErrorInvalidValue, clamp memory_manager_size so the "
-                    "budget summed across devices stays under ~1.6 TiB "
-                    "(GEX-4056).\n";
-  }
-  size_t vmmPageSize = 0;
-  if (vmmEnabled) {
-    // vmmSupported() has already verified the granularity query succeeds, so
-    // this does not error.
-    ErrorOr<size_t> granularity = device.vmmGranularity();
-    assert(!granularity.isError() &&
-           "vmmSupported() implies vmmGranularity() succeeds");
-    size_t pageMb = static_cast<size_t>(std::max<int64_t>(
-        1, DeviceContext::configAsInt("memory_manager_vmm_page_mb", 256)));
-    vmmPageSize = llvm::alignTo(pageMb * 1024 * KB, *granularity);
-    // Round the budget to whole granules.
-    maxCacheSize = llvm::alignTo(maxCacheSize, vmmPageSize);
-    // Single-arena VMM: the whole budget is one lazily-backed VA arena, so
-    // `memory_manager_chunk_percent` is ignored (no incremental chunking).
-    chunkSize = maxCacheSize;
-  }
-
-  // Start address large blocks get so a NIC can pin them; see
-  // `largeAllocAlignment_`. On by default for HIP, off elsewhere; set to 0 to
-  // disable.
-  size_t largeAllocAlignment =
-      largeAllocAlignmentOverride >= 0
-          ? static_cast<size_t>(largeAllocAlignmentOverride)
-          : static_cast<size_t>(std::max<int64_t>(
-                0, DeviceContext::configAsInt(
-                       "memory_manager_large_alloc_alignment",
-                       device.api() == Device::hipAPI ? 2 * 1024 * KB : 0)));
-  // The free-list arithmetic needs a power of 2. Round up rather than assert,
-  // so a mistyped config costs a little more padding instead of placing blocks
-  // at addresses nothing checks in a release build.
-  if (largeAllocAlignment != 0 && !llvm::isPowerOf2_64(largeAllocAlignment)) {
-    size_t rounded = llvm::PowerOf2Ceil(largeAllocAlignment);
-    llvm::errs() << "DeviceContext.MemoryManager: "
-                    "memory_manager_large_alloc_alignment ("
-                 << largeAllocAlignment << ") is not a power of 2, using "
-                 << rounded << " instead.\n";
-    largeAllocAlignment = rounded;
-  }
-
-  MemoryManagerOptions options = readOptionsFromConfig(alignment);
-  options.maxSize = maxCacheSize;
-  options.chunkSize = chunkSize;
-  options.useOnlyMemoryManagerMode = memoryManagerOnlyMode(device);
-  options.vmmEnabled = vmmEnabled;
-  options.vmmPageSize = vmmPageSize;
-  options.largeAllocAlignment = largeAllocAlignment;
-  options.label = deviceLabel(device, /*isHost=*/false);
-  auto result = new MemoryManager(
-      std::move(options),
-      vmmEnabled
-          ? AllocatorBacking(std::make_unique<DeviceAllocatorVmm>(device))
-          : AllocatorBacking(std::make_unique<DeviceAllocatorChunks>(device)));
-
-  if (result->options_.log) {
-    result->logErr("initial memInfo(free: " + humanMemorySize(freeMemory) +
-                   ", total: " + humanMemorySize(memInfo.total) + ")");
-  }
-  return result;
-}
-MemoryManager *MemoryManager::onHost(Device &device, size_t alignment) {
-
-  size_t maxCacheSize = llvm::alignToPowerOf2(
-      DeviceContext::configAsInt("host_memory_manager_size", 16 * GB),
-      256 * KB);
-
-  // Disable host memory manager for Metal devices due to pointer tracking
-  // issues. Metal tracks buffers by exact pointer match, but the memory manager
-  // uses sub-allocation with offset pointers that aren't in the tracking map.
-  // TODO: GEX-2688 - Enable host memory manager for Metal.
-  if (device.api() == Device::metalAPI) {
-    maxCacheSize = 0;
-  }
-
-  // Bump up the default chunk percent so that when the host memory manager is
-  // primed by the Python layer (see `_prime_pinned_memory_cache`), then the
-  // first allocation does not cause the entire cache to be allocated at once.
-  // 8% of the default 16 GiB pool = 1.28 GiB, which is large enough to fit the
-  // 1 GiB priming allocation without tripping the `useMaxSize` heuristic in
-  // MemoryManagerFreeList::allocate. On 8x B200 this drops `max serve` startup
-  // priming from ~55s to ~4s.
-  size_t defaultChunkPercent = 8;
-
-  size_t chunkSize = std::min(
-      maxCacheSize, static_cast<size_t>(llvm::alignToPowerOf2(
-                        (maxCacheSize * DeviceContext::configAsInt(
-                                            "host_memory_manager_chunk_percent",
-                                            defaultChunkPercent)) /
-                            100,
-                        256 * KB)));
-
-  MemoryManagerOptions options = readOptionsFromConfig(alignment);
-  options.maxSize = maxCacheSize;
-  options.chunkSize = chunkSize;
-  options.isHost = true;
-  // We disable useOnlyMemoryManagerMode for host memory manager since it is
-  // not useful by bazel to better binpack tests on a runner.
-  options.useOnlyMemoryManagerMode = false;
-  options.label = deviceLabel(device, /*isHost=*/true);
-  return new MemoryManager(std::move(options),
-                           std::make_unique<DeviceAllocatorChunks>(device));
+std::unique_ptr<MemoryManager>
+MemoryManager::create(MemoryManagerOptions options, AllocatorBacking backing) {
+  return std::unique_ptr<MemoryManager>(
+      new MemoryManager(std::move(options), std::move(backing)));
 }
 
 } // namespace M::Driver

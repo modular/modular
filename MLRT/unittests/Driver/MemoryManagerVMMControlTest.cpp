@@ -20,6 +20,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "TestUtils.h"
 
@@ -52,9 +53,9 @@ protected:
     ErrorOr<Device::MemInfo> memInfo = device.getMemoryInfo();
     if (memInfo.isError())
       return nullptr;
-    return std::unique_ptr<MemoryManager>(MemoryManager::onDevice(
+    return createDeviceMemoryManager(
         device, *memInfo, device.allocationAlignment(),
-        /*memoryLimit=*/static_cast<int64_t>(budgetBytes)));
+        /*memoryLimit=*/static_cast<int64_t>(budgetBytes));
   }
 };
 

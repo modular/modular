@@ -120,7 +120,7 @@ modular_cc_test(
     # NVIDIA-only for now. VMM is opt-in rather than refused on AMD as of
     # GEX-4056, so this could run there too, but it has not been validated on
     # AMD and HIP caps total VMM-mapped memory per process (see
-    # MemoryManager::onDevice) -- enabling it needs a budget clamp first.
+    # createDeviceMemoryManager) -- enabling it needs a budget clamp first.
     gpu_constraints = ["//:nvidia_gpu"],
     tags = ["gpu"],
     deps = [

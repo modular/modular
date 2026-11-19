@@ -159,7 +159,7 @@ Device::Device(API api, std::string name, int id, MemInfo memInfo,
                size_t allocAlignment, bool useMemoryManager)
     : name_(std::move(name)), id_(id), api_(api), memInfo_(memInfo),
       allocAlignment_(allocAlignment), useMemoryManager_(useMemoryManager),
-      hostMemoryManager_(MemoryManager::onHost(*this, allocAlignment)) {}
+      hostMemoryManager_(createHostMemoryManager(*this, allocAlignment)) {}
 
 Device::~Device() {
   // Destroy the function map before destroying the context.
@@ -2083,17 +2083,18 @@ MODULAR_CXX_EXPORT int Device::numberOfDevices(StringRef api) {
 }
 
 MemoryManager &Device::memoryManager() const {
-  // Built lazily on first access rather than in the constructor so onDevice()
-  // sees the fully-constructed derived Device when it queries the virtual
-  // vmmSupported(). First access must therefore occur while the derived Device
-  // is alive: an access during or after subclass destruction queries the base
-  // vmmSupported() (always false) and silently builds a non-VMM manager.
+  // Built lazily on first access rather than in the constructor so
+  // createDeviceMemoryManager() sees the fully-constructed derived Device when
+  // it queries the virtual vmmSupported(). First access must therefore occur
+  // while the derived Device is alive: an access during or after subclass
+  // destruction queries the base vmmSupported() (always false) and silently
+  // builds a non-VMM manager.
   std::call_once(memoryManagerOnce_, [&] {
     Device &device = const_cast<Device &>(*this);
-    memoryManager_.reset(
+    memoryManager_ =
         useMemoryManager_
-            ? MemoryManager::onDevice(device, memInfo_, allocAlignment_)
-            : MemoryManager::disabled(device, allocAlignment_));
+            ? createDeviceMemoryManager(device, memInfo_, allocAlignment_)
+            : createDisabledMemoryManager(device, allocAlignment_);
   });
   return *memoryManager_;
 }
