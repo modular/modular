@@ -100,6 +100,8 @@ PIPELINES: Final[list[PipelineEntry]] = [
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=210,
+        # Mach only, serving the MTP artifact.
+        mach_key="tencent/Hy4-preview-FP8__mtp",
     ),
     PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",

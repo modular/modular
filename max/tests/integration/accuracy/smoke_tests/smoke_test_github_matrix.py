@@ -56,7 +56,7 @@ MACH = {"MACH"}
 # Do not add Mach-only HW tags to hide a model Mach cannot serve on some HW
 # yet: let that job fail. A red smoke test is the forcing function to
 # implement it or to drop the model.
-# MACH marks the one exception, a model with no MAX Serve path: only mach-ci
+# MACH marks the one exception, a model CI serves on Mach alone: only mach-ci
 # runs it, on the HW it lists, and a MACH variant runs its Mach recipe alone.
 #
 # To add a model, trigger the smoke test with it first:
@@ -165,8 +165,8 @@ MODELS: Mapping[str, set[str]] = {
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": _1xB200 | _1xMI355,  # TODO(MODELS-1021)
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": _4xMI355 | _8xB200,
     "reflection/Beam-1.0-501B-A23B-NVFP4": NIGHTLY | _4xB200,
-    "tencent/Hy4-preview-FP8": NIGHTLY | _8xB200,
-    "tencent/Hy4-preview-FP8__mtp": NIGHTLY | VARIANT | _8xB200,
+    "tencent/Hy4-preview-FP8": NIGHTLY | MACH | _8xB200,
+    "tencent/Hy4-preview-FP8__mtp": NIGHTLY | VARIANT | MACH | _8xB200,
     "thinkingmachines/Inkling-2-Small": NIGHTLY | _4xB200,
     "thinkingmachines/Inkling-Small-NVFP4": NIGHTLY | _2xB200,
     "thinkingmachines/Inkling-Small-NVFP4__modulev3": VARIANT | _2xB200,

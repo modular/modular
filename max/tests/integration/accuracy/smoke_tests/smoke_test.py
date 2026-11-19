@@ -144,7 +144,6 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4_dspark.yaml",
     "XiaomiMiMo/MiMo-V2.6-Flash-RL": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_b200.yaml",
     "XiaomiMiMo/MiMo-V2.6-Flash-RL__dflash": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_dflash_b200.yaml",
-    "tencent/Hy4-preview-FP8__mtp": "max/pipelines/architectures/hy_v4/recipes/hy4_preview_fp8_tp_ep_8x_b200.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__modulev3": "max/pipelines/architectures/inkling_modulev3/recipes/inkling_small_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
@@ -526,10 +525,6 @@ def get_server_cmd(
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
-    # vLLM 0.30's sparse-MLA index group waits on a side stream during
-    # CUDA graph capture and fails Hy4's engine start.
-    if "hy4" in model.casefold():
-        VLLM += ["--enforce-eager"]
     MAX = [
         "serve",
         "--pretty-print-config",
@@ -611,10 +606,6 @@ def get_server_cmd(
         # VMM on 8 GPUs at the default memory budget.
         if gpu_name.startswith("AMD") and gpu_count <= 4:
             env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
-        # Hy4's recipe env: its init-time gate/up permute traps memory in
-        # partly used pages at the default 256 MB.
-        if "hy4" in model.casefold():
-            env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB"] = "32"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
