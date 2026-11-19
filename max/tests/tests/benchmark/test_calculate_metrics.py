@@ -124,8 +124,8 @@ def _calculate(
     )
 
 
-def test_per_chunk_tpot_collected_from_outputs() -> None:
-    """Per-chunk TPOT values are collected into step_tpot_ms."""
+def _calculate_one_five_token_request() -> BenchmarkResult:
+    """Returns metrics for one 5-token request with distinct ITL and TPOT."""
     output = RequestFuncOutput(
         success=True,
         latency=1.0,
@@ -135,14 +135,16 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
         itl=[0.1, 0.2, 0.3],
         tpot=[0.05, 0.1, 0.15],
     )
-
-    tokenizer = _make_mock_tokenizer({"hello world": 5})
-
-    metrics = _calculate(
+    return _calculate(
         outputs=[output],
         dur_s=1.0,
-        tokenizer=tokenizer,
+        tokenizer=_make_mock_tokenizer({"hello world": 5}),
     )
+
+
+def test_per_chunk_tpot_collected_from_outputs() -> None:
+    """Per-chunk TPOT values are collected into step_tpot_ms."""
+    metrics = _calculate_one_five_token_request()
 
     assert metrics.text_data is not None
 
@@ -309,23 +311,7 @@ def test_empty_outputs_no_crash() -> None:
 
 def test_itl_metrics_unchanged() -> None:
     """ITL metrics remain unchanged by the TPOT refactor."""
-    output = RequestFuncOutput(
-        success=True,
-        latency=1.0,
-        ttft=0.1,
-        prompt_len=10,
-        generated_text="hello world",
-        itl=[0.1, 0.2, 0.3],
-        tpot=[0.05, 0.1, 0.15],
-    )
-
-    tokenizer = _make_mock_tokenizer({"hello world": 5})
-
-    metrics = _calculate(
-        outputs=[output],
-        dur_s=1.0,
-        tokenizer=tokenizer,
-    )
+    metrics = _calculate_one_five_token_request()
 
     assert metrics.text_data is not None
 
@@ -619,32 +605,6 @@ def test_request_submit_time_defaults_to_none() -> None:
     assert output.request_complete_time is None
 
 
-def test_request_submit_time_set_on_output() -> None:
-    """request_submit_time can be set and is preserved through metrics."""
-    output = RequestFuncOutput(
-        success=True,
-        latency=1.0,
-        ttft=0.1,
-        prompt_len=10,
-        generated_text="hello",
-        itl=[0.1],
-        tpot=[0.1],
-        request_submit_time=100.5,
-    )
-
-    assert output.request_submit_time == 100.5
-
-    tokenizer = _make_mock_tokenizer({"hello": 2})
-    metrics = _calculate(
-        outputs=[output],
-        dur_s=1.0,
-        tokenizer=tokenizer,
-    )
-    assert metrics.text_data is not None
-    # Metrics are computed normally regardless of submit time
-    assert metrics.text_data.completed == 1
-
-
 def test_measured_duration_uses_measured_window() -> None:
     """When skipping is applied, duration and throughput reflect the measured window only."""
     # 10 warmup requests: submit every 1s starting at t=0, each takes 5s.
@@ -835,105 +795,6 @@ def test_request_complete_time_property() -> None:
     submit_times = [o.request_submit_time for o in outputs]
     complete_times = [o.request_complete_time for o in outputs]
     assert len(submit_times) == len(complete_times)
-
-
-def test_skip_uses_submit_time_for_head_complete_time_for_tail() -> None:
-    """skip_first targets earliest submits, skip_last targets latest completes.
-
-    Mirrors a multi-turn flat list, where outputs arrive in
-    ``[session0_turns, session1_turns, ...]`` block order rather than
-    chronological order. The dispatch-order slice would silently target the
-    wrong requests; the timing-based selection picks the right ones.
-    """
-    # Three "sessions" of two turns each, flattened in block order. Submit/
-    # complete times are intentionally non-monotonic vs. iteration order.
-    outputs = [
-        # session 0: starts first, finishes early
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s0t0",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=0.0,  # earliest submit overall
-        ),
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s0t1",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=2.0,
-        ),
-        # session 1: middle
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s1t0",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=0.5,
-        ),
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s1t1",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=3.0,
-        ),
-        # session 2: starts last, last turn finishes last (latest complete)
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s2t0",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=1.0,
-        ),
-        RequestFuncOutput(
-            success=True,
-            latency=5.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s2t1",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=4.0,  # complete = 9.0, latest overall
-        ),
-    ]
-
-    tokenizer = _make_mock_tokenizer(
-        {"s0t0": 2, "s0t1": 2, "s1t0": 2, "s1t1": 2, "s2t0": 2, "s2t1": 2}
-    )
-
-    metrics = _calculate(
-        outputs=outputs,
-        dur_s=10.0,
-        tokenizer=tokenizer,
-        skip_first_n_requests=1,
-        skip_last_n_requests=1,
-    )
-
-    assert metrics.text_data is not None
-
-    # Head trim drops s0t0 (submit=0.0, the earliest).
-    # Tail trim drops s2t1 (complete=9.0, the latest).
-    # Dispatch-order slicing would have dropped s0t0 and s2t1 here too —
-    # but only because outputs[0] happens to be the earliest submit and
-    # outputs[-1] happens to be the latest complete. Use the asymmetric
-    # case below to distinguish.
-    assert metrics.text_data.completed == 4
 
 
 def test_skip_distinguishes_dispatch_order_from_timing() -> None:

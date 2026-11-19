@@ -29,23 +29,12 @@ from max.benchmark.benchmark_shared.datasets.types import (
     ChatSession,
     RequestSamples,
     ResponseFormat,
-    SampledRequest,
     SessionMessage,
     TurnSelector,
 )
-from tests.benchmark.benchmark_fakes import make_session
+from tests.benchmark.benchmark_fakes import make_sampled_request, make_session
 
 _RF: ResponseFormat = {"type": "json_object"}
-
-
-def _make_request() -> SampledRequest:
-    return SampledRequest(
-        prompt_formatted="hi",
-        prompt_len=1,
-        output_len=64,
-        encoded_images=[],
-        ignore_eos=True,
-    )
 
 
 def _constrained_turn_indices(session: ChatSession) -> list[int]:
@@ -56,7 +45,9 @@ def _constrained_turn_indices(session: ChatSession) -> list[int]:
 
 
 def test_zero_fraction_is_noop() -> None:
-    samples = RequestSamples(requests=[_make_request() for _ in range(5)])
+    samples = RequestSamples(
+        requests=[make_sampled_request() for _ in range(5)]
+    )
     augment_samples_with_response_format(
         samples, response_format=_RF, fraction=0.0
     )
@@ -66,7 +57,7 @@ def test_zero_fraction_is_noop() -> None:
 
 @pytest.mark.parametrize("fraction", [-0.1, 1.5])
 def test_rejects_out_of_range_fraction(fraction: float) -> None:
-    samples = RequestSamples(requests=[_make_request()])
+    samples = RequestSamples(requests=[make_sampled_request()])
     with pytest.raises(ValueError, match="must be in"):
         augment_samples_with_response_format(
             samples, response_format=_RF, fraction=fraction
@@ -74,7 +65,9 @@ def test_rejects_out_of_range_fraction(fraction: float) -> None:
 
 
 def test_full_fraction_constrains_every_request_and_clears_ignore_eos() -> None:
-    samples = RequestSamples(requests=[_make_request() for _ in range(5)])
+    samples = RequestSamples(
+        requests=[make_sampled_request() for _ in range(5)]
+    )
     augment_samples_with_response_format(
         samples, response_format=_RF, fraction=1.0
     )
@@ -85,7 +78,9 @@ def test_full_fraction_constrains_every_request_and_clears_ignore_eos() -> None:
 
 def test_request_partial_fraction_converges() -> None:
     n = 2000
-    samples = RequestSamples(requests=[_make_request() for _ in range(n)])
+    samples = RequestSamples(
+        requests=[make_sampled_request() for _ in range(n)]
+    )
     augment_samples_with_response_format(
         samples, response_format=_RF, fraction=0.3
     )
@@ -185,7 +180,7 @@ def test_first_turn_selector_warns_about_warmed_sessions(
     caplog.clear()
     with caplog.at_level(logging.WARNING):
         augment_samples_with_response_format(
-            RequestSamples(requests=[_make_request()]),
+            RequestSamples(requests=[make_sampled_request()]),
             response_format=_RF,
             fraction=1.0,
             turn="first",
@@ -198,7 +193,9 @@ def test_seed_makes_selection_reproducible() -> None:
     later augmentations draw from is left where it was."""
 
     def constrained_with(seed: int) -> list[int]:
-        samples = RequestSamples(requests=[_make_request() for _ in range(200)])
+        samples = RequestSamples(
+            requests=[make_sampled_request() for _ in range(200)]
+        )
         augment_samples_with_response_format(
             samples, response_format=_RF, fraction=0.5, seed=seed
         )

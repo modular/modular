@@ -690,17 +690,22 @@ def test_flush_prefix_cache_no_base_url_uses_host_port_without_auth() -> None:
 # ===========================================================================
 
 
+@pytest.mark.parametrize(
+    "passes_result_filename", [True, False], ids=["given", "not_provided"]
+)
 def test_result_filename_reaches_main_with_parsed_args(
     tmp_path: Path,
     workload_config: Path,
     mocker: pytest_mock.MockerFixture,
+    passes_result_filename: bool,
 ) -> None:
     """config.result_filename must not be cleared before main_with_parsed_args is called.
 
     Regression guard: if run_sweep reintroduces ``config.result_filename = None``
     before calling main_with_parsed_args, the result JSON for non-sweep CI runs
     will silently never be written and the "submit results" step will fail with
-    ``ls: cannot access 'results': No such file or directory``.
+    ``ls: cannot access 'results': No such file or directory``. Without
+    ``--result-filename``, config.result_filename must be None.
     """
     result_path = str(tmp_path / "result.json")
     received: dict[str, str | None] = {}
@@ -725,53 +730,21 @@ def test_result_filename_reaches_main_with_parsed_args(
             "1",
             "--num-prompts",
             "10",
-            "--result-filename",
-            result_path,
+            *(
+                ["--result-filename", result_path]
+                if passes_result_filename
+                else []
+            ),
             "--log-dir",
             str(tmp_path),
         ]
     )
 
-    assert received.get("result_filename") == result_path, (
+    expected = result_path if passes_result_filename else None
+    assert received.get("result_filename") == expected, (
         f"config.result_filename was cleared before main_with_parsed_args. "
-        f"Expected {result_path!r}, got {received.get('result_filename')!r}."
+        f"Expected {expected!r}, got {received.get('result_filename')!r}."
     )
-
-
-def test_result_filename_none_when_not_provided(
-    tmp_path: Path,
-    workload_config: Path,
-    mocker: pytest_mock.MockerFixture,
-) -> None:
-    """When --result-filename is not passed, config.result_filename must be None."""
-    received: dict[str, str | None] = {}
-
-    def capture_config(config: object, **kwargs: object) -> list[object]:
-        received["result_filename"] = getattr(
-            config, "result_filename", "NOT_SET"
-        )
-        return []
-
-    mocker.patch(
-        "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
-        side_effect=capture_config,
-    )
-    sweep_benchmark_serving.main(
-        [
-            "--model",
-            "HuggingFaceTB/SmolLM2-135M",
-            "--workload-config",
-            str(workload_config),
-            "--max-concurrency",
-            "1",
-            "--num-prompts",
-            "10",
-            "--log-dir",
-            str(tmp_path),
-        ]
-    )
-
-    assert received.get("result_filename") is None
 
 
 # ===========================================================================

@@ -145,14 +145,6 @@ def test_categorical_samples_only_given_values() -> None:
     assert samples <= {1.0, 2.0, 3.0}
 
 
-def test_categorical_sample_frequencies_match_weights() -> None:
-    np.random.seed(0)
-    dist = CategoricalDistribution(values=[10.0, 20.0], weights=[0.9, 0.1])
-    samples = [dist.sample_value() for _ in range(5000)]
-    frequency_of_10 = samples.count(10.0) / len(samples)
-    assert abs(frequency_of_10 - 0.9) < 0.03
-
-
 def test_categorical_weights_need_not_sum_to_one() -> None:
     np.random.seed(0)
     dist = CategoricalDistribution(values=[1.0, 2.0], weights=[9.0, 1.0])

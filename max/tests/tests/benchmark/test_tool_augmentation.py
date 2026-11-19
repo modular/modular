@@ -39,6 +39,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SessionMessage,
     TextContentBlock,
 )
+from tests.benchmark.benchmark_fakes import make_sampled_request
 
 _TOOLS: list[dict[str, Any]] = [
     {"type": "function", "function": {"name": "read_file"}},
@@ -112,13 +113,7 @@ def _make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
 
 
 def _make_request(prompt: str = "hi") -> SampledRequest:
-    return SampledRequest(
-        prompt_formatted=prompt,
-        prompt_len=len(prompt.split()),
-        output_len=64,
-        encoded_images=[],
-        ignore_eos=True,
-    )
+    return make_sampled_request(prompt, prompt_len=len(prompt.split()))
 
 
 def _user_turns(session: ChatSession) -> list[SessionMessage]:
@@ -307,13 +302,7 @@ def test_chat_message_prompts_are_sent_untrimmed_with_a_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     messages = [ChatMessage(role="user", content=[TextContentBlock(text="hi")])]
-    request = SampledRequest(
-        prompt_formatted=messages,
-        prompt_len=1,
-        output_len=64,
-        encoded_images=[],
-        ignore_eos=True,
-    )
+    request = make_sampled_request(messages)
     with caplog.at_level(logging.WARNING):
         augment_samples_with_tools(
             RequestSamples(requests=[request]),

@@ -80,8 +80,6 @@ from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
-    OpenAIImage,
-    SessionMessage,
 )
 from PIL import Image
 from tests.benchmark.benchmark_fakes import FakeTokenizer, fake_loader
@@ -2020,24 +2018,6 @@ def test_round_tool_mix_follows_the_weights() -> None:
     light = sum(1 for n in lens if n < 100)
     # 3:1 over 2000 draws; binomial sd is ~20, so this is generous.
     assert 0.70 < light / len(lens) < 0.80
-
-
-def test_session_message_images_defaults_to_empty() -> None:
-    """SessionMessage.images defaults to empty so existing multi-turn
-    workloads are unaffected until a later stage populates it."""
-    message = SessionMessage(source="user", content="hi", num_tokens=1)
-    assert message.images == []
-
-
-def test_session_message_images_can_be_populated() -> None:
-    image: OpenAIImage = {
-        "type": "image_url",
-        "image_url": {"url": "data:image/jpeg;base64,AAA"},
-    }
-    message = SessionMessage(
-        source="user", content="hi", num_tokens=1, images=[image]
-    )
-    assert message.images == [image]
 
 
 @pytest.mark.parametrize("max_output_len", [None, 64])

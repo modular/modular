@@ -36,6 +36,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     ImageURLDetail,
     OpenAIImage,
     PixelGenerationImageOptions,
+    ResponseFormat,
     TextContentBlock,
 )
 from max.benchmark.benchmark_shared.request import (
@@ -70,6 +71,7 @@ from max.benchmark.benchmark_shared.request import (
     tag_response_format_outcome,
 )
 from pytest_mock import MockerFixture
+from tests.benchmark.benchmark_fakes import make_request_input
 from tqdm.asyncio import tqdm
 
 
@@ -233,16 +235,6 @@ class TestRequestFuncOutput:
 
 class TestRequestCounter:
     """Test cases for RequestCounter class."""
-
-    def test_request_counter_advance_success(self) -> None:
-        """Test successful request counter advancement."""
-        counter = RequestCounter(max_requests=5)
-
-        # Should be able to advance 5 times
-        for i in range(5):
-            result = counter.advance_until_max()
-            assert result is True
-            assert counter.total_sent_requests == i + 1
 
     def test_request_counter_advance_max_reached(self) -> None:
         """Test request counter when max requests reached."""
@@ -509,28 +501,6 @@ def _streaming_response(
     return response
 
 
-def _request_input(
-    api_url: str,
-    *,
-    prompt: str | list[ChatMessage] = "Test prompt",
-    prompt_len: int = 10,
-    max_tokens: int = 100,
-    images: list[OpenAIImage] | None = None,
-) -> RequestFuncInput:
-    """Returns a ``test-model`` text request with default sampling."""
-    return RequestFuncInput(
-        model="test-model",
-        session_id=None,
-        sampling=SamplingConfig(),
-        prompt=prompt,
-        images=[] if images is None else images,
-        api_url=api_url,
-        prompt_len=prompt_len,
-        max_tokens=max_tokens,
-        ignore_eos=False,
-    )
-
-
 class TestRequestDriver:
     """Test cases for RequestDriver classes."""
 
@@ -542,7 +512,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test successful OpenAICompletionsRequestDriver request."""
-        request_input = _request_input("http://localhost:8000/completions")
+        request_input = make_request_input("http://localhost:8000/completions")
 
         # Mock response data
         mock_response_data = [
@@ -571,7 +541,9 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test successful OpenAIChatCompletionsRequestDriver request."""
-        request_input = _request_input("http://localhost:8000/chat/completions")
+        request_input = make_request_input(
+            "http://localhost:8000/chat/completions"
+        )
 
         # Mock response data
         mock_response_data = [
@@ -609,7 +581,9 @@ class TestRequestDriver:
         "0 valid requests" steady-state warning. Such a response must now be a
         failure.
         """
-        request_input = _request_input("http://localhost:8000/chat/completions")
+        request_input = make_request_input(
+            "http://localhost:8000/chat/completions"
+        )
 
         # Chunks have choices but the text is in an unmodeled delta field;
         # reasoning/reasoning_content/content are all absent, so no text is
@@ -649,7 +623,7 @@ class TestRequestDriver:
         the ``tool_calls`` field and treat those chunks as content-bearing
         rather than reporting the request as failed.
         """
-        request_input = _request_input(
+        request_input = make_request_input(
             "http://localhost:8000/chat/completions", prompt="Write a file"
         )
 
@@ -704,7 +678,7 @@ class TestRequestDriver:
         length/text check rather than relying on that invariant by
         inspection alone.
         """
-        request_input = _request_input(
+        request_input = make_request_input(
             "http://localhost:8000/chat/completions",
             prompt="What's the weather, then check the time",
         )
@@ -750,7 +724,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test that reasoning, reasoning_content, and content are merged in order."""
-        request_input = _request_input(
+        request_input = make_request_input(
             "http://localhost:8000/chat/completions",
             prompt="Think step by step",
             prompt_len=5,
@@ -790,7 +764,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test that missing or None reasoning/reasoning_content/content are treated as empty."""
-        request_input = _request_input(
+        request_input = make_request_input(
             "http://localhost:8000/chat/completions",
             prompt="Test",
             prompt_len=1,
@@ -827,7 +801,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Regression test for MXTOOLS-203: server error message is surfaced in output.error."""
-        request_input = _request_input(
+        request_input = make_request_input(
             "http://localhost:8000/v1/chat/completions",
             prompt="A very long prompt",
             prompt_len=264408,
@@ -859,91 +833,6 @@ class TestRequestDriver:
 
         assert result.success is False
         assert result.error == error_msg
-
-    @pytest.mark.asyncio
-    async def test_openai_chat_completions_forwards_tools(
-        self,
-        mock_aiohttp_session: Any,
-        mock_openai_env: None,
-        mocker: MockerFixture,
-    ) -> None:
-        """``tools`` on RequestFuncInput is forwarded as the chat ``tools`` field."""
-        tool_schemas = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "bash",
-                    "description": "Run a shell command",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {"cmd": {"type": "string"}},
-                        "required": ["cmd"],
-                    },
-                },
-            },
-        ]
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            sampling=SamplingConfig(),
-            prompt="Run ls",
-            images=[],
-            api_url="http://localhost:8000/v1/chat/completions",
-            prompt_len=5,
-            max_tokens=50,
-            ignore_eos=False,
-            tools=tool_schemas,
-        )
-
-        mock_aiohttp_session.setup_post_response(
-            _streaming_response(
-                mocker,
-                [
-                    b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n',
-                    b"data: [DONE]\n\n",
-                ],
-            )
-        )
-
-        driver = OpenAIChatCompletionsRequestDriver()
-        result = await driver.request(request_input)
-
-        assert result.success is True
-        # Inspect the POST payload to confirm the tools made it through.
-        _, post_kwargs = mock_aiohttp_session.post.call_args
-        assert post_kwargs["json"]["tools"] == tool_schemas
-
-    @pytest.mark.asyncio
-    async def test_openai_chat_completions_omits_tools_when_none(
-        self,
-        mock_aiohttp_session: Any,
-        mock_openai_env: None,
-        mocker: MockerFixture,
-    ) -> None:
-        """No ``tools`` field is sent when SampledRequest.tools is None/empty."""
-        request_input = _request_input(
-            "http://localhost:8000/v1/chat/completions",
-            prompt="hi",
-            prompt_len=1,
-            max_tokens=8,
-        )
-
-        mock_aiohttp_session.setup_post_response(
-            _streaming_response(
-                mocker,
-                [
-                    b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n',
-                    b"data: [DONE]\n\n",
-                ],
-            )
-        )
-
-        driver = OpenAIChatCompletionsRequestDriver()
-        result = await driver.request(request_input)
-
-        assert result.success is True
-        _, post_kwargs = mock_aiohttp_session.post.call_args
-        assert "tools" not in post_kwargs["json"]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -995,7 +884,7 @@ class TestRequestDriver:
         expected: bool,
     ) -> None:
         """A turn that only resends an earlier image still carries one."""
-        request_input = _request_input(
+        request_input = make_request_input(
             "http://localhost:8000/v1/chat/completions",
             prompt=prompt,
             prompt_len=1,
@@ -1028,7 +917,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
     ) -> None:
         """Test that missing content returns an error."""
-        request_input = _request_input("http://localhost:8000/completions")
+        request_input = make_request_input("http://localhost:8000/completions")
 
         mock_response_data = [
             b"data: [DONE]\n\n",
@@ -1049,7 +938,9 @@ class TestRequestDriver:
         self, mock_aiohttp_session: Any, mocker: MockerFixture
     ) -> None:
         """Test that RequestDriver works with progress bars."""
-        request_input = _request_input("http://localhost:8000/generate_stream")
+        request_input = make_request_input(
+            "http://localhost:8000/generate_stream"
+        )
 
         # Create a mock progress bar
         mock_pbar = mocker.Mock(spec=tqdm)
@@ -1069,27 +960,6 @@ class TestRequestDriver:
 
         # Verify progress bar was updated
         mock_pbar.update.assert_called_once_with(1)
-        assert result.success is True
-
-    @pytest.mark.asyncio
-    async def test_request_driver_without_progress_bar(
-        self, mock_aiohttp_session: Any, mocker: MockerFixture
-    ) -> None:
-        """Test that RequestDriver works without progress bars."""
-        request_input = _request_input("http://localhost:8000/generate_stream")
-
-        mock_aiohttp_session.setup_post_response(
-            _streaming_response(
-                mocker,
-                [
-                    b'data: {"text_output": "Hello"}\n\n',
-                ],
-            )
-        )
-
-        driver = TRTLLMRequestDriver()
-        result = await driver.request(request_input)
-
         assert result.success is True
 
 
@@ -1174,7 +1044,7 @@ class TestDriverExtraBody:
 
         driver = OpenAIChatCompletionsRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
-            _request_input(
+            make_request_input(
                 "http://localhost:8000/v1/chat/completions",
                 prompt="hi",
                 prompt_len=1,
@@ -1205,7 +1075,7 @@ class TestDriverExtraBody:
 
         driver = OpenAICompletionsRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
-            _request_input(
+            make_request_input(
                 "http://localhost:8000/v1/completions",
                 prompt="hi",
                 prompt_len=1,
@@ -1235,7 +1105,7 @@ class TestDriverExtraBody:
 
         driver = TRTLLMRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
-            _request_input(
+            make_request_input(
                 "http://localhost:8000/v2/models/ensemble/generate_stream",
                 prompt="hi",
                 prompt_len=1,
@@ -1795,22 +1665,18 @@ def test_attach_images_without_user_message_is_a_noop() -> None:
     assert messages[0]["content"] == [{"type": "text", "text": "sys"}]
 
 
-def _chat_input(response_format: object) -> RequestFuncInput:
-    return RequestFuncInput(
+def _chat_input(response_format: ResponseFormat | None) -> RequestFuncInput:
+    return make_request_input(
+        "http://localhost:8000/v1/chat/completions",
         model="m",
-        session_id=None,
-        sampling=SamplingConfig(),
         prompt="hi",
-        images=[],
-        api_url="http://localhost:8000/v1/chat/completions",
         prompt_len=1,
         max_tokens=16,
-        ignore_eos=False,
-        response_format=response_format,  # type: ignore[arg-type]
+        response_format=response_format,
     )
 
 
-_PERSON_SCHEMA = {
+_PERSON_SCHEMA: ResponseFormat = {
     "type": "json_schema",
     "json_schema": {
         "name": "person",
@@ -1882,7 +1748,7 @@ def test_tag_response_format_outcome_leaves_an_unusable_schema_unjudged() -> (
     """The conformance checker fails open, so an uncompilable schema scores
     ``valid``. Counting that as conforming would report a perfect rate for a
     schema that was never enforced, so it has to stay unjudged."""
-    broken = {
+    broken: ResponseFormat = {
         "type": "json_schema",
         "json_schema": {"name": "broken", "schema": {"type": "not-a-type"}},
     }

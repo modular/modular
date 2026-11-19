@@ -40,6 +40,7 @@ from max.benchmark.benchmark_shared.iteration import (
     seed_for_concurrency,
 )
 from max.benchmark.benchmark_shared.metrics import BenchmarkResult
+from tests.benchmark.benchmark_fakes import make_sampled_request
 
 
 @patch("max.profiler.gpu.BackgroundRecorder")
@@ -236,13 +237,7 @@ def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def _one_request_sample() -> tuple[SampledRequest, RequestSamples]:
-    request = SampledRequest(
-        prompt_formatted="hi",
-        prompt_len=1,
-        output_len=64,
-        encoded_images=[],
-        ignore_eos=True,
-    )
+    request = make_sampled_request()
     return request, RequestSamples(requests=[request], shared_contexts=[])
 
 
