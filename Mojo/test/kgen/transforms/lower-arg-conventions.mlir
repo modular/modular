@@ -480,39 +480,73 @@ kgen.func @call_pack_vararg_round_trip(
 }
 
 //===----------------------------------------------------------------------===//
-// `pop.external_call` pack expansion
+// Pack operand expansion on call-like POP ops
 //===----------------------------------------------------------------------===//
 
+// The pack operand is replaced by its elements, in its position.
 // CHECK-LABEL: @external_call_pack_expand
-kgen.func @external_call_pack_expand(%a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>) {
+kgen.func @external_call_pack_expand(
+    %a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>, %c: !kgen.scalar<f64>) {
   // CHECK: [[PACK:%.*]] = kgen.struct.create
   %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
   // CHECK: [[V0:%.*]] = kgen.struct.extract [[PACK]][0]
   // CHECK: [[V1:%.*]] = kgen.struct.extract [[PACK]][1]
-  // CHECK: pop.external_call @my_extern([[V0]], [[V1]]) : (!kgen.scalar<si32>, !kgen.scalar<f32>) -> ()
-  pop.external_call @my_extern(%pack)
-    : (!kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>) -> ()
+  // CHECK: pop.external_call @my_extern(%arg2, [[V0]], [[V1]], %arg2)
+  // CHECK-SAME: (!kgen.scalar<f64>, !kgen.scalar<si32>, !kgen.scalar<f32>, !kgen.scalar<f64>) -> ()
+  // CHECK-NOT: expandPackOperandIdx
+  pop.external_call @my_extern(%c, %pack, %c)
+    : (!kgen.scalar<f64>, !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>, !kgen.scalar<f64>) -> ()
+    <expandPackOperandIdx = 1>
   hlcf.return
 }
 
-// Nested packs are recursively flattened. This occurs in practice when Mojo
-// variadic args are forwarded to a C variadic function (e.g. fcntl(fd, cmd, *args)).
+// Only one level is expanded, so a pack in the pack is one argument.
 // CHECK-LABEL: @external_call_nested_pack
 kgen.func @external_call_nested_pack(
     %a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>, %c: !kgen.scalar<f64>) {
   %inner = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
   %outer = kgen.struct.create(%inner, %c)
     : !kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>
-  // The outer pack is expanded, and the inner pack extracted from it is
-  // recursively expanded as well, yielding three individual arguments.
   // CHECK: [[INNER:%.*]] = kgen.struct.extract %{{.*}}[0]
-  // CHECK: [[A:%.*]] = kgen.struct.extract [[INNER]][0]
-  // CHECK: [[B:%.*]] = kgen.struct.extract [[INNER]][1]
   // CHECK: [[C:%.*]] = kgen.struct.extract %{{.*}}[1]
-  // CHECK: pop.external_call @my_extern([[A]], [[B]], [[C]])
-  // CHECK-SAME: (!kgen.scalar<si32>, !kgen.scalar<f32>, !kgen.scalar<f64>) -> ()
+  // CHECK: pop.external_call @my_extern([[INNER]], [[C]])
+  // CHECK-SAME: (!kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>, !kgen.scalar<f64>) -> ()
   pop.external_call @my_extern(%outer)
     : (!kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>) -> ()
+    <expandPackOperandIdx = 0>
+  hlcf.return
+}
+
+// Without `expandPackOperandIdx`, a pack is one argument.
+// CHECK-LABEL: @external_call_no_pack_operand
+kgen.func @external_call_no_pack_operand(%a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>) {
+  // CHECK: [[PACK:%.*]] = kgen.struct.create
+  %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
+  // CHECK-NOT: kgen.struct.extract
+  // CHECK: pop.external_call @my_extern([[PACK]])
+  pop.external_call @my_extern(%pack)
+    : (!kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>) -> ()
+  hlcf.return
+}
+
+// CHECK-LABEL: @intrinsic_and_asm_pack_expand
+kgen.func @intrinsic_and_asm_pack_expand(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>) {
+  %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si64>, scalar<si64>) isParamPack>
+  // CHECK: [[A0:%.*]] = kgen.struct.extract %{{.*}}[0]
+  // CHECK: [[A1:%.*]] = kgen.struct.extract %{{.*}}[1]
+  // CHECK: pop.call_llvm_intrinsic "llvm.smax", ([[A0]], [[A1]])
+  // CHECK-SAME: (!kgen.scalar<si64>, !kgen.scalar<si64>) -> !kgen.scalar<si64>
+  // CHECK-NOT: expandPackOperandIdx
+  %0 = pop.call_llvm_intrinsic "llvm.smax", (%pack)
+    : (!kgen.struct<(scalar<si64>, scalar<si64>) isParamPack>) -> !kgen.scalar<si64>
+    <expandPackOperandIdx = 0>
+  // CHECK: [[B0:%.*]] = kgen.struct.extract %{{.*}}[0]
+  // CHECK: [[B1:%.*]] = kgen.struct.extract %{{.*}}[1]
+  // CHECK: pop.inline_asm "add $0, $1, $2", "=r,r,r", ([[B0]], [[B1]])
+  // CHECK-SAME: (!kgen.scalar<si64>, !kgen.scalar<si64>) -> !kgen.scalar<si64>
+  %1 = pop.inline_asm "add $0, $1, $2", "=r,r,r", (%pack)
+    : (!kgen.struct<(scalar<si64>, scalar<si64>) isParamPack>) -> !kgen.scalar<si64>
+    <expandPackOperandIdx = 0>
   hlcf.return
 }
 

@@ -15,17 +15,15 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8f16.v8f16.v8f32(
 // CHECK-LABEL: @test_mma_f16_f16
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8f16.v8f16.v8f32(
-  llvm.func @test_mma_f16_f16(
-      %arg0: !llvm.struct<(vector<8xf16>, i1, vector<8xf16>, i1, vector<8xf32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xf16>, i1, vector<8xf16>, i1, vector<8xf32>)>
-        to !kgen.struct<(simd<8, f16>, scalar<bool>, simd<8, f16>, scalar<bool>, simd<8, f32>)>
+  kgen.func @test_mma_f16_f16(
+      %a: !kgen.simd<8, f16>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, f16>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, f32>) {
     // The "llvm." prefix is stripped during lowering; the compiler mangles the
     // base name with scalar-type chars and vector type suffixes.
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, f16>, scalar<bool>, simd<8, f16>, scalar<bool>, simd<8, f32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, f16>, !kgen.scalar<bool>, !kgen.simd<8, f16>, !kgen.scalar<bool>, !kgen.simd<8, f32>)
       -> !kgen.simd<8, f32>
     llvm.return
   }
@@ -44,15 +42,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8bf16.v8f16.v8f32(
 // CHECK-LABEL: @test_mma_bf16_f16
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8bf16.v8f16.v8f32(
-  llvm.func @test_mma_bf16_f16(
-      %arg0: !llvm.struct<(vector<8xbf16>, i1, vector<8xf16>, i1, vector<8xf32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xbf16>, i1, vector<8xf16>, i1, vector<8xf32>)>
-        to !kgen.struct<(simd<8, bf16>, scalar<bool>, simd<8, f16>, scalar<bool>, simd<8, f32>)>
+  kgen.func @test_mma_bf16_f16(
+      %a: !kgen.simd<8, bf16>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, f16>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, f32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, bf16>, scalar<bool>, simd<8, f16>, scalar<bool>, simd<8, f32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, bf16>, !kgen.scalar<bool>, !kgen.simd<8, f16>, !kgen.scalar<bool>, !kgen.simd<8, f32>)
       -> !kgen.simd<8, f32>
     llvm.return
   }
@@ -72,15 +68,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_widening_multiply_accumulate.s.s.v8i32.v8i8.v8i8.v8i32(
 // CHECK-LABEL: @test_widening_mma_i8_i8
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_widening_multiply_accumulate.s.s.v8i32.v8i8.v8i8.v8i32(
-  llvm.func @test_widening_mma_i8_i8(
-      %arg0: !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xi32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xi32>)>
-        to !kgen.struct<(simd<8, si8>, scalar<bool>, simd<8, si8>, scalar<bool>, simd<8, si32>)>
+  kgen.func @test_widening_mma_i8_i8(
+      %a: !kgen.simd<8, si8>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, si8>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, si32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_widening_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, si8>, scalar<bool>, simd<8, si8>, scalar<bool>, simd<8, si32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, si8>, !kgen.scalar<bool>, !kgen.simd<8, si8>, !kgen.scalar<bool>, !kgen.simd<8, si32>)
       -> !kgen.simd<8, si32>
     llvm.return
   }
@@ -99,15 +93,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_widening_multiply_accumulate.u.u.v8i32.v8i8.v8i8.v8i32(
 // CHECK-LABEL: @test_widening_mma_u8_u8
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_widening_multiply_accumulate.u.u.v8i32.v8i8.v8i8.v8i32(
-  llvm.func @test_widening_mma_u8_u8(
-      %arg0: !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xi32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xi32>)>
-        to !kgen.struct<(simd<8, ui8>, scalar<bool>, simd<8, ui8>, scalar<bool>, simd<8, ui32>)>
+  kgen.func @test_widening_mma_u8_u8(
+      %a: !kgen.simd<8, ui8>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, ui8>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, ui32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_widening_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, ui8>, scalar<bool>, simd<8, ui8>, scalar<bool>, simd<8, ui32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, ui8>, !kgen.scalar<bool>, !kgen.simd<8, ui8>, !kgen.scalar<bool>, !kgen.simd<8, ui32>)
       -> !kgen.simd<8, ui32>
     llvm.return
   }
@@ -126,15 +118,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8bf16.v8bf16.v8f32(
 // CHECK-LABEL: @test_mma_bf16_bf16
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8bf16.v8bf16.v8f32(
-  llvm.func @test_mma_bf16_bf16(
-      %arg0: !llvm.struct<(vector<8xbf16>, i1, vector<8xbf16>, i1, vector<8xf32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xbf16>, i1, vector<8xbf16>, i1, vector<8xf32>)>
-        to !kgen.struct<(simd<8, bf16>, scalar<bool>, simd<8, bf16>, scalar<bool>, simd<8, f32>)>
+  kgen.func @test_mma_bf16_bf16(
+      %a: !kgen.simd<8, bf16>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, bf16>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, f32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, bf16>, scalar<bool>, simd<8, bf16>, scalar<bool>, simd<8, f32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, bf16>, !kgen.scalar<bool>, !kgen.simd<8, bf16>, !kgen.scalar<bool>, !kgen.simd<8, f32>)
       -> !kgen.simd<8, f32>
     llvm.return
   }
@@ -153,15 +143,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8f32.v8f32.v8f32(
 // CHECK-LABEL: @test_mma_f32_f32
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8f32.v8f32.v8f32(
-  llvm.func @test_mma_f32_f32(
-      %arg0: !llvm.struct<(vector<8xf32>, i1, vector<8xf32>, i1, vector<8xf32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xf32>, i1, vector<8xf32>, i1, vector<8xf32>)>
-        to !kgen.struct<(simd<8, f32>, scalar<bool>, simd<8, f32>, scalar<bool>, simd<8, f32>)>
+  kgen.func @test_mma_f32_f32(
+      %a: !kgen.simd<8, f32>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, f32>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, f32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, f32>, scalar<bool>, simd<8, f32>, scalar<bool>, simd<8, f32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, f32>, !kgen.scalar<bool>, !kgen.simd<8, f32>, !kgen.scalar<bool>, !kgen.simd<8, f32>)
       -> !kgen.simd<8, f32>
     llvm.return
   }
@@ -180,15 +168,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_widening_multiply_accumulate.s.s.v8i32.v8i16.v8i16.v8i32(
 // CHECK-LABEL: @test_widening_mma_i16_i16
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_widening_multiply_accumulate.s.s.v8i32.v8i16.v8i16.v8i32(
-  llvm.func @test_widening_mma_i16_i16(
-      %arg0: !llvm.struct<(vector<8xi16>, i1, vector<8xi16>, i1, vector<8xi32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xi16>, i1, vector<8xi16>, i1, vector<8xi32>)>
-        to !kgen.struct<(simd<8, si16>, scalar<bool>, simd<8, si16>, scalar<bool>, simd<8, si32>)>
+  kgen.func @test_widening_mma_i16_i16(
+      %a: !kgen.simd<8, si16>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, si16>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, si32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_widening_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, si16>, scalar<bool>, simd<8, si16>, scalar<bool>, simd<8, si32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, si16>, !kgen.scalar<bool>, !kgen.simd<8, si16>, !kgen.scalar<bool>, !kgen.simd<8, si32>)
       -> !kgen.simd<8, si32>
     llvm.return
   }
@@ -207,15 +193,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_widening_multiply_accumulate.u.s.v8i32.v8i8.v8i8.v8i32(
 // CHECK-LABEL: @test_widening_mma_u8_s8
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_widening_multiply_accumulate.u.s.v8i32.v8i8.v8i8.v8i32(
-  llvm.func @test_widening_mma_u8_s8(
-      %arg0: !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xi32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xi32>)>
-        to !kgen.struct<(simd<8, ui8>, scalar<bool>, simd<8, si8>, scalar<bool>, simd<8, si32>)>
+  kgen.func @test_widening_mma_u8_s8(
+      %a: !kgen.simd<8, ui8>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, si8>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, si32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_widening_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, ui8>, scalar<bool>, simd<8, si8>, scalar<bool>, simd<8, si32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, ui8>, !kgen.scalar<bool>, !kgen.simd<8, si8>, !kgen.scalar<bool>, !kgen.simd<8, si32>)
       -> !kgen.simd<8, si32>
     llvm.return
   }
@@ -236,15 +220,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8f8e4m3fn.v8f8e4m3fn.v8f32(
 // CHECK-LABEL: @test_mma_e4m3_e4m3
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8f8e4m3fn.v8f8e4m3fn.v8f32(
-  llvm.func @test_mma_e4m3_e4m3(
-      %arg0: !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xf32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xf32>)>
-        to !kgen.struct<(simd<8, f8e4m3fn>, scalar<bool>, simd<8, f8e4m3fn>, scalar<bool>, simd<8, f32>)>
+  kgen.func @test_mma_e4m3_e4m3(
+      %a: !kgen.simd<8, f8e4m3fn>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, f8e4m3fn>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, f32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, f8e4m3fn>, scalar<bool>, simd<8, f8e4m3fn>, scalar<bool>, simd<8, f32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, f8e4m3fn>, !kgen.scalar<bool>, !kgen.simd<8, f8e4m3fn>, !kgen.scalar<bool>, !kgen.simd<8, f32>)
       -> !kgen.simd<8, f32>
     llvm.return
   }
@@ -263,15 +245,13 @@ module attributes {M.target_info = #M.target<
 // CHECK: llvm.func @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8f8e4m3fn.v8f8e5m2.v8f32(
 // CHECK-LABEL: @test_mma_e4m3_e5m2
 // CHECK: llvm.call @air.simdgroup_matrix_16x16x16_multiply_accumulate.f.f.v8f32.v8f8e4m3fn.v8f8e5m2.v8f32(
-  llvm.func @test_mma_e4m3_e5m2(
-      %arg0: !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xf32>)>) {
-    %packed = builtin.unrealized_conversion_cast %arg0
-        : !llvm.struct<(vector<8xi8>, i1, vector<8xi8>, i1, vector<8xf32>)>
-        to !kgen.struct<(simd<8, f8e4m3fn>, scalar<bool>, simd<8, f8e5m2>, scalar<bool>, simd<8, f32>)>
+  kgen.func @test_mma_e4m3_e5m2(
+      %a: !kgen.simd<8, f8e4m3fn>, %ta: !kgen.scalar<bool>, %b: !kgen.simd<8, f8e5m2>,
+      %tb: !kgen.scalar<bool>, %c: !kgen.simd<8, f32>) {
     %r = pop.call_llvm_intrinsic
       "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-      (%packed) :
-      (!kgen.struct<(simd<8, f8e4m3fn>, scalar<bool>, simd<8, f8e5m2>, scalar<bool>, simd<8, f32>)>)
+      (%a, %ta, %b, %tb, %c) :
+      (!kgen.simd<8, f8e4m3fn>, !kgen.scalar<bool>, !kgen.simd<8, f8e5m2>, !kgen.scalar<bool>, !kgen.simd<8, f32>)
       -> !kgen.simd<8, f32>
     llvm.return
   }

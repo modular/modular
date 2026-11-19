@@ -21,6 +21,7 @@
 #include "Mojo/Interpreter/InterpreterState.h"
 #include "Mojo/Interpreter/ParametricInterpreterState.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/POPDialect/POPAttrs.h"
 #include "mlir/IR/Builders.h"
@@ -392,4 +393,62 @@ ErrorTreeOrSuccess POP::interpretMemcpy(Attribute dst, Attribute src,
                                         ParametricInterpreterState &state) {
   return ::interpretMemcpy<ParametricInterpreterState>(dst, src, len, loc,
                                                        state);
+}
+
+SmallVector<Attribute>
+POP::getOperandsWithPackExpanded(ArrayRef<Attribute> operands,
+                                 IntegerAttr expandPackOperandIdx) {
+  SmallVector<Attribute> result(operands);
+  if (!expandPackOperandIdx)
+    return result;
+  size_t index = expandPackOperandIdx.getInt();
+  // An operand that is not a struct constant is kept, so that the caller can
+  // diagnose the unknown value.
+  auto pack = dyn_cast<StructAttr>(operands[index]);
+  if (!pack)
+    return result;
+  result.erase(result.begin() + index);
+  result.insert(result.begin() + index, pack.getValues().begin(),
+                pack.getValues().end());
+  return result;
+}
+
+SmallVector<Value>
+POP::getOperandsWithPackExpanded(OpBuilder &builder, Location loc,
+                                 ValueRange operands,
+                                 IntegerAttr expandPackOperandIdx) {
+  SmallVector<Value> result(operands);
+  if (!expandPackOperandIdx)
+    return result;
+  size_t index = expandPackOperandIdx.getInt();
+  Value pack = operands[index];
+  std::optional<SmallVector<Type>> eltTypes =
+      cast<StructType>(pack.getType()).getElementTypes();
+  assert(eltTypes && "pack operand must have resolved element types");
+  SmallVector<Value> elts;
+  for (auto [i, eltType] : llvm::enumerate(*eltTypes)) {
+    elts.push_back(StructExtractOp::create(builder, loc, eltType, pack,
+                                           builder.getIndexAttr(i)));
+  }
+  result.erase(result.begin() + index);
+  result.insert(result.begin() + index, elts.begin(), elts.end());
+  return result;
+}
+
+LogicalResult POP::verifyPackOperand(Operation *op,
+                                     IntegerAttr expandPackOperandIdx) {
+  if (!expandPackOperandIdx)
+    return success();
+  int64_t index = expandPackOperandIdx.getInt();
+  if (index < 0 || index >= static_cast<int64_t>(op->getNumOperands())) {
+    return op->emitOpError("'expandPackOperandIdx' ")
+           << index << " is out of range for " << op->getNumOperands()
+           << " operands";
+  }
+  if (!isa<StructType>(op->getOperand(index).getType())) {
+    return op->emitOpError("'expandPackOperandIdx' must refer to an operand of "
+                           "'!kgen.struct' type, found ")
+           << op->getOperand(index).getType();
+  }
+  return success();
 }

@@ -1759,6 +1759,26 @@ def POP_ExternalCallOp : POPOp<"external_call", [
       <numFixedArgs = 1 : index>
     ```
 
+    The `expandPackOperandIdx` attribute specifies the index of an operand of
+    `!kgen.struct` type that is to be expanded to its elements. This is the
+    equivalent of passing a variadic pack as `*args` to a function.
+    LowerArgConventions replaces this operand with its elements, one level
+    deep. Without this attribute, each operand is passed as one argument.
+    The attribute takes the place of the argument conventions of a function
+    signature: the op passes each other operand as one argument, by value, so
+    no other operand needs a convention.
+
+    `numFixedArgs` and `argAttrs` count the arguments after this expansion,
+    with one argument for each element of the pack. Thus the fixed arguments
+    can end inside the pack. In this example, the first element of `%pack` is
+    the only fixed argument, and its other two elements are variadic arguments:
+
+    ```mlir
+    pop.external_call @printf(%pack)
+      : (!kgen.struct<(pointer<scalar<si8>>, scalar<f32>, scalar<ui32>)>) -> ()
+      <numFixedArgs = 1 : index, expandPackOperandIdx = 0>
+    ```
+
     The `funcAttrs` attribute specifies LLVM function attributes on the external
     callee, such as `noinline` or `noreturn`. LLVM argument and result
     attributes can be attached to the operation through `argAttrs` and
@@ -1769,6 +1789,7 @@ def POP_ExternalCallOp : POPOp<"external_call", [
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$func, Variadic<AnyType>:$operands,
     OptionalAttr<AttrOfType<Index>>:$numFixedArgs,
+    OptionalAttr<IndexAttr>:$expandPackOperandIdx,
     OptionalAttr<ArrayAttr>:$funcAttrs, OptionalAttr<DictArrayAttr>:$argAttrs,
     OptionalAttr<DictionaryAttr>:$resAttrs, OptionalAttr<AnyAttr>:$memory);
   let results = (outs Optional<AnyType>:$result);
@@ -2056,12 +2077,22 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
       %0 = pop.call_llvm_intrinsic "llvm.round", (%arg0) :
         !kgen.scalar<f32> -> !kgen.scalar<f32>
     ```
+
+    The `expandPackOperandIdx` attribute specifies the index of an operand of
+    `!kgen.struct` type that is to be expanded to its elements. This is the
+    equivalent of passing a variadic pack as `*args` to a function.
+    LowerArgConventions replaces this operand with its elements, one level
+    deep. Without this attribute, each operand is passed as one argument.
+    The attribute takes the place of the argument conventions of a function
+    signature: the op passes each other operand as one argument, by value, so
+    no other operand needs a convention.
   }];
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$intrin, Variadic<AnyType>:$args,
     DefaultValuedAttr<POP_FastmathFlagsAttr,
                       "FastmathFlags::none">:$fastmathFlags,
-    AttrOfType<I1>:$hasSideEffects);
+    AttrOfType<I1>:$hasSideEffects,
+    OptionalAttr<IndexAttr>:$expandPackOperandIdx);
 
   let results = (outs Optional<AnyType>:$results);
   let assemblyFormat = [{
@@ -2069,6 +2100,8 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
     `:` functional-type($args, $results) prop-dict attr-dict
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2083,6 +2116,16 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     written, or referenced.
     Attempting to define or reference any symbol or any global behavior is
     considered undefined behavior at this time.
+
+    The `expandPackOperandIdx` attribute specifies the index of an operand of
+    `!kgen.struct` type that is to be expanded to its elements. This is the
+    equivalent of passing a variadic pack as `*args` to a function.
+    LowerArgConventions replaces this operand with its elements, one level
+    deep. Without this attribute, each operand is passed as one argument.
+    The attribute takes the place of the argument conventions of a function
+    signature: the op passes each other operand as one argument, by value, so
+    no other operand needs a convention. `operandAttrs` applies to the
+    operands after this expansion.
   }];
   let arguments = (ins
     Variadic<AnyType>:$operands,
@@ -2090,7 +2133,8 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     AttrOfType<KGEN_StringType>:$constraints,
     AttrOfType<I1>:$hasSideEffects,
     AttrOfType<I1>:$isStackAligned,
-    OptionalAttr<ArrayAttr>:$operandAttrs
+    OptionalAttr<ArrayAttr>:$operandAttrs,
+    OptionalAttr<IndexAttr>:$expandPackOperandIdx
   );
 
   let results = (outs Variadic<AnyType>:$res);
@@ -2102,8 +2146,10 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     attr-dict
     custom<ParamValue>($assembly, "StringType::get($_ctxt)") `,`
     custom<ParamValue>($constraints, "StringType::get($_ctxt)") `,`
-    `(` operands `)` `:` functional-type(operands, results)
+    `(` operands `)` `:` functional-type(operands, results) prop-dict
    }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
