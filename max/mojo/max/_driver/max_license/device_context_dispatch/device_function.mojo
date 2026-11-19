@@ -327,6 +327,17 @@ struct DeviceFunction[
         self._impl = _impl^
 
     @doc_hidden
+    def __init__(out self, *, _legacy: Self._Legacy) where use_legacy_backend():
+        """Wraps a legacy function.
+
+        Only available in a build whose backend is the legacy one.
+
+        Args:
+            _legacy: The legacy function to wrap.
+        """
+        self._impl = _legacy
+
+    @doc_hidden
     def _call_with_pack_checked[
         HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,

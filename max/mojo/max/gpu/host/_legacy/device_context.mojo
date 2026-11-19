@@ -77,6 +77,13 @@ from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
 from ..info import _device_type_encoder_target
+from max._driver.max_license.device_context_dispatch.device_context import (
+    DeviceContext,
+    use_legacy_backend,
+)
+from max._driver.max_license.device_context_dispatch.device_function import (
+    DeviceFunction,
+)
 from max._plugin import MaxPluginForTarget
 
 from ..info import get_gpu_info, default_accelerator
@@ -5177,9 +5184,18 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             comptime assert (
                 HostArgs.length == 0
             ), "host_args is not supported on this target"
+            comptime assert (
+                use_legacy_backend()
+            ), "the legacy compile-and-enqueue path needs the legacy backend"
             plugin.enqueue_function_fn(
-                self,
-                gpu_kernel,
+                DeviceContext[Self.target](_legacy=self),
+                DeviceFunction[
+                    func,
+                    Self.FunctionWrapper,
+                    target=Self.target,
+                    link_options=link_options,
+                    _ptxas_info_verbose=_ptxas_info_verbose,
+                ](_legacy=gpu_kernel),
                 *encoded_args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,

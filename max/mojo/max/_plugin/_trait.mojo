@@ -32,6 +32,7 @@ from max.gpu.globals import WARP_SIZE
 from max.gpu.host import (
     ConstantMemoryMapping,
     DeviceContext,
+    DeviceFunction,
     Dim,
     GridBlockLaunchConfig,
     LaunchAttribute,
@@ -382,8 +383,8 @@ trait MaxPluginHooks:
         //,
         *Ts: DevicePassable,
     ](
-        ctx: _LegacyDeviceContext[ctx_target],
-        f: LegacyDeviceFunction[target=ctx_target, ...],
+        ctx: DeviceContext[ctx_target],
+        f: DeviceFunction[target=ctx_target, ...],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,

@@ -861,6 +861,17 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self._impl = _impl^
 
     @doc_hidden
+    def __init__(out self, *, _legacy: Self._Legacy) where use_legacy_backend():
+        """Wraps a legacy context.
+
+        Only available in a build whose backend is the legacy one.
+
+        Args:
+            _legacy: The legacy device context to wrap.
+        """
+        self._impl = _legacy
+
+    @doc_hidden
     def __init__(out self, ctx_ptr: _DeviceContextPtr[mut=True]):
         """Wraps the runtime's native context handle.
 
@@ -2630,8 +2641,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             comptime plugin = MaxPluginForTarget[Self.target]
             comptime if plugin._handles_enqueue_function:
                 plugin.enqueue_function_fn(
-                    self._impl,
-                    f._impl,
+                    self,
+                    f,
                     *args,
                     grid_dim=grid_dim,
                     block_dim=block_dim,
