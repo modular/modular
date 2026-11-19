@@ -167,9 +167,6 @@ KGEN::SIMDAttr ShapeAttr::getDim(MLIRContext *ctx, int64_t value) {
 
 /// Is the given type a legal dimension (scalar `si64` SIMD lane)?
 bool ShapeAttr::isDimType(Type type) {
-  if (type == getDimType(type.getContext()))
-    return true;
-
   if (auto simdType = dyn_cast<KGEN::SIMDType>(type))
     return simdType.getResolvedSize() == 1 &&
            simdType.getResolvedDType()
