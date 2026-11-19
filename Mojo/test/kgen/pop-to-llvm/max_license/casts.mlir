@@ -558,6 +558,28 @@ module attributes {M.target_info = #M.target<triple = "amdgpu9.50-amd-amdhsa", a
 
     hlcf.return %0, %1 : !kgen.simd<4, bf16>, !kgen.simd<4, bf16>
   }
+
+  kgen.func @simd_cast_f8uz_to_bf16_amd(%f8e4: !kgen.simd<4, f8e4m3fnuz>, %f8e5: !kgen.simd<4, f8e5m2fnuz>) -> (!kgen.simd<4, bf16>, !kgen.simd<4, bf16>) {
+    // For e4m3fn: First convert FP8 -> F32 using AMD intrinsics
+    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
+    // CHECK-DAG: %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
+    // CHECK-DAG: %[[FALSE:.+]] = llvm.mlir.constant(false) : i1
+    // CHECK-DAG: %[[TRUE:.+]] = llvm.mlir.constant(true) : i1
+
+    // Extract and convert FP8 elements to F32
+    // CHECK: llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.fp8"
+    // Then convert F32 to BF16 using fptrunc
+    // CHECK: llvm.fptrunc {{.*}} : vector<4xf32> to vector<4xbf16>
+    %0 = pop.cast %f8e4 : !kgen.simd<4, f8e4m3fnuz> to !kgen.simd<4, bf16>
+
+    // For e5m2: First convert FP8 -> F32 using AMD intrinsics
+    // CHECK: llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.bf8"
+    // Then convert F32 to BF16 using fptrunc
+    // CHECK: llvm.fptrunc {{.*}} : vector<4xf32> to vector<4xbf16>
+    %1 = pop.cast %f8e5 : !kgen.simd<4, f8e5m2fnuz> to !kgen.simd<4, bf16>
+
+    hlcf.return %0, %1 : !kgen.simd<4, bf16>, !kgen.simd<4, bf16>
+  }
 }
 
 // -----
@@ -710,33 +732,5 @@ module attributes {M.target_info = #M.target<triple = "air64-apple-macosx", arch
         !kgen.scalar<f32>,
         !kgen.scalar<f32>,
         !kgen.scalar<f16>, !kgen.scalar<bf16>
-  }
-}
-
-// -----
-
-// The `fnuz` pair is native on gfx942, not on CDNA4: both reach the same
-// `cvt.pk.fp8` mnemonic, which gfx950 gives the OCP meaning.
-module attributes {M.target_info = #M.target<triple = "amdgpu9.42-amd-amdhsa", arch="gfx942", data_layout="">} {
-  kgen.func @simd_cast_f8uz_to_bf16_amd(%f8e4: !kgen.simd<4, f8e4m3fnuz>, %f8e5: !kgen.simd<4, f8e5m2fnuz>) -> (!kgen.simd<4, bf16>, !kgen.simd<4, bf16>) {
-    // For e4m3fn: First convert FP8 -> F32 using AMD intrinsics
-    // CHECK-DAG: %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
-    // CHECK-DAG: %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
-    // CHECK-DAG: %[[FALSE:.+]] = llvm.mlir.constant(false) : i1
-    // CHECK-DAG: %[[TRUE:.+]] = llvm.mlir.constant(true) : i1
-
-    // Extract and convert FP8 elements to F32
-    // CHECK: llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.fp8"
-    // Then convert F32 to BF16 using fptrunc
-    // CHECK: llvm.fptrunc {{.*}} : vector<4xf32> to vector<4xbf16>
-    %0 = pop.cast %f8e4 : !kgen.simd<4, f8e4m3fnuz> to !kgen.simd<4, bf16>
-
-    // For e5m2: First convert FP8 -> F32 using AMD intrinsics
-    // CHECK: llvm.call_intrinsic "llvm.amdgcn.cvt.pk.f32.bf8"
-    // Then convert F32 to BF16 using fptrunc
-    // CHECK: llvm.fptrunc {{.*}} : vector<4xf32> to vector<4xbf16>
-    %1 = pop.cast %f8e5 : !kgen.simd<4, f8e5m2fnuz> to !kgen.simd<4, bf16>
-
-    hlcf.return %0, %1 : !kgen.simd<4, bf16>, !kgen.simd<4, bf16>
   }
 }

@@ -38,6 +38,7 @@ from linalg.fp4_utils import (
 )
 from std.random import random_ui64, seed, rand
 from std.simd import (
+    _convert_f32_to_float8_scalar,
     _convert_f32_to_float8_ue8m0,
 )
 from layout import Coord, Idx, TileTensor, row_major
@@ -262,7 +263,9 @@ def _test_kernel_impl_base[
                             target=scales_dtype
                         ](scale_input)
                     else:
-                        scale_value = scale_input.cast[scales_dtype]()
+                        scale_value = _convert_f32_to_float8_scalar[
+                            scales_dtype
+                        ](scale_input)
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )

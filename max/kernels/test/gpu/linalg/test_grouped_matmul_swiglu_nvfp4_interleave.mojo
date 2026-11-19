@@ -36,6 +36,7 @@ from max.gpu.host import DeviceContext
 from std.memory import alloc
 from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64, seed, rand
+from std.simd import _convert_f32_to_float8_scalar
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 
 from layout import Idx, TileTensor, row_major
@@ -286,11 +287,9 @@ def _test_swiglu_interleave[
                 0, align_up(K, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
             ):
                 if idx1 < K:
-                    var scale_value = (
-                        (1 << random_ui64(0, 2))
-                        .cast[.float32]()
-                        .cast[scales_dtype]()
-                    )
+                    var scale_value = _convert_f32_to_float8_scalar[
+                        scales_dtype
+                    ]((1 << random_ui64(0, 2)).cast[.float32]())
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )

@@ -37,7 +37,7 @@ from std.testing.prop import PropTest
 from std.testing.prop.strategy import SIMD
 
 from std.utils import StaticTuple
-from std.utils.numerics import inf, isfinite, isinf, isnan, nan
+from std.utils.numerics import isfinite, isinf, isnan, nan
 from test_utils import check_convertible_to_python, check_python_object
 
 
@@ -2934,78 +2934,6 @@ def test_convertible_to_python() raises:
         String(non_raising_to_python(UInt64(12345678901234567890))),
         "12345678901234567890",
     )
-
-
-def test_float8_e8m0fnu_cast_folds_like_runtime() raises:
-    # A constant cast is folded by the compiler and a runtime one goes through
-    # the lowered conversion; both round the magnitude up to a power of two.
-    var runtime = List[Float32]()
-    runtime.append(1.1)
-    runtime.append(-4096.0)
-    runtime.append(0.0)
-    runtime.append(-inf[.float32]())
-
-    var folded = List[UInt8]()
-    folded.append(bitcast[.uint8](Float32(1.1).cast[.float8_e8m0fnu]()))
-    folded.append(bitcast[.uint8](Float32(-4096.0).cast[.float8_e8m0fnu]()))
-    folded.append(bitcast[.uint8](Float32(0.0).cast[.float8_e8m0fnu]()))
-    folded.append(
-        bitcast[.uint8](Float32(-inf[.float32]()).cast[.float8_e8m0fnu]())
-    )
-
-    var expected = List[UInt8]()
-    expected.append(128)  # 2**1
-    expected.append(139)  # 2**12
-    expected.append(0)  # 2**-127
-    expected.append(0xFF)  # NaN
-
-    for i in range(len(runtime)):
-        assert_equal(
-            bitcast[.uint8](runtime[i].cast[.float8_e8m0fnu]()), expected[i]
-        )
-        assert_equal(folded[i], expected[i])
-
-
-def test_cast_to_float8_from_non_float32() raises:
-    # Only `f32 -> fp8` lowers directly, so every other source widens to f32
-    # first; the widening must not change the narrowed result.
-    assert_equal(bitcast[.uint8](UInt64(4).cast[.float8_e4m3fn]()), 0x48)
-    assert_equal(bitcast[.uint8](Int32(-4).cast[.float8_e5m2]()), 0xC4)
-    assert_equal(bitcast[.uint8](BFloat16(2.5).cast[.float8_e4m3fn]()), 0x42)
-    assert_equal(bitcast[.uint8](Float16(2.5).cast[.float8_e5m2]()), 0x41)
-    assert_equal(bitcast[.uint8](Float64(2.5).cast[.float8_e4m3fnuz]()), 0x4A)
-    assert_equal(bitcast[.uint8](Float32(2.5).cast[.float8_e4m3fn]()), 0x42)
-
-
-def test_float8_to_float8_cast() raises:
-    # A value outside the narrower range saturates to its largest finite.
-    var e5m2 = List[Float8_e5m2]()
-    e5m2.append(1.0)
-    e5m2.append(-2.5)
-    e5m2.append(0.0)
-    e5m2.append(57344.0)  # e5m2's largest finite, past e4m3fn's range
-    var to_e4m3 = List[UInt8]()
-    to_e4m3.append(0x38)  # 1.0
-    to_e4m3.append(0xC2)  # -2.5
-    to_e4m3.append(0x00)  # 0.0
-    to_e4m3.append(0x7E)  # 448.0, e4m3fn's largest finite
-    for i in range(len(e5m2)):
-        assert_equal(
-            bitcast[.uint8](e5m2[i].cast[.float8_e4m3fn]()), to_e4m3[i]
-        )
-
-    var e4m3 = List[Float8_e4m3fn]()
-    e4m3.append(1.0)
-    e4m3.append(-2.5)
-    e4m3.append(0.0)
-    e4m3.append(448.0)
-    var to_e5m2 = List[UInt8]()
-    to_e5m2.append(0x3C)  # 1.0
-    to_e5m2.append(0xC1)  # -2.5
-    to_e5m2.append(0x00)  # 0.0
-    to_e5m2.append(0x5F)  # 448.0, exact in e5m2
-    for i in range(len(e4m3)):
-        assert_equal(bitcast[.uint8](e4m3[i].cast[.float8_e5m2]()), to_e5m2[i])
 
 
 def main() raises:

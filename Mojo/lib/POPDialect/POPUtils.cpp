@@ -81,17 +81,7 @@ OpFoldResult POP::foldCast(TypedAttr operand, SIMDType resultType,
               in = APFloat::getLargest(*sem);
             return in;
           }
-          // Every other float8 saturates: the conversion this op lowers to
-          // clamps an overflow, and an infinity, to the largest finite value
-          // and keeps the sign. `APFloat::convert` instead yields an infinity,
-          // or a NaN in a format that has none, so a folded cast would
-          // disagree with the lowered one.
-          bool saturates = dtype->isFloat() && dtype->getWidthInBits() == 8;
-          bool wasNaN = in.isNaN();
-          bool negative = in.isNegative();
           in.convert(*sem, APFloat::rmNearestTiesToEven, &ignored);
-          if (saturates && !wasNaN && !in.isFinite())
-            in = APFloat::getLargest(*sem, negative);
           return in;
         },
         [&](bool in) { return APFloat(*sem, in); });
