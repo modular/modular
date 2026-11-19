@@ -378,6 +378,38 @@ mojo build --target-triple x86_64-unknown-linux-gnu \
 This generates code for the Haswell instruction set and optimizes it
 for Skylake.
 
+### Build for an older macOS version
+
+On macOS, `mojo build` records the build machine's macOS version as the
+minimum OS version of the executable or shared library, so the binary
+doesn't load on any older macOS. To support older versions, set the
+version in both the target triple and the `MACOSX_DEPLOYMENT_TARGET`
+environment variable:
+
+```sh
+MACOSX_DEPLOYMENT_TARGET=15.0 mojo build \
+    --target-triple arm64-apple-macosx15.0 \
+    -o myapp myapp.mojo
+```
+
+The triple sets the macOS version the compiler generates code for, and
+the environment variable sets the minimum version the linker records.
+With the triple alone, the binary still requires the build machine's
+version. With the environment variable alone, the linker warns that the
+object file was built for a newer macOS version than the one it links
+for. Choose a version that the
+[system requirements](/docs/requirements/) list as supported.
+
+To check the minimum version of a binary, read its `minos` field:
+
+```sh
+otool -l myapp | grep minos
+```
+
+```output
+    minos 15.0
+```
+
 ### GPU kernel compilation
 
 ```sh
