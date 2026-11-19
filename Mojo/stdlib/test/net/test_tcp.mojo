@@ -135,6 +135,16 @@ def test_listen_keeps_socket_options() raises:
     assert_true(socket^.listen().get_option[ReuseAddress]())
 
 
+def test_listen_backlog_out_of_range_raises() raises:
+    var error: Optional[IOError] = None
+    try:
+        _ = TCPSocket.v4().listen(backlog=Int(c_int.MAX) + 1)
+    except e:
+        error = e^
+    var e = or_raise(error^, "the listen succeeded")
+    assert_equal(e.kind(), .invalid_input)
+
+
 def test_bind_address_in_use_raises() raises:
     var listener = TCPListener(bind=loopback_addr())
     var addr = listener.local_addr()
@@ -237,6 +247,16 @@ def test_read_over_int_max() raises:
     while n < 4:
         n += server.read(buffer[n:])
     assert_equal(String(from_utf8_lossy=buffer[:n]), "ping")
+
+
+def test_read_into_empty_buffer_returns_zero() raises:
+    var listener = TCPListener(bind=loopback_addr())
+    var client = TCPStream(connect=listener.local_addr())
+    var server, _ = listener.accept()
+    var buffer = List[Byte]()
+    # Nothing has been sent, so the read can't return 0 for end of stream.
+    assert_equal(client.read(buffer), 0)
+    _ = server^
 
 
 def test_read_after_peer_closes_returns_zero() raises:

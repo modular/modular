@@ -108,9 +108,9 @@ struct TCPStream(Movable):
         Raises:
             If the read fails, such as when the peer resets the connection.
         """
-        # TODO: on Linux, a `recv` into an empty buffer waits for data to
-        # arrive instead of returning 0. Return 0 without calling `recv` when
-        # `buffer` is empty.
+        # On Linux, a `recv` into an empty buffer waits for data to arrive.
+        if len(buffer) == 0:
+            return 0
         return self._socket.recv(buffer)
 
     def write(self, bytes: ImmSpan[Byte, _]) raises IOError -> Int:
