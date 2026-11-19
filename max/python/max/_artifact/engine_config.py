@@ -102,9 +102,9 @@ class EngineParallelConfig:
         dcp: The ranks of each replica that split a request's KV cache by
             token position (decode context parallelism), or 1.
         pcp: The ranks of each replica that split a prefill step's query
-            rows, prefill context parallelism. Always 1: PCP is not supported
-            on the artifact path, whose warmup does not reserve PCP's
-            whole-context scratch.
+            rows, prefill context parallelism: 1 without it, or the decode
+            context degree, since PCP splits rows over the decode context
+            ranks.
         dcp_interleave: The consecutive token positions a decode context
             rank owns before the next rank's turn; 1 without it.
 
@@ -129,11 +129,10 @@ class EngineParallelConfig:
                 f"the decode context degree {self.dcp} must divide the"
                 f" tensor-parallel degree {self.tp}"
             )
-        if self.pcp != 1:
+        if self.pcp not in (1, self.dcp):
             raise ArtifactError(
-                "PCP is not supported on the artifact path: the artifact"
-                " warmup does not reserve PCP's whole-context scratch, so pcp"
-                f" must be 1, got {self.pcp}"
+                f"the prefill context degree {self.pcp} must be 1 or the"
+                f" decode context degree {self.dcp}"
             )
         if self.dcp_interleave < 1 or (
             self.dcp == 1 and self.dcp_interleave != 1

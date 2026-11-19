@@ -934,6 +934,8 @@ def _plan(n_devices: int) -> MemoryPlan:
         (8, 8, 8, None, False, (8, 1, 8, 1, 1, 1)),
         (8, 1, 1, (8, 128), False, (1, 8, 1, 8, 1, 128)),
         (8, 2, 8, (4, 1), False, (2, 4, 8, 4, 1, 1)),
+        # PCP4 x DCP4 inside one TP8 replica.
+        (8, 1, 8, (4, 1), True, (1, 8, 8, 4, 4, 1)),
     ],
 )
 def test_engine_config_records_the_parallel_layout(
@@ -985,30 +987,6 @@ def test_context_parallel_flags_without_split_caches_record_no_split() -> None:
     )
     parallel = pipeline_engine_config(config, _plan(2)).parallel
     assert (parallel.dcp, parallel.pcp, parallel.dcp_interleave) == (1, 1, 1)
-
-
-def test_engine_config_refuses_prefill_context_parallelism() -> None:
-    config = _pipeline_config(
-        sampling=SamplingConfig.model_construct(),
-        ep_size=8,
-        data_parallel_degree=2,
-        decode_context_parallel_degree=4,
-        decode_context_parallel_interleave=1,
-        prefill_context_parallel=True,
-    )
-    with pytest.raises(
-        ArtifactError, match="PCP is not supported on the artifact path"
-    ):
-        pipeline_engine_config(
-            config,
-            _plan(8),
-            context_parallel=ContextParallel(degree=4, interleave=1),
-            prefill_context_parallel=EnginePrefillContextParallel(
-                min_step_tokens=7168,
-                min_rows_per_request=8,
-                max_batch_context=1,
-            ),
-        )
 
 
 def test_engine_config_refuses_replicas_that_do_not_divide_the_devices() -> (

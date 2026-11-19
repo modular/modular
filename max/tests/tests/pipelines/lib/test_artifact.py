@@ -734,6 +734,8 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
         (8, _parallel(dp=2, tp=4, dcp=4, dcp_interleave=128)),
         # DCP2 without PCP.
         (2, _parallel(tp=2, dcp=2, dcp_interleave=1)),
+        # PCP4 x DCP4 inside one TP8 replica.
+        (8, _parallel(tp=8, ep=8, dcp=4, pcp=4)),
     ],
 )
 def test_parallel_layouts_round_trip(
@@ -760,8 +762,7 @@ def test_parallel_layouts_round_trip(
     [
         (4, {"dp": 2, "tp": 1}, "4 devices for dp 2 x tp 1"),
         (4, {"tp": 4, "dcp": 3}, "must divide"),
-        (4, {"tp": 4, "dcp": 2, "pcp": 2}, "PCP is not supported"),
-        (4, {"tp": 4, "dcp": 2, "pcp": 4}, "PCP is not supported"),
+        (4, {"tp": 4, "dcp": 2, "pcp": 4}, "must be 1 or the decode context"),
         (2, {"tp": 2, "dcp_interleave": 64}, "needs a decode context"),
         (4, {"tp": 4, "ep": 3}, "expert-parallel degree 3"),
         (2, {"tp": 2, "ep": 0}, "positive"),
