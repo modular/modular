@@ -14,7 +14,7 @@
 #include "MLRT/Core/IO/IO.h"
 
 using namespace M;
-using namespace M::IO;
+using namespace M::MLRT;
 
 ErrorOrSuccess File::init() {
   // TODO: Implement this.
