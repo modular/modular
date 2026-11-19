@@ -146,7 +146,11 @@ from ..registration_draft import (
     RegisteredDraftBuilder,
     default_target_hidden_states,
 )
-from ..registration_runtime import BatchContextLengths
+from ..registration_runtime import (
+    BatchContextLengths,
+    ConstantInputs,
+    initialize_static_inputs,
+)
 from ..utils import CompilationTimer, start_checkpoint_prefetch
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
 from ..weight_transform import (
@@ -1826,8 +1830,19 @@ class SpecDecodePipelineModel(
         target, target_config = target_builder.build_module(target_context)
         # The planner sized the cache from this config before finalizing.
         config.target = target_config
+        constant_provider = getattr(type(target), "constant_inputs", None)
+        constants = (
+            constant_provider(target_config, devices=self.devices)
+            if constant_provider is not None
+            else None
+        )
+        static_modules = initialize_static_inputs(session, constants)
         self.ep_comm_initializer = ep.initializer
-        self.compiled_modules = {**self.compiled_modules, **ep.modules}
+        self.compiled_modules = {
+            **self.compiled_modules,
+            **ep.modules,
+            **static_modules,
+        }
         # Each module's entries go under its name in the fused graph. A module
         # whose naming isn't rules yet compiles with its checkpoint_weights,
         # and leaves the graph unnamed.
@@ -1858,6 +1873,18 @@ class SpecDecodePipelineModel(
         self.weight_naming = (
             {GraphRole.SPEC_DECODER: tuple(entries)} if named else {}
         )
+        if (
+            isinstance(constants, ConstantInputs)
+            and constants.initializer is not None
+        ):
+            self.weight_naming = {
+                **self.weight_naming,
+                GraphRole.STATIC_INIT: tuple(
+                    _weight_entries(
+                        target_builder, target_context, target_config
+                    )
+                ),
+            }
         return _Modules(
             target, target_config, draft, draft_config, hidden_states, weights
         )

@@ -46,7 +46,7 @@ from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
-from .graph_specs import GraphSpec
+from .graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
 from .interfaces.pipeline_model import (
     ModelLoadContext,
     compile_ep_init,
@@ -66,6 +66,7 @@ __all__ = [
     "batch_context_length_types",
     "ep_input_tree",
     "initialize_ep_comm_buffers",
+    "initialize_static_inputs",
     "prepare_weights",
     "role_weights",
     "uses_expert_parallel_exchange",
@@ -161,6 +162,20 @@ def allocate_static_buffers(
         return buffer
 
     return tree.map(allocate, input_types)
+
+
+def initialize_static_inputs(
+    session: InferenceSession,
+    constants: ConstantInputs | None,
+) -> dict[str, CompiledCallable[..., Any]]:
+    """Compiles and runs deployment-buffer initialization, when declared."""
+    if constants is None or constants.initializer is None:
+        return {}
+    modules = compile_and_init_graphs(
+        session, {GraphRole.STATIC_INIT: constants.initializer}
+    )
+    constants.initialize(modules[GraphRole.STATIC_INIT], session)
+    return modules
 
 
 @dataclass(frozen=True)
