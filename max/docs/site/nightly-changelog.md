@@ -484,9 +484,8 @@ This version is still a work in progress.
   they took an `IndexList[rank]`: the `shape` and `input_shape` arguments, and
   the point passed to the `load_fn`, `compute_fn` and `compute_finalize_fn`
   callbacks. A shape `Coord` keeps its static dimensions on the way to the
-  kernel. Wrap an existing `IndexList` shape with `Coord(shape)`. `map_fn`
-  still takes and returns `IndexList`. The point holds the same values as
-  before:
+  kernel. Wrap an existing `IndexList` shape with `Coord(shape)`. The point
+  holds the same values as before:
 
   ```mojo
   # was: def load_fn[...](point: IndexList[rank, ...]) -> ...
@@ -494,6 +493,20 @@ This version is still a work in progress.
       dtype, simd_width
   ]:
       return input.load[width=simd_width](point)
+  ```
+
+  `map_fn` now takes and returns `DynamicCoord[DType.int, stencil_rank]`
+  instead of `IndexList[stencil_rank]`, and the `stencil_axis` parameter is
+  gone: it only accepted the spatial axes `(1, 2)`, which both backends
+  assume. Drop `stencil_axis` from the parameter list:
+
+  ```mojo
+  comptime StencilPoint = DynamicCoord[DType.int, stencil_rank]
+
+  def map_fn(point: StencilPoint) -> Tuple[StencilPoint, StencilPoint]:
+      var lower = StencilPoint(point[0] * stride, point[1] * stride)
+      var upper = StencilPoint(lower[0] + window_h, lower[1] + window_w)
+      return lower, upper
   ```
 
 ## Tools
