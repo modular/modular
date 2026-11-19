@@ -17,7 +17,7 @@ func.func @build_graph_missing_decl(
 // A mogg.graph_blob is the one launch of the calls it holds, so it can't hold
 // another.
 func.func @nested_graph_blob(%ctx: !mogg.context) {
-  // expected-error@+1 {{calls kernels only through 'mogg.call.opaque', but holds 'mogg.graph_blob'}}
+  // expected-error@+1 {{calls kernels only through 'mogg.call.opaque' and 'mogg.call.foreach', but holds 'mogg.graph_blob'}}
   mogg.graph_blob {
     mogg.graph_blob {
       mogg.call.opaque @missing.kernel context(%ctx : !mogg.context)

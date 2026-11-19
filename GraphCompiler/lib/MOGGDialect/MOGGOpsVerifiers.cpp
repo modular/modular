@@ -299,17 +299,22 @@ LogicalResult GraphBlobOp::verifyRegions() {
   for (Operation &op : getBody().getOps()) {
     if (!op.hasTrait<MOGG::CallLike>())
       continue;
-    auto call = dyn_cast<CallOpaqueOp>(op);
-    if (!call)
-      return emitOpError("calls kernels only through 'mogg.call.opaque', but "
-                         "holds '")
+    Value callCtx;
+    if (auto call = dyn_cast<CallOpaqueOp>(op)) {
+      if (call.getDeviceContexts().size() != 1 ||
+          !isa<ContextType>(call.getDeviceContexts().front().getType()))
+        return emitOpError("calls each kernel on one device context");
+      callCtx = call.getDeviceContexts().front();
+    } else if (auto foreach = dyn_cast<CallForeachOp>(op)) {
+      callCtx = foreach.getDeviceContext();
+    } else {
+      return emitOpError("calls kernels only through 'mogg.call.opaque' and "
+                         "'mogg.call.foreach', but holds '")
              << op.getName() << "'";
-    if (call.getDeviceContexts().size() != 1 ||
-        !isa<ContextType>(call.getDeviceContexts().front().getType()))
-      return emitOpError("calls each kernel on one device context");
+    }
     if (!ctx)
-      ctx = call.getDeviceContexts().front();
-    else if (call.getDeviceContexts().front() != ctx)
+      ctx = callCtx;
+    else if (callCtx != ctx)
       return emitOpError("calls kernels on more than one device context");
   }
   if (!ctx)

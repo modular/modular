@@ -1435,12 +1435,13 @@ def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   NoTerminator,
   SingleBlock,
 ]> {
-  let summary = "Launch several declarative kernels as one device kernel.";
+  let summary = "Launch several kernels as one device kernel.";
   let description = [{
-    Runs the declarative `mogg.call.opaque`s in its body, in order, as one
-    launch on their shared device context. Each call runs on the part of the
-    launch its own configuration asks for, and every call sees the writes of
-    the calls before it.
+    Runs the declarative `mogg.call.opaque`s and the `mogg.call.foreach`s in
+    its body, in order, as one launch on their shared device context. Each
+    declarative call runs on the part of the launch its own configuration asks
+    for, each loop runs on all of it, and every call sees the writes of the
+    calls before it.
 
     The body holds the calls and the ops that build their operands, and can use
     the enclosing region's values. `LowerGraphBlobs` writes the op as host ops

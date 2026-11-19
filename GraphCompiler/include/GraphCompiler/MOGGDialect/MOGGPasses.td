@@ -201,18 +201,20 @@ def OutlineAsyncRoutines: Pass<"mogg-outline-async-routines", "ModuleOp"> {
 
 def FormGraphBlobs
     : Pass<"mogg-form-graph-blobs", "mlir::ModuleOp"> {
-  let summary = "Fuse groups of declarative routines into graph blobs.";
+  let summary = "Fuse groups of device routines into graph blobs.";
   let description = [{
-    Replaces each group of declarative `mogg.routine`s with one routine that
-    runs the routines' bodies in order inside a `mogg.graph_blob`, so the group
-    launches as one device kernel. A group holds sequences, where one routine
-    reads another's results, and siblings that don't depend on each other. The
-    fused routine reads what the routines read from outside the group and
-    returns every routine's results.
+    Replaces each group of `mogg.routine`s that each call a declarative kernel
+    or run a generated elementwise loop (`mogg.call.foreach`) with one routine
+    that runs the routines' bodies in order inside a `mogg.graph_blob`, so the
+    group launches as one device kernel. A routine joins only when the launch
+    can take, or its kernel can build, every operand of its call. A group holds
+    sequences, where one routine reads another's results, and siblings that
+    don't depend on each other. The fused routine reads what the routines read
+    from outside the group and returns every routine's results.
 
     Each group runs on one device. It ends at the first routine with a result
-    that something outside the group reads, other than another declarative
-    routine on that device or the block's terminator, such as the graph's
+    that something outside the group reads, other than another routine that
+    can join it on that device or the block's terminator, such as the graph's
     output, so no path leaves the group and comes back in. Device graphs and
     routines on the host, which has no blob launch, are left alone. Runs before
     `OutlineRoutines`, which outlines the fused routine.
@@ -265,7 +267,9 @@ def LowerGraphBlobs : Pass<"mogg-lower-graph-blobs"> {
     declarative call's configuration, the blob's launch configuration, and the
     part of the launch each call runs on. The kernel runs each call in a
     `mogg.graph_blob.call`, in the blob's order, with a barrier between
-    consecutive calls.
+    consecutive calls. A generated loop (`mogg.call.foreach`) has no
+    configuration: it runs on the whole launch, as a
+    `mogg.graph_blob.foreach`.
 
     Each call builds its operands from the values that cross the launch. A
     value crosses when the kernel can't build it: a routine argument, or the
