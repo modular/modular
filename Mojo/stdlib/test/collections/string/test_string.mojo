@@ -765,6 +765,12 @@ def test_find() raises:
 
     assert_false(String("abc").find("abcd"))
 
+    # An empty substring matches at `start`, if `start` is in bounds.
+    assert_equal(String("abc").find("", 2), 2)
+    assert_equal(String("abc").find("", 3), 3)
+    assert_equal(String("abc").find("", -1), 2)
+    assert_false(String("abc").find("", 4))
+
 
 def test_replace() raises:
     # Replace empty
@@ -807,6 +813,10 @@ def test_rfind() raises:
     assert_equal(s1.rfind("w", -5), 6)
 
     assert_false(String("abc").rfind("abcd"))
+
+    # An empty substring matches last at the end, if `start` is in bounds.
+    assert_equal(String("abc").rfind("", 3), 3)
+    assert_false(String("abc").rfind("", 4))
 
     # Special characters.
     # TODO(#26444): Support unicode strings.

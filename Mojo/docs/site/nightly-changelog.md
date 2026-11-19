@@ -618,6 +618,14 @@ Most code that no longer compiles matches one of these patterns:
 
 ## Fixed
 
+- `find()` and `rfind()` on `String`, `StringSpan` and `StringLiteral` now
+  honor `start` when the substring is empty. `"abc".find("", 2)` returns `2`
+  instead of `0`, and both methods return `None` when `start` is past the end
+  of the string. Contributed by [@dhruvilmehta](https://github.com/dhruvilmehta)
+  in [#7451](https://github.com/modular/modular/pull/7451) and
+  [@Antony-mcw](https://github.com/Antony-mcw) in
+  [#7668](https://github.com/modular/modular/pull/7668).
+
 - A bare `raise` in an `except` block no longer crashes the compiler when
   building with debug info.
 
