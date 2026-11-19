@@ -14,7 +14,7 @@
 
 from std.ffi import c_int, c_size_t
 from std.io import FileDescriptor, IOError
-from std.io._syscall import check, retry_io_interrupted
+from std.io._syscall import cap_io_length, check, retry_io_interrupted
 from std.net.addr import SocketAddr
 from std.sys import size_of
 
@@ -201,15 +201,12 @@ struct Socket(not Deinitable, Movable):
         """Reads into `buffer` with the given `MSG_*` flags, and returns how
         many bytes it read: 0 once the peer has closed its end."""
 
-        # TODO(https://github.com/modular/modular/issues/7476): macOS fails a
-        # `recv` of more than `INT_MAX` bytes with `EINVAL` instead of reading
-        # less. Cap the length there.
         def attempt() raises IOError {imm} -> Int:
             return check(
                 unix.recv(
                     self.unsafe_fd(),
                     buffer.unsafe_ptr(),
-                    c_size_t(len(buffer)),
+                    c_size_t(cap_io_length(len(buffer))),
                     flags,
                 ),
                 "recv",
@@ -230,15 +227,12 @@ struct Socket(not Deinitable, Movable):
         # that has closed raises `SIGPIPE`, which ends the process by default.
         # Suppress it with `MSG_NOSIGNAL` on each send on Linux, and with
         # `SO_NOSIGPIPE` on macOS, set in `open_socket` and `accept_socket`.
-        # TODO(https://github.com/modular/modular/issues/7476): macOS fails a
-        # `send` of more than `INT_MAX` bytes with `EINVAL` instead of writing
-        # less. Cap the length there.
         def attempt() raises IOError {imm} -> Int:
             return check(
                 unix.send(
                     self.unsafe_fd(),
                     bytes.unsafe_ptr(),
-                    c_size_t(len(bytes)),
+                    c_size_t(cap_io_length(len(bytes))),
                     flags,
                 ),
                 "send",

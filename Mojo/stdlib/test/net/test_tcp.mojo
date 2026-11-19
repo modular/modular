@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.ffi import c_int
 from std.io import IOError
 from std.net import IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6
 from std.net.tcp import TCPListener, TCPSocket, TCPStream
@@ -23,6 +24,7 @@ from std.testing import (
     assert_raises,
     assert_true,
 )
+from test_utils.mmap import ZeroedMmap
 
 
 def or_raise[
@@ -220,6 +222,20 @@ def test_write_then_read() raises:
     # The send buffer is empty, so a write this small isn't cut short.
     assert_equal(server.write("pong".as_bytes()), 4)
     assert_equal(read_string(client, 4), "pong")
+
+
+def test_read_over_int_max() raises:
+    var listener = TCPListener(bind=loopback_addr())
+    var client = TCPStream(connect=listener.local_addr())
+    var server, _ = listener.accept()
+    client.write_all("ping".as_bytes())
+    # More bytes than macOS will read in a single call.
+    var mapping = ZeroedMmap[mut=True](Int(c_int.MAX) + 1)
+    var buffer = mapping.as_bytes()
+    var n = 0
+    while n < 4:
+        n += server.read(buffer[n:])
+    assert_equal(String(from_utf8_lossy=buffer[:n]), "ping")
 
 
 def test_read_after_peer_closes_returns_zero() raises:

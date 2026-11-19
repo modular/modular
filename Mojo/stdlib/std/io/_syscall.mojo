@@ -13,8 +13,23 @@
 """Turns failed C calls into `IOError`s."""
 
 from std.ffi import c_int
+from std.sys import CompilationTarget
 
 from .error import IOError, IOErrorKind
+
+
+@inline(.always)
+def cap_io_length(length: Int) -> Int:
+    """Returns `length`, capped at the most bytes one `read`, `write`, `recv`
+    or `send` call accepts.
+
+    macOS fails a call of more than `c_int.MAX` bytes with `EINVAL` instead of
+    transferring fewer.
+    """
+    comptime if CompilationTarget.is_macos():
+        return min(length, Int(c_int.MAX))
+    else:
+        return length
 
 
 @inline(.always)
