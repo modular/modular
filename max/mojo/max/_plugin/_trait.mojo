@@ -42,7 +42,7 @@ from max.gpu.host import (
 # `--config=hal-device-context` points `max.gpu.host` at the HAL one.
 from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
 from max.gpu.host._legacy.device_context import (
-    LegacyDeviceContext as _LegacyDeviceContext,
+    LegacyDeviceContext,
     LegacyDeviceFunction,
 )
 from max.gpu.host.info import get_gpu_info
@@ -434,10 +434,10 @@ trait MaxPluginHooks:
         ctx_target: CompilationTarget,
         //,
         ClosureType: RegisterPassable & def() -> None,
-    ](ctx: _LegacyDeviceContext[ctx_target]) raises -> Self.ClosureKernel[
+    ](ctx: LegacyDeviceContext[ctx_target]) raises -> Self.ClosureKernel[
         ClosureType, ctx_target
     ]:
-        """Per-target plugin hook for `DeviceContext.compile_function[ClosureType]`.
+        """Per-target plugin hook for `DeviceContext.compile_closure`.
 
         Parameters:
             ClosureType: The closure's type.
@@ -460,7 +460,7 @@ trait MaxPluginHooks:
         //,
         ClosureType: RegisterPassable & def() -> None,
     ](
-        ctx: _LegacyDeviceContext[ctx_target],
+        ctx: LegacyDeviceContext[ctx_target],
         kernel: Self.ClosureKernel[ClosureType, ctx_target],
         closure: ClosureType,
         grid_dim: Dim,

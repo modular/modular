@@ -88,7 +88,6 @@ from max.gpu.host._legacy.dim import Dim
 from max.gpu.host._legacy.func_attribute import FuncAttribute
 from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from max.gpu.host._legacy.device_context import (
-    LegacyDeviceClosureFunction,
     LegacyDeviceContext,
     LegacyDeviceFunction,
     _LegacyDeviceContextScope,
@@ -2352,12 +2351,20 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def compile_closure[
         ClosureType: RegisterPassable & def() -> None,
-    ](self) raises -> LegacyDeviceClosureFunction[ClosureType, Self.target]:
+    ](self) raises -> MaxPluginForTarget[Self.target].ClosureKernel[
+        ClosureType, Self.target
+    ]:
         """Compiles a closure as a kernel that takes no arguments.
 
-        Launch the result with `enqueue_closure(kernel, closure, ...)`. Only
-        targets whose MAX plugin handles closure kernels support this, and the
-        HAL backend has no closure kernels.
+        Launch the result with `enqueue_closure(kernel, closure, ...)`, which
+        passes the closure's captures. Only targets whose MAX plugin handles
+        closure kernels support this, and the HAL backend has no closure
+        kernels.
+
+        ```mojo
+        var kernel = ctx.compile_closure[type_of(closure)]()
+        ctx.enqueue_closure(kernel, closure, grid_dim=1, block_dim=1)
+        ```
 
         Parameters:
             ClosureType: The closure's type, such as `type_of(closure)`.
@@ -2371,13 +2378,19 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "closure kernels are only available on the legacy DeviceContext"
-        return self._impl.compile_function[ClosureType]()
+        comptime plugin = MaxPluginForTarget[Self.target]
+        comptime assert (
+            plugin._handles_closure_kernels
+        ), "compile_closure is not supported on this target"
+        return plugin.compile_closure_fn[ClosureType](self._impl)
 
     def enqueue_closure[
         ClosureType: RegisterPassable & def() -> None,
     ](
         self,
-        f: LegacyDeviceClosureFunction[ClosureType, Self.target],
+        f: MaxPluginForTarget[Self.target].ClosureKernel[
+            ClosureType, Self.target
+        ],
         closure: ClosureType,
         *,
         grid_dim: Dim,
@@ -2407,7 +2420,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ), "closure kernels are only available on the legacy DeviceContext"
         MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
             self._impl,
-            f.kernel,
+            f,
             closure,
             grid_dim=grid_dim,
             block_dim=block_dim,

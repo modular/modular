@@ -4056,30 +4056,6 @@ struct LegacyDeviceExternalFunction[
         return Int(result)
 
 
-@fieldwise_init
-struct LegacyDeviceClosureFunction[
-    ClosureType: RegisterPassable & def() -> None,
-    target: CompilationTarget,
-](ImplicitlyCopyable):
-    """A closure kernel compiled by `DeviceContext.compile_function[ClosureType]`.
-
-    The MAX plugin for `target` compiles and launches the kernel and owns its
-    representation.
-
-    Parameters:
-        ClosureType: The closure's type.
-        target: The compilation target.
-    """
-
-    # Launches match on `ClosureType` through this wrapper: matching the
-    # plugin's kernel type against a launch argument fails to unify for
-    # nested captures.
-    var kernel: MaxPluginForTarget[Self.target].ClosureKernel[
-        Self.ClosureType, Self.target
-    ]
-    """The plugin's compiled kernel."""
-
-
 struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
     ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer
 ):
@@ -4999,35 +4975,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             asm=asm^,
             func_attribute=func_attribute,
         )
-
-    def compile_function[
-        ClosureType: RegisterPassable & def() -> None,
-    ](self) raises -> LegacyDeviceClosureFunction[ClosureType, Self.target]:
-        """Compiles a closure as a kernel that takes no arguments.
-
-        Launch the result with `enqueue_function(kernel, closure, ...)`, which
-        passes the closure's captures. Only targets whose MAX plugin handles
-        closure kernels support this.
-
-        ```mojo
-        var kernel = ctx.compile_function[type_of(closure)]()
-        ctx.enqueue_function(kernel, closure, grid_dim=1, block_dim=1)
-        ```
-
-        Parameters:
-            ClosureType: The closure's type, such as `type_of(closure)`.
-
-        Returns:
-            The compiled kernel.
-
-        Raises:
-            If compilation or loading fails.
-        """
-        comptime plugin = MaxPluginForTarget[Self.target]
-        comptime assert (
-            plugin._handles_closure_kernels
-        ), "compile_function[ClosureType] is not supported on this target"
-        return {plugin.compile_closure_fn[ClosureType](self)}
 
     @inline(.always)
     def enqueue_cpu_function[
