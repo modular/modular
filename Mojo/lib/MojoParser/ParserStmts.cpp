@@ -1425,7 +1425,10 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     // space.
     // TODO: Move this to general implicit conversion diagnostics.
     if (!userResultType.isEqualCanon(argType)) {
-      if (!emitter.canZeroCostConvert(argType, userResultType).isTrue()) {
+      if (!emitter
+               .canZeroCostConvert(argType, userResultType,
+                                   emitter.shared.noAssumptions)
+               .isTrue()) {
         auto expectedRefType = sugarCast<RefType>(userResultType);
         auto diag = emitter.emitError(operandExpr->getLoc())
                     << "cannot return reference with incompatible ";

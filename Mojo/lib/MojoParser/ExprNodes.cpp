@@ -1121,7 +1121,7 @@ static TypedAttr selectCondTypeArm(TypedAttr typeValue, TypedAttr assumptions) {
 
 Type LIT::maybeRefineCondTypeWithAssumptions(Type type, TypedAttr assumptions) {
   auto paramType = sugarDynCast<ParamType>(type);
-  if (!paramType || hasNoAssumptions(assumptions))
+  if (!paramType || isTriviallyTrueProposition(assumptions))
     return type;
   if (TypedAttr arm = selectCondTypeArm(paramType.getParam(), assumptions))
     return ASTType(arm);
@@ -1149,7 +1149,7 @@ static Type maybeRefineParamType(Type varType, ParamType paramType,
   ParamDeclRefAttr paramDeclRef = extractParamDeclRef(unwrapped);
   TypedAttr lookupAttr = paramDeclRef ? TypedAttr(paramDeclRef) : paramRef;
 
-  if (hasNoAssumptions(assumptions))
+  if (isTriviallyTrueProposition(assumptions))
     return varType;
 
   TraitType refinedBound = getTraitBoundFromAssumptions(
@@ -1877,7 +1877,7 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
                      sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true,
                      /*declIfDirect=*/typeDecl,
-                     /*discardError=*/false,
+                     /*discardError=*/false, emitter.shared.noAssumptions,
                      /*deferredTypingContext=*/emitter.deferredTypingContext);
   VerifiedParamBindings newBindings = inference.inferForStruct();
   if (!newBindings)

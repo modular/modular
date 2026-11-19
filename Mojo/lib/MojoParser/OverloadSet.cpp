@@ -64,12 +64,22 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()),
       explicitParamBindings(std::move(paramBindings)),
       contextualType(contextualType), syntax(syntax), erroneous(erroneous) {
+  additionalAssumptions =
+      explicitParamBindings.declScope.getShared().noAssumptions;
   for (auto fnDecl : fnDecls) {
     assert(fnDecl->resolvedness >= DeclResolvedness::signature &&
            "Overload set must contain fully resolved declarations");
 
     // TODO: partially bind the call target here using contextual type.
   }
+}
+
+OverloadSet::OverloadSet(ASTDecl &declScope, const ExprNode *expr,
+                         CallSyntax syntax, bool erroneous,
+                         ASTType contextualType)
+    : explicitParamBindings(declScope, expr), contextualType(contextualType),
+      syntax(syntax), erroneous(erroneous) {
+  additionalAssumptions = declScope.getShared().noAssumptions;
 }
 
 SMLoc OverloadSet::getExprLoc() const { return getExpr()->getLoc(); }
@@ -208,7 +218,8 @@ OverloadSet::getCallee(ASTDecl *fnDecl,
   ParamInf inference(paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, fnDecl,
-                     /*discardError=*/false);
+                     /*discardError=*/false,
+                     paramBindings.declScope.getShared().noAssumptions);
   VerifiedParamBindings verified = inference.inferForStruct();
   if (!verified)
     return {};
@@ -1076,9 +1087,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
                        candidateType.getParamListAttrs(),
                        /*allowImplicitConversions=*/true,
                        /*declIfDirect=*/nullptr,
-                       /*discardError=*/true,
-                       /*deferredTypingContext=*/nullptr,
-                       additionalAssumptions);
+                       /*discardError=*/true, additionalAssumptions);
     VerifiedParamBindings newBindings = inference.inferForStruct();
     if (!newBindings)
       return {{}, nullptr}; // If there is an error, return the problem.

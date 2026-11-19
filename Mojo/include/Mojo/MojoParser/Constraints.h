@@ -92,7 +92,7 @@ TriBool canDischargeConstraintsInScope(
     ArrayRef<ConstraintAttr> origConstraints,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
-    ParameterEvaluator *evaluator, TypedAttr additionalAssumptions = {},
+    ParameterEvaluator *evaluator, TypedAttr additionalAssumptions,
     llvm::BitVector *provenConstraints = nullptr);
 
 /// Rewrite cond(a, b, a) patterns to and(a, b) for constraint propositions.

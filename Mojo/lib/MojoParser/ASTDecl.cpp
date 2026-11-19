@@ -861,7 +861,7 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
 static TypedAttr getParentScopeAssumptions(const ASTDecl &decl) {
   if (const ASTDecl *parent = decl.getParentDecl())
     return parent->getScopeAssumptions();
-  return SIMDAttr::getScalarBool(decl.getContext(), true);
+  return decl.getShared().noAssumptions;
 }
 
 void ASTDecl::takeDecls(ASTDecl &src) {
@@ -893,7 +893,7 @@ TypedAttr ASTDecl::getScopeAssumptions() const {
        decl = decl->getParentDecl())
     result = decl->scopeAssumptions;
   if (!result)
-    result = SIMDAttr::getScalarBool(getContext(), true);
+    result = getShared().noAssumptions;
   return result;
 }
 

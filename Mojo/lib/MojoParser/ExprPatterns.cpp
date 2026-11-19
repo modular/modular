@@ -596,8 +596,8 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                          SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
 
-  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
-                                               builder.shared, {}))
+  if (subjectType.provenConformsToBuiltinTrait(
+          "EnumLike", getLoc(), builder.shared, builder.shared.noAssumptions))
     return buildEnumCheckList(builder, subject, path, out);
 
   IREmitter emitter = builder.getParamEmitter();
@@ -955,8 +955,8 @@ LogicalResult AttributeRefNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
-  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
-                                               builder.shared, {})) {
+  if (subjectType.provenConformsToBuiltinTrait(
+          "EnumLike", getLoc(), builder.shared, builder.shared.noAssumptions)) {
     IREmitter emitter = builder.getParamEmitter();
     if (subject && failed(checkEnumCaseTypeBase(emitter, subject, base, this)))
       return failure();
@@ -974,8 +974,8 @@ LogicalResult InferredAttributeRefNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
-  if (subjectType.provenConformsToBuiltinTrait("EnumLike", getLoc(),
-                                               builder.shared, {})) {
+  if (subjectType.provenConformsToBuiltinTrait(
+          "EnumLike", getLoc(), builder.shared, builder.shared.noAssumptions)) {
     IREmitter emitter = builder.getParamEmitter();
     auto caseIndex = lookupEnumCaseIndex(emitter, subjectType, spelling, this);
     if (!caseIndex)

@@ -2093,11 +2093,11 @@ Value ClosureEmitter::emitClosure(ModuleASTDecl &moduleDecl,
 
     SyntheticNode synthNode(nestedFnDecl.getLoc());
     ExprDest dest(anyType, EC_Type);
-    PValue captureTypeValue =
-        emitter
-            .emitImplicitConversionToType({value.getType(), &synthNode},
-                                          anyType, dest)
-            .getIfPValue();
+    PValue captureTypeValue = emitter
+                                  .emitImplicitConversionToType(
+                                      {value.getType(), &synthNode}, anyType,
+                                      dest, emitter.shared.noAssumptions)
+                                  .getIfPValue();
     auto captureTypeAttr = cast<TypedAttr>(captureTypeValue.get());
     auto captureName = StringAttr::get(ctx, capture.getSpelling());
     auto captureConvention = capture.getCaptureConvention();
@@ -2580,11 +2580,11 @@ PValue ClosureEmitter::createParamClosureExtensionType(
       GetWitnessAttr::get(newSelfVal, srcClosureInst, callName, srcSig);
 
   ExprDest dest(EC_TypeParamValue);
-  TypedAttr converted =
-      emitter
-          .emitImplicitConversionToType({PValue(toConvert), srcTypeVal.expr},
-                                        tgtSig, dest)
-          .getIfPValue();
+  TypedAttr converted = emitter
+                            .emitImplicitConversionToType(
+                                {PValue(toConvert), srcTypeVal.expr}, tgtSig,
+                                dest, emitter.shared.noAssumptions)
+                            .getIfPValue();
   assert(converted && "trait convertibility must have been tested");
 
   // This is the bridging thunk generated.

@@ -666,7 +666,7 @@ checkConformanceMember(ConformanceWitnessASTDecl &member,
       assert(initializerExpr && "Struct's alias should have initializer");
 
       // Pass the conformance constraint as an assumption.
-      TypedAttr conformanceAssumptions;
+      TypedAttr conformanceAssumptions = shared.noAssumptions;
       if (ConstraintAttr conformanceConstraint = op.getConstraintAttr())
         conformanceAssumptions =
             getCanonicalAttr(conformanceConstraint.getProposition());
@@ -901,7 +901,7 @@ static TriBool doesNominalTypeConformToCached(
     ASTDecl *self, TraitType trait, ASTType concreteType,
     TypedAttr callerAssumptions, SmallVectorImpl<ConstraintAttr> *details) {
   TriBool result = TriBool::no();
-  if (!hasNoAssumptions(callerAssumptions)) {
+  if (!isTriviallyTrueProposition(callerAssumptions)) {
     // Only the assumption-free queries are context-independent enough to
     // memoize; where-clause assumptions make the result caller-dependent, so
     // those bypass the cache entirely.
@@ -1097,10 +1097,6 @@ static TriBool doesNominalTypeConformToUncached(
   }
 
   ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
-  TypedAttr callerCanonical =
-      hasNoAssumptions(callerAssumptions)
-          ? SIMDAttr::getScalarBool(self->getContext(), true)
-          : callerAssumptions;
 
   // Check the provided symbols against the required symbols by the target
   // trait: a definitively-missing required symbol keeps the whole thing `no`,
@@ -1143,13 +1139,13 @@ static TriBool doesNominalTypeConformToUncached(
     // Assume each requirement's own condition while checking it. Remember that
     // an empty constraints array means every requirement is unconditional.
     std::optional<TypedAttr> refined;
-    auto assumption = [&] { return refined ? *refined : callerCanonical; };
+    auto assumption = [&] { return refined ? *refined : callerAssumptions; };
     if (!requiredConstraints.empty()) {
       TypedAttr requiredCond = requiredConstraints[i].getProposition();
-      if (isPropositionImplied(requiredCond, callerCanonical).isFalse())
+      if (isPropositionImplied(requiredCond, callerAssumptions).isFalse())
         continue;
       refined =
-          ParamOperatorAttr::get(POC::And, {callerCanonical, requiredCond});
+          ParamOperatorAttr::get(POC::And, {callerAssumptions, requiredCond});
     }
 
     auto it = providedConditions.find(required);

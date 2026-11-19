@@ -244,7 +244,8 @@ bool LIT::attrConformsToTraitUnderAssumptions(TypedAttr actualAttr,
                                               SharedState &shared,
                                               TypedAttr assumptions) {
   ASTType actualType(actualAttr.getType());
-  if (actualType.doesConformTo(expectedTrait, shared, {}).isTrue()) {
+  if (actualType.doesConformTo(expectedTrait, shared, shared.noAssumptions)
+          .isTrue()) {
     return true;
   }
 
@@ -260,6 +261,6 @@ bool LIT::attrConformsToTraitUnderAssumptions(TypedAttr actualAttr,
     return false;
 
   return ASTType(refinedBound)
-      .doesConformTo(expectedTrait, shared, {})
+      .doesConformTo(expectedTrait, shared, shared.noAssumptions)
       .isTrue();
 }

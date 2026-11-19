@@ -100,8 +100,7 @@ public:
 
   /// Facts that hold at this call site but are not reachable from
   /// `explicitParamBindings.declScope`'s lexical assumptions. These are used as
-  /// assumptions when discharging candidates' constraints. Null when there are
-  /// none.
+  /// assumptions when discharging candidates' constraints.
   TypedAttr additionalAssumptions;
 
   /// When doing resolution, we should only raise new errors if previous errors
@@ -289,9 +288,7 @@ public:
 
 private:
   OverloadSet(ASTDecl &declScope, const ExprNode *expr, CallSyntax syntax,
-              bool erroneous, ASTType contextualType = {})
-      : explicitParamBindings(declScope, expr), contextualType(contextualType),
-        syntax(syntax), erroneous(erroneous) {}
+              bool erroneous, ASTType contextualType = {});
 
   /// Resolve the selected candidate `fnDecl` into a single PValue callee.
   /// `verifiedBindings`, when provided, are the bindings already inferred

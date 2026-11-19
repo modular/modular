@@ -4848,7 +4848,7 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
     IREmitter::ImplicitConversionResult result =
         trait ? IREmitter::classifyImplicitConversionWithDetails(
                     {askedValue, typeExpr}, trait, enumDecl,
-                    /*additionalAssumptions=*/{}, /*deferralCtx=*/nullptr)
+                    shared.noAssumptions, /*deferralCtx=*/nullptr)
               : IREmitter::ImplicitConversionResult::no({});
     if (result.isYes())
       return success();

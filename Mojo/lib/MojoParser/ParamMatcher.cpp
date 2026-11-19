@@ -28,6 +28,7 @@
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
+#include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
@@ -490,7 +491,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       // filter out more candidates before testing result mismatch.
       if (!IREmitter::canImplicitlyConvertToType(
               {UnknownAttr::get(actualResultType), expr}, expectedResultType,
-              state.declScope))
+              state.declScope, shared.noAssumptions))
         return failure();
       failableScope.revert();
     }
@@ -518,7 +519,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // before trying to infer through the parameter expression itself.
   if (sugarIsa<ParamType>(actualType) && sugarIsa<ParamType>(expectedType) &&
       IREmitter::canZeroCostConvert(actualType, expectedType, shared,
-                                    state.declScope)
+                                    state.declScope, shared.noAssumptions)
           .isTrue())
     return success();
 
@@ -604,7 +605,8 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
       // mut=false.
       if (!state.hasReferences(expectedType)) {
         if (!IREmitter::canZeroCostConvert(actualType, expectedType, shared,
-                                           state.declScope)
+                                           state.declScope,
+                                           shared.noAssumptions)
                  .isTrue())
           return error(MatchFailure::Unclassified{});
         return success();
@@ -811,7 +813,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
       expectedType = state.evaluator.getReboundType(expectedType);
       if (IREmitter::canImplicitlyConvertToType(
-              {actualAttr, expr}, expectedType, emitter.getDeclScope())) {
+              {actualAttr, expr}, expectedType, emitter.getDeclScope(),
+              shared.noAssumptions)) {
         actualAttr = emitter.emitPValue({actualAttr, expr}, EC_TypeParamValue,
                                         expectedType);
         assert(actualAttr && "conversion is double checked");
@@ -840,9 +843,9 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
         if (auto va = sugarDynCast<ParamListAttr>(actualAttr))
           toCheck = va.getValues();
 
-        TypedAttr assumptions;
-        if (isa<TraitType>(targetMT))
-          assumptions = state.declScope.getScopeAssumptions();
+        TypedAttr assumptions = isa<TraitType>(targetMT)
+                                    ? state.declScope.getScopeAssumptions()
+                                    : shared.noAssumptions;
 
         fixableByUpCast =
             !state.hasReferences(targetMT) &&
@@ -863,7 +866,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
               if (succeeded(upCastable))
                 upCastFailure = std::move(*upCastable);
 
-              if (!hasNoAssumptions(assumptions)) {
+              if (!isTriviallyTrueProposition(assumptions)) {
                 if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
                   return (LIT::attrConformsToTraitUnderAssumptions(
                       typeExpr, targetTrait, shared, assumptions));
@@ -1262,7 +1265,7 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
 
       if (actual.getType() != argRVType &&
           IREmitter::canZeroCostConvert(actual.getType(), argRVType, shared,
-                                        state.declScope)
+                                        state.declScope, shared.noAssumptions)
               .isTrue()) {
         actual = IREmitter::emitZeroCostConvert(actual, argRVType, shared);
       }

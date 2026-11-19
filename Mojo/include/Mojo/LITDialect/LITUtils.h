@@ -377,13 +377,6 @@ inline bool isImplicationProven(TypedAttr proposition, TypedAttr assumption) {
   return isPropositionImplied(proposition, assumption).isTrue();
 }
 
-/// An assumption set is one canonical scalar-bool conjunction: True when
-/// there are no assumptions, False when they contradict each other. APIs that
-/// take one also accept a null attribute, which means the same as True.
-
-/// Returns true if `assumptions` carries no facts (null or True).
-bool hasNoAssumptions(TypedAttr assumptions);
-
 /// Returns the conjunction of `propositions` as an assumption set.
 TypedAttr buildAssumptions(ArrayRef<TypedAttr> propositions, MLIRContext *ctx);
 

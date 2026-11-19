@@ -111,13 +111,13 @@ static void diagnoseFailedRefTypeConversion(MojoInflightDiag &diag,
         << ASTType::getAddressSpaceForDisplay(argType.getAddressSpace());
   } else if (!IREmitter::canZeroCostConvert(operandRefTy.getOriginType(),
                                             argType.getOriginType(), shared,
-                                            declScope)
+                                            declScope, shared.noAssumptions)
                   .isTrue()) {
     diag.attachNote(loc) << "operand mutability " << operandRefTy.isMutable()
                          << " doesn't match expected mutability "
                          << argType.isMutable();
   } else if (!IREmitter::canZeroCostConvert(operandRefTy, argType, shared,
-                                            declScope)
+                                            declScope, shared.noAssumptions)
                   .isTrue()) {
     auto operandO = operandRefTy.getOrigin();
     auto argO = argType.getOrigin();
@@ -257,9 +257,7 @@ OverloadFitness::evaluateDirectCall(ASTDecl *candidate,
   ParamInf inference(paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, candidate,
-                     /*discardError=*/true,
-                     /*deferredTypingContext=*/nullptr,
-                     callable.additionalAssumptions);
+                     /*discardError=*/true, callable.additionalAssumptions);
   // Don't yield constraint failure for a single overload failure: we want a
   // better error message diagnosed for the entire set.
   VerifiedParamBindings bindings = inference.inferForStruct();
@@ -385,7 +383,7 @@ OverloadFitness::evaluateIndirectCall(FnTypeGeneratorType signature,
   // inferred from the operands.
   ParamBindings noBindings(declScope, operands.callExpr);
   return evaluateImpl(signature, /*funcIfDirect=*/nullptr, noBindings,
-                      /*additionalAssumptions=*/TypedAttr(), operands,
+                      declScope.getShared().noAssumptions, operands,
                       /*allowImplicitConversions=*/true);
 }
 

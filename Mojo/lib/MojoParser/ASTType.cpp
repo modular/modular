@@ -800,7 +800,7 @@ TriBool ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
   // If it doesn't conform to the corresponding trait. Only return `no`
   // (provably non-trivial) when we can definitively prove non-conformance.
   auto [conformanceResult, traitDecl] =
-      conformsToBuiltinTrait(traitName, loc, shared, {});
+      conformsToBuiltinTrait(traitName, loc, shared, shared.noAssumptions);
   if (conformanceResult.isFalse())
     return TriBool::no();
 

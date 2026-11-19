@@ -1016,10 +1016,6 @@ Attribute NameToImplicitOriginRefRemapper::tryReplace(Attribute attr,
 // Constraint Implication
 //===----------------------------------------------------------------------===//
 
-bool LIT::hasNoAssumptions(TypedAttr assumptions) {
-  return !assumptions || isTriviallyTrueProposition(assumptions);
-}
-
 TypedAttr LIT::buildAssumptions(ArrayRef<TypedAttr> propositions,
                                 MLIRContext *ctx) {
   if (propositions.empty())
@@ -1037,9 +1033,9 @@ TypedAttr LIT::buildAssumptions(ArrayRef<ConstraintAttr> constraints,
 }
 
 TypedAttr LIT::conjoinAssumptions(TypedAttr lhs, TypedAttr rhs) {
-  if (hasNoAssumptions(rhs))
+  if (isTriviallyTrueProposition(rhs))
     return lhs;
-  if (hasNoAssumptions(lhs))
+  if (isTriviallyTrueProposition(lhs))
     return rhs;
   return ParamOperatorAttr::get(POC::And, {lhs, rhs});
 }
@@ -1048,7 +1044,7 @@ TypedAttr LIT::conjoinAssumptions(TypedAttr assumptions,
                                   ArrayRef<ConstraintAttr> constraints) {
   if (constraints.empty())
     return assumptions;
-  if (hasNoAssumptions(assumptions))
+  if (isTriviallyTrueProposition(assumptions))
     return buildAssumptions(constraints, constraints.front().getContext());
   SmallVector<TypedAttr> operands{assumptions};
   for (ConstraintAttr constraint : constraints)
@@ -1062,8 +1058,7 @@ bool LIT::isPropositionPrecluded(TypedAttr proposition, TypedAttr assumptions) {
 }
 
 TriBool LIT::isPropositionImplied(TypedAttr proposition, TypedAttr assumption) {
-  if (!assumption)
-    assumption = SIMDAttr::getScalarBool(proposition.getContext(), true);
+  assert(assumption && "an assumption set is never null");
   switch (
       testClause(getCanonicalAttr(assumption), getCanonicalAttr(proposition))) {
   case ClauseInsertResult::Redundant:
@@ -1103,7 +1098,7 @@ TraitType LIT::getTraitBoundFromAssumptions(
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
   typeAttr = getCanonicalAttr(typeAttr);
 
-  if (hasNoAssumptions(assumptions))
+  if (isTriviallyTrueProposition(assumptions))
     return {};
 
   TypedAttr targetStripped = stripIdentityWrappers(typeAttr);

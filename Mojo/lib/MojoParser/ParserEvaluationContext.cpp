@@ -128,8 +128,8 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
     auto sourceType = ASTType(isRefinedTrait.getSourceType());
     if (auto targetTrait =
             sugarDynCast<TraitType>(ASTType(isRefinedTrait.getTargetType()))) {
-      TriBool foldResult = sourceType.doesConformTo(targetTrait, shared,
-                                                    /*callerAssumptions=*/{});
+      TriBool foldResult =
+          sourceType.doesConformTo(targetTrait, shared, shared.noAssumptions);
       if (foldResult.isUnknown())
         return failure(); // un-foldable
 
@@ -146,7 +146,9 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
     // the more refined trait.
     if (TraitType toTrait = sugarDynCast<TraitType>(downcast.getType())) {
       auto fromType = ASTType(downcast.getInputTypeValue());
-      bool fromImpliesTo = fromType.doesConformTo(toTrait, shared, {}).isTrue();
+      bool fromImpliesTo =
+          fromType.doesConformTo(toTrait, shared, shared.noAssumptions)
+              .isTrue();
       if (fromImpliesTo)
         return UpcastAttr::get(downcast.getType(),
                                downcast.getInputTypeValue());

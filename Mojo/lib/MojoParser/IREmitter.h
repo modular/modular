@@ -281,11 +281,11 @@ public:
   /// alongside it.
   static TriBool canZeroCostConvert(ASTType fromType, ASTType toType,
                                     SharedState &shared, ASTDecl &declScope,
-                                    TypedAttr additionalAssumptions = {});
+                                    TypedAttr additionalAssumptions);
 
   /// Same as the above, using this emitter's shared state and scope.
   TriBool canZeroCostConvert(ASTType fromType, ASTType toType,
-                             TypedAttr additionalAssumptions = {}) {
+                             TypedAttr additionalAssumptions) {
     return canZeroCostConvert(fromType, toType, shared, declScope,
                               additionalAssumptions);
   }
@@ -533,7 +533,7 @@ public:
   static TriBool
   classifyImplicitConversion(ASTExprAnd<CValue> value, ASTType requiredType,
                              ASTDecl &declScope,
-                             TypedAttr additionalAssumptions = {},
+                             TypedAttr additionalAssumptions,
                              DeferredTypingContext *deferralCtx = nullptr);
 
   /// The answer from `classifyImplicitConversionWithDetails`:
@@ -555,7 +555,7 @@ public:
   static bool
   canImplicitlyConvertToType(ASTExprAnd<CValue> value, ASTType requiredType,
                              ASTDecl &declScope,
-                             TypedAttr additionalAssumptions = {},
+                             TypedAttr additionalAssumptions,
                              DeferredTypingContext *deferralCtx = nullptr) {
     TriBool verdict = classifyImplicitConversion(
         value, requiredType, declScope, additionalAssumptions, deferralCtx);
@@ -569,7 +569,7 @@ public:
   /// implicit promotions like origin conversions.
   CValue emitImplicitConversionToType(ASTExprAnd<CValue> value,
                                       ASTType requiredType, ExprDest &dest,
-                                      TypedAttr additionalAssumptions = {});
+                                      TypedAttr additionalAssumptions);
 
   /// Emit the specified expression into the specified destination.
   AnyValue emitExpr(const ExprNode *expr, ExprDest &dest);

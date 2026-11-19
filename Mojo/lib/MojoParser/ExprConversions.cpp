@@ -160,7 +160,7 @@ static TriBool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
                                         GeneratorType actual,
                                         GeneratorType expected,
                                         ASTDecl &declScope,
-                                        TypedAttr additionalAssumptions = {}) {
+                                        TypedAttr additionalAssumptions) {
   // Tentatively disallow converting from constrained generators when bodies
   // are different. When bodies are the same, `canZeroCostConvert` will have
   // already allowed it.
@@ -843,7 +843,7 @@ static TypedAttr emitFullConstraintDischarge(PValue generatorValue,
 static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
                                     GeneratorType expected, IREmitter &emitter,
                                     ExprDest &dest,
-                                    TypedAttr additionalAssumptions = {}) {
+                                    TypedAttr additionalAssumptions) {
   // Constraint discharge (shedding `value`'s body constraints to reach
   // `expected`) is handled up front by `emitZeroCostConvert`.
 
@@ -858,7 +858,7 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
           {PValue(sugarCast<FuncLiteralTypeGeneratorType>(callee.getType())
                       .getFuncSymbolAttr()),
            expr},
-          expected, dest);
+          expected, dest, emitter.shared.noAssumptions);
     }
     return convertFunctionGeneratorValue(value, expr, expectedFnType, emitter,
                                          dest);
@@ -1000,7 +1000,7 @@ static ConversionResult classifyGeneratorToGenerator(
                                declScope, additionalAssumptions);
   // A result that could have depended on `additionalAssumptions` is not safe to
   // cache.
-  if (hasNoAssumptions(additionalAssumptions))
+  if (isTriviallyTrueProposition(additionalAssumptions))
     return ConversionResult::scopeIndependent(result);
   return ConversionResult::scopeDependent(result);
 }
@@ -1484,15 +1484,15 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // If there is one __merge_with__ method, then we use that if the other type
   // converts to the result value.
   if (lhsMWPV) {
-    if (IREmitter::canImplicitlyConvertToType(val2, lhsMPType,
-                                              emitter.declScope))
+    if (IREmitter::canImplicitlyConvertToType(
+            val2, lhsMPType, emitter.declScope, emitter.shared.noAssumptions))
       return succeed(lhsMPType, lhsMWPV, PValue());
     result = lhsMPType;
     return {CTR_MergeWithConvertFail, lhsMWPV, PValue()};
   }
   if (rhsMWPV) {
-    if (IREmitter::canImplicitlyConvertToType(val1, rhsMPType,
-                                              emitter.declScope))
+    if (IREmitter::canImplicitlyConvertToType(
+            val1, rhsMPType, emitter.declScope, emitter.shared.noAssumptions))
       return succeed(rhsMPType, PValue(), rhsMWPV);
     result = rhsMPType;
     return {CTR_MergeWithConvertFail, PValue(), rhsMWPV};
@@ -1502,9 +1502,11 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // type.  If so, convert to that.
   if (contextualType) {
     if (IREmitter::canImplicitlyConvertToType(val1, contextualType,
-                                              emitter.declScope) &&
+                                              emitter.declScope,
+                                              emitter.shared.noAssumptions) &&
         IREmitter::canImplicitlyConvertToType(val2, contextualType,
-                                              emitter.declScope))
+                                              emitter.declScope,
+                                              emitter.shared.noAssumptions))
       return succeed(contextualType);
   }
 
@@ -1513,10 +1515,10 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   // If one type implicit converts to the other, then the other is a common
   // type.  Don't do this if both convert to each other, this would be
   // ambiguous.
-  bool isConvertibleToType2 =
-      IREmitter::canImplicitlyConvertToType(val1, type2, emitter.declScope);
-  bool isConvertibleToType1 =
-      IREmitter::canImplicitlyConvertToType(val2, type1, emitter.declScope);
+  bool isConvertibleToType2 = IREmitter::canImplicitlyConvertToType(
+      val1, type2, emitter.declScope, emitter.shared.noAssumptions);
+  bool isConvertibleToType1 = IREmitter::canImplicitlyConvertToType(
+      val2, type1, emitter.declScope, emitter.shared.noAssumptions);
   if (isConvertibleToType2 && !isConvertibleToType1)
     return succeed(type2);
   if (isConvertibleToType1 && !isConvertibleToType2)
@@ -1532,10 +1534,10 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
   auto type2Nonmat = type2.getNonmaterializableTarget(emitter.shared);
   if (type1Nonmat)
     type2ConvertsToType1Nonmat = IREmitter::canImplicitlyConvertToType(
-        val2, type1Nonmat, emitter.declScope);
+        val2, type1Nonmat, emitter.declScope, emitter.shared.noAssumptions);
   if (type2Nonmat)
     type1ConvertsToType2Nonmat = IREmitter::canImplicitlyConvertToType(
-        val1, type2Nonmat, emitter.declScope);
+        val1, type2Nonmat, emitter.declScope, emitter.shared.noAssumptions);
 
   if (type2ConvertsToType1Nonmat && !type1ConvertsToType2Nonmat)
     return succeed(type1Nonmat);
@@ -1756,7 +1758,7 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
   return wrapperType
       .doesConformTo(trait, shared,
                      wrapperDecl ? wrapperDecl->getScopeAssumptions()
-                                 : TypedAttr())
+                                 : shared.noAssumptions)
       .isTrue();
 }
 
@@ -1794,7 +1796,8 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.  __MLIRType has only
   // unconditional conformances, so no caller scope is needed.
-  if (!wrapperType.doesConformTo(trait, shared, {}).isTrue()) {
+  if (!wrapperType.doesConformTo(trait, shared, shared.noAssumptions)
+           .isTrue()) {
     MojoInflightDiag diag =
         shared.emitError(value.expr->getLoc(), "cannot bind MLIR type ")
         << mlirType << " to trait " << ASTType(trait);
@@ -1914,8 +1917,8 @@ canMetaTypeUpCastToImpl(SharedState &shared, SMLoc loc, ASTType fromType,
                         SmallVectorImpl<ConstraintAttr> *unsatConstraints) {
   auto conformanceVerdict = [&](ASTType type, TraitType trait) {
     TypedAttr assumptions =
-        declScope ? declScope->getScopeAssumptions() : TypedAttr();
-    if (scopeDependent && !hasNoAssumptions(assumptions))
+        declScope ? declScope->getScopeAssumptions() : shared.noAssumptions;
+    if (scopeDependent && !isTriviallyTrueProposition(assumptions))
       *scopeDependent = true;
     if (!unsatConstraints)
       return type.doesConformTo(trait, shared, assumptions);
@@ -2552,7 +2555,8 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
   // Convert to StringSpan if not already.
   auto stringSpanType = shared.lookupBuiltinType("StringSpan", declScope, loc);
   if (val.getType().getDecl(shared) != stringSpanType.getDecl(shared)) {
-    if (!canImplicitlyConvertToType({val, expr}, stringSpanType, declScope)) {
+    if (!canImplicitlyConvertToType({val, expr}, stringSpanType, declScope,
+                                    shared.noAssumptions)) {
       emitError(expr->getLoc()) << "cannot implicitly convert " << val.getType()
                                 << " to a `StringSpan`";
       return {};
