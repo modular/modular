@@ -12,12 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Collective ops tests on simulated CPU mesh — inherits all logic from _collectives."""
 
+from unittest.mock import patch
+
+import numpy as np
 import pytest
 from _test_helpers import make_partial
 from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.tensor import Tensor
+from max.tensor.realization_context import EagerRealizationContext
 from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -41,6 +45,20 @@ class TestCollectives(CollectivesTests):
         axis_names=("dp", "tp"),
     )
     partial_fn = staticmethod(make_partial)
+
+
+def test_groups_on_one_device_allocate_no_signal_buffers() -> None:
+    """Every device of this mesh is the same CPU, so no group exchanges
+    anything and eager execution creates no signal buffers."""
+    mesh = TestCollectives.MESH_2D
+    t = make_partial(
+        np.ones((2, 4), dtype=np.float32), mesh, (Replicated(), Partial())
+    )
+    with patch.object(
+        EagerRealizationContext, "ensure_signal_buffers"
+    ) as ensure:
+        F.allreduce_sum(t, mesh_axis="tp").to_numpy()
+    ensure.assert_not_called()
 
 
 def test_post_norm_residual_rms_norm_requires_replicated_operands() -> None:

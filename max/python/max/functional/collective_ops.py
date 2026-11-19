@@ -22,17 +22,21 @@ placements.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from max import _validation_hooks
-from max.driver import Accelerator, Device
+from max.driver import Device
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.graph.dim import Dim, StaticDim
 from max.graph.ops.allreduce_rms_norm import gamma_dtype_supported
 from max.graph.ops.slice_tensor import SliceIndex
 from max.tensor import tensor as _experimental_tensor
-from max.tensor.realization_context import ensure_context
+from max.tensor.realization_context import (
+    EagerRealizationContext,
+    GraphRealizationContext,
+    ensure_context,
+)
 from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -47,155 +51,191 @@ from max.tensor.sharding.action import PerShard
 from max.tensor.sharding.placements import even_shard_sizes
 from max.tensor.tensor import Tensor
 
-from .dispatch import call_on_mesh
+from .dispatch import _device_groups, call_on_mesh
 
 
-def _signal_buffers(mesh: DeviceMesh) -> PerShard[BufferValue] | None:
-    """Returns each device's signal buffer for a collective kernel on ``mesh``.
+def _even_chunk(
+    value: TensorValue, axis: int, num_shards: int, index: int
+) -> TensorValue:
+    """Returns shard ``index`` of ``num_shards`` balanced shards along ``axis``.
 
-    Returns ``None`` when the kernel cannot run: with no realization context,
-    on a mesh without accelerators, or on a mesh that repeats a device.
+    The larger shards come first, as the reduce-scatter kernel orders them.
     """
-    ctx = _experimental_tensor.current_realization_context(None)
-    if (
-        ctx is None
-        or len(set(mesh.devices)) != mesh.num_devices
-        or not any(isinstance(d, Accelerator) for d in mesh.devices)
-    ):
-        return None
-    buffers = getattr(ctx, "signal_buffers", None)
-    if buffers is None and hasattr(ctx, "ensure_signal_buffers"):
-        # Returns None for fewer than two accelerators.
-        buffers = ctx.ensure_signal_buffers(mesh)
-    if buffers is None:
-        return None
-    # The context holds one buffer per device of the graph, in mesh order.
-    return PerShard(buffers[: mesh.num_devices])
-
-
-def _even_split_along_axis(
-    sv: TensorValue, axis: int, n: int
-) -> list[TensorValue]:
-    """Splits ``sv`` into ``n`` load-balanced chunks along ``axis``.
-
-    The larger chunks come first, as the reduce-scatter kernel orders them,
-    so slicing a replicated tensor gives the same pieces as a reduce-scatter.
-    """
-    dim = sv.shape[axis]
-    if isinstance(dim, StaticDim):
-        return list(ops.split(sv, even_shard_sizes(int(dim), n), axis=axis))
-    return [_even_chunk(sv, axis, n, index) for index in range(n)]
-
-
-def _even_chunk(sv: TensorValue, axis: int, n: int, index: int) -> TensorValue:
-    """Returns chunk ``index`` of ``_even_split_along_axis``."""
-    axis %= sv.rank
-    dim = sv.shape[axis]
-    if n == 1:
-        return sv
+    axis %= value.rank
+    dim = value.shape[axis]
+    if num_shards == 1:
+        return value
     indices: list[SliceIndex] = [slice(None)] * (axis + 1)
     if isinstance(dim, StaticDim):
-        sizes = even_shard_sizes(int(dim), n)
-        offset = sum(sizes[:index])
-        indices[axis] = slice(offset, offset + sizes[index])
-        return sv[tuple(indices)]
-    start: Dim = Dim(0)
+        sizes = even_shard_sizes(int(dim), num_shards)
+        start = sum(sizes[:index])
+        indices[axis] = slice(start, start + sizes[index])
+        return value[tuple(indices)]
+    begin: Dim = Dim(0)
     for i in range(index):
-        start = start + (dim + (n - 1 - i)) // n
-    size = (dim + (n - 1 - index)) // n
+        begin = begin + (dim + (num_shards - 1 - i)) // num_shards
+    size = (dim + (num_shards - 1 - index)) // num_shards
     indices[axis] = (
         slice(
-            ops.shape_to_tensor([start]),
-            ops.shape_to_tensor([start + size]),
-            1,
+            ops.shape_to_tensor([begin]), ops.shape_to_tensor([begin + size]), 1
         ),
         size,
     )
-    return ops.slice_tensor(sv, indices)
+    return ops.slice_tensor(value, indices)
 
 
-def _collective(
-    t: Tensor,
-    mesh_axis: int | str | Sequence[int | str],
-    new_placement: Placement,
-    kernel: Callable[..., list[TensorValue]],
-    simulated: Callable[[list[TensorValue]], list[TensorValue]],
-) -> Tensor:
-    """Runs a collective on each group of devices along ``mesh_axis``.
-
-    A group holds the devices that differ only in their coordinates along
-    ``mesh_axis``. With several mesh axes, one group holds every device they
-    span, in row-major order: on a 2x2 mesh, both axes form one group of 4
-    devices.
-
-    ``kernel`` synchronizes a group's devices through their signal buffers.
-    Without signal buffers, it calls ``simulated`` instead, which computes
-    the group's results on its first device.
-    """
-
-    def run(
-        shards: list[Tensor], signal_buffers: list[BufferValue] | None
-    ) -> list[TensorValue]:
-        if signal_buffers is not None:
-            return kernel(shards, signal_buffers)
-        values = [TensorValue(shard) for shard in shards]
-        home = values[0].device
-        combined = simulated(
-            [
-                value if value.device == home else value.to(home)
-                for value in values
-            ]
+def _split(value: TensorValue, axis: int, num_shards: int) -> list[TensorValue]:
+    """Returns every balanced shard of ``value`` along ``axis``."""
+    dim = value.shape[axis]
+    if isinstance(dim, StaticDim):
+        return list(
+            ops.split(value, even_shard_sizes(int(dim), num_shards), axis=axis)
         )
-        return [
-            result if value.device == home else result.to(value.device)
-            for result, value in zip(combined, values, strict=True)
-        ]
+    return [_even_chunk(value, axis, num_shards, i) for i in range(num_shards)]
 
-    mesh = t.mesh
-    axes = [
-        mesh._resolve_axis(axis)
-        for axis in (
-            (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
-        )
-    ]
+
+def _mesh_axes(
+    mesh: DeviceMesh, mesh_axis: int | str | Sequence[int | str]
+) -> list[int]:
+    names = (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
+    return [mesh._resolve_axis(name) for name in names]
+
+
+def _placed(
+    t: Tensor, axes: Sequence[int], placement: Placement
+) -> DeviceMapping:
+    """Returns ``t``'s mapping with ``placement`` on ``axes``."""
     placements = list(t.placements)
     for axis in axes:
-        placements[axis] = new_placement
-    with ensure_context():
-        group_size = mesh.axis_size(axes)
-        # A group of one device exchanges nothing, so it allocates no
-        # signal buffers.
-        signal_buffers = _signal_buffers(mesh) if group_size > 1 else None
-        # The kernel splits its inputs into runs of ``group_size``
-        # consecutive devices, so one launch serves every group when each
-        # group is such a run.
-        contiguous = all(
-            other < min(axes)
-            for other in range(mesh.ndim)
-            if other not in axes and mesh.mesh_shape[other] > 1
+        placements[axis] = placement
+    return DeviceMapping(t.mesh, tuple(placements))
+
+
+def _launch_axes(
+    mesh: DeviceMesh,
+    axes: Sequence[int],
+    signal_buffers: PerShard[BufferValue | None],
+) -> Sequence[int]:
+    """Returns the mesh axes to launch a collective over.
+
+    When every device is distinct and has a signal buffer, and the groups
+    are runs of consecutive devices, one kernel launch over the whole mesh,
+    with the kernel's ``group_size``, serves every group, as the Graph API
+    emits it.
+    """
+    kernel_runs = (
+        len(set(mesh.devices)) == mesh.num_devices
+        and None not in signal_buffers.values
+    )
+    contiguous = all(
+        other < min(axes)
+        for other in range(mesh.ndim)
+        if other not in axes and mesh.mesh_shape[other] > 1
+    )
+    if (
+        kernel_runs
+        and contiguous
+        and 1 < mesh.axis_size(axes) < mesh.num_devices
+    ):
+        return range(mesh.ndim)
+    return axes
+
+
+def _signal_buffers(
+    mesh: DeviceMesh, axes: Sequence[int]
+) -> PerShard[BufferValue | None]:
+    """Returns the signal buffer of each device of ``mesh``.
+
+    A device without one, as on a mesh with fewer than two GPUs, gets
+    ``None``. Eager execution adds buffers only when a group along ``axes``
+    spans distinct devices: a group on one device exchanges nothing. Call it
+    before tracing the group: each graph input added later costs more.
+    """
+    ctx = _experimental_tensor.current_realization_context()
+    buffers = None
+    spans_devices = any(
+        len({mesh.devices[d] for d in group}) > 1
+        for group in _device_groups(mesh, axes)
+    )
+    if isinstance(ctx, EagerRealizationContext) and spans_devices:
+        buffers = ctx.ensure_signal_buffers(mesh)
+    elif isinstance(ctx, GraphRealizationContext):
+        buffers = ctx.signal_buffers
+    by_device = {buffer.device: buffer for buffer in buffers or []}
+    return PerShard(
+        [by_device.get(DeviceRef.from_device(d)) for d in mesh.devices]
+    )
+
+
+def _kernel_signal_buffers(
+    shards: list[Tensor], signal_buffers: list[BufferValue | None]
+) -> list[BufferValue] | None:
+    """Returns a group's signal buffers when a collective kernel can run it.
+
+    A kernel runs over a group of distinct devices that each have a signal
+    buffer. Otherwise, as on a simulated mesh or in a graph without signal
+    buffers, this returns ``None`` and the group computes its result on its
+    first device.
+
+    Raises:
+        ValueError: If the group repeats some devices but not all.
+    """
+    devices = {shard.device for shard in shards}
+    if 1 < len(devices) < len(shards):
+        raise ValueError(
+            "A collective runs over a group of distinct devices, or of one "
+            f"device repeated, got {[shard.device for shard in shards]}."
         )
-        if (
-            signal_buffers is not None
-            and contiguous
-            and group_size < mesh.num_devices
-        ):
-            return call_on_mesh(
-                lambda shards, buffers: kernel(
-                    shards, buffers, group_size=group_size
-                ),
-                mesh,
-                range(mesh.ndim),
-                out_specs=DeviceMapping(mesh, tuple(placements)),
-            )(t, signal_buffers)
-        # Per-rank IR after the collective carries the honest algebraic
-        # form (e.g. ``batch_dp_0 + batch_dp_1``); :attr:`Tensor.shape`
-        # reads back the same dim on every rank and collapses the wrapper.
-        return call_on_mesh(
-            run,
-            mesh,
-            axes,
-            out_specs=DeviceMapping(mesh, tuple(placements)),
-        )(t, signal_buffers)
+    buffers = [buffer for buffer in signal_buffers if buffer is not None]
+    if len(devices) == 1 or len(buffers) < len(shards):
+        return None
+    return buffers
+
+
+def _on_devices(
+    arg: list[Tensor] | list[TensorValue] | Tensor,
+    devices: Sequence[DeviceRef],
+) -> list[TensorValue]:
+    """Returns a group's values on ``devices``, or one tensor copied to each."""
+    values = [
+        TensorValue(x)
+        for x in (arg if isinstance(arg, list) else [arg] * len(devices))
+    ]
+    return [
+        v if v.device == d else v.to(d)
+        for v, d in zip(values, devices, strict=True)
+    ]
+
+
+def _check_1d(
+    t: Tensor, placement: type[Placement] | Placement, name: str
+) -> None:
+    placed = (
+        isinstance(t.placements[0], placement)
+        if isinstance(placement, type)
+        else t.placements[0] == placement
+    )
+    if t.mesh.ndim != 1 or not placed:
+        raise ValueError(
+            f"{name} needs a {getattr(placement, '__name__', placement)} tensor "
+            f"on a one-dimensional mesh, got {t.mapping}."
+        )
+
+
+def _allreduce_sum_group(
+    shards: list[Tensor],
+    signal_buffers: list[BufferValue | None],
+    group_size: int,
+) -> list[TensorValue]:
+    values = [TensorValue(s) for s in shards]
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is not None:
+        return ops.allreduce.sum(values, buffers, group_size=group_size)
+    devices = [v.device for v in values]
+    first = _on_devices(values, devices[:1] * len(values))
+    return _on_devices(
+        [functools.reduce(ops.add, first)] * len(values), devices
+    )
 
 
 def allreduce_sum(
@@ -220,15 +260,32 @@ def allreduce_sum(
         A tensor with the same per-device values everywhere along
         ``mesh_axis``.
     """
-    return _collective(
-        t,
-        mesh_axis,
-        Replicated(),
-        kernel=ops.allreduce.sum,
-        simulated=lambda shards: (
-            [functools.reduce(ops.add, shards)] * len(shards)
-        ),
-    )
+    axes = _mesh_axes(t.mesh, mesh_axis)
+    with ensure_context():
+        signal_buffers = _signal_buffers(t.mesh, axes)
+        return call_on_mesh(
+            _allreduce_sum_group,
+            t.mesh,
+            _launch_axes(t.mesh, axes, signal_buffers),
+            out_specs=_placed(t, axes, Replicated()),
+        )(t, signal_buffers, t.mesh.axis_size(axes))
+
+
+def _allgather_group(
+    shards: list[Tensor],
+    signal_buffers: list[BufferValue | None],
+    tensor_axis: int,
+    group_size: int,
+) -> list[TensorValue]:
+    values = [TensorValue(s) for s in shards]
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is not None:
+        return ops.allgather(
+            values, buffers, axis=tensor_axis, group_size=group_size
+        )
+    devices = [v.device for v in values]
+    first = _on_devices(values, devices[:1] * len(values))
+    return _on_devices([ops.concat(first, tensor_axis)] * len(values), devices)
 
 
 def allgather(
@@ -256,17 +313,110 @@ def allgather(
     Returns:
         A tensor with the full data replicated across ``mesh_axis``.
     """
-    return _collective(
-        t,
-        mesh_axis,
-        Replicated(),
-        kernel=lambda shards, signal_buffers, group_size=None: ops.allgather(
-            shards, signal_buffers, axis=tensor_axis, group_size=group_size
-        ),
-        simulated=lambda shards: (
-            [ops.concat(shards, tensor_axis)] * len(shards)
-        ),
+    axes = _mesh_axes(t.mesh, mesh_axis)
+    with ensure_context():
+        signal_buffers = _signal_buffers(t.mesh, axes)
+        return call_on_mesh(
+            _allgather_group,
+            t.mesh,
+            _launch_axes(t.mesh, axes, signal_buffers),
+            out_specs=_placed(t, axes, Replicated()),
+        )(t, signal_buffers, tensor_axis, t.mesh.axis_size(axes))
+
+
+def _reduce_scatter_group(
+    shards: list[Tensor],
+    signal_buffers: list[BufferValue | None],
+    scatter_axis: int,
+    group_size: int,
+) -> list[TensorValue]:
+    values = [TensorValue(s) for s in shards]
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is not None:
+        return ops.reducescatter.sum(
+            values, buffers, axis=scatter_axis, group_size=group_size
+        )
+    devices = [v.device for v in values]
+    first = _on_devices(values, devices[:1] * len(values))
+    return _on_devices(
+        _split(functools.reduce(ops.add, first), scatter_axis, len(values)),
+        devices,
     )
+
+
+def reduce_scatter(
+    t: Tensor,
+    scatter_axis: int = 0,
+    mesh_axis: int | str | Sequence[int | str] = 0,
+) -> Tensor:
+    """Reduces a tensor across mesh axes and scatters the result.
+
+    Transitions the tensor's placement on ``mesh_axis`` from
+    :class:`~max.tensor.sharding.Partial` to
+    :class:`~max.tensor.sharding.Sharded`. Each device contributes
+    to the sum and ends up with one shard of the reduced tensor along
+    ``scatter_axis``. With several mesh axes, one collective sums over
+    every device they span and gives each device one shard, in row-major
+    device order: on a 2x2 mesh, ``mesh_axis=(0, 1)`` gives each of the 4
+    devices one quarter of the summed rows. When the rows do not divide
+    evenly, the first devices get one more row each.
+
+    Args:
+        t: The input distributed tensor.
+        scatter_axis: The tensor axis along which the reduced result is
+            sharded.
+        mesh_axis: The mesh axis or axes, by index or name, whose placement
+            changes from Partial to Sharded. Defaults to ``0``.
+
+    Returns:
+        A tensor with the reduced and re-sharded result.
+    """
+    axes = _mesh_axes(t.mesh, mesh_axis)
+    with ensure_context():
+        signal_buffers = _signal_buffers(t.mesh, axes)
+        return call_on_mesh(
+            _reduce_scatter_group,
+            t.mesh,
+            _launch_axes(t.mesh, axes, signal_buffers),
+            out_specs=_placed(t, axes, Sharded(scatter_axis)),
+        )(t, signal_buffers, scatter_axis, t.mesh.axis_size(axes))
+
+
+def _all_to_all_group(
+    shards: list[Tensor],
+    signal_buffers: list[BufferValue | None],
+    split_axis: int,
+    concat_axis: int,
+    group_size: int,
+) -> list[TensorValue]:
+    values = [TensorValue(s) for s in shards]
+    for v in values:
+        extent = v.shape[split_axis]
+        if isinstance(extent, StaticDim) and extent.dim % group_size:
+            raise ValueError(
+                f"all_to_all: split_axis {split_axis} has extent {extent.dim},"
+                f" not a multiple of the group size {group_size}."
+            )
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is not None:
+        return ops.all_to_all(
+            values,
+            buffers,
+            split_axis=split_axis,
+            concat_axis=concat_axis,
+            group_size=group_size,
+        )
+    devices = [v.device for v in values]
+    first = _on_devices(values, devices[:1] * len(values))
+    if split_axis != concat_axis:
+        swapped = _split(ops.concat(first, concat_axis), split_axis, len(first))
+    else:
+        chunks = [_split(v, split_axis, len(first)) for v in first]
+        swapped = [
+            ops.concat([chunk[dst] for chunk in chunks], concat_axis)
+            for dst in range(len(first))
+        ]
+    return _on_devices(swapped, devices)
 
 
 def all_to_all(
@@ -307,119 +457,97 @@ def all_to_all(
         A tensor whose shards have ``split_axis`` divided by the group size
         and ``concat_axis`` multiplied by it.
     """
-
-    def simulated(shards: list[TensorValue]) -> list[TensorValue]:
-        chunks = [
-            _split_evenly(shard, split_axis, len(shards)) for shard in shards
-        ]
-        return [
-            ops.concat(
-                [chunks[src][dst] for src in range(len(shards))], concat_axis
-            )
-            for dst in range(len(shards))
-        ]
-
-    return _collective(
-        t,
-        mesh_axis,
-        _all_to_all_placement(t, split_axis, concat_axis, mesh_axis),
-        kernel=lambda shards, signal_buffers, group_size=None: ops.all_to_all(
-            shards,
-            signal_buffers,
-            split_axis=split_axis,
-            concat_axis=concat_axis,
-            group_size=group_size,
-        ),
-        simulated=simulated,
+    axes = _mesh_axes(t.mesh, mesh_axis)
+    split, concat = split_axis % t.rank, concat_axis % t.rank
+    sliced = split != concat and all(
+        isinstance(p := t.placements[a], Sharded) and p.axis % t.rank == concat
+        for a in axes
     )
+    with ensure_context():
+        signal_buffers = _signal_buffers(t.mesh, axes)
+        return call_on_mesh(
+            _all_to_all_group,
+            t.mesh,
+            _launch_axes(t.mesh, axes, signal_buffers),
+            out_specs=_placed(t, axes, Sharded(split) if sliced else Unknown()),
+        )(t, signal_buffers, split, concat, t.mesh.axis_size(axes))
 
 
-def _all_to_all_placement(
-    t: Tensor,
-    split_axis: int,
-    concat_axis: int,
-    mesh_axis: int | str | Sequence[int | str],
-) -> Placement:
-    """Returns the placement an all-to-all leaves on ``mesh_axis``.
-
-    Chunks of a tensor sharded along ``concat_axis`` reassemble along it, so
-    the result is sharded along ``split_axis``. Anything else is not slices
-    of one tensor afterwards, so it is :class:`~max.tensor.sharding.Unknown`.
-    """
-    rank = t.rank
-    split, concat = split_axis % rank, concat_axis % rank
-    axes = (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
-    placements = [t.placements[t.mesh._resolve_axis(axis)] for axis in axes]
-    if split != concat and all(
-        isinstance(p, Sharded) and p.axis % rank == concat for p in placements
-    ):
-        return Sharded(split)
-    return Unknown()
-
-
-def _split_evenly(sv: TensorValue, axis: int, n: int) -> list[TensorValue]:
-    """Splits ``sv`` into ``n`` equal chunks along ``axis``."""
-    axis %= sv.rank
-    dim = sv.shape[axis]
-    if isinstance(dim, StaticDim):
-        if int(dim) % n != 0:
-            raise ValueError(
-                f"all_to_all cannot split axis {axis} of size {int(dim)} "
-                f"into {n} chunks"
-            )
-        return list(ops.split(sv, [int(dim) // n] * n, axis=axis))
-    # A symbolic axis splits into equal chunks only when it divides; the
-    # ragged binning of ``_even_chunk`` is exactly that then.
-    return [_even_chunk(sv, axis, n, index) for index in range(n)]
-
-
-def reduce_scatter(
-    t: Tensor,
-    scatter_axis: int = 0,
-    mesh_axis: int | str | Sequence[int | str] = 0,
-) -> Tensor:
-    """Reduces a tensor across mesh axes and scatters the result.
-
-    Transitions the tensor's placement on ``mesh_axis`` from
-    :class:`~max.tensor.sharding.Partial` to
-    :class:`~max.tensor.sharding.Sharded`. Each device contributes
-    to the sum and ends up with one shard of the reduced tensor along
-    ``scatter_axis``. With several mesh axes, one collective sums over
-    every device they span and gives each device one shard, in row-major
-    device order: on a 2x2 mesh, ``mesh_axis=(0, 1)`` gives each of the 4
-    devices one quarter of the summed rows. When the rows do not divide
-    evenly, the first devices get one more row each.
+def distributed_broadcast(t: Tensor, mesh: DeviceMesh) -> Tensor:
+    """Replicates a non-distributed tensor onto every device with one collective.
 
     Args:
-        t: The input distributed tensor.
-        scatter_axis: The tensor axis along which the reduced result is
-            sharded.
-        mesh_axis: The mesh axis or axes, by index or name, whose placement
-            changes from Partial to Sharded. Defaults to ``0``.
+        t: A non-distributed source tensor.
+        mesh: The device mesh to replicate onto.
 
     Returns:
-        A tensor with the reduced and re-sharded result.
+        A distributed tensor with :class:`Replicated` placement on every axis.
     """
-    return _collective(
-        t,
-        mesh_axis,
-        Sharded(scatter_axis),
-        kernel=lambda shards, signal_buffers, group_size=None: (
-            ops.reducescatter.sum(
-                shards, signal_buffers, axis=scatter_axis, group_size=group_size
-            )
-        ),
-        simulated=lambda shards: _even_split_along_axis(
-            functools.reduce(ops.add, shards), scatter_axis, len(shards)
-        ),
+    if t.is_distributed:
+        raise RuntimeError(
+            "distributed_broadcast takes a single-device tensor."
+        )
+    replicated = DeviceMapping(mesh, (Replicated(),) * mesh.ndim)
+    devices = [DeviceRef.from_device(d) for d in mesh.devices]
+    if len(set(devices)) < len(devices) or not all(d.is_gpu() for d in devices):
+        return transfer_to(t, replicated)
+    with ensure_context():
+        signal_buffers = [
+            buffer
+            for buffer in _signal_buffers(mesh, range(mesh.ndim)).values
+            if buffer is not None
+        ]
+        if len(signal_buffers) < len(devices):
+            return transfer_to(t, replicated)
+        return Tensor.from_shard_values(
+            ops.distributed_broadcast(TensorValue(t), signal_buffers),
+            replicated,
+        )
+
+
+def _reduce_scatter_rms_norm_group(
+    shards: list[Tensor],
+    gammas: list[Tensor] | Tensor,
+    signal_buffers: list[BufferValue | None],
+    epsilon: float,
+    weight_offset: float,
+) -> list[tuple[TensorValue, TensorValue]]:
+    values = [TensorValue(s) for s in shards]
+    devices = [v.device for v in values]
+    gamma_values = _on_devices(gammas, devices)
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is not None:
+        normed, summed = ops.reduce_scatter_rms_norm(
+            values,
+            buffers,
+            gamma_values,
+            epsilon,
+            weight_offset=weight_offset,
+        )
+        return list(zip(normed, summed, strict=True))
+    first = _on_devices(values, devices[:1] * len(values))
+    summed = _split(functools.reduce(ops.add, first), 0, len(values))
+    normed = [
+        ops.rms_norm(
+            s,
+            gamma_values[0],
+            epsilon,
+            weight_offset,
+            multiply_before_cast=True,
+        )
+        for s in summed
+    ]
+    return list(
+        zip(
+            _on_devices(normed, devices),
+            _on_devices(summed, devices),
+            strict=True,
+        )
     )
 
 
 def reduce_scatter_rms_norm(
-    t: Tensor,
-    gamma: Tensor,
-    epsilon: float,
-    weight_offset: float = 0.0,
+    t: Tensor, gamma: Tensor, epsilon: float, weight_offset: float = 0.0
 ) -> tuple[Tensor, Tensor]:
     """Reduce-scatters a tensor along axis 0 and RMS-normalizes each shard.
 
@@ -441,58 +569,68 @@ def reduce_scatter_rms_norm(
         :class:`~max.tensor.sharding.Sharded` along axis 0: the norm
         of the reduce-scatter sum, and the sum itself.
     """
-    mesh = t.mesh
-    if mesh.ndim != 1 or not isinstance(t.placements[0], Partial):
-        raise ValueError(
-            "reduce_scatter_rms_norm needs a Partial tensor on a "
-            f"one-dimensional mesh, got {t.mapping}."
-        )
-
-    def run(
-        shards: list[Tensor],
-        gammas: list[Tensor],
-        signal_buffers: list[BufferValue] | None,
-    ) -> list[tuple[TensorValue, TensorValue]]:
-        if signal_buffers is not None:
-            normed, summed = ops.reduce_scatter_rms_norm(
-                shards,
-                signal_buffers,
-                gammas,
-                epsilon,
-                weight_offset=weight_offset,
-            )
-        else:
-            values = [TensorValue(shard) for shard in shards]
-            home = values[0].device
-            total = functools.reduce(
-                ops.add,
-                [v if v.device == home else v.to(home) for v in values],
-            )
-            summed = [
-                chunk if v.device == home else chunk.to(v.device)
-                for chunk, v in zip(
-                    _even_split_along_axis(total, 0, len(values)),
-                    values,
-                    strict=True,
-                )
-            ]
-            normed = [
-                ops.rms_norm(
-                    s,
-                    g,
-                    epsilon,
-                    weight_offset,
-                    multiply_before_cast=True,
-                )
-                for s, g in zip(summed, gammas, strict=True)
-            ]
-        return list(zip(normed, summed, strict=True))
-
-    sharded = DeviceMapping(mesh, (Sharded(0),))
+    _check_1d(t, Partial, "reduce_scatter_rms_norm")
+    sharded = DeviceMapping(t.mesh, (Sharded(0),))
     with ensure_context():
-        return call_on_mesh(run, mesh, (0,), out_specs=[sharded, sharded])(
-            t, gamma, _signal_buffers(mesh)
+        return call_on_mesh(
+            _reduce_scatter_rms_norm_group,
+            t.mesh,
+            (0,),
+            out_specs=[sharded, sharded],
+        )(
+            t,
+            gamma,
+            _signal_buffers(t.mesh, range(t.mesh.ndim)),
+            epsilon,
+            weight_offset,
         )
+
+
+def _rms_norm_shard(
+    shard: Tensor,
+    gamma: Tensor,
+    epsilon: float,
+    weight_offset: float,
+    multiply_before_cast: bool,
+) -> TensorValue:
+    value = TensorValue(shard)
+    (gamma_value,) = _on_devices(gamma, [value.device])
+    return ops.rms_norm(
+        value, gamma_value, epsilon, weight_offset, multiply_before_cast
+    )
+
+
+def _allreduce_rms_norm_group(
+    shards: list[Tensor],
+    gammas: list[Tensor] | Tensor,
+    signal_buffers: list[BufferValue | None],
+    epsilon: float,
+    weight_offset: float,
+    multiply_before_cast: bool,
+) -> list[TensorValue]:
+    values = [TensorValue(s) for s in shards]
+    devices = [v.device for v in values]
+    gamma_values = _on_devices(gammas, devices)
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is not None:
+        normed, _ = ops.allreduce_rms_norm(
+            values,
+            buffers,
+            gamma_values,
+            epsilon,
+            weight_offset=weight_offset,
+            multiply_before_cast=multiply_before_cast,
+        )
+        return normed
+    first = _on_devices(values, devices[:1] * len(values))
+    normed_sum = ops.rms_norm(
+        functools.reduce(ops.add, first),
+        gamma_values[0],
+        epsilon,
+        weight_offset,
+        multiply_before_cast,
+    )
+    return _on_devices([normed_sum] * len(values), devices)
 
 
 def allreduce_rms_norm(
@@ -534,115 +672,63 @@ def allreduce_rms_norm(
     Returns:
         The normed sum, :class:`~max.tensor.sharding.Replicated` on the mesh.
     """
-    mesh = t.mesh
-    axes = [
-        mesh._resolve_axis(axis)
-        for axis in (
-            (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
-        )
-    ]
-    if (
-        mesh.ndim != 1
-        or axes != [0]
-        or not isinstance(t.placements[0], Partial)
-    ):
+    _check_1d(t, Partial, "allreduce_rms_norm")
+    if _mesh_axes(t.mesh, mesh_axis) != [0]:
         raise ValueError(
-            "allreduce_rms_norm needs a Partial tensor on a one-dimensional "
-            f"mesh, reducing its only axis. Got: {t.mapping}, "
-            f"mesh_axis={mesh_axis!r}."
+            f"allreduce_rms_norm reduces axis 0, got {mesh_axis!r}."
         )
-
-    replicated = DeviceMapping(mesh, (Replicated(),))
-
-    # The fused kernel is bfloat16 or float32, 2-D only, and reads gamma in
-    # the input dtype or a narrower float on a float32 input; anything else
-    # keeps the unfused allreduce + norm chain rather than failing at build
-    # time or dropping to the home-device add in the no-signal path below.
-    if (
-        t.dtype not in (DType.bfloat16, DType.float32)
-        or t.rank != 2
-        or not gamma_dtype_supported(gamma.dtype, t.dtype)
-    ):
-        summed = allreduce_sum(t, mesh_axis=mesh_axis)
-
-        def norm(shard: Tensor, gamma_shard: Tensor) -> TensorValue:
-            value = TensorValue(shard)
-            gamma_value = TensorValue(gamma_shard)
-            return ops.rms_norm(
-                value,
-                gamma_value
-                if gamma_value.device == value.device
-                else gamma_value.to(value.device),
+    replicated = DeviceMapping(t.mesh, (Replicated(),))
+    with ensure_context():
+        if (
+            t.dtype not in (DType.bfloat16, DType.float32)
+            or t.rank != 2
+            or not gamma_dtype_supported(gamma.dtype, t.dtype)
+        ):
+            return call_on_mesh(_rms_norm_shard, t.mesh, out_specs=replicated)(
+                allreduce_sum(t),
+                gamma,
                 epsilon,
                 weight_offset,
                 multiply_before_cast,
             )
-
-        # What :func:`max.functional.rms_norm` stages for a Replicated input,
-        # inlined here because ``spmd_ops`` imports this module, so the
-        # functional binding itself would be a circular import.
-        with ensure_context():
-            return call_on_mesh(norm, mesh, out_specs=replicated)(summed, gamma)
-
-    def run(
-        shards: list[Tensor],
-        gammas: list[Tensor] | Tensor,
-        signal_buffers: list[BufferValue] | None,
-    ) -> list[TensorValue]:
-        # A gamma that is not distributed reaches the group whole, not as
-        # one shard per device; the ops below take one entry per device.
-        if not isinstance(gammas, list):
-            gammas = [gammas] * len(shards)
-        values = [TensorValue(shard) for shard in shards]
-        if signal_buffers is not None:
-            # The op reads gammas[i] on device i, so a gamma that reached
-            # the group whole needs a copy on every device (the no-signal
-            # path below moves it to the sum's home device instead).
-            gamma_values = [TensorValue(g) for g in gammas]
-            local_gammas = [
-                g if g.device == v.device else g.to(v.device)
-                for g, v in zip(gamma_values, values, strict=True)
-            ]
-            # The op also returns the raw sum, written only by the
-            # two-launch arm, so callers cannot rely on it and it is
-            # dropped here.
-            normed, _summed = ops.allreduce_rms_norm(
-                shards,
-                signal_buffers,
-                local_gammas,
-                epsilon,
-                weight_offset=weight_offset,
-                multiply_before_cast=multiply_before_cast,
-            )
-            return normed
-        # No signal buffers (single-device and simulated meshes): reduce on
-        # the first device and transfer the norm back out. The norm reads
-        # gamma on the device the sum lives on.
-        home = values[0].device
-        total = functools.reduce(
-            ops.add,
-            [v if v.device == home else v.to(home) for v in values],
-        )
-        gamma = TensorValue(gammas[0])
-        normed_home = ops.rms_norm(
-            total,
-            gamma if gamma.device == home else gamma.to(home),
+        return call_on_mesh(
+            _allreduce_rms_norm_group, t.mesh, (0,), out_specs=replicated
+        )(
+            t,
+            gamma,
+            _signal_buffers(t.mesh, range(t.mesh.ndim)),
             epsilon,
             weight_offset,
             multiply_before_cast,
         )
-        return [
-            normed_home if v.device == home else normed_home.to(v.device)
-            for v in values
-        ]
 
-    with ensure_context():
-        # A single device exchanges nothing, so it allocates no signal
-        # buffers and takes the no-signal path above.
-        signal_buffers = _signal_buffers(mesh) if mesh.num_devices > 1 else None
-        return call_on_mesh(run, mesh, (0,), out_specs=replicated)(
-            t, gamma, signal_buffers
+
+def _allreduce_post_norm_residual_rms_norm_group(
+    shards: list[Tensor],
+    residuals: list[Tensor] | Tensor,
+    gammas: list[Tensor] | Tensor,
+    gamma2s: list[Tensor] | Tensor,
+    mixes: list[Tensor] | Tensor,
+    signal_buffers: list[BufferValue | None],
+    epsilon: float,
+) -> list[tuple[TensorValue, TensorValue]]:
+    values = [TensorValue(s) for s in shards]
+    devices = [v.device for v in values]
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is None or not all(d.is_gpu() for d in devices):
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm runs only on accelerators."
         )
+    joined, normed = ops.allreduce_post_norm_residual_rms_norm(
+        values,
+        buffers,
+        _on_devices(residuals, devices),
+        _on_devices(gammas, devices),
+        _on_devices(gamma2s, devices),
+        _on_devices(mixes, devices),
+        epsilon,
+    )
+    return list(zip(joined, normed, strict=True))
 
 
 def allreduce_post_norm_residual_rms_norm(
@@ -692,136 +778,101 @@ def allreduce_post_norm_residual_rms_norm(
             mesh, a weight is distributed but not replicated on it, or the
             mesh has no accelerators.
     """
-    mesh = t.mesh
-    if mesh.ndim != 1 or not isinstance(t.placements[0], Partial):
-        raise ValueError(
-            "allreduce_post_norm_residual_rms_norm needs a Partial tensor on a "
-            f"one-dimensional mesh, got {t.mapping}."
-        )
+    name = "allreduce_post_norm_residual_rms_norm"
+    _check_1d(t, Partial, name)
     if t.dtype != DType.bfloat16 or t.rank != 2:
         raise ValueError(
-            "allreduce_post_norm_residual_rms_norm takes a 2-D bfloat16 "
-            f"tensor, got {t.dtype} of rank {t.rank}."
+            f"{name} takes a 2-D bfloat16 tensor, got {t.dtype} of rank {t.rank}."
         )
-    # Each device joins its own operands and the outputs are labelled
-    # replicated, so an operand that differs across devices would make the
-    # outputs differ under that label. A weight may instead be one host
-    # tensor, copied to every device.
-    for name, operand in (
+    replicated = DeviceMapping(t.mesh, (Replicated(),))
+    for operand_name, operand in (
         ("residual", residual),
         ("gamma", gamma),
         ("gamma2", gamma2),
         ("mix", mix),
     ):
-        is_replicated = operand.mesh == mesh and operand.placements == (
+        is_replicated = operand.mesh == t.mesh and operand.placements == (
             Replicated(),
         )
-        if not is_replicated and (name == "residual" or operand.is_distributed):
+        if not is_replicated and (
+            operand_name == "residual" or operand.is_distributed
+        ):
             raise ValueError(
-                f"allreduce_post_norm_residual_rms_norm takes {name} "
-                f"replicated on the mesh of its input, got {operand.mapping}."
+                f"{name} takes {operand_name} replicated on the mesh of its input, "
+                f"got {operand.mapping}."
             )
-
-    def run(
-        shards: list[Tensor],
-        residuals: list[Tensor],
-        gammas: list[Tensor] | Tensor,
-        gamma2s: list[Tensor] | Tensor,
-        mixes: list[Tensor] | Tensor,
-        signal_buffers: list[BufferValue] | None,
-    ) -> list[tuple[TensorValue, TensorValue]]:
-        if signal_buffers is None:
-            raise ValueError(
-                "allreduce_post_norm_residual_rms_norm runs only on "
-                "accelerators."
-            )
-        values = [TensorValue(shard) for shard in shards]
-
-        # The op reads each weight on its input's device, so a host weight,
-        # which reaches the group whole, needs a copy on every device.
-        def local(weights: list[Tensor] | Tensor) -> list[TensorValue]:
-            if not isinstance(weights, list):
-                weights = [weights] * len(values)
-            return [
-                w if w.device == v.device else w.to(v.device)
-                for w, v in zip(
-                    (TensorValue(w) for w in weights), values, strict=True
-                )
-            ]
-
-        joined, normed = ops.allreduce_post_norm_residual_rms_norm(
-            shards,
-            signal_buffers,
-            residuals,
-            local(gammas),
-            local(gamma2s),
-            local(mixes),
-            epsilon,
-        )
-        return list(zip(joined, normed, strict=True))
-
-    replicated = DeviceMapping(mesh, (Replicated(),))
     with ensure_context():
         return call_on_mesh(
-            run, mesh, (0,), out_specs=[replicated, replicated]
-        )(t, residual, gamma, gamma2, mix, _signal_buffers(mesh))
+            _allreduce_post_norm_residual_rms_norm_group,
+            t.mesh,
+            (0,),
+            out_specs=[replicated, replicated],
+        )(
+            t,
+            residual,
+            gamma,
+            gamma2,
+            mix,
+            _signal_buffers(t.mesh, range(t.mesh.ndim)),
+            epsilon,
+        )
 
 
-def _exit_concat_without_signals(
-    values: list[TensorValue],
-    gate_ups: list[TensorValue],
-    gamma: TensorValue,
+def _allreduce_rms_norm_exit_concat_group(
+    shards: list[Tensor],
+    gate_ups: list[Tensor] | Tensor,
+    gammas: list[Tensor] | Tensor,
+    signal_buffers: list[BufferValue | None],
     epsilon: float,
     beta: float,
     linear_beta: float,
 ) -> list[TensorValue]:
-    """The unfused :func:`allreduce_rms_norm_exit_concat`, for no signals.
-
-    Reduces on the first device, norms there, and sends each device its
-    column shard of the normed rows, written in bfloat16 beside the
-    SiTU-and-mul of that device's own ``gate_up``.
-    """
-    home = values[0].device
-    num_devices = len(values)
-    cols = int(values[0].shape[1])
-    if cols % num_devices:
-        # The same requirement the op itself enforces: silently dropping the
-        # remainder columns would hand the exit GEMM a wrong-width shard.
-        raise ValueError(
-            "allreduce_rms_norm_exit_concat splits every row into "
-            f"{num_devices} equal column shards, so cols ({cols}) must be a "
-            f"multiple of the device count ({num_devices})"
+    values = [TensorValue(s) for s in shards]
+    devices = [v.device for v in values]
+    gate_up_values = _on_devices(gate_ups, devices)
+    gamma_values = _on_devices(gammas, devices)
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is not None:
+        return ops.allreduce_rms_norm_exit_concat(
+            values,
+            buffers,
+            gamma_values,
+            gate_up_values,
+            epsilon,
+            beta,
+            linear_beta,
         )
-    total = functools.reduce(
-        ops.add,
-        [v if v.device == home else v.to(home) for v in values],
-    )
+    cols = int(values[0].shape[1])
+    if cols % len(values):
+        raise ValueError(
+            f"allreduce_rms_norm_exit_concat splits rows into {len(values)} column "
+            f"shards, so cols ({cols}) must be a multiple of the device count."
+        )
+    width = cols // len(values)
+    first = _on_devices(values, devices[:1] * len(values))
     normed = ops.rms_norm(
-        total,
-        gamma if gamma.device == home else gamma.to(home),
-        epsilon,
-        0.0,
-        False,
+        functools.reduce(ops.add, first), gamma_values[0], epsilon, 0.0, False
     )
-    slice_cols = cols // num_devices
+    latents = _on_devices(
+        [
+            normed[:, rank * width : (rank + 1) * width]
+            for rank in range(len(values))
+        ],
+        devices,
+    )
     outs = []
-    for rank, (value, gate_up) in enumerate(zip(values, gate_ups, strict=True)):
-        shard = normed[:, rank * slice_cols : (rank + 1) * slice_cols]
-        if shard.device != value.device:
-            shard = shard.to(value.device)
-        if gate_up.device != value.device:
-            gate_up = gate_up.to(value.device)
+    for latent, gate_up in zip(latents, gate_up_values, strict=True):
         half = int(gate_up.shape[1]) // 2
         gate = ops.cast(gate_up[:, :half], DType.float32)
         up = ops.cast(gate_up[:, half:], DType.float32)
-        situ = beta * ops.tanh(gate / beta) * ops.sigmoid(gate)
         if linear_beta != 0.0:
             up = linear_beta * ops.tanh(up / linear_beta)
+        activated = beta * ops.tanh(gate / beta) * ops.sigmoid(gate) * up
         outs.append(
             ops.concat(
                 [
-                    ops.cast(shard, DType.bfloat16),
-                    ops.cast(situ * up, DType.bfloat16),
+                    ops.cast(latent, DType.bfloat16),
+                    ops.cast(activated, DType.bfloat16),
                 ],
                 axis=1,
             )
@@ -879,87 +930,82 @@ def allreduce_rms_norm_exit_concat(
         axes: each device holds its own normed column shard followed by its
         own activated half.
     """
-    mesh = t.mesh
-    axes = [
-        mesh._resolve_axis(axis)
-        for axis in (
-            (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
-        )
-    ]
-    if (
-        mesh.ndim != 1
-        or axes != [0]
-        or not isinstance(t.placements[0], Partial)
-    ):
-        raise ValueError(
-            "allreduce_rms_norm_exit_concat needs a Partial tensor on a "
-            f"one-dimensional mesh, reducing its only axis. Got: {t.mapping}, "
-            f"mesh_axis={mesh_axis!r}."
-        )
+    name = "allreduce_rms_norm_exit_concat"
+    _check_1d(t, Partial, name)
+    if _mesh_axes(t.mesh, mesh_axis) != [0]:
+        raise ValueError(f"{name} reduces axis 0, got {mesh_axis!r}.")
     if t.dtype not in (DType.float32, DType.bfloat16) or t.rank != 2:
         raise ValueError(
-            "allreduce_rms_norm_exit_concat takes a 2-D float32 or bfloat16 "
-            f"Partial. Got: {t.dtype} {t.rank}-D."
+            f"{name} takes a 2-D float32 or bfloat16 tensor, got {t.dtype} {t.rank}-D."
         )
     if gate_up.dtype != DType.bfloat16 or gate_up.rank != 2:
         raise ValueError(
-            "allreduce_rms_norm_exit_concat takes a 2-D bfloat16 gate/up "
-            f"projection. Got: {gate_up.dtype} {gate_up.rank}-D."
+            f"{name} takes a 2-D bfloat16 gate_up, got {gate_up.dtype} {gate_up.rank}-D."
         )
-
-    sharded = DeviceMapping(mesh, (Sharded(axis=1),))
-
-    def run(
-        shards: list[Tensor],
-        gate_ups: list[Tensor] | Tensor,
-        gammas: list[Tensor] | Tensor,
-        signal_buffers: list[BufferValue] | None,
-    ) -> list[TensorValue]:
-        # A tensor that is not distributed reaches the group whole, not as
-        # one shard per device; the op takes one entry per device.
-        if not isinstance(gate_ups, list):
-            gate_ups = [gate_ups] * len(shards)
-        if not isinstance(gammas, list):
-            gammas = [gammas] * len(shards)
-        values = [TensorValue(shard) for shard in shards]
-        if signal_buffers is None:
-            return _exit_concat_without_signals(
-                values,
-                [TensorValue(g) for g in gate_ups],
-                TensorValue(gammas[0]),
-                epsilon,
-                beta,
-                linear_beta,
-            )
-        # The op reads device i's gamma and gate/up on device i.
-        local = [
-            (
-                TensorValue(gate_up_i)
-                if gate_up_i.device == value.device
-                else TensorValue(gate_up_i).to(value.device),
-                TensorValue(gamma_i)
-                if gamma_i.device == value.device
-                else TensorValue(gamma_i).to(value.device),
-            )
-            for gate_up_i, gamma_i, value in zip(
-                gate_ups, gammas, values, strict=True
-            )
-        ]
-        return ops.allreduce_rms_norm_exit_concat(
-            shards,
-            signal_buffers,
-            [gamma_i for _, gamma_i in local],
-            [gate_up_i for gate_up_i, _ in local],
+    with ensure_context():
+        return call_on_mesh(
+            _allreduce_rms_norm_exit_concat_group,
+            t.mesh,
+            (0,),
+            out_specs=DeviceMapping(t.mesh, (Sharded(1),)),
+        )(
+            t,
+            gate_up,
+            gamma,
+            _signal_buffers(t.mesh, range(t.mesh.ndim)),
             epsilon,
             beta,
             linear_beta,
         )
 
-    with ensure_context():
-        signal_buffers = _signal_buffers(mesh) if mesh.num_devices > 1 else None
-        return call_on_mesh(run, mesh, (0,), out_specs=sharded)(
-            t, gate_up, gamma, signal_buffers
+
+def _allgather_rms_norm_group(
+    shards: list[Tensor],
+    gammas: list[Tensor] | Tensor,
+    signal_buffers: list[BufferValue | None],
+    axis: int,
+    epsilon: float,
+    weight_offset: float,
+    round_offset_gamma: bool,
+) -> list[tuple[TensorValue, TensorValue]]:
+    values = [TensorValue(s) for s in shards]
+    devices = [v.device for v in values]
+    gamma_values = _on_devices(gammas, devices)
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is not None:
+        normed, gathered = ops.allgather_rms_norm(
+            values,
+            buffers,
+            gamma_values,
+            epsilon=epsilon,
+            weight_offset=weight_offset,
+            axis=axis,
+            round_offset_gamma=round_offset_gamma,
         )
+        return list(zip(normed, gathered, strict=True))
+    whole = ops.concat(_on_devices(values, devices[:1] * len(values)), axis)
+    if round_offset_gamma:
+        normed_whole = ops.rms_norm(
+            whole,
+            gamma_values[0] + weight_offset,
+            epsilon,
+            multiply_before_cast=True,
+        )
+    else:
+        normed_whole = ops.rms_norm(
+            whole,
+            gamma_values[0],
+            epsilon,
+            weight_offset,
+            multiply_before_cast=True,
+        )
+    return list(
+        zip(
+            _on_devices([normed_whole] * len(values), devices),
+            _on_devices([whole] * len(values), devices),
+            strict=True,
+        )
+    )
 
 
 def allgather_rms_norm(
@@ -991,60 +1037,65 @@ def allgather_rms_norm(
         :class:`~max.tensor.sharding.Replicated`: the norm of the
         gathered tensor, and the gathered tensor itself.
     """
-    mesh = t.mesh
-    placement = t.placements[0] if mesh.ndim == 1 else None
+    placement = t.placements[0] if t.mesh.ndim == 1 else None
     if t.rank != 2 or placement not in (Sharded(0), Sharded(1)):
         raise ValueError(
-            "allgather_rms_norm needs a 2D tensor sharded along axis 0 or 1 "
-            f"on a one-dimensional mesh, got {t.mapping}."
+            "allgather_rms_norm needs a 2-D tensor sharded along axis 0 or 1 on "
+            f"a one-dimensional mesh, got {t.mapping}."
         )
     assert isinstance(placement, Sharded)
-    axis = placement.axis
-
-    def run(
-        shards: list[Tensor],
-        gammas: list[Tensor],
-        signal_buffers: list[BufferValue] | None,
-    ) -> list[tuple[TensorValue, TensorValue]]:
-        if signal_buffers is not None:
-            normed, gathered = ops.allgather_rms_norm(
-                shards,
-                signal_buffers,
-                gammas,
-                epsilon=epsilon,
-                weight_offset=weight_offset,
-                axis=axis,
-                round_offset_gamma=round_offset_gamma,
-            )
-        else:
-            values = [TensorValue(shard) for shard in shards]
-            home = values[0].device
-            full = ops.concat(
-                [v if v.device == home else v.to(home) for v in values], axis
-            )
-            gathered = [
-                full if v.device == home else full.to(v.device) for v in values
-            ]
-            normed = [
-                ops.rms_norm(
-                    g,
-                    TensorValue(w) + weight_offset,
-                    epsilon,
-                    multiply_before_cast=True,
-                )
-                if round_offset_gamma
-                else ops.rms_norm(
-                    g, w, epsilon, weight_offset, multiply_before_cast=True
-                )
-                for g, w in zip(gathered, gammas, strict=True)
-            ]
-        return list(zip(normed, gathered, strict=True))
-
-    replicated = DeviceMapping(mesh, (Replicated(),))
+    replicated = DeviceMapping(t.mesh, (Replicated(),))
     with ensure_context():
         return call_on_mesh(
-            run, mesh, (0,), out_specs=[replicated, replicated]
-        )(t, gamma, _signal_buffers(mesh))
+            _allgather_rms_norm_group,
+            t.mesh,
+            (0,),
+            out_specs=[replicated, replicated],
+        )(
+            t,
+            gamma,
+            _signal_buffers(t.mesh, range(t.mesh.ndim)),
+            placement.axis,
+            epsilon,
+            weight_offset,
+            round_offset_gamma,
+        )
+
+
+def _allgather_gated_residual_rms_norm_group(
+    shards: list[Tensor],
+    residuals: list[Tensor] | Tensor,
+    post_weights: list[Tensor] | Tensor,
+    gates: list[Tensor] | Tensor,
+    norm_weights: list[Tensor] | Tensor,
+    signal_buffers: list[BufferValue | None],
+    post_eps: float,
+    norm_eps: float,
+    temperature: float,
+    gate_eps: float,
+    scale_branch: bool,
+) -> list[tuple[TensorValue, TensorValue]]:
+    values = [TensorValue(s) for s in shards]
+    devices = [v.device for v in values]
+    buffers = _kernel_signal_buffers(shards, signal_buffers)
+    if buffers is None or not all(d.is_gpu() for d in devices):
+        raise ValueError(
+            "allgather_gated_residual_rms_norm runs only on accelerators."
+        )
+    stream, normed = ops.allgather_gated_residual_rms_norm(
+        values,
+        buffers,
+        _on_devices(residuals, devices),
+        _on_devices(post_weights, devices),
+        _on_devices(gates, devices),
+        _on_devices(norm_weights, devices),
+        post_eps,
+        norm_eps,
+        temperature,
+        gate_eps,
+        scale_branch,
+    )
+    return list(zip(stream, normed, strict=True))
 
 
 def allgather_gated_residual_rms_norm(
@@ -1081,161 +1132,26 @@ def allgather_gated_residual_rms_norm(
     Returns:
         ``(stream, normed)``, each replicated.
     """
-    mesh = branch.mesh
-    if mesh.ndim != 1 or branch.placements[0] != Sharded(1):
-        raise ValueError(
-            "allgather_gated_residual_rms_norm needs a branch sharded along "
-            f"axis 1 on a one-dimensional mesh, got {branch.mapping}."
-        )
-
-    def run(
-        shards: list[Tensor],
-        residuals: list[Tensor],
-        post_weights: list[Tensor],
-        gates: list[Tensor],
-        norm_weights: list[Tensor],
-        signal_buffers: list[BufferValue] | None,
-    ) -> list[tuple[TensorValue, TensorValue]]:
-        if signal_buffers is None:
-            raise ValueError(
-                "allgather_gated_residual_rms_norm runs only on accelerators."
-            )
-        stream, normed = ops.allgather_gated_residual_rms_norm(
-            shards,
-            signal_buffers,
-            residuals,
-            post_weights,
-            gates,
-            norm_weights,
-            post_eps,
-            norm_eps,
-            temperature,
-            gate_eps,
-            scale_branch,
-        )
-        return list(zip(stream, normed, strict=True))
-
-    replicated = DeviceMapping(mesh, (Replicated(),))
+    _check_1d(branch, Sharded(1), "allgather_gated_residual_rms_norm")
+    replicated = DeviceMapping(branch.mesh, (Replicated(),))
     with ensure_context():
         return call_on_mesh(
-            run, mesh, (0,), out_specs=[replicated, replicated]
+            _allgather_gated_residual_rms_norm_group,
+            branch.mesh,
+            (0,),
+            out_specs=[replicated, replicated],
         )(
             branch,
             residual,
             post_weight,
             gate,
             norm_weight,
-            _signal_buffers(mesh),
-        )
-
-
-def _local_split(
-    t: Tensor, mesh_axes: Sequence[int], target: Sharded
-) -> Tensor:
-    """``Replicated -> Sharded``: each device slices its local copy with no communication.
-
-    With several mesh axes, the tensor axis is split once into one piece per
-    device they span.
-    """
-
-    def split(copies: list[Tensor]) -> list[TensorValue]:
-        return [
-            _even_chunk(TensorValue(copy), target.axis, len(copies), index)
-            for index, copy in enumerate(copies)
-        ]
-
-    placements = list(t.placements)
-    for mesh_axis in mesh_axes:
-        placements[mesh_axis] = target
-    return call_on_mesh(
-        split,
-        t.mesh,
-        mesh_axes,
-        out_specs=DeviceMapping(t.mesh, tuple(placements)),
-    )(t)
-
-
-def _keep_one_copy(t: Tensor, mesh_axes: Sequence[int]) -> Tensor:
-    """Moves ``t`` from Replicated to Partial along ``mesh_axes``.
-
-    The first device along ``mesh_axes`` keeps its copy and the others hold
-    zeros, with no communication, so the copies sum to the value exactly.
-    """
-
-    def keep_first(copies: list[Tensor]) -> list[TensorValue]:
-        first, *others = (TensorValue(copy) for copy in copies)
-        return [
-            first,
-            *(
-                ops.broadcast_to(
-                    ops.constant(0, other.dtype, other.device), other.shape
-                )
-                for other in others
-            ),
-        ]
-
-    placements = list(t.placements)
-    for mesh_axis in mesh_axes:
-        placements[mesh_axis] = Partial()
-    return call_on_mesh(
-        keep_first,
-        t.mesh,
-        mesh_axes,
-        out_specs=DeviceMapping(t.mesh, tuple(placements)),
-    )(t)
-
-
-def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
-    """Distributes a non-distributed tensor across a mesh."""
-    assert not t.is_distributed, "_scatter expects a non-distributed tensor"
-    mesh = target.mesh
-    placements = target.placements
-
-    # Size-1 axes cannot host a shard.
-    src_shape = t.shape
-    for mesh_axis, p in enumerate(placements):
-        ax = p.localized_axis()
-        if ax is None and not isinstance(p, Replicated):
-            raise ValueError(
-                f"Cannot scatter with placement {type(p).__name__}; "
-                "scatter requires Replicated or a placement that localizes "
-                "a single tensor axis (override ``localized_axis()``)."
-            )
-        if ax is None or not 0 <= ax < len(src_shape):
-            continue
-        dim = src_shape[ax]
-        if isinstance(dim, StaticDim) and dim.dim == 1:
-            raise ShardingError(
-                f"_scatter: placement {p!r} on mesh axis "
-                f"{mesh.axis_names[mesh_axis]!r} targets tensor axis {ax} "
-                f"with static extent 1; cannot split a size-1 axis. Use "
-                f"Replicated() on this mesh axis instead."
-            )
-
-    groups: dict[int, list[int]] = {}
-    for mesh_axis, p in enumerate(placements):
-        if (tensor_axis := p.localized_axis()) is not None:
-            groups.setdefault(tensor_axis % t.rank, []).append(mesh_axis)
-    with ensure_context():
-        tv = t.__tensorvalue__()
-        # The host slices out each device's part, so a device receives only
-        # its own part.
-        shard_tvs = []
-        for index, device in enumerate(mesh.devices):
-            shard = tv
-            for tensor_axis, group in groups.items():
-                shard = _even_chunk(
-                    shard,
-                    tensor_axis,
-                    mesh.axis_size(group),
-                    mesh.device_coord(index, group),
-                )
-            shard_tvs.append(
-                ops.transfer_to(shard, DeviceRef.from_device(device))
-            )
-        return Tensor.from_shard_values(
-            shard_tvs,
-            DeviceMapping(mesh, placements),
+            _signal_buffers(branch.mesh, range(branch.mesh.ndim)),
+            post_eps,
+            norm_eps,
+            temperature,
+            gate_eps,
+            scale_branch,
         )
 
 
@@ -1324,29 +1240,99 @@ def _place_stack(values: Sequence[Tensor], target: DeviceMapping) -> Tensor:
         return Tensor.from_shard_values(shards, target)
 
 
-def distributed_broadcast(t: Tensor, mesh: DeviceMesh) -> Tensor:
-    """Replicates a non-distributed tensor onto every device with one collective.
+def _nonnegative(mapping: DeviceMapping, rank: int) -> DeviceMapping:
+    """Returns ``mapping`` with each Sharded axis counted from the start."""
+    return DeviceMapping(
+        mapping.mesh,
+        tuple(
+            Sharded(p.axis % rank) if isinstance(p, Sharded) else p
+            for p in mapping.placements
+        ),
+    )
 
-    Args:
-        t: A non-distributed source tensor.
-        mesh: The device mesh to replicate onto.
 
-    Returns:
-        A distributed tensor with :class:`Replicated` placement on every axis.
-    """
-    if t.mesh.num_devices > 1:
-        raise RuntimeError(
-            "`F.distributed_broadcast` requires the source tensor to be non-distributed."
-        )
-    replicated = DeviceMapping(mesh, (Replicated(),) * mesh.ndim)
+def _relabel(t: Tensor, placements: Sequence[Placement]) -> Tensor:
+    """Returns ``t``'s shards under ``placements``, moving no data."""
     with ensure_context():
-        signal_buffers = _signal_buffers(mesh)
-        # One device and simulated meshes, such as in tests, have no signal
-        # buffers.
-        if signal_buffers is None:
-            return transfer_to(t, replicated)
-        shards = ops.distributed_broadcast(TensorValue(t), list(signal_buffers))
-        return Tensor.from_shard_values(shards, replicated)
+        return Tensor.from_shard_values(
+            [TensorValue(s) for s in t.local_shards],
+            DeviceMapping(t.mesh, tuple(placements)),
+        )
+
+
+def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
+    """Places a single-device tensor at ``target``, each device its shard."""
+    if any(isinstance(p, (Partial, Unknown)) for p in target.placements):
+        raise ValueError(f"Cannot scatter a single-device tensor to {target}.")
+    mesh, placements = target.mesh, _nonnegative(target, t.rank).placements
+    for mesh_axis, p in enumerate(placements):
+        if not isinstance(p, Sharded) or mesh.mesh_shape[mesh_axis] == 1:
+            continue
+        extent = t.shape[p.axis]
+        if isinstance(extent, StaticDim) and extent.dim == 1:
+            raise ShardingError(
+                f"Cannot split tensor axis {p.axis}, of static extent 1, over"
+                f" mesh axis {mesh.axis_names[mesh_axis]!r}. Use Replicated()"
+                " on that mesh axis."
+            )
+    with ensure_context():
+        value = TensorValue(t)
+        shards = []
+        for index, device in enumerate(mesh.devices):
+            shard = value
+            for tensor_axis in {
+                p.axis for p in placements if isinstance(p, Sharded)
+            }:
+                axes = _splitting_axes(mesh, placements, tensor_axis)
+                shard = _even_chunk(
+                    shard,
+                    tensor_axis,
+                    mesh.axis_size(axes),
+                    mesh.device_coord(index, axes),
+                )
+            shards.append(ops.transfer_to(shard, DeviceRef.from_device(device)))
+        return Tensor.from_shard_values(shards, target)
+
+
+def _splitting_axes(
+    mesh: DeviceMesh, placements: Sequence[Placement], tensor_axis: int
+) -> list[int]:
+    """Returns the mesh axes, larger than one device, that split ``tensor_axis``."""
+    return [
+        axis
+        for axis, p in enumerate(placements)
+        if isinstance(p, Sharded)
+        and p.axis == tensor_axis
+        and mesh.mesh_shape[axis] > 1
+    ]
+
+
+def _common_prefix(source: list[int], target: list[int]) -> list[int]:
+    """Returns the leading mesh axes both placements split a tensor axis by."""
+    length = 0
+    while (
+        length < min(len(source), len(target))
+        and source[length] == target[length]
+    ):
+        length += 1
+    return source[:length]
+
+
+def _local_split_group(
+    copies: list[Tensor], tensor_axis: int
+) -> list[TensorValue]:
+    return [
+        _even_chunk(TensorValue(c), tensor_axis, len(copies), i)
+        for i, c in enumerate(copies)
+    ]
+
+
+def _keep_first_group(copies: list[Tensor]) -> list[TensorValue]:
+    values = [TensorValue(c) for c in copies]
+    return [values[0]] + [
+        ops.broadcast_to(ops.constant(0, v.dtype, v.device), v.shape)
+        for v in values[1:]
+    ]
 
 
 def transfer_to(
@@ -1388,182 +1374,157 @@ def transfer_to(
     if isinstance(target, Device):
         target = DeviceMapping(DeviceMesh.single(target), (Replicated(),))
     source = t.mapping
-    if (
-        t.is_distributed
-        and source.mesh != target.mesh
-        and source.mesh.mesh_shape == target.mesh.mesh_shape
-    ):
-        # Moving each shard to the same position needs no gather; the
-        # placement then changes on the new mesh.
-        with ensure_context():
-            moved = Tensor.from_shard_values(
-                [
-                    ops.transfer_to(
-                        TensorValue(shard), DeviceRef.from_device(device)
-                    )
-                    for shard, device in zip(
-                        t.local_shards, target.mesh.devices, strict=True
-                    )
-                ],
-                DeviceMapping(target.mesh, source.placements),
-            )
-        return transfer_to(moved, target)
-    # Unknown shards have no global value to preserve, so only
-    # Tensor.rebind_mapping can change an Unknown placement.
-    if source != target and (
-        any(
-            isinstance(p, Unknown)
-            for p in (*source.placements, *target.placements)
-        )
-        if source.mesh != target.mesh
-        else any(
+    if source == target:
+        return t
+    if source.mesh.mesh_shape == target.mesh.mesh_shape:
+        changes_unknown = any(
             old != new and Unknown in (type(old), type(new))
             for old, new in zip(
                 source.placements, target.placements, strict=True
             )
         )
-    ):
-        raise ShardingError(
-            f"transfer_to cannot move {source} to {target}: Unknown shards "
-            "have no global value to preserve. Use Tensor.rebind_mapping to "
-            "claim a placement, or a collective such as allreduce_sum to "
-            "combine them."
+    else:
+        changes_unknown = any(
+            isinstance(p, Unknown)
+            for p in (*source.placements, *target.placements)
         )
-
-    if t.real and not t.is_distributed and target.mesh.num_devices == 1:
-        mesh_device = target.mesh.devices[0]
-        if t.device == mesh_device:
-            return t
-        _validation_hooks.device_transfer("Tensor.to()", t, mesh_device)
-        return Tensor(storage=t.driver_tensor.to(mesh_device))
-
-    target_p = target.placements
+    if changes_unknown:
+        raise ShardingError(
+            f"transfer_to cannot move {source} to {target}: Unknown shards have no "
+            "global value. Claim a placement with Tensor.rebind_mapping, or combine "
+            "them with a collective."
+        )
 
     if not t.is_distributed:
+        if t.real and target.mesh.num_devices == 1:
+            device = target.mesh.devices[0]
+            if t.device == device:
+                return t
+            _validation_hooks.device_transfer("Tensor.to()", t, device)
+            return Tensor(storage=t.driver_tensor.to(device))
         return _scatter(t, target)
 
-    # Cross-mesh: gather, transfer, scatter.
-    if t.mesh != target.mesh:
-        source_mesh = t.mesh
-        target_mesh = target.mesh
-
-        replicated_p = tuple(Replicated() for _ in range(source_mesh.ndim))
-        if t.placements != replicated_p:
-            t = transfer_to(t, DeviceMapping(source_mesh, replicated_p))
-
-        single = t.local_shards[0]
-        with ensure_context():
-            if single.real:
-                _validation_hooks.device_transfer(
-                    "Tensor.to()", single, target_mesh.devices[0]
+    if source.mesh != target.mesh:
+        if source.mesh.mesh_shape == target.mesh.mesh_shape:
+            with ensure_context():
+                moved = Tensor.from_shard_values(
+                    [
+                        ops.transfer_to(
+                            TensorValue(s), DeviceRef.from_device(d)
+                        )
+                        for s, d in zip(
+                            t.local_shards, target.mesh.devices, strict=True
+                        )
+                    ],
+                    DeviceMapping(target.mesh, source.placements),
                 )
-                buf = single.driver_tensor.to(target_mesh.devices[0])
-                single = Tensor(storage=buf)
-            else:
-                tv = ops.transfer_to(
-                    single.__tensorvalue__(),
-                    DeviceRef.from_device(target_mesh.devices[0]),
-                )
-                single = Tensor.from_graph_value(tv)
-
-        if target_mesh.num_devices == 1:
-            return single
-        return _scatter(single, target)
-
-    if t.placements == target_p:
-        return t
-
-    mesh = t.mesh
-    # On a mesh axis of size 1, every placement describes the same data, so
-    # the placement changes without communication.
-    rebound = tuple(
-        new if mesh.mesh_shape[ax] == 1 else old
-        for ax, (old, new) in enumerate(
-            zip(t.placements, target_p, strict=True)
+            return transfer_to(moved, target)
+        whole = transfer_to(
+            t, DeviceMapping(source.mesh, (Replicated(),) * source.mesh.ndim)
         )
-    )
-    if rebound != t.placements:
-        t = t.rebind_mapping(DeviceMapping(mesh, rebound))
-        if t.placements == target_p:
-            return t
+        return transfer_to(whole.local_shards[0], target)
 
-    # Mesh axes of size 1 are left out, since they split nothing.
-    def split_by(
-        placements: Sequence[Placement], tensor_axis: int
-    ) -> list[int]:
-        return [
-            ax
-            for ax, p in enumerate(placements)
-            if p == Sharded(tensor_axis) and mesh.mesh_shape[ax] > 1
-        ]
-
-    def shared_split_axes(tensor_axis: int) -> list[int]:
-        """Returns the common leading mesh axes that split ``tensor_axis``."""
-        have, want = (
-            split_by(t.placements, tensor_axis),
-            split_by(target_p, tensor_axis),
+    mesh, want = t.mesh, _nonnegative(target, t.rank).placements
+    if t.placements != (counted := _nonnegative(t.mapping, t.rank).placements):
+        t = _relabel(t, counted)
+    # On a mesh axis of one device, every placement holds the same data.
+    if any(
+        mesh.mesh_shape[a] == 1 and t.placements[a] != want[a]
+        for a in range(mesh.ndim)
+    ):
+        t = t.rebind_mapping(
+            DeviceMapping(
+                mesh,
+                tuple(
+                    w if mesh.mesh_shape[a] == 1 else p
+                    for a, (p, w) in enumerate(
+                        zip(t.placements, want, strict=True)
+                    )
+                ),
+            )
         )
-        n = 0
-        while n < min(len(have), len(want)) and have[n] == want[n]:
-            n += 1
-        return have[:n]
 
-    # The mesh axes that split a tensor axis divide it in mesh order, so the
-    # pieces of the axes the source and target share stay in place. The
-    # source's other axes gather, and the target's other axes split each
-    # piece further.
-    targets = {p.axis for p in target_p if isinstance(p, Sharded)}
-    to_replicated = [
-        ax
-        for ax in range(mesh.ndim)
-        if isinstance(t.placements[ax], Partial)
-        and isinstance(target_p[ax], Replicated)
-    ]
-    if to_replicated:
-        t = allreduce_sum(t, mesh_axis=to_replicated)
-    for tensor_axis in targets:
-        shared = shared_split_axes(tensor_axis)
-        to_split = split_by(target_p, tensor_axis)[len(shared) :]
+    # Partial: reduce-scatter into a target split, else all-reduce.
+    for tensor_axis in {p.axis for p in want if isinstance(p, Sharded)}:
+        have = _splitting_axes(mesh, t.placements, tensor_axis)
+        kept = _common_prefix(have, _splitting_axes(mesh, want, tensor_axis))
+        to_split = _splitting_axes(mesh, want, tensor_axis)[len(kept) :]
         if (
             to_split
-            and split_by(t.placements, tensor_axis) == shared
-            and all(isinstance(t.placements[ax], Partial) for ax in to_split)
+            and have == kept
+            and all(isinstance(t.placements[a], Partial) for a in to_split)
         ):
-            t = reduce_scatter(t, scatter_axis=tensor_axis, mesh_axis=to_split)
+            t = reduce_scatter(t, tensor_axis, to_split)
     partial = [
-        ax
-        for ax in range(mesh.ndim)
-        if isinstance(t.placements[ax], Partial)
-        and t.placements[ax] != target_p[ax]
+        a
+        for a in range(mesh.ndim)
+        if isinstance(t.placements[a], Partial) and want[a] != t.placements[a]
     ]
     if partial:
-        t = allreduce_sum(t, mesh_axis=partial)
+        t = allreduce_sum(t, partial)
 
+    # Sharded(a) to Sharded(b) over the same mesh axes, equal static shards.
+    shapes = {tuple(s.shape) for s in t.local_shards}
+    shape = next(iter(shapes))
+    if len(shapes) == 1 and all(isinstance(d, StaticDim) for d in shape):
+        swaps = [
+            (p.axis, q.axis, axes)
+            for p in set(t.placements)
+            if isinstance(p, Sharded)
+            and (axes := _splitting_axes(mesh, t.placements, p.axis))
+            for q in set(want)
+            if isinstance(q, Sharded)
+            and q.axis != p.axis
+            and _splitting_axes(mesh, want, q.axis) == axes
+            and not _splitting_axes(mesh, t.placements, q.axis)
+            and int(shape[q.axis]) % mesh.axis_size(axes) == 0
+        ]
+        if swaps:
+            concat_axis, split_axis, axes = swaps[0]
+            t = all_to_all(t, split_axis, concat_axis, axes)
+
+    # Sharded: gather the axes the target does not keep, then split locally.
     for tensor_axis in {p.axis for p in t.placements if isinstance(p, Sharded)}:
-        to_gather = split_by(t.placements, tensor_axis)[
-            len(shared_split_axes(tensor_axis)) :
+        have = _splitting_axes(mesh, t.placements, tensor_axis)
+        to_gather = have[
+            len(
+                _common_prefix(have, _splitting_axes(mesh, want, tensor_axis))
+            ) :
         ]
         if to_gather:
-            t = allgather(t, tensor_axis=tensor_axis, mesh_axis=to_gather)
-
-    for tensor_axis in targets:
-        to_split = split_by(target_p, tensor_axis)[
-            len(split_by(t.placements, tensor_axis)) :
-        ]
+            t = allgather(t, tensor_axis, to_gather)
+    for tensor_axis in {p.axis for p in want if isinstance(p, Sharded)}:
+        have = _splitting_axes(mesh, t.placements, tensor_axis)
+        to_split = _splitting_axes(mesh, want, tensor_axis)[len(have) :]
         if to_split:
-            t = _local_split(t, to_split, Sharded(tensor_axis))
+            t = call_on_mesh(
+                _local_split_group,
+                mesh,
+                to_split,
+                out_specs=_placed(t, to_split, Sharded(tensor_axis)),
+            )(t, tensor_axis)
 
+    # Replicated to Partial: one copy, zeros elsewhere.
     to_partial = [
-        ax
-        for ax in range(mesh.ndim)
-        if isinstance(t.placements[ax], Replicated)
-        and isinstance(target_p[ax], Partial)
+        a
+        for a in range(mesh.ndim)
+        if isinstance(t.placements[a], Replicated)
+        and isinstance(want[a], Partial)
     ]
     if to_partial:
-        t = _keep_one_copy(t, to_partial)
+        t = call_on_mesh(
+            _keep_first_group,
+            mesh,
+            to_partial,
+            out_specs=_placed(t, to_partial, Partial()),
+        )(t)
 
-    if t.placements != target_p:
+    if t.placements != want:
         raise NotImplementedError(
-            f"No transition from {t.placements} to {target_p}."
+            f"No transition from {t.placements} to {want}."
         )
-    return t
+    return (
+        t
+        if t.placements == target.placements
+        else _relabel(t, target.placements)
+    )
