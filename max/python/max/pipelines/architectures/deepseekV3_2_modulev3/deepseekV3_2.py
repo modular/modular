@@ -212,7 +212,8 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
             else None
         )
         # A pipeline stage builds only its layers, under their global names;
-        # only the first embeds and only the last scores.
+        # only the first embeds and only the last scores. A last stage whose
+        # NextN layer drafts also embeds, for the draft.
         ids = (
             range(config.num_hidden_layers)
             if config.layer_ids is None
@@ -220,7 +221,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         )
         self.first = ids.start == 0
         self.last = ids.stop == config.num_hidden_layers
-        if self.first:
+        if self.first or (self.last and config.last_stage_embeds):
             self.embed_tokens = VocabParallelEmbedding(
                 config.vocab_size,
                 dim=config.hidden_size,

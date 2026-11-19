@@ -273,9 +273,12 @@ def test_verify_preserves_host_offsets_contexts_and_cache_ownership(
         host: Tensor,
         comm: object,
         hisparse: object,
+        boundary: object,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        # The batch carries no HiSparse tables, so the verify passes none.
+        # The batch carries no HiSparse tables and no stage boundary, so the
+        # verify passes neither.
         assert hisparse is None
+        assert boundary is None
         if dp > 1:
             # Exercise the actual split: uint32 host bounds fail constructing
             # the mixed static/runtime slice indices before a decoder runs.

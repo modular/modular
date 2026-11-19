@@ -23,6 +23,7 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.deepseekV3_2_modulev3.model_config import (
     indexer_cache_layer_map,
+    nextn_drafts,
     resolve_indexer_types,
     stage_indexer_types,
 )
@@ -41,6 +42,7 @@ from max.pipelines.lib.pipeline_parallel import (
 from max.pipelines.lib.pipeline_stage import PipelineStage
 from max.pipelines.lib.registration_graph_api import registered_pipeline_model
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.speculative import spec_adapters
 
 
 def _glm_5_3() -> Any:
@@ -123,3 +125,15 @@ def test_the_registered_glm_decoder_builds_stages() -> None:
         None,
     )
     assert issubclass(model, PipelinedModel)
+
+
+def test_the_nextn_layer_drafts_on_the_last_stage() -> None:
+    """Under MTP the last stage runs the NextN layer, which embeds each
+    position's successor token, so that stage builds the embedding too."""
+    assert spec_adapters.speculates_on_last_stage(
+        "GlmMoeDsaForCausalLM_ModuleV3", "mtp"
+    )
+    mtp: Any = SimpleNamespace(speculative=SimpleNamespace(is_mtp=lambda: True))
+    plain: Any = SimpleNamespace(speculative=None)
+    assert nextn_drafts(mtp)
+    assert not nextn_drafts(plain)

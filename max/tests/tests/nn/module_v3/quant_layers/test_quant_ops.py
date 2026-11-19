@@ -1086,6 +1086,44 @@ def test_nvfp4_swiglu_kernel_per_output_dtype(
     assert quantizes == (1 if fused else 2)
 
 
+@pytest.mark.parametrize("accum_dtype", [None, DType.float32])
+def test_bf16_experts_take_bf16_down_rows(
+    mock_accelerator: MagicMock, accum_dtype: DType | None
+) -> None:
+    """Unquantized experts hand the down matmul bf16 rows.
+
+    A float32 gate/up accumulation, which DeepSeek-V3.2's non-EP MoEs and so
+    GLM-5.3's bf16 NextN layer take, casts the SwiGLU back before the down
+    projection.
+    """
+    device = mock_accelerator()
+    with F.lazy():
+        out = quant_ops.grouped_matmul_silu(
+            Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM), dtype=DType.bfloat16, device=device
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS, 2 * _MOE_DIM, _HIDDEN_DIM),
+                dtype=DType.bfloat16,
+                device=device,
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM),
+                dtype=DType.bfloat16,
+                device=device,
+            ),
+            Tensor.zeros(
+                (_NUM_EXPERTS + 1,), dtype=DType.uint32, device=device
+            ),
+            Tensor.zeros((_NUM_EXPERTS,), dtype=DType.int32, device=device),
+            Tensor.zeros((2,), dtype=DType.uint32, device=device),
+            None,
+            accum_dtype=accum_dtype,
+        )
+    assert isinstance(out, Tensor)
+    assert out.dtype == DType.bfloat16
+
+
 # --------------------------------------------------------------------------- #
 # MXFP8
 # --------------------------------------------------------------------------- #

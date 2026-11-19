@@ -756,7 +756,7 @@ def _pairing_stage_error(pipeline_config: PipelineConfig) -> str | None:
     assert method is not None
     if issubclass(
         _pipeline_model(pairing.target), PipelinedModel
-    ) and spec_adapters.speculates_on_last_stage(pairing.target_arch, method):
+    ) and spec_adapters.speculates_on_last_stage(pairing.adapter_arch, method):
         return None
     return (
         f"A {pairing.target_arch} target does not speculate with {method} on"

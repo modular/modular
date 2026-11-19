@@ -228,6 +228,12 @@ def stage_latent_slots(
     return widest * full
 
 
+def nextn_drafts(pipeline_config: PipelineConfig) -> bool:
+    """Returns whether the checkpoint's NextN layer drafts for the target."""
+    speculative = pipeline_config.speculative
+    return speculative is not None and speculative.is_mtp()
+
+
 def num_indexer_cache_layers(
     indexer_types: Sequence[str], num_layers: int
 ) -> int:
@@ -451,6 +457,11 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     """The decoder layers this config builds: every layer, unless it builds
     one pipeline stage. Weight names stay global; the KV caches hold only
     these layers."""
+
+    last_stage_embeds: bool = False
+    """Whether the last of several pipeline stages also builds the token
+    embedding: its fused graph runs the NextN layer, which embeds each
+    position's successor token."""
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -963,4 +974,5 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             quantization_encoding=quantization_encoding,
             hisparse=hisparse,
             layer_ids=stage_layers(pipeline_config, config.num_hidden_layers),
+            last_stage_embeds=nextn_drafts(pipeline_config),
         )

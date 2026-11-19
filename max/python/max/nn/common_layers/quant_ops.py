@@ -1568,9 +1568,10 @@ def grouped_matmul_silu(
         or (isinstance(down, NVFP4Tensor) and accum_dtype is not None)
         else None
     )
+    out_dtype = gate_up_out.dtype
     if accum_dtype is not None:
         gate_up_out = gate_up_out.cast(accum_dtype)
-    return grouped_silu(
+    silu_out = grouped_silu(
         gate_up_out,
         expert_start_indices,
         requant_weight,
@@ -1579,6 +1580,13 @@ def grouped_matmul_silu(
         activation=activation,
         swiglu_limit=swiglu_limit,
     )
+    # An unquantized down weight takes the SwiGLU back in the activation
+    # dtype, as DeepSeek-V3.2 does (``.type_as(x)``). The grouped matmul has
+    # no tensor-core path for float32 rows against bf16 weights.
+    if accum_dtype is not None and isinstance(down, Tensor):
+        assert isinstance(silu_out, Tensor)
+        silu_out = silu_out.cast(out_dtype)
+    return silu_out
 
 
 def _quantize_activation_fp8(

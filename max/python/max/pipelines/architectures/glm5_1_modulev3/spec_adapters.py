@@ -53,7 +53,10 @@ from max.pipelines.speculative.driver import (
     TensorAdapter,
     gather_variable_rows,
 )
-from max.pipelines.speculative.spec_adapters import HISPARSE_INPUTS
+from max.pipelines.speculative.spec_adapters import (
+    HISPARSE_INPUTS,
+    STAGE_BOUNDARY,
+)
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_target import Verified
 from max.tensor import Tensor
@@ -220,6 +223,9 @@ class Glm5_1Target:
             merged_offsets_i64,
             comm_buffers,
             hisparse,
+            # A later pipeline stage starts from the previous stage's hidden
+            # states over the merged window instead of embedding its tokens.
+            boundary=batch.extra.get(STAGE_BOUNDARY),
         )
         # Under data parallelism each device's shard is its replica's rows,
         # the layout the proposer's step 0 reads.
@@ -565,4 +571,7 @@ ADAPTER = TargetAdapter(
     verify_takes_prefill_rows=_takes_prefill_rows,
     # The NextN head reads each position's successor token.
     successor_replay=True,
+    # The NextN layer reads the final hidden states, the embedding and head
+    # the last stage builds, and its own caches.
+    speculates_on_last_stage=True,
 )

@@ -122,6 +122,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/glm5_1_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
     ],
 )
 

@@ -43,6 +43,7 @@ from ..deepseekV3_2_modulev3.model_config import (
     DeepseekV3_2Config,
     check_replica_layout,
     hisparse_params_for,
+    nextn_drafts,
     resolve_dcp_q_replicate,
     resolve_indexer_types,
     resolve_prefill_context_parallel,
@@ -192,6 +193,7 @@ class Glm5_1Config(DeepseekV3_2Config, ExpertParallelDeploymentConfig):
             unpadded_vocab_size=glm_unpadded_vocab_size(pipeline_config),
             hisparse=hisparse,
             layer_ids=stage_layers(pipeline_config, config.num_hidden_layers),
+            last_stage_embeds=nextn_drafts(pipeline_config),
         )
 
     def finalize(
