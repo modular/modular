@@ -266,6 +266,7 @@ def allreduce_determinism_test[
                 var out_tensor = out_tensors[i]
 
                 @inline(.always)
+                @__allow_legacy_any_origin_fields
                 def store_out[
                     _dtype: DType,
                     _width: SIMDLength,

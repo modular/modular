@@ -123,6 +123,7 @@ def mojo_square_array(array_obj: PythonObject) raises:
     comptime simd_width = simd_width_of[DType.int64]()
     var ptr = array_obj.ctypes.data.unsafe_get_as_pointer[.int64]()
 
+    @__allow_legacy_any_origin_fields
     def pow[width: Int](i: Int) {mut ptr}:
         var elem = ptr.unsafe_load[width=width](i)
         ptr.unsafe_store[width=width](i, elem * elem)

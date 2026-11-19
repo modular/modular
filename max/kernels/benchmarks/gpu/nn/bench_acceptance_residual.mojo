@@ -121,6 +121,7 @@ def _bench_materialized[
     ]
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_fn(
         mut bb: Bencher,
     ) raises {
@@ -215,6 +216,7 @@ def _bench_fused[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_fn(
         mut bb: Bencher,
     ) raises {

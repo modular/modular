@@ -490,6 +490,7 @@ def run_case[
 
     var ref_indices_ptr = ref_indices.unsafe_ptr().as_unsafe_any_origin()
 
+    @__allow_legacy_any_origin_fields
     def _launch_ref(ctx: DeviceContext[]) raises {imm}:
         @inline(.always)
         def launch[SinkType: OptionalPointer](sink: SinkType) raises {imm}:
@@ -536,6 +537,7 @@ def run_case[
         else:
             launch(NullPointer[DType.float32]())
 
+    @__allow_legacy_any_origin_fields
     def _launch_once(ctx: DeviceContext[]) raises {imm}:
         @inline(.always)
         def launch[SinkType: OptionalPointer](sink: SinkType) raises {imm}:
@@ -846,6 +848,7 @@ def test_noncausal_lengths[
         for with_sink in [False, True]:
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def run[SinkType: OptionalPointer](sink_arg: SinkType) raises {imm}:
                 mla_prefill_sparse_nvfp4_via_fp8[
                     config=config,
@@ -929,6 +932,7 @@ def test_noncausal_lengths[
     var scratch_view = scratch_owner.view()
     var workspace = Optional[NVFP4PrefillWorkspaceView](scratch_view)
 
+    @__allow_legacy_any_origin_fields
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         with builder.recording_context() as rec:
             mla_prefill_sparse_nvfp4_via_fp8[

@@ -257,6 +257,7 @@ def test[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def kernel_launch(
         ctx: DeviceContext[],
     ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
@@ -478,6 +479,7 @@ def bench[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def kernel_launch(
         ctx: DeviceContext[],
     ) raises {
@@ -728,6 +730,7 @@ def test_sw[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def kernel_launch(
         ctx: DeviceContext[],
     ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:

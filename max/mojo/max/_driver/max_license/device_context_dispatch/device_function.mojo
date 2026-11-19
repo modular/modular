@@ -1083,6 +1083,7 @@ struct DeviceExternalFunction[
                 .as_unsafe_any_origin()
             )
 
+        @__allow_legacy_any_origin_fields
         def _populate_arg_sizes[i: Int]() {mut dense_args}:
             dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
@@ -1141,6 +1142,7 @@ struct DeviceExternalFunction[
                 .as_unsafe_any_origin()
             )
 
+        @__allow_legacy_any_origin_fields
         def _populate_arg_sizes[i: Int]() {mut dense_args}:
             dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 

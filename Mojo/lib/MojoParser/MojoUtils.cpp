@@ -150,6 +150,15 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
   UnreachableOp::create(builder, unreachableLoc);
 }
 
+bool LIT::typeHasAnyOrigin(SharedState &shared, Type type) {
+  return llvm::any_of(
+      shared.cachedOriginFinder.findOriginsIn(getCanonicalType(type)),
+      [](TypedAttr origin) {
+        return sugarIsa<AnyOriginAttr>(
+            OriginType::stripMutCastAndRebind(origin));
+      });
+}
+
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//

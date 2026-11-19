@@ -109,6 +109,9 @@ CValue materializeAsyncCallAsCoroutine(IREmitter &emitter, AsyncCallOp call,
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
+/// Returns true if an AnyOrigin appears anywhere in `type`.
+bool typeHasAnyOrigin(SharedState &shared, Type type);
+
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);
 

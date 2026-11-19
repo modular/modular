@@ -136,6 +136,7 @@ def _run(
     ](rows)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def ranked() raises {imm}:
         ctx.enqueue_function[
             _histsel_topk_bounded_kernel[
@@ -164,6 +165,7 @@ def _run(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def cluster() raises {imm}:
         topk_cluster_det(
             ctx,
@@ -177,6 +179,7 @@ def _run(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def dispatch() raises {imm}:
         persistent_topk_block_split[deterministic=True](
             ctx, scores, dsp_idxs, N, K, rows, Optional(bounds)

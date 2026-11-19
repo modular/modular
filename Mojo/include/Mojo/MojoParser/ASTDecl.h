@@ -857,6 +857,20 @@ public:
   /// only by this function's IR signature.
   void createIRSignatureDecls(DeclResolver &resolver);
 
+  void setAllowLegacyAnyOriginCaptures() {
+    allowLegacyAnyOriginCaptures = true;
+  }
+
+  /// Returns true if `@__allow_legacy_any_origin_fields` is on this function
+  /// or on a function that encloses it.
+  bool allowsLegacyAnyOriginCaptures() const {
+    for (const ASTDecl *cur = this; cur; cur = cur->getParentDecl())
+      if (auto *def = dyn_cast<DefASTDecl>(cur))
+        if (def->allowLegacyAnyOriginCaptures)
+          return true;
+    return false;
+  }
+
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
@@ -867,6 +881,7 @@ private:
              ssize_t indentation);
 
   FnOp operation;
+  bool allowLegacyAnyOriginCaptures = false;
 };
 
 /// The AST representation of an anonymous function type.

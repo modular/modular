@@ -3446,6 +3446,7 @@ struct Struct_mixed_gemv_epilogue:
         var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _cast_bf16_to_fp32[
             width: Int, alignment: Int = 1
         ](idx: Coord) {var a_bf16_tt, var a_f32_tt}:

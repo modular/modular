@@ -1651,9 +1651,10 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   // If this is a reference to a value from an outer function scope, record
   // the capture.
   if (needsCapture) {
-    emitter.shared.addCaptureToScope(
-        *nearestEscapingFnOrNone, declRef,
-        Capture(value, CaptureConvention::kConventionRead, spelling));
+    emitter.shared.addCaptureToScope(*nearestEscapingFnOrNone, declRef,
+                                     Capture(value,
+                                             CaptureConvention::kConventionRead,
+                                             spelling, expr->getLoc()));
   }
 
   return emitter.emitCResult(value, expr, dest);

@@ -744,6 +744,7 @@ def topk_topp_masked_probs_cluster[
             ):
                 cluster_size = c
 
+        @__allow_legacy_any_origin_fields
         def launch_cluster[vec_size: Int, cluster_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsClusterKernel[
                 block_size,
@@ -776,6 +777,7 @@ def topk_topp_masked_probs_cluster[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
+        @__allow_legacy_any_origin_fields
         def launch_single[vec_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsKernel[
                 block_size,
@@ -1657,6 +1659,7 @@ def topk_topp_sampling_from_prob_cluster[
                 ):
                     cluster_size = c
 
+        @__allow_legacy_any_origin_fields
         def launch_cluster[
             vec_size: Int, deterministic: Bool, cluster_size: Int
         ]() raises {imm}:
@@ -1701,6 +1704,7 @@ def topk_topp_sampling_from_prob_cluster[
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
 
+        @__allow_legacy_any_origin_fields
         def launch_single[vec_size: Int, deterministic: Bool]() raises {imm}:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,

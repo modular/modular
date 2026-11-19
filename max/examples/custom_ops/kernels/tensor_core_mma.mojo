@@ -1484,6 +1484,7 @@ def mma_tile_buffers[
     var k_counter = 0
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def load_tiles_from_dram() {mut k_counter, imm}:
         a_loader.load(
             a_load_reg,

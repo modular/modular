@@ -2617,6 +2617,7 @@ struct PaddedFlashAttentionGPU:
             Int(valid_length.shape()[0].value()),
         )
 
+        @__allow_legacy_any_origin_fields
         def _dispatch_flash_attention[
             mask_t: MHAMask
         ](mask: mask_t) raises {

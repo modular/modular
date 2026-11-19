@@ -1909,6 +1909,7 @@ struct ConvDirectNHWC[
                 var stride_w = conv_attr_dyn.strides()[1]
 
                 @inline(.always)
+                @__allow_legacy_any_origin_fields
                 def update_middle[
                     height: Int
                 ](wo: Int) {
@@ -4993,6 +4994,7 @@ def _conv_miopen[
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def miopen_epilogue[
             _width: Int, alignment: Int = 1
         ](coords: Coord) {var output_tmp, var epilogue_fn}:
@@ -5599,6 +5601,7 @@ def conv_gpu[
             from nn.conv.gpu.amd.dispatch import dispatch_amd_4wave_conv2d
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _amd_4wave_dispatch[
                 GemmEpilogueFnType: ElementwiseEpilogueFn,
                 GemmComputeFnType: ElementwiseComputeFn,

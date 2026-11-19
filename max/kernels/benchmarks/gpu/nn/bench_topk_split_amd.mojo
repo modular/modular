@@ -190,6 +190,7 @@ def _bench(
         in_dtype=.float32,
     ]
 
+    @__allow_legacy_any_origin_fields
     def run_old(c: DeviceContext) raises {imm}:
         c.enqueue_function[old_kernel](
             sp,
@@ -206,6 +207,7 @@ def _bench(
             ),
         )
 
+    @__allow_legacy_any_origin_fields
     def run_new(c: DeviceContext) raises {imm}:
         _histsel_split_topk(
             c, sp, np, cp, csp, N, K, rows, rb, slices, slice_len

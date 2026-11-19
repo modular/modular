@@ -515,6 +515,7 @@ def execute_fp8_index_prefill[
     ctx.enqueue_memset(o_device, unwritten_score)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def kernel_launch(launch_ctx: DeviceContext[]) raises {mut o_device, imm}:
         for chunk_begin in range(0, total_seq_len, rows_per_chunk):
             var chunk_rows = min(rows_per_chunk, total_seq_len - chunk_begin)

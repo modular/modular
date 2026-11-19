@@ -2398,6 +2398,7 @@ def TopKTopPSamplingFromProbKernel[
                     )[0]
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def load_dist[width: Int](offset: Int) {imm} -> SIMD[.float32, width]:
             # Load `width` elements of the sampling distribution at `offset`.
             # In from-logits mode this is the unnormalized softmax value with
@@ -3139,6 +3140,7 @@ def topk_topp_sampling_from_prob[
         if coop > 1:
             hist_ptr = hist_buf.unsafe_ptr().as_unsafe_any_origin()
 
+        @__allow_legacy_any_origin_fields
         def launch_kernel[
             vec_size: Int, deterministic: Bool, coop_size: Int
         ]() raises {imm}:
@@ -3846,6 +3848,7 @@ def TopKTopPMaskedProbsKernel[
     var has_dist = isfinite(z)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def load_e(offset: Int) {imm} -> SIMD[.float32, vec_size]:
         comptime if is_amd_gpu():
             return probs_row.load[width=vec_size]((Idx[0], offset))
@@ -4056,6 +4059,7 @@ def topk_topp_masked_probs[
         if coop > 1:
             hist_ptr = hist_buf.unsafe_ptr().as_unsafe_any_origin()
 
+        @__allow_legacy_any_origin_fields
         def launch_kernel[vec_size: Int, coop_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsKernel[
                 block_size,

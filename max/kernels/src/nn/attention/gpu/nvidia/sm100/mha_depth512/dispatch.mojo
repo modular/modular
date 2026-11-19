@@ -286,6 +286,7 @@ def mha_sm100_depth512_dispatch[
         ](ctx, q, num_rows_q)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def with_sink[
             SinkType: OptionalPointer
         ](sink_ptr: SinkType) raises {imm}:
@@ -416,6 +417,7 @@ def mha_sm100_depth512_dispatch[
         ](ctx, q, num_rows_q)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def with_sink_q[
             SinkType: OptionalPointer
         ](sink_ptr: SinkType) raises {imm}:

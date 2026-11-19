@@ -49,6 +49,11 @@ This version is still a work in progress.
 - `match` now warns when literal cases do not include a catch-all pattern,
   helping identify unmatched values.
 
+- A closure that captures a value with an `UnsafeAnyOrigin` in its type, such
+  as a `Pointer[Int, MutUnsafeAnyOrigin]`, now produces a warning. A closure
+  does not keep the value behind such a capture alive, so Mojo can destroy that
+  value before the closure runs. Capture a value with a tracked origin instead.
+
 - Auto-parameterization now reaches `_` holes nested inside other parameterized
   types, so an unbound parameter at any depth of an argument's type becomes an
   an implicit parameter of the function:

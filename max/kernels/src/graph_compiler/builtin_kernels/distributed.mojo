@@ -319,6 +319,7 @@ struct DistributedAllReduceSum:
             logger.info("Executing: Vendor CCL")
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def launch_vendor_allreduce[
                 index: Int
             ]() raises {
@@ -376,6 +377,7 @@ struct DistributedAllReduceSum:
         # Custom allreduce path: hand the collective the whole world plus the
         # group width, and let it do its own group-local slicing internally.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_allreduce[
             index: Int
         ]() raises {
@@ -550,6 +552,7 @@ struct DistributedReduceScatterSum:
         var output_views = TensorTuple._fused_view(outputs)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_reducescatter[
             index: Int
         ]() raises {
@@ -716,6 +719,7 @@ struct DistributedAllToAll:
         var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_all_to_all[
             index: Int
         ]() raises {
@@ -908,6 +912,7 @@ struct DistributedAllGather:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def launch_rows_slice[
                 index: Int
             ]() raises {
@@ -932,6 +937,7 @@ struct DistributedAllGather:
         else:
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def launch_allgather[
                 index: Int
             ]() raises {
@@ -1038,6 +1044,7 @@ struct DistributedBroadcast:
         var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_broadcast[
             index: Int
         ]() raises {
@@ -1149,6 +1156,7 @@ struct DistributedScatter:
             )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_scatter[
             index: Int
         ]() raises {
@@ -1269,6 +1277,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_fused_allreduce[
             index: Int
         ]() raises {
@@ -1461,6 +1470,7 @@ struct DistributedAllReduceRMSNorm:
             )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_fused_allreduce_norm[
             index: Int
         ]() raises {
@@ -1780,6 +1790,7 @@ struct DistributedAllReduceRMSNormExitConcat:
             )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_exit_concat[
             index: Int
         ]() raises {
@@ -2009,6 +2020,7 @@ struct DistributedReduceScatterRMSNorm:
             )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_fused_rs_norm[
             index: Int
         ]() raises {
@@ -2312,6 +2324,7 @@ struct DistributedAllGatherRMSNorm:
         comptime if gather_axis == 1 or round_offset_gamma:
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def launch_fused[
                 index: Int
             ]() raises {
@@ -2402,6 +2415,7 @@ struct DistributedAllGatherRMSNorm:
                 row_off += len_i
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_fused_ag_norm[
             index: Int
         ]() raises {
@@ -2614,6 +2628,7 @@ struct DistributedAllGatherGatedResidualRMSNorm:
         _check_uniform_cols[op="allgather_gated_residual_rms_norm"](inputs)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch[
             index: Int
         ]() raises {
@@ -2851,6 +2866,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
                 row_off += len_i
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_fused_ag_norm_quant[
             index: Int
         ]() raises {
@@ -3390,6 +3406,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
                 row_off += len_i
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_fused_ag_norm_quant[
             index: Int
         ]() raises {
@@ -3672,6 +3689,7 @@ struct DistributedAllReducePostNormResidualRMSNorm:
         var cols = Int(inputs[0].shape()[1].value())
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_post_norm_residual[
             index: Int
         ]() raises {

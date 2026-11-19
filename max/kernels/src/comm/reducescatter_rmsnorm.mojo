@@ -82,6 +82,7 @@ comptime _ZeroSizedLayout = type_of(row_major(Idx[0], Idx[0]))
     )
 )
 @__name(t"reducescatter_rmsnorm_{in_dtype}_{ngpus}_{has_residual}")
+@__allow_legacy_any_origin_fields
 def _reducescatter_rmsnorm_kernel[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -425,6 +426,7 @@ def _check_residual_extent[
             )
 
 
+@__allow_legacy_any_origin_fields
 def reducescatter_rmsnorm[
     in_dtype: DType,
     ngpus: Int,

@@ -174,6 +174,7 @@ def _pdl_release_at_end[pdl_level: PDLLevel]():
 @__name(
     t"allreduce_rmsnorm_fp8_warp_tiling_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}_{multiply_before_cast}",
 )
+@__allow_legacy_any_origin_fields
 def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -412,6 +413,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
 @__name(
     t"allreduce_rmsnorm_fp8_2stage_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}_{multiply_before_cast}",
 )
+@__allow_legacy_any_origin_fields
 def _allreduce_rmsnorm_fp8_kernel_2stage[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -1210,6 +1212,7 @@ def _rms_norm_rows_kernel[
         ](output, input, gamma, _rows, _cols, epsilon, weight_offset)
 
 
+@__allow_legacy_any_origin_fields
 def _launch_split_allreduce_rmsnorm[
     in_dtype: DType,
     out_dtype: DType,
@@ -1718,6 +1721,7 @@ def _dispatch_fused_kernel[
             if use_split and split_scratch > scratch_bytes:
                 use_split = False
 
+    @__allow_legacy_any_origin_fields
     def launch_1stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch[
             sw,
@@ -1746,6 +1750,7 @@ def _dispatch_fused_kernel[
             residual_output,
         )
 
+    @__allow_legacy_any_origin_fields
     def launch_2stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch_2stage[
             sw,

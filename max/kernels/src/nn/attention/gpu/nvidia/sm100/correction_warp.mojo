@@ -299,6 +299,7 @@ def fa4_correction[
     # once more after the main loop for any extra c0-only iter (1Q
     # odd-T case where WG0 has one more main-loop commit than WG1).
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _correction_step[
         i: Int
     ]() {mut pipeline_c0, mut pipeline_c1, mut pipeline_o, imm}:

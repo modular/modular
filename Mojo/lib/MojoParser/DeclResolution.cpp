@@ -977,6 +977,9 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
   } else if (spelling == "__allow_legacy_custom_self_type") {
     applyArgumentless(spelling, callNode,
                       [&]() { tcSignature.allowCustomSelfType = true; });
+  } else if (spelling == "__allow_legacy_any_origin_fields") {
+    applyArgumentless(spelling, callNode,
+                      [&]() { decl.setAllowLegacyAnyOriginCaptures(); });
   } else if (spelling == "implicit") {
     applyImplicitDecorator(decorator->getLoc(), callNode);
   } else if (spelling == "extern") {
@@ -4712,18 +4715,15 @@ LogicalResult StructFieldASTDecl::resolveBody(Lexer &) {
     return success();
 
   ASTType fieldType = op.getType();
-  for (TypedAttr origin :
-       shared.cachedOriginFinder.findOriginsIn(getCanonicalType(fieldType))) {
-    if (sugarIsa<AnyOriginAttr>(OriginType::stripMutCastAndRebind(origin))) {
-      auto diag = shared.emitError(getLoc())
-                  << "struct fields cannot expose AnyOrigin in their type; "
-                  << op.getNameAttr().getValue() << " has type " << fieldType;
-      diag.attachNote(*this)
-          << "consider parameterizing enclosing struct with an Origin";
-      diag.attachNote(op.getLoc()) << "alternatively, use UntrackedOrigin if "
-                                      "lifetime is managed explicitly";
-      return failure();
-    }
+  if (typeHasAnyOrigin(shared, fieldType)) {
+    auto diag = shared.emitError(getLoc())
+                << "struct fields cannot expose AnyOrigin in their type; "
+                << op.getNameAttr().getValue() << " has type " << fieldType;
+    diag.attachNote(*this)
+        << "consider parameterizing enclosing struct with an Origin";
+    diag.attachNote(op.getLoc()) << "alternatively, use UntrackedOrigin if "
+                                    "lifetime is managed explicitly";
+    return failure();
   }
   return success();
 }

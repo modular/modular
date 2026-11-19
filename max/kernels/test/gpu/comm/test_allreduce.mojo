@@ -184,6 +184,7 @@ def allreduce_test[
         comptime if use_custom_epilogue:
             # Custom epilogue that negates values to distinguish from default
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def outputs_lambda[
                 _dtype: DType,
                 _width: SIMDLength,
@@ -362,6 +363,7 @@ def allreduce_naive_test() raises -> None:
     comptime for i in range(ngpus):
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def outputs_lambda[
             _dtype: DType,
             _width: SIMDLength,

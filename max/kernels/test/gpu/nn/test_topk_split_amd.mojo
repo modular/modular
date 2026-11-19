@@ -242,6 +242,7 @@ def _case[
     if graph:
         replays = 2
 
+        @__allow_legacy_any_origin_fields
         def build(mut builder: DeviceGraphBuilder) raises {imm}:
             _histsel_split_topk(
                 builder.recording_context(),

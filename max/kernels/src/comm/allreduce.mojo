@@ -857,6 +857,7 @@ def _allreduce_naive_single_ptr[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"allreduce_2stage_{dtype}_{use_multimem}")
+@__allow_legacy_any_origin_fields
 def _allreduce_2stage_kernel[
     dtype: DType,
     ngpus: Int,
@@ -1152,6 +1153,7 @@ def _allreduce_1stage_reduce_store_one[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"allreduce_1stage_{dtype}_{use_multimem}")
+@__allow_legacy_any_origin_fields
 def _allreduce_1stage_kernel[
     dtype: DType,
     ngpus: Int,
@@ -1358,6 +1360,7 @@ def _lamport_supported() -> Bool:
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"allreduce_lamport_{dtype}_{use_fence}")
+@__allow_legacy_any_origin_fields
 def _allreduce_lamport_kernel[
     dtype: DType,
     ngpus: Int,
@@ -1890,6 +1893,7 @@ def _enqueue_lamport[
 
 
 @inline(.always)
+@__allow_legacy_any_origin_fields
 def _allreduce_p2p[
     in_engine: TensorEngine,
     OutputLambdaType: CollectiveEpilogueFn,
