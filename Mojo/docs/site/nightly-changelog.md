@@ -672,7 +672,7 @@ Most code that no longer compiles matches one of these patterns:
   `x = "ls"` produced `alsb` instead of `a\0bls`.
 
 - [#7642](https://github.com/modular/modular/issues/7642) - `Counter.le()`,
-  `Counter.lt()`, `Counter.ge()` and `Counter.gt()` now compare keys that
-  appear only in the right-hand `Counter`, treating the missing count as zero.
-  Previously `Counter[Int]().le(c)` returned `True` even when `c` held a
-  negative count.
+  `Counter.lt()` now compares every key in both `self` and `other` `Counter`,
+  treating a missing count as zero.
+  Previously `a.le(b)` and `a.lt(b)` skipped keys present only in `b`, so
+  an empty `a.le(b)` returned `True` even when `b` held a negative count.
