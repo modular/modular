@@ -376,6 +376,12 @@ CAPTURED_HOST_INPUTS: Mapping[str, CapturedHostInput] = {
 """How a replay gets each host input of a group kind a graph may take,
 keyed ``<group kind>.<field>``."""
 
+_ROOT_LEAF_KINDS: Mapping[str, str] = {"decoder_inputs": "ragged_batch"}
+"""The group kind the serving engine gives the leaves directly under a root of
+each kind here. A decoder that takes ``DecoderGraphInputs`` holds ``tokens``
+and ``return_n_logits`` as direct leaves, which the engine reads as
+``ragged_batch`` fields (``input_tree`` in ``engine-batch``)."""
+
 
 def captured_host_inputs(
     graphs: Iterable[CompiledCallable[..., Any]],
@@ -387,7 +393,8 @@ def captured_host_inputs(
 
     Returns:
         The entries of :data:`CAPTURED_HOST_INPUTS` whose group kind one of
-        the graphs' input trees holds.
+        the graphs' input trees holds, the kind a root gives its direct
+        leaves (:data:`_ROOT_LEAF_KINDS`) included.
     """
     kinds: set[str] = set()
 
@@ -395,6 +402,8 @@ def captured_host_inputs(
         if isinstance(node, Mapping):
             if isinstance(kind := node.get("type"), str):
                 kinds.add(kind)
+                if leaf_kind := _ROOT_LEAF_KINDS.get(kind):
+                    kinds.add(leaf_kind)
             for child in node.get("children", ()):
                 collect(child)
 

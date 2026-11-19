@@ -22,7 +22,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock, Mock, PropertyMock, patch
+from unittest.mock import MagicMock, Mock, NonCallableMock, PropertyMock, patch
 
 import huggingface_hub
 import pytest
@@ -124,7 +124,10 @@ from max.pipelines.lib import (
 from max.pipelines.lib.graph_specs import compile_roles_separately
 from max.pipelines.lib.interfaces import BatchProcessorRuntime
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.module_registration import DecoderBatchProcessor
+from max.pipelines.lib.module_registration import (
+    DecoderBatchProcessor,
+    decoder_input_types,
+)
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodePipelineModel,
     _BatchProcessor,
@@ -290,6 +293,35 @@ def test_only_a_graph_with_mrope_positions_takes_the_positions_feed() -> None:
         rope=OrderedDict(positions=MRoPEPositions(position_ids=positions)),
     )
     assert _takes_mrope_positions(graph(nested))
+
+
+def test_a_decoder_taking_decoder_inputs_records_its_host_batch_fields() -> (
+    None
+):
+    # A decoder registered by role (Llama's, for one) takes its batch fields
+    # as direct leaves of its decoder_inputs root, which the serving engine
+    # reads as ragged_batch fields. Each one it reads on the host needs a
+    # replay mode, or the engine refuses device graph capture at boot.
+    types = decoder_input_types(
+        NonCallableMock(get_symbolic_inputs=lambda: (X,)),
+        DeviceRef.CPU(),
+        data_parallel_degree=2,
+    )
+    signature: tuple[list[Any], tree.TreeDef] = (
+        [],
+        tree.flatten(((types,), {}))[1],
+    )
+    decoder = cast(
+        CompiledCallable[..., Any], _fake(graph_signature=lambda: signature)
+    )
+    recorded = captured_host_inputs([decoder])
+    for name in (
+        "return_n_logits",
+        "host_input_row_offsets",
+        "data_parallel_splits",
+    ):
+        assert name in types
+        assert recorded[f"ragged_batch.{name}"] == CapturedHostInput("shape")
 
 
 def test_a_model_that_loads_its_own_graphs_is_refused() -> None:
