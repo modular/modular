@@ -40,6 +40,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from max import tree
 from max.driver import Buffer, Device
 from max.graph import BufferType, SymbolicDim, TensorType
 from max.nn.legacy.graph_groups import GraphGroup
@@ -76,8 +77,12 @@ class RequestStateStore(ABC):
     """
 
     @abstractmethod
-    def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Returns the graph inputs the state adds, in graph order."""
+    def input_types(self) -> tuple[tree.Tree[TensorType | BufferType], ...]:
+        """Returns the graph inputs the state adds, in graph order.
+
+        Entries may be kinded groups, which retain their names in an artifact;
+        :meth:`prepare` returns the same tree with buffers at its leaves.
+        """
 
     def max_dims(self) -> Mapping[str, int]:
         """Returns the largest size of each symbolic dim of the state inputs.
@@ -91,7 +96,9 @@ class RequestStateStore(ABC):
         return {}
 
     @abstractmethod
-    def prepare(self, batch: Sequence[TextContext]) -> tuple[Buffer, ...]:
+    def prepare(
+        self, batch: Sequence[TextContext]
+    ) -> tuple[tree.Tree[Buffer], ...]:
         """Returns the step's state inputs for a batch.
 
         Gives each request it hasn't seen a fresh slot first; a request it
@@ -169,7 +176,7 @@ def build_state_store(
     bounds = store.max_dims()
     unbounded = [
         dim.name
-        for input_type in store.input_types()
+        for input_type in tree.leaves(store.input_types())
         if isinstance(input_type, TensorType)
         for dim in input_type.shape
         if isinstance(dim, SymbolicDim) and dim.name not in bounds

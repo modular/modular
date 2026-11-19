@@ -94,6 +94,7 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     spec_decode_architecture,
 )
 from max.pipelines.lib.registration_draft import TargetHiddenStates
+from max.pipelines.lib.weight_transform import WeightTransform
 from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative import proposers
 from max.pipelines.speculative import spec_adapters as registry
@@ -328,8 +329,15 @@ def test_the_pairing_reserves_vision_cache_only_with_its_encoder() -> None:
     assert plan is not None
 
 
+@pytest.mark.parametrize(
+    ("adapter", "raw_checkpoint_weights"),
+    [(None, False), (WeightTransform(()), True)],
+    ids=["pretransformed", "raw-checkpoint"],
+)
 def test_the_modulev3_stages_are_a_registered_block_draft(
     monkeypatch: pytest.MonkeyPatch,
+    adapter: WeightTransform | None,
+    raw_checkpoint_weights: bool,
 ) -> None:
     """The stages construct through the draft registration, with the RoPE
     the trunk's checkpoint names."""
@@ -340,8 +348,11 @@ def test_the_modulev3_stages_are_a_registered_block_draft(
     assert arch.draft.create_proposer is None
     assert arch.pipeline_model is None
     assert not hasattr(arch.config, "build_module")
-    config = configure_dspark_draft(_dp_context(monkeypatch), {})
+    context = _dp_context(monkeypatch)
+    context.adapter = adapter
+    config = configure_dspark_draft(context, {})
     assert config.rope is not None
+    assert config.raw_checkpoint_weights is raw_checkpoint_weights
 
 
 def test_the_graph_api_pairing_is_unchanged() -> None:
@@ -512,6 +523,7 @@ def _dp_context(monkeypatch: pytest.MonkeyPatch) -> Any:
         monkeypatch.setattr(model_module, name, value)
     return SimpleNamespace(
         pipeline_config=SimpleNamespace(
+            artifact_export=False,
             speculative=SpeculativeConfig(
                 speculative_method="dspark", num_speculative_tokens=BLOCK
             ),
@@ -525,6 +537,8 @@ def _dp_context(monkeypatch: pytest.MonkeyPatch) -> Any:
         max_seq_len=64,
         target_layer_ids=tuple(arch_config.dspark_target_layer_ids),
         kv_params=None,
+        # ModelLoadContext always carries its adapter, including no adapter.
+        adapter=None,
         weights={},
         start_ep=lambda ep_config: None,
     )

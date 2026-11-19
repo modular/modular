@@ -662,7 +662,7 @@ class DecoderModelInputs(ModelInputs):
     constants: tree.Tree[Buffer] | None = None
     """The checkpoint-backed inputs, retained across steps."""
 
-    state: tuple[Buffer, ...] = ()
+    state: tuple[tree.Tree[Buffer], ...] = ()
     """The decoder's per-request state inputs, when it declares any."""
 
     scratch: tuple[Buffer, ...] = ()

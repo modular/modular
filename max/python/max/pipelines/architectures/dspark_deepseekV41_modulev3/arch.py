@@ -19,6 +19,7 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.lib import GraphRole
 
 from ..deepseekV41_modulev3.model_config import dspark_draft_width
+from ..deepseekV41_modulev3.weight_adapters import dspark_v41_weight_rules
 from ..dspark_deepseekV41.arch import dspark_deepseekV41_draft_arch
 from ..dspark_deepseekV41.model import DSparkDeepseekV41DraftArchConfigBase
 from .model import (
@@ -39,5 +40,8 @@ dspark_deepseekV41_modulev3_draft_arch = replace(
     weight_adapters={
         WeightsFormat.safetensors: convert_dspark_modulev3_safetensor_state_dict,
     },
+    weight_rules=dspark_v41_weight_rules,
+    use_weight_rules=True,
+    weight_rules_for_artifacts_only=True,
     checkpoint_draft_width=dspark_draft_width,
 )

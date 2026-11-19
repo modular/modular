@@ -47,6 +47,7 @@ from max.nn.activation import GatedActivation
 from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
 )
+from max.nn.transparent_module import TransparentModule
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 from max.tensor.sharding.action import AxisAssignment
@@ -634,3 +635,60 @@ class MXFP8Linear(Module[[Tensor], Tensor]):
         return rope_tail_matmul_op(
             x.codes, x.scales, self.weight, self.scale, cos_sin, head_dim
         )
+
+
+class ConcatenatedMXFP8Linear(TransparentModule[[Tensor], Tensor]):
+    """One projection over two stored checkpoint projections.
+
+    The transparent container retains the checkpoint's sibling names. Only
+    weights feed the concatenations, so compilation can hoist them into init.
+    """
+
+    def __init__(
+        self, in_dim: int, first: tuple[str, int], second: tuple[str, int]
+    ) -> None:
+        super().__init__()
+        self._first_name, self._second_name = first[0], second[0]
+        self._concat_mesh: DeviceMesh | None = None
+        setattr(self, first[0], MXFP8Linear(in_dim, first[1]))
+        setattr(self, second[0], MXFP8Linear(in_dim, second[1]))
+
+    def shard(self, axis: int, mesh: DeviceMesh) -> "ConcatenatedMXFP8Linear":
+        """Shards each checkpoint projection before concatenating local rows."""
+        for name in (self._first_name, self._second_name):
+            getattr(self, name).shard(axis, mesh)
+        self._concat_mesh = mesh if axis == 0 else None
+        return self
+
+    def _concatenate(self, field: str) -> Tensor:
+        values = [
+            getattr(getattr(self, name), field)
+            for name in (self._first_name, self._second_name)
+        ]
+        if self._concat_mesh is not None:
+            # Gate and up rows must stay paired within each TP rank, as in
+            # the converted checkpoint's rank-interleaved w13 projection.
+            return F.call_on_mesh(
+                F.concat,
+                self._concat_mesh,
+                out_specs=DeviceMapping(self._concat_mesh, (Sharded(0),)),
+            )(values, axis=0)
+        return F.concat(values, axis=0)
+
+    @property
+    def weight(self) -> Tensor:
+        """Concatenates stored code rows without changing their bytes."""
+        return self._concatenate("weight")
+
+    @property
+    def scale(self) -> Tensor:
+        """Concatenates the corresponding compact block-scale rows."""
+        return self._concatenate("scale")
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Quantizes the activation once for both stored projections."""
+        return _dense_op(x, self.weight, self.scale)
+
+    def forward_quantized(self, x: Mxfp8Rows) -> Tensor:
+        """Projects an activation that is already quantized."""
+        return _dense_quantized_op(x.codes, x.scales, self.weight, self.scale)

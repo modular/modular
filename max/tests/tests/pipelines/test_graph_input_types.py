@@ -62,7 +62,7 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.legacy import graph_groups
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.graph_groups import BatchContext, RaggedBatch
+from max.nn.legacy.graph_groups import BatchContext, RaggedBatch, StaticBuffers
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
@@ -601,8 +601,91 @@ def _lfm2_vl() -> tuple[_InputTree, _InputTypes]:
     return types, tuple(tree.leaves(types))
 
 
+def _deepseek_v41_artifact(replicas: int) -> tuple[_InputTree, _InputTypes]:
+    """The V4.1 producer's eager DP/EP inputs, including startup resources."""
+    from max.pipelines.architectures.deepseekV41_modulev3.interface import (
+        V41Config,
+        build_kv_params,
+        extra_inputs,
+        kv_cache_config,
+    )
+    from max.pipelines.architectures.deepseekV41_modulev3.registration import (
+        DeepseekV41RequestState,
+        RegisteredDeepseekV41Decoder,
+    )
+
+    devices = _gpus(replicas)
+    config = V41Config(
+        vocab_size=129280,
+        num_hidden_layers=2,
+        num_attention_heads=8,
+        head_dim=576,
+        sliding_window=128,
+        compress_ratios=(0, 0),
+        kv_source_layer_ids=(0, 1),
+        index_head_dim=128,
+        engram_num_embeddings=(11, 13),
+        engram_head_dim=256,
+        num_dspark_stages=3,
+        hidden_size=5120,
+        moe_intermediate_size=2304,
+        q_lora_rank=1024,
+        o_lora_rank=1024,
+        o_groups=8,
+        n_routed_experts=384,
+        index_source_layer_ids=(),
+        candidate_source_layer_id=1,
+        index_n_heads=4,
+        index_topk=8,
+        candidate_topk_blocks=8,
+        hc_mult=4,
+        engram_layer_ids=(0, 1),
+        has_vision=False,
+        decoder_replay=True,
+        engram_lookback_history=True,
+        artifact_export=True,
+    )
+    declarations = extra_inputs(
+        config,
+        devices,
+        replicas,
+        artifact=True,
+    )
+    constants = StaticBuffers(
+        (name, spec)
+        for name, spec in declarations
+        if name.startswith("engram_table_")
+    )
+    dynamic = [
+        i for i, (name, _) in enumerate(declarations) if name not in constants
+    ]
+    state = DeepseekV41RequestState._group(
+        _fake(
+            _raw_checkpoint_weights=True,
+            _declarations=declarations,
+            _dynamic_indices=dynamic,
+        ),
+        [declarations[i][1] for i in dynamic],
+    )
+    ep = EPBatchManager(
+        replace(_ep_config(), n_gpus_per_node=replicas)
+    ).input_tree()
+    types = decoder_input_types(
+        build_kv_params(config, kv_cache_config(), devices, replicas),
+        devices[0],
+        data_parallel_degree=replicas,
+        constants=constants,
+        state=state,
+        ep=ep,
+        input_layout=RegisteredDeepseekV41Decoder.input_layout,
+    )
+    return types, tuple(tree.leaves(types))
+
+
 _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "inkling_single_device": lambda: _inkling(_gpus(1)),
+    "deepseekV41_artifact_dp4": lambda: _deepseek_v41_artifact(4),
+    "deepseekV41_artifact_dp8": lambda: _deepseek_v41_artifact(8),
     "inkling_multi_device": lambda: _inkling(_gpus(2)),
     "llama3_single_device": lambda: _llama3(_gpus(1)),
     "llama3_eagle_draft": lambda: _llama3(_gpus(1), hidden=True),
@@ -721,7 +804,7 @@ def virtual_gpus() -> Iterator[None]:
     """Lets a layout name a GPU on the CPU-only workers."""
     set_virtual_device_api("cuda")
     set_virtual_device_target_arch("sm_80")
-    set_virtual_device_count(2)
+    set_virtual_device_count(8)
     try:
         yield
     finally:
@@ -861,9 +944,35 @@ def _runtime() -> BatchProcessorRuntime:
 @pytest.mark.parametrize("name", list(_CASES))
 def test_every_per_step_dim_has_a_maximum(name: str) -> None:
     dims = per_step_dims(_input_signature(_CASES[name]()[0])[0])
-    assert set(_runtime().max_dims(dims, _kv_params(_gpus(1)))) == set(dims)
-    # KV pages and state pool rows are sized by their owners.
-    assert not [d for d in dims if d.endswith(("total_num_pages", "_rows"))]
+    owners: dict[str, int] = {}
+    if name.startswith("deepseekV41_artifact_"):
+        from max.pipelines.architectures.deepseekV41_modulev3.registration import (
+            DeepseekV41RequestState,
+        )
+
+        # A registered state store bounds its additional per-step fields;
+        # the common runtime still sizes the ordinary batch and KV metadata.
+        # The case's replicas: the per-replica replay extents follow them.
+        replicas = int(name.rpartition("_dp")[2])
+        owners = dict(
+            DeepseekV41RequestState.max_dims(
+                _fake(
+                    processor=_fake(
+                        runtime=replace(
+                            _runtime(), data_parallel_degree=replicas
+                        )
+                    ),
+                    _verify_width=0,
+                    _window=128,
+                )
+            )
+        )
+    ordinary = [dim for dim in dims if dim not in owners]
+    bounds = _runtime().max_dims(ordinary, _kv_params(_gpus(1)))
+    bounds.update((dim, owners[dim]) for dim in dims if dim in owners)
+    assert set(bounds) == set(dims)
+    # KV pages and persistent state pool rows are sized by their owners.
+    assert not [d for d in ordinary if d.endswith(("total_num_pages", "_rows"))]
 
 
 def test_max_dims_bound_the_step() -> None:

@@ -40,10 +40,8 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     ],
     default_encoding=RegisteredDeepseekV41Config.DEFAULT_ENCODING,
     supported_encodings=RegisteredDeepseekV41Config.SUPPORTED_ENCODINGS,
-    # Multi-GPU serves the data-parallel attention + expert-parallel MoE
-    # shapes this trunk wires (dp == ep_size == the device count, the
-    # full attention heads once per rank); plain tensor parallelism
-    # still hits the window-list masking placement conflict.
+    # TP2/TP4 shard attention and MoE over replicated request rows. DP/EP
+    # runs one full attention replica per device with routed experts shared.
     multi_gpu_supported=True,
     supports_empty_batches=False,
     modules={
@@ -51,17 +49,25 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
         GraphRole.VISION: DeepseekV41VisionEncoder,
     },
     tokenizer=DeepseekV41Tokenizer,
+    tokenizer_family=deepseekV41_arch.tokenizer_family,
     context_type=TextAndVisionContext,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
+    # Only a pipeline artifact loads the raw weight rules. Serving and bare
+    # MEF exports keep the adapter and the registry weight and graph contract
+    # Mach checks during migration.
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    weight_rules=weight_adapters.deepseek_v41_weight_rules,
+    use_weight_rules=True,
+    weight_rules_for_artifacts_only=True,
     # The trunk serves every request with a zero window start and a zero
     # write floor; a request resumed from cached pages would read its
     # window from position 0 and land compressor and indexer writes in
     # blocks the cached prefix shares with other sessions. Prefix caching
-    # stays off until resuming from cached pages is supported.
+    # stays off until resuming from cached pages is supported, and an
+    # artifact export records it off.
     required_arguments={"enable_prefix_caching": False},
     config=RegisteredDeepseekV41Config,
     batching=RegisteredDeepseekV41BatchProcessor,

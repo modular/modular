@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -24,9 +25,20 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from max import functional as F
-from max.driver import CPU, Buffer
+from max import tree
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.graph_groups import BatchContext, StaticBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.deepseekV41_modulev3 import (
@@ -41,6 +53,9 @@ from max.pipelines.architectures.deepseekV41_modulev3.batch_processor import (
 from max.pipelines.architectures.deepseekV41_modulev3.deepseekV41 import (
     DeepseekV41,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
+    DSparkDrafter,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
     build_kv_params,
@@ -51,8 +66,12 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
     mhc_fused_post_pre,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
+    RopeParams,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.model import (
     DeepseekV41Model,
+    build_ep_config,
     serving_token_map,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
@@ -81,10 +100,15 @@ from max.pipelines.lib.config.config import _required_argument_changes
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _driver_call,
+    _SpecDecodeModule,
+)
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.lib.tokenizer import TextTokenizer
 from max.pipelines.modeling.types import InputModality
-from max.tensor import Tensor
+from max.pipelines.speculative.config import SpeculativeConfig
+from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 from runtime_config import text_config
 from tokenizers import Tokenizer
@@ -729,3 +753,265 @@ def test_extras_read_real_lookback_windows(
             [-1, -1, -1],
         ],
     )
+
+
+@pytest.mark.parametrize("tp", [2, 4])
+@pytest.mark.parametrize("raw", [False, True])
+@pytest.mark.parametrize("history", [False, True])
+def test_real_trunk_traces_tensor_parallel_virtual_sm100(
+    tp: int, raw: bool, history: bool
+) -> None:
+    """Stages real attention/MoE sharding without compiling or executing."""
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_100a")
+    set_virtual_device_count(4)
+    try:
+        devices = tuple(Accelerator(i) for i in range(tp))
+        refs = [DeviceRef.from_device(device) for device in devices]
+        mesh = DeviceMesh(devices, (tp,), ("tp",))
+        text = text_config(
+            num_hidden_layers=3,
+            compress_ratios=[0, 1, 0],
+            num_attention_heads=64,
+            o_groups=8,
+            moe_intermediate_size=128,
+            engram_lookback_history=history,
+            decoder_replay=history,
+        )
+        interface = V41Config.from_hf({"text_config": vars(text)})
+        kv = build_kv_params(
+            interface, KVCacheConfig(kv_cache_page_size=128), refs
+        )
+        config = DeepseekV41Config(
+            dtype=DType.bfloat16,
+            kv_params=kv,
+            devices=refs,
+            max_seq_len=256,
+            raw_checkpoint_weights=raw,
+            **DeepseekV41Config.resolve_text_fields(text),
+        )
+        with F.lazy():
+            module = DeepseekV41(
+                config,
+                kv,
+                mesh,
+                text_config=text,
+                token_map=np.arange(128, dtype=np.int32),
+            )
+        attn = module.layers[0].attn
+        assert (
+            int(attn.wq_b.weight.local_shards[0].shape[0])
+            == text.num_attention_heads * text.head_dim // tp
+        )
+        assert (
+            int(attn.attn_sink.local_shards[0].shape[0])
+            == text.num_attention_heads // tp
+        )
+        assert (
+            int(attn.wo_a.weight.local_shards[0].shape[0])
+            == text.o_groups * text.o_lora_rank // tp
+        )
+        assert (
+            int(attn.wo_b.weight.local_shards[0].shape[1])
+            == text.o_groups * text.o_lora_rank // tp
+        )
+        inputs = list(
+            modulev3_ragged_kv_symbolic_inputs(kv_params=kv, device_refs=refs)
+        )
+        inputs.extend(
+            kind for _, kind in extra_inputs(interface, refs, artifact=raw)
+        )
+        staged = str(module.trace(*inputs))
+        assert "window_kv_store" in staged
+    finally:
+        set_virtual_device_count(0)
+
+
+@pytest.mark.parametrize(
+    ("devices_count", "dp"), [(2, 1), (4, 1), (4, 4), (8, 8)]
+)
+def test_real_fused_dspark_named_history_virtual_sm100(
+    devices_count: int, dp: int
+) -> None:
+    """The actual fused builder stages named arena/history/replay inputs."""
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_100a")
+    set_virtual_device_count(8)
+    try:
+        register_all_models()
+        devices = tuple(Accelerator(i) for i in range(devices_count))
+        refs = [DeviceRef.from_device(d) for d in devices]
+        mesh = DeviceMesh(
+            devices, (devices_count,), ("dp" if dp > 1 else "tp",)
+        )
+        text = text_config(
+            num_hidden_layers=3,
+            compress_ratios=[0, 1, 0, 0],
+            num_attention_heads=64,
+            o_groups=8,
+            moe_intermediate_size=128,
+            n_mtp_layers=1,
+            dspark_target_layer_ids=[2],
+            dspark_noise_token_id=0,
+            dspark_n_routed_experts=8,
+            dspark_num_experts_per_tok=2,
+            dspark_markov_rank=32,
+            engram_lookback_history=True,
+            decoder_replay=True,
+        )
+        interface = V41Config.from_hf(
+            {"text_config": vars(text)}, artifact_export=True
+        )
+        kv = build_kv_params(
+            interface,
+            KVCacheConfig(kv_cache_page_size=128),
+            refs,
+            data_parallel_degree=dp,
+            num_draft_tokens=5,
+        )
+        declarations = extra_inputs(
+            interface,
+            refs,
+            dp,
+            verify_rows=True,
+            artifact=True,
+        )
+        config = DeepseekV41Config(
+            dtype=DType.bfloat16,
+            kv_params=kv,
+            devices=refs,
+            max_seq_len=256,
+            max_batch_rows=74,
+            raw_checkpoint_weights=True,
+            artifact_export=True,
+            data_parallel_degree=dp,
+            dspark_trailing_inputs=declarations,
+            **DeepseekV41Config.resolve_text_fields(text),
+        )
+        speculative = SpeculativeConfig.model_construct(
+            speculative_method="dspark",
+            num_speculative_tokens=5,
+            draft_proposal="sampled",
+            use_greedy_acceptance=False,
+            draft_probs_layout="replica" if dp > 1 else "device0",
+            draft_head_parallelism="replica" if dp > 1 else "device0",
+        )
+        pipeline: Any = SimpleNamespace(
+            models=SimpleNamespace(
+                main_architecture_name="DeepseekV41ForCausalLM"
+            ),
+            model=SimpleNamespace(
+                data_parallel_degree=dp,
+                pipeline_stage=None,
+                huggingface_config=SimpleNamespace(
+                    get_text_config=lambda: text
+                ),
+            ),
+            draft_model=None,
+            speculative=speculative,
+            needs_bitmask_constraints=False,
+            runtime=SimpleNamespace(
+                prefer_module_v3=True,
+                reasoning_parser=None,
+                ep_size=dp,
+                max_batch_size=2,
+                max_batch_input_tokens=64,
+            ),
+        )
+        ep = (
+            EPBatchManager(
+                build_ep_config(
+                    pipeline, config, devices_count, config.routed_expert_format
+                )
+            )
+            if dp > 1
+            else None
+        )
+        with F.lazy(), default_device(mesh), default_dtype(DType.bfloat16):
+            target = DeepseekV41(
+                config,
+                kv,
+                mesh,
+                text_config=text,
+                token_map=np.arange(128, dtype=np.int32),
+                data_parallel_degree=dp,
+                ep_batch_manager=ep,
+            )
+            draft = DSparkDrafter(
+                config,
+                mesh,
+                rope=RopeParams.from_text_config(text),
+                data_parallel_degree=dp,
+            )
+            fused = _SpecDecodeModule(
+                target,
+                draft,
+                partial(
+                    _driver_call,
+                    pipeline,
+                    MultiKVCacheParams.from_params({"target": kv}),
+                    refs,
+                    include_signal_buffers=True,
+                    target_config=config,
+                    draft_config=config,
+                    hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
+                    trace_owns_signal_buffers=True,
+                ),
+            )
+        call = fused.driver_call()
+        staged = fused.trace(*call.arguments)
+        assert "SpecDecodeOutputs" in str(staged.out_tree)
+        probabilities = [
+            layout for layout in staged.out_layouts if len(layout.shape) == 3
+        ]
+        assert len(probabilities) == max(1, dp)
+        assert all(
+            int(layout.shape[1]) == 5 and int(layout.shape[2]) == 128
+            for layout in probabilities
+        )
+        assert call.input_tree is not None
+        assert len(tree.leaves(call.input_tree)) == len(call.input_types)
+        fields = {
+            key
+            for group in tree.nodes(call.input_tree, BatchContext).values()
+            for key in group
+        }
+        # Data parallelism adds the canonical per-replica context lengths.
+        assert fields - {"length", "total_length"} == {
+            "window_start",
+            "write_floor",
+            "image_token_mask",
+            "lookback_tokens",
+            "lookback_source",
+            "lookback_mask",
+            "window_rows",
+            "replay_skip",
+            "replay_row_indices",
+            "replay_offsets",
+            "replay_longest",
+        }
+        # The kept rows arrive one input per replica, none of them on the host.
+        for group in tree.nodes(call.input_tree, BatchContext).values():
+            for key in (
+                "replay_row_indices",
+                "replay_offsets",
+                "replay_longest",
+            ):
+                if key in group:
+                    assert len(group[key]) == max(1, dp), key
+        # The Engram tables reach the ops as the fp8 they read, not bytes.
+        constants = {
+            key: spec.dtype
+            for group in tree.nodes(call.input_tree, StaticBuffers).values()
+            for key, spec in group.items()
+        }
+        assert constants == {
+            f"engram_table_{i}_{part}": dtype
+            for i in range(len(text.engram_num_embeddings))
+            for part, dtype in (
+                ("weight", DType.float8_e4m3fn),
+                ("scale", DType.float8_e8m0fnu),
+            )
+        }
+    finally:
+        set_virtual_device_count(0)

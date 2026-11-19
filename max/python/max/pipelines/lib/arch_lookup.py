@@ -313,6 +313,13 @@ class SupportedArchitecture:
     """Whether the pipeline loads the checkpoint through :attr:`weight_rules`
     rather than :attr:`weight_adapters`."""
 
+    weight_rules_for_artifacts_only: bool = False
+    """Whether :attr:`use_weight_rules` applies only to a pipeline artifact
+    export (``PipelineConfig.artifact_export``). Every other load, serving
+    and bare MEF exports included, keeps :attr:`weight_adapters` and the
+    weight and graph contract they produce, while an architecture migrates
+    to its artifact."""
+
     multi_gpu_supported: bool = False
     """Whether the architecture supports multi-GPU execution."""
 
@@ -658,19 +665,24 @@ class SupportedArchitecture:
             )
 
     def checkpoint_adapters(
-        self, huggingface_config: PretrainedConfig
+        self, huggingface_config: PretrainedConfig, *, artifact_export: bool
     ) -> dict[WeightsFormat, WeightsAdapter]:
         """Returns the adapters a pipeline loads the checkpoint through.
 
         Args:
             huggingface_config: The checkpoint's config, which
                 :attr:`weight_rules` reads.
+            artifact_export: Whether the pipeline is built for a pipeline
+                artifact (``PipelineConfig.artifact_export``), which
+                :attr:`weight_rules_for_artifacts_only` reads.
 
         Raises:
             ValueError: If :attr:`use_weight_rules` is set without
                 :attr:`weight_rules`.
         """
-        if not self.use_weight_rules:
+        if not self.use_weight_rules or (
+            self.weight_rules_for_artifacts_only and not artifact_export
+        ):
             return self.weight_adapters
         if self.weight_rules is None:
             raise ValueError(

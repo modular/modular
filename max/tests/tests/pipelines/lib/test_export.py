@@ -127,6 +127,7 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.module_registration import DecoderBatchProcessor
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodePipelineModel,
+    _BatchProcessor,
 )
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
@@ -1771,3 +1772,68 @@ def test_export_warns_when_no_cache_splits_the_positions_asked_for(
         config, "GlmMoeDsaForCausalLM", pipeline_kv_cache(_dcp_latent())
     )
     assert "ignores the context parallel flags" not in caplog.text
+
+
+def _fused_bounds_processor(target: Any) -> _BatchProcessor:
+    config = _fake(
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+        model=_fake(
+            data_parallel_degree=1,
+            huggingface_config=_fake(
+                get_text_config=lambda: _fake(vocab_size=64)
+            ),
+        ),
+    )
+    runtime = BatchProcessorRuntime(
+        pipeline_config=config,
+        devices=[],
+        return_logits=ReturnLogits.VARIABLE,
+        max_batch_size=4,
+        max_seq_len=256,
+        max_batch_input_tokens=64,
+    )
+    processor = object.__new__(_BatchProcessor)
+    processor.runtime = runtime
+    processor.__dict__["_target_batching"] = target
+    processor.bind_input_tree(OrderedDict())
+    return processor
+
+
+def test_fused_export_bounds_include_the_targets_model_specific_dims() -> None:
+    target = _fake(max_dims=Mock(return_value={"model_rows": 37}))
+    processor = _fused_bounds_processor(target)
+    kv = _fake(page_size=128, num_draft_tokens=3)
+    model = _fake(batch_processor=processor, kv_params=kv)
+    layout = as_layout(
+        TensorType(
+            DType.float32,
+            ["merged_total_seq_len", "model_rows"],
+            device=DeviceRef.CPU(),
+        )
+    )
+    decoder = _fake(in_layouts=[layout])
+    assert batch_processor_dims(model, decoder) == BatchProcessorDims(
+        {"merged_total_seq_len": 76, "model_rows": 37}
+    )
+    target.max_dims.assert_called_once_with(["model_rows"], kv)
+
+
+def test_fused_export_preserves_the_targets_unbounded_dim_error() -> None:
+    target = _fake(
+        max_dims=Mock(side_effect=ValueError("target cannot bound model_rows"))
+    )
+    processor = _fused_bounds_processor(target)
+    model = _fake(batch_processor=processor, kv_params=_fake(page_size=128))
+    decoder = _fake(
+        in_layouts=[
+            as_layout(
+                TensorType(
+                    DType.float32, ["model_rows"], device=DeviceRef.CPU()
+                )
+            )
+        ]
+    )
+    with pytest.raises(ValueError, match="target cannot bound model_rows"):
+        batch_processor_dims(model, decoder)

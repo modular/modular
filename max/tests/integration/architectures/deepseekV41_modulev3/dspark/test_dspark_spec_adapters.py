@@ -26,24 +26,24 @@ import pytest
 import torch
 from dspark_test_support import TESTDATA
 from max import functional as F
+from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import (
-    BufferType,
     DeviceRef,
     Dim,
-    Graph,
     TensorType,
     TensorValue,
     ops,
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
-from max.pipelines.architectures.deepseekV41.engram_lookback import (
-    read_engram_lookback,
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    MultiKVCacheParams,
+    RecurrentLeafInputs,
+    RecurrentStateInputsPerDevice,
 )
+from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
 from max.pipelines.architectures.deepseekV41_modulev3 import (
     deepseekV41 as trunk,
 )
@@ -59,6 +59,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
     build_kv_params,
     extra_input_names,
+    extra_inputs,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
     RopeParams,
@@ -451,6 +452,7 @@ class _RecordingTarget:
         self.assembled: tuple[Any, ...] | None = None
         self.draft_width: Tensor | None = None
         self.vision: VisionInputs[Tensor] | None = None
+        self.history: Any = None
 
     def batch_from_parts(
         self,
@@ -463,9 +465,11 @@ class _RecordingTarget:
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: Any = None,
         draft_width: Tensor | None = None,
+        history: Any = None,
         vision: VisionInputs[Tensor] | None = None,
     ) -> Any:
         self.assembled = (tokens, input_row_offsets, kv, extras)
+        self.history = history
         self.draft_width = draft_width
         self.vision = vision
         return SimpleNamespace(
@@ -632,7 +636,9 @@ def test_verify_records_the_window_only_when_the_export_carries_the_history() ->
         default = adapter(_batch(lengths=lengths))
     assert default.roll_forward is None
 
-    config = dataclasses.replace(_v41_config(), engram_lookback_history=True)
+    config = dataclasses.replace(
+        _v41_config(), engram_lookback_history=True, artifact_export=True
+    )
     batch = 2
     extras: dict[str, Tensor | Buffer] = {**_extras()}
     del extras["engram_lookback"]
@@ -642,158 +648,37 @@ def test_verify_records_the_window_only_when_the_export_carries_the_history() ->
     extras["engram_lookback_source"] = _to_max(
         torch.full((batch,), -1, dtype=torch.int64)
     )
-    extras["engram_lookback_history"] = Buffer.from_numpy(
-        np.zeros((batch, 3), np.int64)
-    )
     assert set(extras) == set(extra_input_names(config))
     target = _target(sum(lengths))
     target.config = config
     target.interface_config = config
-    adapter = DeepseekV41BlockTarget(target, _kv_params_stub())
-    with _eager():
-        recording = adapter(_batch(lengths=lengths, extra=extras))
-    assert recording.roll_forward is not None
-
-
-def _to_device(array: np.ndarray) -> Buffer:
-    return Buffer.from_numpy(np.ascontiguousarray(array)).to(CPU())
-
-
-def _lookback_record_graph() -> Graph:
-    """The roll-forward's graph: the window its record reads, then the record.
-
-    The driver hands the roll-forward a batch whose lookback extras are
-    the graph's own input values -- the roll-forward reads them through
-    ``.tensor`` and ``.buffer`` -- so the record runs here against the
-    batch exactly as the driver stages it.
-    """
-    adapter = DeepseekV41BlockTarget(_target(0), _kv_params_stub())
-    base = _batch(lengths=[1, 1])
-    device = DeviceRef.CPU()
-    input_types: list[TensorType | BufferType] = [
-        TensorType(
-            DType.int64, ["engram_lookback_batch", DEPTH], device=device
-        ),
-        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
-        BufferType(DType.int64, ["engram_history_rows", DEPTH], device=device),
-        TensorType(DType.int64, ["total_seq_len"], device=device),
-        TensorType(DType.uint32, ["input_row_offsets_len"], device=device),
-        TensorType(
-            DType.int64, ["engram_lookback_batch", "num_drafts"], device=device
-        ),
-        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
-    ]
-    with Graph(
-        "modulev3_dspark_lookback_record", input_types=input_types
-    ) as graph:
-        host, source, history, tokens, offsets, drafts, accepted = graph.inputs
-        window = read_engram_lookback(
-            host.tensor, source.tensor, history.buffer
-        )
-        batch = dataclasses.replace(
-            base,
-            tokens=tokens.tensor,
-            input_row_offsets=offsets.tensor,
-            draft_tokens=drafts.tensor,
-            num_accepted=accepted.tensor,
-            extra={
-                "engram_lookback_ids": host,
-                "engram_lookback_source": source,
-                "engram_lookback_history": history,
-            },
-        )
-        adapter._record_lookback(batch)
-        graph.output(window)
-    return graph
-
-
-def _lookback_read_graph() -> Graph:
-    """The trunk's read, as ``batch_from_parts`` runs it: the recorded row
-    the source map names, else the host window, cast to the int32 the
-    Engram hash reads."""
-    device = DeviceRef.CPU()
-    input_types: list[TensorType | BufferType] = [
-        TensorType(
-            DType.int64, ["engram_lookback_batch", DEPTH], device=device
-        ),
-        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
-        BufferType(DType.int64, ["engram_history_rows", DEPTH], device=device),
-    ]
-    with Graph(
-        "modulev3_dspark_lookback_read", input_types=input_types
-    ) as graph:
-        host, source, history = graph.inputs
-        graph.output(
-            F.cast(
-                read_engram_lookback(
-                    host.tensor, source.tensor, history.buffer
+    # The history is a recurrent leaf of the cache tree, beside the paged ones.
+    kv_params = _kv_params_stub()
+    kv_params.children["lookback_history"] = object()
+    # The eager run carries realized tensors in the graph-typed slots.
+    history: Any = RecurrentStateInputsPerDevice(
+        leaves=(
+            RecurrentLeafInputs(
+                pool=cast(Any, _to_max(torch.zeros(4, 3, dtype=torch.int64))),
+                live_row_ids=_graph_typed(
+                    _to_max(torch.tensor([[0, 1]], dtype=torch.uint32))
                 ),
-                DType.int32,
-            )
+            ),
         )
-    return graph
-
-
-def test_roll_forward_records_the_window_a_following_step_reads() -> None:
-    """The roll-forward's record and the following read agree on the rows.
-
-    The verify hands the roll-forward the driver's batch, so a swapped
-    argument there records another row's window and only fed rows ever
-    notice: with a known batch, the record must leave each row's window
-    -- the ``DEPTH`` tokens ending with the row's last accepted draft --
-    in its history row, and the next step's read must return exactly
-    those rows, never the stale host windows it carries.
-    """
-    session = InferenceSession(devices=[CPU()])
-    record = session.load(_lookback_record_graph())
-    read = session.load(_lookback_read_graph())
-    # The persistent history, as the executor allocates it once per boot.
-    history = _to_device(np.zeros((4, DEPTH), np.int64))
-
-    # Step one: two fresh rows read their host windows and record the
-    # tokens their accepted drafts end with -- request 0 accepts one of
-    # its two drafts, request 1 both.
-    host = np.array([[901, 902, 903], [911, 912, 913]], np.int64)
-    (window,) = record.execute(
-        _to_device(host),
-        _to_device(np.array([-1, -1], np.int64)),
-        history,
-        _to_device(np.array([101, 102, 111, 112, 113], np.int64)),
-        _to_device(np.array([0, 2, 5], np.uint32)),
-        _to_device(np.array([[201, 202], [211, 212]], np.int64)),
-        _to_device(np.array([1, 2], np.int64)),
     )
-    assert isinstance(window, Buffer)
-    np.testing.assert_array_equal(window.to_numpy(), host)
-    recorded = np.array([[201, 102, 101], [212, 211, 113]], np.int64)
-    np.testing.assert_array_equal(history.to_numpy()[:2], recorded)
-
-    # The following step's read sources the rows the record wrote, so
-    # the stale host windows it carries must not survive the source map.
-    stale = np.array([[701, 702, 703], [711, 712, 713]], np.int64)
-    sources = np.array([0, 1], np.int64)
-    (lookback,) = read.execute(_to_device(stale), _to_device(sources), history)
-    assert isinstance(lookback, Buffer)
-    np.testing.assert_array_equal(lookback.to_numpy(), recorded)
-
-    # A record over rows still in flight reads its windows out of the
-    # history the previous step recorded, then records past each chunk's
-    # single committed token: nothing accepted, and one draft accepted.
-    (window,) = record.execute(
-        _to_device(stale),
-        _to_device(sources),
-        history,
-        _to_device(np.array([103, 114], np.int64)),
-        _to_device(np.array([0, 1, 2], np.uint32)),
-        _to_device(np.array([[231, 232], [241, 242]], np.int64)),
-        _to_device(np.array([0, 1], np.int64)),
+    with_history = _batch(lengths=lengths, extra=extras)
+    with_history = dataclasses.replace(
+        with_history,
+        passthrough_kv={
+            **with_history.passthrough_kv,
+            "lookback_history": [history],
+        },
     )
-    assert isinstance(window, Buffer)
-    np.testing.assert_array_equal(window.to_numpy(), recorded)
-    np.testing.assert_array_equal(
-        history.to_numpy()[:2],
-        np.array([[103, 201, 102], [241, 114, 212]], np.int64),
-    )
+    adapter = DeepseekV41BlockTarget(target, kv_params)
+    with _eager():
+        recording = adapter(with_history)
+    assert recording.roll_forward is not None
+    assert target.history is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -1478,3 +1363,119 @@ def test_context_store_origins_are_the_staged_lengths_unshifted() -> None:
     assert torch.equal(
         _torch(origins), torch.tensor([4, 10], dtype=torch.int32)
     )
+
+
+def test_replica_proposals_enable_replica_verify_logits() -> None:
+    """The q and target-logit ownership must select the same replica path."""
+    with F.lazy():
+        config = _small_config()
+        drafter = DSparkDrafter(config, _MESH, rope=_rope())
+        target = _target(0)
+        assert isinstance(config.kv_params, MultiKVCacheParams)
+        verify = DeepseekV41BlockTarget(target, config.kv_params)
+        proposer = spec_adapters.block_proposer(
+            verify,
+            drafter,
+            config,
+            cast(
+                Any,
+                SimpleNamespace(
+                    draft_probs_layout="replica",
+                    draft_head_parallelism="replica",
+                ),
+            ),
+        )
+    assert verify.replica_logits
+    assert proposer.per_replica_head
+    assert proposer.per_replica_probs
+
+
+def test_replica_proposals_do_not_use_the_joined_draft_head(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with F.lazy():
+        config = _small_config()
+        drafter = DSparkDrafter(config, _MESH, rope=_rope())
+        proposer = DSparkDeepseekV41Proposer(
+            drafter,
+            _target(0),
+            config,
+            per_replica_head=True,
+            per_replica_probs=True,
+        )
+    proposer.dp = 8
+    hidden, expected = object(), object()
+    monkeypatch.setattr(spec_adapters, "as_tensors", lambda value: value)
+    monkeypatch.setattr(
+        proposer,
+        "_replica_head",
+        lambda batch, value, accepted, sampler: (
+            expected if value is hidden else None
+        ),
+    )
+    assert (
+        proposer.head(
+            cast(Any, None), cast(Any, hidden), cast(Any, None), cast(Any, None)
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize("degree", [4, 8])
+def test_raw_trailing_tree_preserves_declared_order(degree: int) -> None:
+    """The fused named signature preserves each actual context/resource leaf."""
+    config = _small_config()
+    config.raw_checkpoint_weights = True
+    config.dspark_trailing_inputs = extra_inputs(
+        _v41_config(),
+        [DeviceRef.GPU(rank) for rank in range(degree)],
+        degree,
+        verify_rows=True,
+        artifact=True,
+    )
+    named = spec_adapters.trailing_input_tree(config)
+    assert named is not None
+    assert tree.leaves(named) == spec_adapters.trailing_input_types(config)
+    assert {cast(Any, group).kind for group in named.values()} == {
+        "batch_context",
+        "static_buffers",
+    }
+    context = named["context_0"]
+    constants = named["constants_1"]
+    assert isinstance(context, Mapping) and isinstance(constants, Mapping)
+    assert list(context)[:2] == ["window_start", "write_floor"]
+    assert list(constants) == [
+        f"engram_table_{ordinal}_{part}"
+        for ordinal in range(2)
+        for part in ("weight", "scale")
+    ]
+    assert spec_adapters.ADAPTER.trailing_input_tree(config) is not None
+
+
+def test_legacy_trailing_signature_remains_positional() -> None:
+    assert spec_adapters.trailing_input_tree(_small_config()) is None
+
+
+def test_raw_trailing_tree_refuses_unnamed_history() -> None:
+    config = _small_config()
+    config.raw_checkpoint_weights = True
+    config.dspark_trailing_inputs = [
+        (
+            "engram_device_history",
+            TensorType(DType.int32, [1], DeviceRef.GPU(0)),
+        )
+    ]
+    with pytest.raises(ValueError, match="no artifact input producer"):
+        spec_adapters.trailing_input_tree(config)
+
+
+def test_text_only_artifact_omits_vision_inputs_but_preserves_bare_abi() -> (
+    None
+):
+    config = _small_config()
+    config.vision = None
+    assert spec_adapters.ADAPTER.takes_vision_inputs(config)
+    config.raw_checkpoint_weights = True
+    assert not spec_adapters.ADAPTER.takes_vision_inputs(config)
+    config.vision = cast(Any, object())
+    assert spec_adapters.ADAPTER.takes_vision_inputs(config)

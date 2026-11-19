@@ -117,9 +117,13 @@ modular_py_test(
         ":abi_contract",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
@@ -214,13 +218,15 @@ modular_py_test(
 
 # MXFP4-packed Engram tables: the quantization config's engram_embed_* keys,
 # the weight adapter's packed views, and the unpack to E4M3 as they are
-# pinned, bit-exact against FP8 twins. CPU only.
+# pinned, bit-exact against FP8 twins, and the static initializer compiled
+# for fp8 tables against a virtual B200.
 modular_py_test(
     name = "test_engram_mxfp4_tables",
     srcs = ["test_engram_mxfp4_tables.py"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         requirement("numpy"),
@@ -251,6 +257,9 @@ modular_py_test(
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
     },
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41_modulev3",
+    ],
     deps = [
         ":abi_contract",
         "//max/python/max:tree",
@@ -261,9 +270,11 @@ modular_py_test(
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 

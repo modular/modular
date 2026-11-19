@@ -24,7 +24,7 @@ so every text input keeps its position.
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
 from typing import Any, ClassVar, cast
 
@@ -44,6 +44,7 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.graph_groups import BatchContext, StaticBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (
     ImageMetadata,
@@ -91,6 +92,7 @@ from .batch_processor import DeepseekV41BatchProcessor
 from .deepseekV41 import DeepseekV41
 from .inputs import v41_config
 from .interface import extra_input_names, extra_inputs
+from .layers.engram_init import build_engram_static_inputs
 from .model import (
     build_ep_config,
     check_parallel_layout,
@@ -101,10 +103,84 @@ from .model import (
 from .model_config import DeepseekV41Config, max_images_per_request
 from .vision_encoder import DeepseekV41VisionModel, vision_input_types
 from .vision_inputs import pack_uncached_images
+from .weight_adapters import AdapterResult, check_expert_gate_up_scale_pairs
 
 
 def _is_constant(name: str) -> bool:
     return name == "engram_token_map" or name.startswith("engram_table_")
+
+
+# The artifact's batch-context field for each scheduler-produced input. Each
+# names what the value means, so an engine stages it from request and
+# scheduler state alone.
+_CONTEXT_FIELDS = {
+    "swa_begin": "window_start",
+    "global_write_floor": "write_floor",
+    "image_token_mask": "image_token_mask",
+    "engram_lookback": "lookback_tokens",
+    "engram_lookback_ids": "lookback_tokens",
+    "engram_lookback_source": "lookback_source",
+    "engram_lookback_dead": "lookback_mask",
+    "decoder_rows": "window_rows",
+    "replay.kept_skip": "replay_skip",
+}
+
+# The context fields one input per replica carries, each declared as
+# ``<stem>.<replica>``: the field holds them in replica order.
+_PER_REPLICA_FIELDS = {
+    "replay.row_indices": "replay_row_indices",
+    "replay.kept_offsets": "replay_offsets",
+    "replay.longest_rows": "replay_longest",
+}
+
+
+def _context_field(name: str) -> str | None:
+    """The batch-context field ``name`` stages, or ``None``."""
+    if name in _CONTEXT_FIELDS:
+        return _CONTEXT_FIELDS[name]
+    stem, _, replica = name.rpartition(".")
+    return _PER_REPLICA_FIELDS.get(stem) if replica.isdigit() else None
+
+
+def _context_entries(
+    pairs: Iterable[tuple[str, Any]],
+) -> list[tuple[str, Any]]:
+    """Each declaration's field, with a per-replica field's values as a tuple.
+
+    Raises:
+        ValueError: If a declaration stages no context field.
+    """
+    fields: dict[str, Any] = {}
+    for name, value in pairs:
+        field = _context_field(name)
+        if field is None:
+            raise ValueError(f"no artifact input producer for {name!r}")
+        if name in _CONTEXT_FIELDS:
+            fields[field] = value
+        else:
+            fields[field] = (*fields.get(field, ()), value)
+    return list(fields.items())
+
+
+def artifact_trailing_input_tree(
+    declarations: Sequence[tuple[str, TensorType | BufferType]],
+) -> Mapping[str, object]:
+    """Names the ordered context and immutable-resource runs of a fused call."""
+    runs: list[tuple[str, list[tuple[str, TensorType | BufferType]]]] = []
+    for name, value in declarations:
+        kind = "constants" if name.startswith("engram_table_") else "context"
+        if not runs or runs[-1][0] != kind:
+            runs.append((kind, []))
+        runs[-1][1].append((name, value))
+    return OrderedDict(
+        (
+            f"{kind}_{index}",
+            StaticBuffers(fields)
+            if kind == "constants"
+            else BatchContext(_context_entries(fields)),
+        )
+        for index, (kind, fields) in enumerate(runs)
+    )
 
 
 @dataclass(kw_only=True)
@@ -119,6 +195,7 @@ class RegisteredDeepseekV41Config(
     text_config: AutoConfig | None = field(default=None, repr=False)
     token_map: np.ndarray | None = field(default=None, repr=False)
     ep: EPConfig | None = field(default=None, repr=False)
+    static_constants: ConstantInputs | None = field(default=None, repr=False)
 
     @classmethod
     def initialize(
@@ -135,7 +212,14 @@ class RegisteredDeepseekV41Config(
         )
         return cls(
             **{
-                item.name: getattr(config, item.name) for item in fields(config)
+                **{
+                    item.name: getattr(config, item.name)
+                    for item in fields(config)
+                },
+                # Only an artifact export loads the raw weight rules
+                # (``weight_rules_for_artifacts_only``), so its graphs alone
+                # take the artifact inputs.
+                "raw_checkpoint_weights": pipeline_config.artifact_export,
             },
             pipeline_config=pipeline_config,
             text_config=DeepseekV41Config.get_text_config(
@@ -151,22 +235,51 @@ class RegisteredDeepseekV41Config(
     ) -> Self:
         """Pins adapter sidecars without copying them into module weights."""
         del huggingface_config
+        config = self
+        if (
+            isinstance(state_dict, AdapterResult)
+            == config.raw_checkpoint_weights
+        ):
+            raise ValueError(
+                "DeepSeek-V4.1 loads raw checkpoint weights for a pipeline "
+                "artifact export and its safetensors weight adapter otherwise; "
+                f"got {type(state_dict).__name__} with raw_checkpoint_weights="
+                f"{config.raw_checkpoint_weights}"
+            )
+        if config.raw_checkpoint_weights:
+            assert config.pipeline_config is not None
+            if config.data_parallel_degree > 1:
+                check_expert_gate_up_scale_pairs(state_dict)
+            static_constants = build_engram_static_inputs(config, state_dict)
+            assert isinstance(static_constants.buffers, Mapping)
+            table_buffers: dict[str, Buffer] = {}
+            for name, buffer in static_constants.buffers.items():
+                assert isinstance(buffer, Buffer)
+                table_buffers[name] = buffer
+            return replace(
+                config,
+                token_map=serving_token_map(config.pipeline_config, config),
+                static_constants=static_constants,
+                engram_static_inputs=table_buffers,
+                return_logits=outputs.return_logits,
+                return_hidden_states=outputs.return_hidden_states,
+            )
         tables = getattr(state_dict, "engram_tables", None)
         if tables is None:
             raise ValueError(
                 "DeepSeek-V4.1 requires its safetensors weight adapter "
                 "and Engram table sidecar"
             )
-        assert self.pipeline_config is not None
-        validate_engram_tables(tables, self)
-        token_map = serving_token_map(self.pipeline_config, self)
+        assert config.pipeline_config is not None
+        validate_engram_tables(tables, config)
+        token_map = serving_token_map(config.pipeline_config, config)
         constants = engram_static_inputs(
-            tables, token_map, self.devices[0].to_device()
+            tables, token_map, config.devices[0].to_device()
         )
         # Drop checkpoint table views once their pinned copies own the bytes.
         tables.clear()
         return replace(
-            self,
+            config,
             token_map=token_map,
             engram_static_inputs=constants,
             return_logits=outputs.return_logits,
@@ -191,10 +304,14 @@ class RegisteredDeepseekV41Config(
             return_logits=ReturnLogits.LAST_TOKEN,
             return_hidden_states=ReturnHiddenStates.NONE,
             dspark_trailing_inputs=extra_inputs(
-                v41_config(self.pipeline_config.model.huggingface_config),
+                v41_config(
+                    self.pipeline_config.model.huggingface_config,
+                    artifact_export=self.pipeline_config.artifact_export,
+                ),
                 self.devices,
                 self.data_parallel_degree,
                 verify_rows=True,
+                artifact=self.raw_checkpoint_weights,
             ),
         )
 
@@ -216,7 +333,7 @@ class RegisteredDeepseekV41Config(
 
 
 class DeepseekV41RequestState(RequestStateStore):
-    """Owns Engram history and the request/replay metadata of each step."""
+    """Prepares step metadata; persistent history lives in the KV arena."""
 
     def __init__(
         self,
@@ -243,16 +360,21 @@ class DeepseekV41RequestState(RequestStateStore):
         )
         self.processor = DeepseekV41BatchProcessor(config, runtime)
         self._declarations = extra_inputs(
-            v41_config(config.pipeline_config.model.huggingface_config),
+            v41_config(
+                config.pipeline_config.model.huggingface_config,
+                artifact_export=config.pipeline_config.artifact_export,
+            ),
             config.devices,
             config.data_parallel_degree,
             verify_rows=bool(config.dspark_trailing_inputs),
+            artifact=config.raw_checkpoint_weights,
         )
         self._dynamic_indices = tuple(
             i
             for i, (name, _) in enumerate(self._declarations)
             if not _is_constant(name)
         )
+        self._raw_checkpoint_weights = config.raw_checkpoint_weights
         self._splits: np.ndarray | None = None
         self._return_n_logits = 1
         self._window = config.sliding_window
@@ -260,25 +382,50 @@ class DeepseekV41RequestState(RequestStateStore):
             config.dspark_block_size if config.dspark_trailing_inputs else 0
         )
 
-    def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Declares dynamic metadata in the interface's named field order."""
-        return tuple(self._declarations[i][1] for i in self._dynamic_indices)
+    def _group(self, values: Sequence[Any]) -> tuple[Any, ...]:
+        if not self._raw_checkpoint_weights:
+            return tuple(values)
+        declarations = [self._declarations[i][0] for i in self._dynamic_indices]
+        unsupported = [
+            name for name in declarations if _context_field(name) is None
+        ]
+        if unsupported:
+            raise ValueError(f"no artifact input producer for {unsupported}")
+        return (
+            BatchContext(
+                _context_entries(zip(declarations, values, strict=True))
+            ),
+        )
+
+    def input_types(self) -> tuple[Any, ...]:
+        """Names each scheduler-produced context field in graph order."""
+        return self._group(
+            [self._declarations[i][1] for i in self._dynamic_indices]
+        )
 
     def max_dims(self) -> Mapping[str, int]:
         """Bounds history and replay from the scheduler's actual batch limits."""
         runtime = self.processor.runtime
         batch = runtime.max_global_batch_size
         tokens = runtime.max_batch_active_tokens
-        return {
+        merged = tokens + batch * self._verify_width
+        dims = {
             "replica_0_batch_size": batch,
             "global_batch_rows": batch,
             "total_seq_len": tokens,
-            "merged_seq_len": tokens + batch * self._verify_width,
+            "merged_seq_len": merged,
             "decoder_rows": min(tokens, batch * self._window),
             "engram_history_rows": batch,
             "kept_batch_plus_one": batch + 1,
-            "replay_kept_rows": tokens + batch * self._verify_width,
+            "replay_kept_rows": merged,
         }
+        # The artifact's per-replica replay extents: a replica holds at most
+        # the whole step, and its longest kept span is one row's.
+        for r in range(max(1, runtime.data_parallel_degree)):
+            dims[f"replay_kept_rows_{r}"] = merged
+            dims[f"replay_kept_bounds_{r}"] = batch + 1
+            dims[f"replay_longest_{r}"] = tokens + self._verify_width
+        return dims
 
     def set_layout(
         self,
@@ -293,7 +440,9 @@ class DeepseekV41RequestState(RequestStateStore):
             else None
         )
 
-    def prepare(self, batch: Sequence[TextContext]) -> tuple[Buffer, ...]:
+    def prepare(
+        self, batch: Sequence[TextContext]
+    ) -> tuple[tree.Tree[Buffer], ...]:
         """Stages request metadata while reusing the pinned constants."""
         if batch:
             _, offsets = build_single_replica_ragged_token_arrays(
@@ -302,9 +451,13 @@ class DeepseekV41RequestState(RequestStateStore):
         else:
             offsets = np.zeros(1, np.uint32)
         all_inputs = self.processor._extras(
-            batch, offsets, self._return_n_logits, self._splits
+            batch,
+            offsets,
+            self._return_n_logits,
+            self._splits,
+            artifact=self._raw_checkpoint_weights,
         )
-        return tuple(all_inputs[i] for i in self._dynamic_indices)
+        return self._group([all_inputs[i] for i in self._dynamic_indices])
 
     def release(self, request_id: RequestID) -> None:
         """Drops a completed request's previous-batch history source."""
@@ -322,11 +475,11 @@ class RegisteredDeepseekV41Inputs(DecoderModelInputs):
     @property
     def extras(self) -> tuple[Buffer, ...]:
         """Reconstructs the speculative adapter tail without duplicate buffers."""
-        dynamic = iter(self.state)
-        assert isinstance(self.constants, Mapping)
+        dynamic = iter(tree.leaves(self.state))
         extras: list[Buffer] = []
         for name in self.extra_names:
             if _is_constant(name):
+                assert isinstance(self.constants, Mapping)
                 value = self.constants[name]
             else:
                 value = next(dynamic)
@@ -387,9 +540,11 @@ class RegisteredDeepseekV41BatchProcessor(DecoderBatchProcessor):
             extra_names=tuple(
                 extra_input_names(
                     v41_config(
-                        self.config.pipeline_config.model.huggingface_config
+                        self.config.pipeline_config.model.huggingface_config,
+                        artifact_export=self.config.pipeline_config.artifact_export,
                     ),
                     self.runtime.data_parallel_degree,
+                    artifact=self.config.raw_checkpoint_weights,
                 )
             ),
         )
@@ -487,6 +642,7 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
     )
 
     def __init__(self, config: RegisteredDeepseekV41Config) -> None:
+        self.raw_checkpoint_weights = config.raw_checkpoint_weights
         assert config.pipeline_config is not None
         assert config.token_map is not None
         assert config.text_config is not None
@@ -513,12 +669,18 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
     ) -> ConstantInputs:
         """Declares pinned host tables and token map as named constants."""
         del cls, devices
+        if config.raw_checkpoint_weights:
+            assert config.static_constants is not None
+            return config.static_constants
         assert config.pipeline_config is not None
         declarations: OrderedDict[str, tree.Tree[TensorType | BufferType]] = (
             OrderedDict(
                 (name, value_type)
                 for name, value_type in extra_inputs(
-                    v41_config(config.pipeline_config.model.huggingface_config),
+                    v41_config(
+                        config.pipeline_config.model.huggingface_config,
+                        artifact_export=config.pipeline_config.artifact_export,
+                    ),
                     config.devices,
                     config.data_parallel_degree,
                 )
@@ -564,9 +726,14 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
                 tokens, return_n_logits, input_row_offsets, *rest, vision=vision
             )
         inputs = tokens
-        names = extra_input_names(self.interface_config, self.dp)
-        dynamic = iter(inputs.state or ())
-        assert inputs.constants is not None
+        names = extra_input_names(
+            self.interface_config,
+            self.dp,
+            artifact=self.raw_checkpoint_weights,
+        )
+        dynamic = iter(tree.leaves(inputs.state or ()))
+        if not self.raw_checkpoint_weights:
+            assert inputs.constants is not None
         extras = tuple(
             inputs.constants[name] if _is_constant(name) else next(dynamic)
             for name in names

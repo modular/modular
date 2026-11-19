@@ -29,7 +29,7 @@ share, until each moves onto :class:`SpecDecodePipelineModel`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from functools import cached_property, partial
@@ -1003,11 +1003,30 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._method = speculative.speculative_method
         self._pairing = _Pairing.from_pipeline_config(runtime.pipeline_config)
         target = self._pairing.target
-        self._takes_images = _takes_images(target)
+        self._takes_images = _takes_images(
+            target
+        ) and spec_adapters.takes_vision_inputs(
+            self._pairing.adapter_arch, self._method, config.target
+        )
         self._prepares_batches = _encodes_in_batching(
             target
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
         self._ep_comm_initializer: EPCommInitializer | None = None
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Combines canonical speculative bounds with the target's own bounds."""
+        bounds: dict[str, int] = {}
+        for dim in dims:
+            try:
+                bounds.update(super().max_dims([dim], kv_params))
+            except ValueError:
+                target = self._target_batching
+                if target is None:
+                    raise
+                bounds.update(target.max_dims([dim], kv_params))
+        return bounds
 
     @property
     def _target_prepares_inputs(self) -> bool:
@@ -1788,7 +1807,8 @@ class SpecDecodePipelineModel(
             context,
             weights=load_weights(draft_paths),
             adapter=pairing.draft.checkpoint_adapters(
-                draft_checkpoint.huggingface_config
+                draft_checkpoint.huggingface_config,
+                artifact_export=self.pipeline_config.artifact_export,
             ).get(weights_format(draft_paths)),
             # A draft without a leaf of its own runs on the target's.
             kv_params=config.kv_params.children.get(
@@ -2396,8 +2416,12 @@ def _driver_call(
     # A target that encodes its images in its own batching passes them
     # past the tail, so only one that encodes through the vision cache
     # takes the pipeline's vision inputs.
-    vision = _takes_images(pairing.target) and not _encodes_in_batching(
-        pairing.target
+    vision = (
+        _takes_images(pairing.target)
+        and not _encodes_in_batching(pairing.target)
+        and spec_adapters.takes_vision_inputs(
+            target_arch, method, target_config
+        )
     )
     huggingface_config = pipeline_config.model.huggingface_config
     verify = spec_adapters.verify_for(

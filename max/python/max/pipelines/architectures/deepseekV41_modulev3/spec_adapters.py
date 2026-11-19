@@ -42,16 +42,17 @@ rows, which the verify merges as the trunk does.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
 from max import functional as F
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, Dim, TensorType, TensorValue, Value, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.deepseekV41.engram_lookback import (
@@ -59,6 +60,7 @@ from max.pipelines.architectures.deepseekV41.engram_lookback import (
     record_engram_lookback,
 )
 from max.pipelines.lib.role_contracts import VisionInputs
+from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,
@@ -68,6 +70,7 @@ from max.pipelines.speculative.block_driver import (
     ArgmaxDraftSampler,
     BlockBatch,
     DraftSampler,
+    SampledDraftSampler,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (
@@ -75,6 +78,7 @@ from max.pipelines.speculative.driver import (
     gather_variable_rows,
 )
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
+from max.pipelines.speculative.spec_input_types import draft_probs_rows_name
 from max.pipelines.speculative.spec_target import Verified
 from max.tensor import Tensor
 from max.tensor.sharding import (
@@ -85,13 +89,17 @@ from max.tensor.sharding import (
     Unknown,
 )
 
-from .deepseekV41 import DeepseekV41
+from .deepseekV41 import DeepseekV41, _slice_requests
 from .dspark_drafter import DSparkDrafter
+from .history import distributed_history, read_history, record_history
 from .inputs import DeepseekV41Inputs
 from .interface import V41Config, extra_input_names
 from .layers.attention import absolute_positions
 from .model_config import DeepseekV41Config
-from .registration import RegisteredDeepseekV41Inputs
+from .registration import (
+    RegisteredDeepseekV41Inputs,
+    artifact_trailing_input_tree,
+)
 
 __all__ = [
     "ADAPTER",
@@ -124,7 +132,11 @@ def _to_lead(t: Tensor) -> Tensor:
 
 
 def _extras(
-    batch: BlockBatch, config: V41Config, data_parallel_degree: int
+    batch: BlockBatch,
+    config: V41Config,
+    data_parallel_degree: int,
+    *,
+    artifact: bool = False,
 ) -> dict[str, Tensor]:
     """The trunk's extras, out of the driver's ``extra`` carry-all.
 
@@ -137,7 +149,7 @@ def _extras(
             feed the trunk garbage masks and Engram windows, so the miss is
             loud.
     """
-    names = extra_input_names(config, data_parallel_degree)
+    names = extra_input_names(config, data_parallel_degree, artifact=artifact)
     missing = [name for name in names if name not in batch.extra]
     if missing:
         raise ValueError(
@@ -184,12 +196,18 @@ def _leaf_kv(
     mapping = DeviceMapping(mesh, (Unknown(),) if dp > 1 else (Replicated(),))
     kv: dict[str, PagedCacheValues] = {}
     for name in kv_params.children:
+        if name == "lookback_history":
+            continue
         per_device = (
             batch.kv_collections
             if name == WINDOW_LEAF
             else batch.passthrough_kv[name]
         )
-        kv[name] = PagedCacheValues.from_upstream(per_device, mapping)
+        paged: list[UpstreamPagedCacheValues] = []
+        for record in per_device:
+            assert isinstance(record, KVCacheInputsPerDevice)
+            paged.append(record)
+        kv[name] = PagedCacheValues.from_upstream(paged, mapping)
     return kv
 
 
@@ -256,6 +274,8 @@ def _dp_gather_variable_rows(
     row_offsets: Tensor,
     return_n_logits: Tensor,
     mesh: DeviceMesh,
+    *,
+    join: bool = True,
 ) -> Tensor:
     """Each request's last ``n`` hidden rows, gathered per rank then joined.
 
@@ -286,7 +306,7 @@ def _dp_gather_variable_rows(
     variable_h = F.functional(_body)(
         hidden, row_offsets, n_range
     ).rebind_mapping(hidden.mapping)
-    return F.allgather(variable_h, tensor_axis=0)
+    return F.allgather(variable_h, tensor_axis=0) if join else variable_h
 
 
 def context_store_origins(
@@ -383,6 +403,7 @@ class DeepseekV41BlockTarget:
         self.kv_params = kv_params
         self.ep_batch_manager = ep_batch_manager
         self.takes_distributed_inputs = target.dp > 1
+        self.replica_logits = False
 
     def __call__(
         self, batch: SequentialBatch | BlockBatch
@@ -418,7 +439,14 @@ class DeepseekV41BlockTarget:
             as_tensors(batch.merged_tokens),
             as_tensors(batch.merged_offsets),
             _leaf_kv(batch, self.kv_params, target.mesh, dp),
-            _extras(batch, target.interface_config, dp),
+            _extras(
+                batch,
+                target.interface_config,
+                dp,
+                artifact=getattr(
+                    target.config, "raw_checkpoint_weights", False
+                ),
+            ),
             data_parallel_splits=(
                 as_tensors(batch.data_parallel_splits)
                 if batch.data_parallel_splits is not None
@@ -426,6 +454,16 @@ class DeepseekV41BlockTarget:
             ),
             input_row_offsets_i64=input_row_offsets_i64,
             comm_buffers=comm_buffers,
+            history=(
+                distributed_history(
+                    batch.passthrough_kv["lookback_history"],
+                    DeviceMapping(
+                        target.mesh, (Unknown(),) if dp > 1 else (Replicated(),)
+                    ),
+                )
+                if "lookback_history" in self.kv_params.children
+                else None
+            ),
             # The merged frame's draft rows per request, read off the
             # draft_tokens input's own width so the narrowing can widen
             # its kept-row bound by exactly what this step appended: a
@@ -452,6 +490,7 @@ class DeepseekV41BlockTarget:
                 b.row_offsets,
                 as_tensors(batch.return_n_logits),
                 target.mesh,
+                join=not self.replica_logits,
             )
         else:
             var_h, _ = gather_variable_rows(
@@ -460,11 +499,26 @@ class DeepseekV41BlockTarget:
                 as_tensors(batch.return_n_logits),
                 target.mesh,
             )
+        per_replica = (
+            [
+                as_graph_values(value)
+                for value in target.logits_per_replica(var_h).local_shards
+            ]
+            if self.replica_logits
+            else None
+        )
         return Verified(
-            logits=as_graph_values(target.logits_all_rows(var_h)),
+            logits=(
+                per_replica[0]
+                if per_replica is not None
+                else as_graph_values(target.logits_all_rows(var_h))
+            ),
+            replica_logits=per_replica,
             hidden=(taps, b.row_offsets, b.positions),
             roll_forward=(
                 self._record_lookback
+                if "lookback_history" in batch.passthrough_kv
+                else _record_lookback_buffer
                 if "engram_lookback_history" in batch.extra
                 else None
             ),
@@ -475,22 +529,83 @@ class DeepseekV41BlockTarget:
 
         Only that step reads it, so it may be recorded before this step's
         draft runs. The window is read back out of the history the same way
-        the trunk read it; the compiler folds the two reads into one.
+        the trunk read it: a copy of the batch's rows only.
         """
         assert batch.num_accepted is not None
-        history = batch.extra["engram_lookback_history"].buffer
-        record_engram_lookback(
-            history,
-            read_engram_lookback(
-                batch.extra["engram_lookback_ids"].tensor,
-                batch.extra["engram_lookback_source"].tensor,
-                history,
-            ),
-            batch.tokens,
-            batch.input_row_offsets,
-            batch.draft_tokens,
-            batch.num_accepted,
+        target = self.target
+        mesh, dp = target.mesh, target.dp
+        mapping = DeviceMapping(
+            mesh, (Unknown(),) if dp > 1 else (Replicated(),)
         )
+        history = distributed_history(
+            batch.passthrough_kv["lookback_history"], mapping
+        )
+        tokens = F.distributed_broadcast(as_tensors(batch.tokens), mesh)
+        offsets = F.distributed_broadcast(
+            as_tensors(batch.input_row_offsets), mesh
+        )
+        lookback = F.distributed_broadcast(
+            as_tensors(batch.extra["engram_lookback_ids"].tensor), mesh
+        )
+        source = F.distributed_broadcast(
+            as_tensors(batch.extra["engram_lookback_source"].tensor), mesh
+        )
+        drafts = F.distributed_broadcast(as_tensors(batch.draft_tokens), mesh)
+        accepted = F.distributed_broadcast(as_tensors(batch.num_accepted), mesh)
+        if dp > 1:
+            assert batch.data_parallel_splits is not None
+            assert batch.host_input_row_offsets is not None
+            splits = as_tensors(batch.data_parallel_splits)
+            sharded = DeviceMapping(mesh, (Sharded(0),))
+            tokens, offsets = split_replicated_batch(
+                tokens,
+                offsets,
+                as_tensors(batch.host_input_row_offsets).cast(DType.int64),
+                splits,
+                sharded,
+            )
+            lookback = _slice_requests(
+                lookback, splits, sharded, "history_lookback"
+            )
+            source = _slice_requests(source, splits, sharded, "history_source")
+            drafts = _slice_requests(drafts, splits, sharded, "history_drafts")
+            accepted = _slice_requests(
+                accepted, splits, sharded, "history_accepted"
+            )
+        lookback = read_history(
+            history.pool, history.live_row_ids, lookback, source
+        )
+        record_history(
+            history.pool,
+            history.live_row_ids,
+            lookback,
+            tokens,
+            offsets,
+            drafts,
+            accepted,
+        )
+
+
+def _record_lookback_buffer(batch: BlockBatch) -> None:
+    """Records each row's window in a bare MEF's history buffer input.
+
+    Batch row ``i``'s window lands in buffer row ``i``, which the next
+    step's source map names, as the bare-MEF registry contract specifies.
+    """
+    assert batch.num_accepted is not None
+    history = batch.extra["engram_lookback_history"].buffer
+    record_engram_lookback(
+        history,
+        read_engram_lookback(
+            batch.extra["engram_lookback_ids"].tensor,
+            batch.extra["engram_lookback_source"].tensor,
+            history,
+        ),
+        batch.tokens,
+        batch.input_row_offsets,
+        batch.draft_tokens,
+        batch.num_accepted,
+    )
 
 
 class DSparkDeepseekV41Proposer:
@@ -511,6 +626,9 @@ class DSparkDeepseekV41Proposer:
         drafter: DSparkDrafter,
         target: DeepseekV41,
         config: DeepseekV41Config,
+        *,
+        per_replica_head: bool = False,
+        per_replica_probs: bool = False,
     ) -> None:
         if config.dspark_noise_token_id is None:
             raise ValueError(
@@ -520,6 +638,8 @@ class DSparkDeepseekV41Proposer:
         self.drafter = drafter
         self.target = target
         self.config = config
+        self.per_replica_head = per_replica_head
+        self.per_replica_probs = per_replica_probs
         self.mesh = drafter.mesh
         self.block_size = config.dspark_block_size
         self.mask_token_id = config.dspark_noise_token_id
@@ -701,6 +821,8 @@ class DSparkDeepseekV41Proposer:
     ) -> TensorValue:
         """Turns the block's hidden states into draft tokens, one at a time."""
         block_hs = as_tensors(block_hs)
+        if self.dp > 1 and self.per_replica_head:
+            return self._replica_head(batch, block_hs, accepted, sampler)
         # The committed anchors arrive on rank 0 (the accept runs there),
         # so stage them onto the mesh where the serial loop and the
         # replicated Markov head live. Under data parallelism the block
@@ -745,6 +867,90 @@ class DSparkDeepseekV41Proposer:
         )
         return as_graph_values(_to_lead(drafts))
 
+    def _replica_head(
+        self,
+        batch: BlockBatch,
+        hidden: Tensor,
+        accepted: Accepted,
+        sampler: DraftSampler,
+    ) -> TensorValue:
+        """Draws replica-local proposals and retains each replica's true q."""
+        assert batch.data_parallel_splits is not None
+        splits = as_tensors(batch.data_parallel_splits)
+        rows = [f"dspark_head_rows_{rank}" for rank in range(self.dp)]
+
+        def select(value: TensorValue) -> list[TensorValue]:
+            replicas = F.distributed_broadcast(as_tensors(value), self.mesh)
+            return [
+                as_graph_values(
+                    F.slice_tensor(
+                        shard,
+                        [(slice(splits[rank], splits[rank + 1]), rows[rank])],
+                    )
+                )
+                for rank, shard in enumerate(replicas.local_shards)
+            ]
+
+        samplers: Sequence[DraftSampler] = (
+            sampler.split(select, rows)
+            if isinstance(sampler, SampledDraftSampler)
+            else [sampler] * self.dp
+        )
+        anchors = select(accepted.next_tokens)
+        weights = self.target.replicated_head_weight()
+        drafted = []
+        for rank, (local_hidden, local_anchor, local_sampler) in enumerate(
+            zip(hidden.local_shards, anchors, samplers, strict=True)
+        ):
+            # Module is a pytree: each local view keeps the same code and
+            # selects that rank's parameter shards, without copying weights.
+            local = tree.map(
+                lambda tensor, index=rank: (
+                    tensor.local_shards[index]
+                    if tensor.is_distributed
+                    else tensor
+                ),
+                self.drafter,
+                leaf=Tensor,
+            )
+            logits = local.logits(local_hidden, weights.local_shards[rank])
+            greedy = type(local_sampler) is ArgmaxDraftSampler
+            local_ids, _ = local.draft(
+                logits,
+                as_tensors(local_anchor),
+                sampler=(
+                    None
+                    if greedy
+                    else lambda values, step, sample=local_sampler: as_tensors(
+                        sample.sample_next(as_graph_values(values), step)
+                    )
+                ),
+            )
+            drafted.append(as_graph_values(local_ids))
+        if isinstance(sampler, SampledDraftSampler):
+            distributions = [
+                local.distributions()
+                for local in samplers
+                if isinstance(local, SampledDraftSampler)
+            ]
+            if self.per_replica_probs:
+                sampler.adopt_replica_distributions(
+                    [
+                        value.rebind(
+                            [draft_probs_rows_name(rank), *value.shape[1:]]
+                        )
+                        for rank, value in enumerate(distributions)
+                    ]
+                )
+            else:
+                sampler.adopt_distributions(
+                    ops.allgather(distributions, batch.signal_buffers)[0]
+                )
+        return ops.cast(
+            ops.allgather(drafted, batch.signal_buffers)[0],
+            accepted.next_tokens.dtype,
+        ).rebind([accepted.next_tokens.shape[0], self.block_size])
+
 
 def verify(
     target: Any,
@@ -777,11 +983,17 @@ def block_proposer(
     speculative: SpeculativeConfig,
 ) -> DSparkDeepseekV41Proposer:
     """Returns the proposer of the DSpark stages, on the verify's trunk."""
-    del speculative
     assert isinstance(verify, DeepseekV41BlockTarget)
     assert isinstance(draft, DSparkDrafter)
     assert isinstance(draft_config, DeepseekV41Config)
-    return DSparkDeepseekV41Proposer(draft, verify.target, draft_config)
+    verify.replica_logits = speculative.draft_probs_layout == "replica"
+    return DSparkDeepseekV41Proposer(
+        draft,
+        verify.target,
+        draft_config,
+        per_replica_head=speculative.draft_head_parallelism == "replica",
+        per_replica_probs=verify.replica_logits,
+    )
 
 
 def ep_input_tree(target: Any) -> object | None:
@@ -800,6 +1012,14 @@ def trailing_input_types(
     return [dtype for _, dtype in target_config.dspark_trailing_inputs]
 
 
+def trailing_input_tree(target_config: Any) -> Mapping[str, object] | None:
+    """Keeps the actual trailing declaration order in the named fused signature."""
+    assert isinstance(target_config, DeepseekV41Config)
+    if not target_config.raw_checkpoint_weights:
+        return None
+    return artifact_trailing_input_tree(target_config.dspark_trailing_inputs)
+
+
 def batch_trailing_buffers(target_inputs: object) -> list[Buffer]:
     """Returns the extras the trunk's batch processor prepared."""
     assert isinstance(
@@ -813,6 +1033,16 @@ def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
     assert isinstance(target_config, DeepseekV41Config)
     names = [name for name, _ in target_config.dspark_trailing_inputs]
     return dict(zip(names, trailing, strict=True))
+
+
+def _takes_vision_inputs(target_config: Any) -> bool:
+    """Omits image inputs for a text-only registered deployment."""
+    assert isinstance(target_config, DeepseekV41Config)
+    # The retained bare-MEF ABI continues to declare its original image slots.
+    return (
+        not target_config.raw_checkpoint_weights
+        or target_config.vision is not None
+    )
 
 
 def _takes_prefill_rows(target_config: Any) -> bool:
@@ -832,7 +1062,9 @@ ADAPTER = TargetAdapter(
     # engine binds doesn't.
     relaxed_thinking_acceptance=False,
     prepares_every_batch=True,
+    takes_vision_inputs=_takes_vision_inputs,
     trailing_input_types=trailing_input_types,
+    trailing_input_tree=trailing_input_tree,
     batch_trailing_buffers=batch_trailing_buffers,
     extra=extra,
     verify_takes_prefill_rows=_takes_prefill_rows,

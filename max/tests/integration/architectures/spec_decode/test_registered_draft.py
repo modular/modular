@@ -558,6 +558,7 @@ def _build_until_the_target(
                 get_text_config=lambda: text_config
             )
         ),
+        artifact_export=False,
     )
     pairing: Any = SimpleNamespace(
         target=SimpleNamespace(pipeline_model=object), draft=arch

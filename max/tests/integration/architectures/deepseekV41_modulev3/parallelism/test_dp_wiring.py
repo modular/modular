@@ -51,6 +51,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.layers.moe import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model import (
     DeepseekV41Model,
+    check_parallel_layout,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
@@ -228,11 +229,14 @@ def test_model_builds_the_checkpoint_ep_config() -> None:
     assert ep_config.dispatch_quant_config.is_nvfp4
 
 
-def test_model_refuses_multi_device_without_dp_attention() -> None:
-    # The arch registration lets every multi-GPU layout through, but the
-    # trunk wires one: plain TP would die deep in graph staging, so the
-    # runtime must refuse it before any weights load.
-    model = _model(dp=1, ep_size=1)
+@pytest.mark.parametrize("devices", [2, 4])
+def test_model_accepts_staged_tensor_parallel_layout(devices: int) -> None:
+    model = _model(dp=1, ep_size=1, n_devices=devices)
+    check_parallel_layout(model.pipeline_config)
+
+
+def test_model_refuses_unstaged_tensor_parallel_eight() -> None:
+    model = _model(dp=1, ep_size=1, n_devices=8)
     with pytest.raises(ValueError, match="only as"):
         model._init_distributed_runtime(_model_config())
 

@@ -27,11 +27,19 @@ from .interface import V41Config
 
 def v41_config(
     huggingface_config: Mapping[str, object] | PretrainedConfig,
+    *,
+    artifact_export: bool,
 ) -> V41Config:
-    """Reads the interface config off a HF config object or its ``to_dict()``."""
+    """Reads the interface config off a HF config object or its ``to_dict()``.
+
+    ``artifact_export`` is ``PipelineConfig.artifact_export``; see
+    :meth:`V41Config.from_hf`.
+    """
     if not isinstance(huggingface_config, Mapping):
         huggingface_config = huggingface_config.to_dict()
-    return V41Config.from_hf(huggingface_config)
+    return V41Config.from_hf(
+        huggingface_config, artifact_export=artifact_export
+    )
 
 
 @dataclass

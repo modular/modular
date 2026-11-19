@@ -19,6 +19,7 @@ The routed experts are NVFP4 or MXFP4, as the checkpoint's
 from collections.abc import Sequence
 
 from max import functional as F
+from max.driver import CPU
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn import Module
@@ -46,7 +47,7 @@ from max.tensor.sharding.action import PerShard
 
 from ..model_config import RoutedExpertFormat
 from . import mxfp4_ops, nvfp4_ops
-from .mxfp8_linear import MXFP8Linear, Mxfp8Rows
+from .mxfp8_linear import ConcatenatedMXFP8Linear, MXFP8Linear, Mxfp8Rows
 
 
 class _Expert(Module[[], None]):
@@ -107,10 +108,12 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
         swiglu_limit: float | None = 10.0,
         ep_batch_manager: EPBatchManager | None = None,
         expert_format: RoutedExpertFormat = RoutedExpertFormat.NVFP4,
+        raw_checkpoint_weights: bool = False,
     ) -> None:
         super().__init__()
         self.mesh = mesh or defaults()[1]
         self.expert_format = expert_format
+        self.raw_checkpoint_weights = raw_checkpoint_weights
         self.hidden_dim = hidden_dim
         self.moe_dim = moe_dim
         self.ep_batch_manager = ep_batch_manager
@@ -136,7 +139,10 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
                     tensor.input_scale = tensor.input_scale.to(device)
             experts.append(expert)
         self.experts = ModuleList(experts)
-        if expert_format is RoutedExpertFormat.NVFP4:
+        if (
+            expert_format is RoutedExpertFormat.NVFP4
+            and not raw_checkpoint_weights
+        ):
             # The dispatch quantizes every rank's activations with one
             # uniform scale: the max static ``w1``/``w3`` ``input_scale``
             # over all experts, a pure function of the checkpoint the weight
@@ -234,7 +240,22 @@ class RoutedExperts(TransparentModule[[Tensor, Tensor, Tensor], Tensor]):
             # One replicated [1] leaf; ``local_shards`` is per rank, in mesh
             # order, exactly where the dispatch and the activation payloads
             # read their scale.
-            global_scales = list(self.global_input_scale.local_shards)
+            if self.raw_checkpoint_weights:
+                # Replicate the weight-only reduction at init, rather than
+                # naming a synthetic scalar absent from the checkpoint.
+                scales = []
+                for expert in self.experts:
+                    for projection in (expert.w1, expert.w3):
+                        assert isinstance(projection.weight, NVFP4Tensor)
+                        scales.append(
+                            projection.weight.input_scale.to(CPU()).reshape([1])
+                        )
+                maximum = F.max(F.concat(scales, axis=0), axis=0).reshape([1])
+                global_scales = [
+                    maximum.to(device) for device in self.mesh.devices
+                ]
+            else:
+                global_scales = list(self.global_input_scale.local_shards)
             input_scales = [
                 F.broadcast_to(scale, [self.num_experts])
                 for scale in global_scales
@@ -492,7 +513,7 @@ class StackedSharedExpert(Module[[Tensor], Tensor]):
         swiglu_limit: Asymmetric clamp limit from training.
     """
 
-    w13: MXFP8Linear
+    w13: MXFP8Linear | ConcatenatedMXFP8Linear
     w2: MXFP8Linear
 
     def __init__(
@@ -503,6 +524,7 @@ class StackedSharedExpert(Module[[Tensor], Tensor]):
         mesh: DeviceMesh | None = None,
         swiglu_limit: float | None = 10.0,
         data_parallel: bool = False,
+        raw_checkpoint_weights: bool = False,
     ) -> None:
         super().__init__()
         mesh = mesh or defaults()[1]
@@ -510,7 +532,13 @@ class StackedSharedExpert(Module[[Tensor], Tensor]):
         # Under data parallelism the rank runs the whole expert on its own
         # rows: the weights stay whole and nothing reduces.
         self.data_parallel = data_parallel
-        w13 = MXFP8Linear(hidden_dim, 2 * moe_dim)
+        w13 = (
+            ConcatenatedMXFP8Linear(
+                hidden_dim, ("w1", moe_dim), ("w3", moe_dim)
+            )
+            if raw_checkpoint_weights
+            else MXFP8Linear(hidden_dim, 2 * moe_dim)
+        )
         w2 = MXFP8Linear(moe_dim, hidden_dim)
         if not data_parallel:
             w13 = w13.shard(0, mesh)

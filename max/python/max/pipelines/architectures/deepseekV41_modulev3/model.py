@@ -473,32 +473,23 @@ def engram_static_inputs(
 
 
 def check_parallel_layout(pipeline_config: PipelineConfig) -> None:
-    """Raises unless the pipeline asks for a layout this trunk wires.
+    """Checks TP2/TP4 or one attention replica per expert-parallel device.
 
-    Raises:
-        ValueError: If more than one device serves other than data-parallel
-            attention with expert-parallel MoE over all of them, if
-            ``ep_size`` isn't the device count, or if expert parallelism
-            runs without chunked prefill.
+    Mixed DP/TP layouts and wider TP have no staged contract. EP still
+    requires chunked prefill because its dispatch allocation has a fixed bound.
     """
     ep_size = pipeline_config.runtime.ep_size
     dp = pipeline_config.model.data_parallel_degree
-    # The arch registration lets every multi-GPU layout through, but this
-    # trunk wires exactly one: DP attention with EP over all the devices.
-    # Everything else -- plain tensor parallelism included -- dies deep in
-    # graph staging, so refuse it before the graphs compile, naming the
-    # layout that works. The config's ``device_specs`` is read rather than
-    # a model's devices: an EP1 build (a graph-contract recorder can stage
-    # the model without ``__init__``) never touches the device list.
     n_devices = len(pipeline_config.model.device_specs)
-    if n_devices > 1 and (dp != n_devices or ep_size != n_devices):
+    tensor_parallel = dp == 1 and ep_size == 1 and n_devices in (2, 4)
+    data_expert_parallel = dp == n_devices and ep_size == n_devices
+    if n_devices > 1 and not (tensor_parallel or data_expert_parallel):
         raise ValueError(
-            f"DeepSeek-V4.1 serves {n_devices} devices only as "
+            f"DeepSeek-V4.1 serves {n_devices} devices only as TP2/TP4 "
+            "with data_parallel_degree=1 and ep_size=1, or as "
             "data-parallel attention with expert-parallel MoE: pass "
-            f"--data-parallel-degree {n_devices} --ep-size "
-            f"{n_devices} (got data_parallel_degree={dp}, "
-            f"ep_size={ep_size}). Plain tensor parallelism is not "
-            "wired for this trunk."
+            f"--data-parallel-degree {n_devices} --ep-size {n_devices} "
+            f"(got data_parallel_degree={dp}, ep_size={ep_size})."
         )
     if ep_size <= 1:
         return
@@ -703,7 +694,10 @@ class DeepseekV41Model(
             tables, token_map, devices[0]
         )
         config.dspark_trailing_inputs = extra_inputs(
-            v41_config(pipeline_config.model.huggingface_config),
+            v41_config(
+                pipeline_config.model.huggingface_config,
+                artifact_export=pipeline_config.artifact_export,
+            ),
             config.devices,
             dp,
             verify_rows=True,

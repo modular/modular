@@ -213,6 +213,7 @@ class FeedForward(Module[..., Tensor]):
             mesh=mesh,
             swiglu_limit=config.swiglu_limit,
             data_parallel=data_parallel,
+            raw_checkpoint_weights=config.raw_checkpoint_weights,
         )
         # Name-transparent: the experts' leaves stay ``ffn.experts.E.wN``.
         self.routed = RoutedExperts(
@@ -223,6 +224,7 @@ class FeedForward(Module[..., Tensor]):
             swiglu_limit=config.swiglu_limit,
             ep_batch_manager=ep_batch_manager,
             expert_format=config.routed_expert_format,
+            raw_checkpoint_weights=config.raw_checkpoint_weights,
         )
 
     def forward(
