@@ -48,6 +48,7 @@ __all__ = [
     "SparseIndices",
     "SpecDecode",
     "SpecDecodeOutputs",
+    "StaticBuffers",
     "TPSignals",
     "TokenBitmask",
     "VisionEmbeddings",
@@ -268,6 +269,16 @@ class DecoderGraphScratch(GraphGroup[str, _ScratchT]):
     """
 
     kind = "decoder_scratch"
+
+
+class StaticBuffers(GraphGroup[str, Any]):
+    """Named deployment buffers filled by the static initializer at startup.
+
+    Their static shapes and bytes are shared by the initializer and every
+    serving graph. CPU buffers are pinned and stay owned until GPU work drains.
+    """
+
+    kind = "static_buffers"
 
 
 class EPPayload(GraphGroup[str, tuple[TensorType | BufferType, ...]]):
