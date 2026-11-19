@@ -17,7 +17,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
@@ -36,7 +35,6 @@ from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.module_registration import supports_pipeline_stages
 from max.pipelines.lib.pipeline_parallel import (
     PipelinedModel,
-    pipeline_stages,
     split_layers,
 )
 from max.pipelines.lib.pipeline_stage import PipelineStage
@@ -85,18 +83,12 @@ def _cached_layers(stage: PipelineStage | None) -> tuple[int, int]:
     return mla.num_layers, indexer.num_layers
 
 
-def test_every_pp8_stage_starts_on_a_full_layer() -> None:
+def test_pp8_splits_the_layers_evenly() -> None:
+    """A stage may start on a ``shared`` layer, which reuses the selection
+    the previous stage hands it, so no cut is forbidden."""
     spec = Glm5_1Config.construct_partition_spec(_glm_5_3())
-    schedule = resolve_indexer_types(_glm_5_3(), 78)
-    stages = pipeline_stages(split_layers(spec, 8))
-    assert stages[-1].layers.stop == 78
-    assert all(schedule[stage.layers.start] == "full" for stage in stages)
-
-
-def test_a_stage_may_not_start_on_a_shared_layer() -> None:
-    spec = Glm5_1Config.construct_partition_spec(_glm_5_3())
-    with pytest.raises(ValueError, match="forbids a cut"):
-        split_layers(spec, 2, [3, 75])
+    assert split_layers(spec, 8) == [10, 10, 10, 10, 10, 10, 9, 9]
+    assert split_layers(spec, 2, [3, 75]) == [3, 75]
 
 
 def test_every_stage_keeps_the_latent_to_indexer_proportion() -> None:
@@ -107,6 +99,14 @@ def test_every_stage_keeps_the_latent_to_indexer_proportion() -> None:
     assert _cached_layers(PipelineStage(0, 8, range(10))) == (16, 4)
     assert _cached_layers(PipelineStage(0, 1, range(78))) == (78, 21)
     assert _cached_layers(None) == (78, 21)
+
+
+def test_a_stage_that_starts_mid_group_counts_that_group() -> None:
+    """Layers 20 and 21 reuse layer 18's selection, so layers 20-29 touch
+    three groups (18, 22 and 26): twelve latent slots and a spare indexer
+    slot past its two full layers' slots, the proportion every stage keeps."""
+    assert _cached_layers(PipelineStage(2, 8, range(20, 30))) == (12, 3)
+    assert _cached_layers(PipelineStage(7, 8, range(69, 78))) == (12, 3)
 
 
 def test_a_stage_numbers_its_indexer_slots_from_its_first_layer() -> None:

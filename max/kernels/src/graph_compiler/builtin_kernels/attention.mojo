@@ -36,6 +36,7 @@ from kv_cache.paged_sparse_kv_index_remap import (
     PagedKVScaleRemap,
     SparseIndexRemap,
     paged_sparse_kv_index_remap,
+    sparse_selection_rows,
 )
 from kv_cache.types import KVCacheStaticParams
 from linalg.mx_format import MXFormat
@@ -2193,6 +2194,182 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
             remap,
             ctx,
             _split_record_pointer(mixed_step_split.to_tile_tensor[.uint32]()),
+        )
+
+
+@extensibility.register("attention.mla.sparse.selection_rows")
+struct MLASparseSelectionRows:
+    """Registers the `attention.mla.sparse.selection_rows` graph op.
+
+    Maps a top-k selection's logical token positions to the MLA cache rows the
+    sparse MLA kernels read, the rows
+    `attention.mla.indexer.ragged.float8.paged.remap` writes beside the
+    positions it selects. A row names a page of the cache it was resolved
+    against, so a pipeline stage resolves the positions the previous stage
+    selected against its own cache.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        k: Int,
+    ](
+        physical_indices: Some[Output & Tensor],
+        positions: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        mla_kv_blocks: Some[MutableInput & Tensor],
+        mla_lookup_table: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        """Writes each position's physical row in the MLA cache.
+
+        Parameters:
+            k: Positions per row.
+
+        Args:
+            physical_indices: `[rows, k]` physical rows, `block_id *
+                page_size + offset`, `-1` where the position is `-1` or its
+                page is unmapped.
+            positions: `[rows, k]` logical token positions, `-1` past a
+                token's selection.
+            input_row_offsets: Ragged row offsets `[batch_size + 1]`.
+            mla_kv_blocks: The MLA cache's blocks; their page count is the
+                invalid block id and their page size the remap's.
+            mla_lookup_table: The MLA cache's page lookup table
+                `[batch_size, pages_per_seq]`.
+            ctx: Device context for GPU execution.
+        """
+        comptime assert conforms_to(type_of(physical_indices), TileTensorable)
+        comptime assert conforms_to(type_of(positions), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(mla_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(mla_lookup_table), TileTensorable)
+        comptime assert type_of(positions).rank == 2
+        comptime assert type_of(mla_kv_blocks).rank == 6
+        comptime mla_page_size = type_of(mla_kv_blocks)._shape_types[
+            3
+        ].static_value
+        var remap = PagedKVRemap[mla_page_size](
+            physical_indices.to_tile_tensor[.int32]().unsafe_ptr(),
+            mla_lookup_table.to_tile_tensor[.uint32]().unsafe_ptr(),
+            Int(mla_lookup_table.shape()[1].value()),
+            Int(mla_lookup_table.shape()[0].value()),
+            UInt32(Int(mla_kv_blocks.shape()[0].value())),
+        )
+        sparse_selection_rows(
+            remap,
+            positions.to_tile_tensor[.int32]().unsafe_ptr().as_imm(),
+            input_row_offsets.to_tile_tensor[.uint32]().unsafe_ptr().as_imm(),
+            Int(positions.shape()[0].value()),
+            k,
+            Int(input_row_offsets.shape()[0].value()) - 1,
+            ctx,
+        )
+
+
+@extensibility.register("attention.mla.sparse.selection_rows.nvfp4")
+struct MLASparseSelectionRowsNVFP4:
+    """Registers the `attention.mla.sparse.selection_rows.nvfp4` graph op.
+
+    `attention.mla.sparse.selection_rows` for an NVFP4 MLA cache: each row of
+    `physical_indices` is `2 * k` wide, the positions' physical rows in the
+    values, then their rows in the scale pool, as
+    `attention.mla.indexer.ragged.float8.paged.remap.nvfp4` writes them.
+    """
+
+    @staticmethod
+    def execute[
+        *,
+        k: Int,
+    ](
+        physical_indices: Some[Output & Tensor],
+        positions: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        mla_kv_blocks: Some[MutableInput & Tensor],
+        mla_lookup_table: Some[Input & Tensor],
+        mla_kv_scales: Some[MutableInput & Tensor],
+        mla_scales_page_stride: Some[Input & Tensor],
+        mla_scales_lookup_table: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        """Writes each position's value row and scale-pool row.
+
+        Parameters:
+            k: Positions per row.
+
+        Args:
+            physical_indices: `[rows, 2 * k]`. Columns `[0, k)` are each
+                position's physical MLA cache row; columns `[k, 2 * k)` its
+                row in the MLA scale pool, `scale_block_id * rows_per_block +
+                offset`. `-1` where the position is `-1` or its page is
+                unmapped.
+            positions: `[rows, k]` logical token positions, `-1` past a
+                token's selection.
+            input_row_offsets: Ragged row offsets `[batch_size + 1]`.
+            mla_kv_blocks: The MLA cache's blocks; their page count is the
+                invalid block id and their page size the remap's.
+            mla_lookup_table: The MLA cache's page lookup table
+                `[batch_size, pages_per_seq]`.
+            mla_kv_scales: The MLA cache's scale blocks; their page count is
+                the invalid scale block id.
+            mla_scales_page_stride: Page-to-page distance of `mla_kv_scales`
+                in elements; -1 when packed.
+            mla_scales_lookup_table: The MLA cache's scales page lookup table
+                `[batch_size, pages_per_seq]`.
+            ctx: Device context for GPU execution.
+        """
+        comptime assert conforms_to(type_of(physical_indices), TileTensorable)
+        comptime assert conforms_to(type_of(positions), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(mla_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(mla_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(mla_kv_scales), TileTensorable)
+        comptime assert conforms_to(
+            type_of(mla_scales_page_stride), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(mla_scales_lookup_table), TileTensorable
+        )
+        comptime assert type_of(positions).rank == 2
+        comptime assert type_of(mla_kv_blocks).rank == 6
+        comptime assert type_of(mla_kv_scales).rank == 6
+        comptime mla_page_size = type_of(mla_kv_blocks)._shape_types[
+            3
+        ].static_value
+        # The scale pool's blocks sit a page stride apart, which is
+        # `rows_per_block` rows of `heads * scales_per_row` elements.
+        var mla_kv_scales_tile = mla_kv_scales.to_tile_tensor()
+        var scales_row_elems = Int(mla_kv_scales_tile.dim[4]()) * Int(
+            mla_kv_scales_tile.dim[5]()
+        )
+        var scales_page_elems = Int(
+            mla_scales_page_stride.to_tile_tensor[.int64]()
+            .as_imm()
+            .load[width=1](Coord(0))
+        )
+        if scales_page_elems < 0:
+            scales_page_elems = scales_row_elems
+            for i in range(1, 4):
+                scales_page_elems *= Int(mla_kv_scales_tile.dim(i))
+        var remap = PagedKVScaleRemap[mla_page_size, k](
+            physical_indices.to_tile_tensor[.int32]().unsafe_ptr(),
+            mla_lookup_table.to_tile_tensor[.uint32]().unsafe_ptr(),
+            mla_scales_lookup_table.to_tile_tensor[.uint32]().unsafe_ptr(),
+            Int(mla_lookup_table.shape()[1].value()),
+            Int(mla_scales_lookup_table.shape()[1].value()),
+            Int(mla_lookup_table.shape()[0].value()),
+            UInt32(Int(mla_kv_blocks.shape()[0].value())),
+            UInt32(Int(mla_kv_scales.shape()[0].value())),
+            scales_page_elems // scales_row_elems,
+        )
+        sparse_selection_rows(
+            remap,
+            positions.to_tile_tensor[.int32]().unsafe_ptr().as_imm(),
+            input_row_offsets.to_tile_tensor[.uint32]().unsafe_ptr().as_imm(),
+            Int(positions.shape()[0].value()),
+            k,
+            Int(input_row_offsets.shape()[0].value()) - 1,
+            ctx,
         )
 
 

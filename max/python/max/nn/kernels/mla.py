@@ -60,6 +60,9 @@ from max.nn._graph_ops import (
 )
 from max.nn._graph_ops import mla_prefill_graph as _mla_prefill_graph
 from max.nn._graph_ops import (
+    mla_sparse_selection_rows as _mla_sparse_selection_rows,
+)
+from max.nn._graph_ops import (
     store_mla_latent_ragged as _store_mla_latent_ragged,
 )
 from max.nn.common_layers.mesh_axis import dcp_axis
@@ -79,6 +82,7 @@ mla_fp8_index_top_k = F.functional(_mla_fp8_index_top_k)
 mla_fp8_index_top_k_with_physical = F.functional(
     _mla_fp8_index_top_k_with_physical
 )
+mla_sparse_selection_rows = F.functional(_mla_sparse_selection_rows)
 mla_fp8_index_top_k_physical = F.functional(_mla_fp8_index_top_k_physical)
 mla_fp8_index_top_k_physical_cp = F.functional(_mla_fp8_index_top_k_physical_cp)
 mla_kpool_append = F.functional(_mla_kpool_append)
@@ -153,5 +157,6 @@ __all__ = [
     "mla_kpool_seed_tail",
     "mla_prefill_decode_graph",
     "mla_prefill_graph",
+    "mla_sparse_selection_rows",
     "store_mla_latent_ragged",
 ]

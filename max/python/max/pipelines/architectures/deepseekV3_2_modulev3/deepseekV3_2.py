@@ -32,6 +32,7 @@ from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.multi_latent_attention import MLAPrefillMetadata
 from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.kernels import mla_sparse_selection_rows
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
@@ -62,7 +63,7 @@ from .layers.prefill_context_parallel import (
     prefill_predicate,
 )
 from .layers.rms_norm import MultiplyBeforeCastRMSNorm
-from .layers.sparse_mla import Selection
+from .layers.sparse_mla import CarriedSelection, Selection
 from .layers.transformer_block import (
     BlockOutput,
     DeepseekV3_2TransformerBlock,
@@ -253,6 +254,11 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
             )
             for i in ids
         }
+        # A stage before the last hands its last selection to the next stage,
+        # as token positions.
+        if not self.last:
+            for layer in self.layers.values():
+                layer.self_attn.carries_positions = True
         # The caches hold only this stage's layers, so its indexer slots and
         # gather widths count from its first layer.
         self.indexer_types = stage_indexer_types(config.indexer_types, ids)
@@ -304,16 +310,20 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 tokens = tokens.to(self.mesh)
                 input_row_offsets = input_row_offsets.to(self.mesh)
 
+        carried: Tensor | None = None
         if self.first:
             h = self.embed_tokens(tokens)
         else:
+            # Each device's hidden states, then its last top-k selection's
+            # token positions, which a stage that starts on a ``shared``
+            # layer reuses.
             assert boundary is not None and self.mesh is not None
-            h = Tensor.from_shard_values(
-                boundary,
-                DeviceMapping(
-                    self.mesh, tuple(Replicated() for _ in self.mesh.axis_names)
-                ),
+            replicated = DeviceMapping(
+                self.mesh, tuple(Replicated() for _ in self.mesh.axis_names)
             )
+            n = self.mesh.num_devices
+            h = Tensor.from_shard_values(boundary[:n], replicated)
+            carried = Tensor.from_shard_values(boundary[n:], replicated)
         if self.config.data_parallel_degree > 1:
             assert data_parallel_splits is not None
             assert input_row_offsets_i64 is not None
@@ -386,10 +396,13 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 kv_collection,
                 indexer_kv_collection,
             )
-        h = self._run_layers(h, *layer_args, pcp=pcp, hisparse=hisparse)
+        h, selection = self._run_layers(
+            h, *layer_args, pcp=pcp, hisparse=hisparse, carried=carried
+        )
         if not self.last:
             # The next stage's first block applies its own input norm.
-            return tuple(h.local_shards)
+            assert isinstance(selection, CarriedSelection)
+            return (*h.local_shards, *selection.positions.local_shards)
 
         self._check_output_modes()
         outputs: list[Tensor] = []
@@ -422,12 +435,16 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         comm_buffers: EPCommBuffers | None,
         pcp: PrefillContextParallelStep | None = None,
         hisparse: HiSparseInputs | None = None,
-    ) -> Tensor:
+        carried: Tensor | None = None,
+    ) -> tuple[Tensor, Selection | None]:
         """Runs the decoder blocks over ``h``.
 
         With ``pcp`` every block's attention chooses prefill context
         parallelism per step. With ``hisparse`` every ``full`` layer resolves
-        its selection against the hot buffer and gathers the misses.
+        its selection against the hot buffer and gathers the misses. A
+        ``shared`` first layer reuses ``carried``, the token positions of the
+        previous stage's last selection, resolved against this stage's cache.
+        Returns the hidden states and the last selection.
         """
         # MoE blocks share a subgraph, as in V3. ``full`` and ``shared``
         # layers differ structurally (shared layers carry no indexer weights),
@@ -435,6 +452,15 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         # call sites reuse a body, and the cache key does not otherwise see
         # the difference.
         topk_indices: Selection | None = None
+        # A ``full`` first layer selects for itself, so only a ``shared`` one
+        # reads the carried positions.
+        if carried is not None and self.indexer_types[0] == "shared":
+            rows = mla_sparse_selection_rows(
+                carried, input_row_offsets, kv_collection
+            )
+            topk_indices = (
+                rows if self.last else CarriedSelection(rows, carried)
+            )
         layers = list(self.layers.values())
         indexer_slots = indexer_cache_layer_map(self.indexer_types, len(layers))
         # How many consecutive layers one gather launch fills at each layer:
@@ -500,7 +526,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
                 hisparse_group_size=gather_group,
             )
             norm_h = rest[0] if rest else None
-        return h
+        return h, topk_indices
 
     def module_outputs(self, outputs: tuple[Tensor, ...]) -> ModuleV3Outputs:
         """Names the outputs of :meth:`forward` for the pipeline model."""

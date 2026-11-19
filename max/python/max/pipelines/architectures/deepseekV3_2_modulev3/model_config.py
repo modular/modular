@@ -199,6 +199,24 @@ def stage_indexer_types(
     return [indexer_types[i] for i in layers]
 
 
+def stage_selection_groups(indexer_types: Sequence[str], layers: range) -> int:
+    """Returns how many selection groups a pipeline stage's layers touch.
+
+    A group is a ``full`` layer and the ``shared`` layers that reuse its
+    top-k. A stage that starts on a ``shared`` layer also holds the end of
+    the group its previous stage started.
+
+    Args:
+        indexer_types: The whole decoder's schedule from
+            :func:`resolve_indexer_types`, or empty.
+        layers: The decoder layers the stage builds.
+    """
+    schedule = stage_indexer_types(indexer_types, layers)
+    if not schedule:
+        return len(layers)
+    return sum(t == "full" for t in schedule) + (schedule[0] == "shared")
+
+
 def stage_latent_slots(
     indexer_types: Sequence[str],
     num_layers: int,
@@ -207,11 +225,10 @@ def stage_latent_slots(
     """Returns how many layers a pipeline stage's MLA latent cache holds.
 
     The stages of a pipeline share one KV pool, which needs the same
-    latent-to-indexer proportion on every stage. A stage starts on a ``full``
-    layer and holds whole selection groups (a ``full`` layer and the
-    ``shared`` layers that reuse its top-k), so slots for the widest group per
-    ``full`` layer cover its layers. A stage that holds the narrower leading
-    groups gets spare slots past its last layer.
+    latent-to-indexer proportion on every stage. Each stage's caches hold the
+    widest selection group's latent slots, and one indexer slot, per group
+    its layers touch (:func:`stage_selection_groups`). That covers its layers;
+    a stage that holds narrower groups gets spare slots past its last layer.
 
     Args:
         indexer_types: The whole decoder's schedule from
@@ -222,10 +239,7 @@ def stage_latent_slots(
     if stage is None or stage.num_stages == 1:
         return len(stage.layers) if stage is not None else num_layers
     widest = max(hisparse_gather_groups(indexer_types, num_layers))
-    full = num_indexer_cache_layers(
-        stage_indexer_types(indexer_types, stage.layers), len(stage.layers)
-    )
-    return widest * full
+    return widest * stage_selection_groups(indexer_types, stage.layers)
 
 
 def nextn_drafts(pipeline_config: PipelineConfig) -> bool:
@@ -564,17 +578,12 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     ) -> PartitionSpec:
         """Returns where the decoder may be cut into pipeline stages.
 
-        A ``shared`` layer reuses the top-k selection of the ``full`` layer
-        before it, and that selection is an activation, not a cache entry.
-        A stage therefore starts on a ``full`` layer.
+        Any layer may start a stage. A ``shared`` layer reuses the top-k
+        selection of the ``full`` layer before it, and every stage hands the
+        next its last selection beside its hidden states.
         """
-        num_layers = int(huggingface_config.num_hidden_layers)
-        schedule = resolve_indexer_types(huggingface_config, num_layers)
         return PartitionSpec(
-            num_layers=num_layers,
-            forbidden_cuts=frozenset(
-                i for i, kind in enumerate(schedule) if kind == "shared"
-            ),
+            num_layers=int(huggingface_config.num_hidden_layers)
         )
 
     def _check_hisparse(self) -> None:
@@ -781,23 +790,17 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             else None
         )
         num_layers = mla_kv_params.num_layers
-        layers = stage_layers(pipeline_config, num_layers)
         whole_schedule = resolve_indexer_types(huggingface_config, num_layers)
+        stage = pipeline_config.model.pipeline_stage
         mla_kv_params = replace(
             mla_kv_params,
-            num_layers=stage_latent_slots(
-                whole_schedule,
-                num_layers,
-                pipeline_config.model.pipeline_stage,
-            ),
+            num_layers=stage_latent_slots(whole_schedule, num_layers, stage),
             sparse_indices_stride=sparse_selection_width(
                 mla_kv_params, huggingface_config.index_topk
             ),
             sparse_physical_indices=True,
             context_parallel=context_parallel,
         )
-        schedule = stage_indexer_types(whole_schedule, layers)
-
         # Always store the indexer's K cache in float8_e4m3fn.
         indexer_cache_dtype = DType.float8_e4m3fn
         # Per-token FP8 KV scales use float32 storage; required for
@@ -831,7 +834,10 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             # Only ``full`` layers run the indexer, so only they hold a slot
             # (see :func:`indexer_cache_layer_map`); the graph-API config and
             # the fused MTP graph size it the same way.
-            num_layers=num_indexer_cache_layers(schedule, len(layers)),
+            num_layers=stage_selection_groups(
+                whole_schedule,
+                stage.layers if stage is not None else range(num_layers),
+            ),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             # Set to True because there is only a key-cache, and one KV head.
