@@ -744,9 +744,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             True if the target is an accelerator and False otherwise.
         """
         comptime match Self.stdlib_plugin.device_kind:
-            case .cpu:
+            case .cpu():
                 return False
-            case .gpu:
+            case .gpu():
                 return True
             case .other(_, accelerates):
                 return accelerates
@@ -763,9 +763,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             True if the target is a GPU and False otherwise.
         """
         comptime match Self.stdlib_plugin.device_kind:
-            case .cpu:
+            case .cpu():
                 return False
-            case .gpu:
+            case .gpu():
                 return True
             case .other(_, _):
                 return False

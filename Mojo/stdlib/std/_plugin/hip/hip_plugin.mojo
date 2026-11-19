@@ -215,7 +215,7 @@ struct HIPPlugin(StdPlugin):
 
 
 struct HIPPluginHooks[target: CompilationTarget](PluginHooks):
-    comptime device_kind = TargetDeviceKind.gpu
+    comptime device_kind = TargetDeviceKind.gpu()
 
     comptime print_emit_fn: OptionalReg[
         _PrintEmitPluginHookFnType

@@ -106,7 +106,7 @@ The hooks struct must at a minimum set the `device_kind` field:
 
 ```mojo
 struct MyPluginHooks[target: CompilationTarget](PluginHooks):
-    # Possible values: TargetDeviceKind.cpu, .gpu, and
+    # Possible values: TargetDeviceKind.cpu(), .gpu(), and
     # .other(name, is_accelerator), e.g. `.other("npu", True)`.
     comptime device_kind = ...
 ```

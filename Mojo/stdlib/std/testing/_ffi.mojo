@@ -54,15 +54,15 @@ struct CStruct(ImplicitlyCopyable):
         self.skip_fields = skip_fields
 
 
-__enum CType(ImplicitlyCopyable):
+__union CType(ImplicitlyCopyable):
     """The C spelling of a field's type, such as `.type("void *")` for
     `void *udata` or `.array("__u64", 2)` for `__u64 __pad2[2]`.
 
-    A `String` implicitly converts to the `.type` case. `.default` spells
+    A `String` implicitly converts to the `.type` case. `.default()` spells
     nothing: the field's check uses the C type that its Mojo type implies.
     """
 
-    case default
+    case default()
     case type(String)
     case array(String, Int)
 
@@ -100,14 +100,14 @@ struct CField(ImplicitlyCopyable):
     """The C field's name, when it differs from the Mojo field's name."""
 
     var c_type: CType
-    """The C field's type, or `.default` for the one that the Mojo field's
+    """The C field's type, or `.default()` for the one that the Mojo field's
     type implies."""
 
     def __init__(
         out self,
         *,
         rename: Optional[String] = None,
-        c_type: CType = .default,
+        c_type: CType = .default(),
     ):
         """Creates the annotation.
 
