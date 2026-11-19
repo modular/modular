@@ -1166,11 +1166,13 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     # Auto-select the correct endpoint for pixel generation based on the
     # backend. Each pixel-gen backend requires a specific endpoint (e.g.,
     # sglang needs /v1/images/generations, vllm needs
-    # /v1/chat/completions). We auto-select when the current endpoint
-    # doesn't match this backend's expected pixel-gen endpoint.
+    # /v1/chat/completions). We auto-select when the current endpoint does not match this
+    # backend's expected pixel-gen endpoint.
     if benchmark_task in PIXEL_GENERATION_TASKS:
         try:
-            expected = get_pixel_gen_endpoint(args.backend, benchmark_task)
+            expected = get_pixel_gen_endpoint(
+                args.backend, benchmark_task, args.video_request_schema
+            )
         except ValueError:
             raise ValueError(
                 f"Backend {args.backend!r} does not have a default"

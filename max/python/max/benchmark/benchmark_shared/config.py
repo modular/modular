@@ -44,6 +44,7 @@ from .datasets import (
 )
 from .goodput import GoodputTargets, goodput_tokens
 from .utils import int_or_none, parse_comma_separated
+from .video_schema import VideoRequestSchema, get_video_request_schema
 
 logger = logging.getLogger(__name__)
 
@@ -199,10 +200,21 @@ IMAGE_MIXING_ENDPOINTS: frozenset[Endpoint] = frozenset(
 )
 
 
-def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
-    """Return the pixel-generation endpoint for a given backend and task."""
-    if task in VIDEO_GENERATION_TASKS and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
-        return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
+def get_pixel_gen_endpoint(
+    backend: Backend,
+    task: BenchmarkTask,
+    video_request_schema: VideoRequestSchema = "default",
+) -> Endpoint:
+    """Returns the video schema's endpoint before the backend defaults."""
+    if task in VIDEO_GENERATION_TASKS:
+        schema = get_video_request_schema(video_request_schema)
+        if (
+            schema is not None
+            and (endpoint := schema.endpoint(backend)) is not None
+        ):
+            return endpoint
+        if backend in VIDEO_GEN_DEFAULT_ENDPOINT:
+            return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
     if backend in PIXEL_GEN_DEFAULT_ENDPOINT:
         return PIXEL_GEN_DEFAULT_ENDPOINT[backend]
     raise ValueError(
@@ -846,6 +858,32 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     num_frames: int | None = Field(
         default=None,
         description="Number of frames to generate. Required for text-to-video.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    video_request_schema: VideoRequestSchema = Field(
+        default="default",
+        description="Video body schema registered by the benchmark entrypoint.",
+        json_schema_extra={"group": "Output Control"},
+    )
+    video_duration_seconds: int | None = Field(
+        default=None,
+        description="Clip length in seconds for a registered video schema.",
+        json_schema_extra={"group": "Output Control"},
+    )
+    video_aspect_ratio: str | None = Field(
+        default=None,
+        description="Output aspect ratio for a registered video schema.",
+        json_schema_extra={"group": "Output Control"},
+    )
+    video_short_edge: int | None = Field(
+        default=None,
+        description="Short edge in pixels for a registered video schema.",
+        json_schema_extra={"group": "Output Control"},
+    )
+    keyframes: Literal["first-last"] | None = Field(
+        default=None,
+        description="Conditioning frames for a registered video schema.",
         json_schema_extra={"group": "Output Control"},
     )
 

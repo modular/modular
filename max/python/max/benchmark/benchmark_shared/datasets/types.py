@@ -124,6 +124,13 @@ class PixelGenerationImageOptions:
     negative_prompt: str | None = None
     seed: int | None = None
     num_frames: int | None = None
+    # ``None`` means the default video body (size + num_frames). A schema name
+    # selects a backend-specific body; see ``VideoRequestSchema``.
+    request_schema: str | None = None
+    duration_seconds: int | None = None
+    aspect_ratio: str | None = None
+    short_edge: int | None = None
+    keyframes: str | None = None
 
 
 @dataclass

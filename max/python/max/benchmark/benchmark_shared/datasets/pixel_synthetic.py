@@ -24,6 +24,7 @@ from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import override
 
+from ..video_schema import get_video_request_schema
 from .pixel import PixelBenchmarkDataset
 from .types import RequestSamples
 
@@ -71,12 +72,21 @@ class SyntheticPixelBenchmarkDataset(PixelBenchmarkDataset):
             image_negative_prompt=kwargs.get("image_negative_prompt"),
             image_seed=kwargs.get("image_seed"),
             num_frames=kwargs.get("num_frames"),
+            video_request_schema=kwargs.get("video_request_schema"),
+            video_duration_seconds=kwargs.get("video_duration_seconds"),
+            video_aspect_ratio=kwargs.get("video_aspect_ratio"),
+            video_short_edge=kwargs.get("video_short_edge"),
+            keyframes=kwargs.get("keyframes"),
         )
         benchmark_task = kwargs.get("benchmark_task")
         input_image_paths: list[str] = []
+        schema = get_video_request_schema(kwargs.get("video_request_schema"))
+        if schema is not None:
+            assert image_options is not None
+            input_image_paths = schema.keyframe_paths(image_options)
         # Both image-to-image and image-to-video consume an input image; only
         # the payload routing (num-frames) differs downstream.
-        if benchmark_task in ("image-to-image", "image-to-video"):
+        elif benchmark_task in ("image-to-image", "image-to-video"):
             input_image_paths = [
                 self._get_placeholder_image_path(
                     width=kwargs.get("image_width") or 1024,

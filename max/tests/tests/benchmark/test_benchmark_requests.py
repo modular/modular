@@ -19,7 +19,7 @@ import logging
 import os
 import time
 from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -50,6 +50,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     RequestFuncOutput,
     SglangPixelGenerationRequestDriver,
+    SglangVideoPayload,
     SglangVideoRequestDriver,
     TRTLLMRequestDriver,
     VllmOmniPixelGenerationRequestDriver,
@@ -1496,7 +1497,12 @@ class TestPixelGenerationPayloadBuilders:
             negative_prompt="blurry",
             num_frames=81,
         )
-        payload = _build_sglang_video_payload(self._make_input(opts))
+        # The builder also accepts registered video schemas; narrow it
+        # here so mypy checks the sglang keys against SglangVideoPayload.
+        payload = cast(
+            SglangVideoPayload,
+            _build_sglang_video_payload(self._make_input(opts)),
+        )
         assert payload["prompt"] == "A beautiful sunset"
         assert payload["model"] == "black-forest-labs/FLUX.2-dev"
         assert payload["width"] == 832
@@ -1510,14 +1516,20 @@ class TestPixelGenerationPayloadBuilders:
         assert "response_format" not in payload
 
     def test_sglang_video_payload_no_options(self) -> None:
-        payload = _build_sglang_video_payload(self._make_input(None))
+        payload = cast(
+            SglangVideoPayload,
+            _build_sglang_video_payload(self._make_input(None)),
+        )
         assert payload["prompt"] == "A beautiful sunset"
         assert payload["model"] == "black-forest-labs/FLUX.2-dev"
         assert len(payload) == 2
 
     def test_sglang_video_payload_partial_options(self) -> None:
         opts = PixelGenerationImageOptions(width=832, height=480, num_frames=81)
-        payload = _build_sglang_video_payload(self._make_input(opts))
+        payload = cast(
+            SglangVideoPayload,
+            _build_sglang_video_payload(self._make_input(opts)),
+        )
         assert payload["width"] == 832
         assert payload["height"] == 480
         assert payload["num_frames"] == 81
