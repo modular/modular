@@ -384,7 +384,9 @@ public:
   }
 
   void addPostLowerToLLVMPasses(mlir::OpPassManager &pm) const override {
-    pm.addPass(mlir::createConvertNVVMToLLVMPass());
+    // The pass rewrites NVVM ops in place and touches no symbol, so it runs
+    // in parallel on every isolated top-level op, including globals.
+    pm.nestAny().addPass(mlir::createConvertNVVMToLLVMPass());
   }
 
   void markExportedKernel(mlir::Operation *func) const override {
