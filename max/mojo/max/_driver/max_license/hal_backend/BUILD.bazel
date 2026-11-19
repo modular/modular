@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "overlay_layer")
+
+package(default_visibility = ["//max:consumers"])
+
+# Marks a `max` package as built for the HAL DeviceContext. Every HAL `max`
+# package stacks this layer over its base sources. This file is in its own
+# Bazel package so that the glob in `:srcs` of the parent package does not add
+# it to the default `max`.
+overlay_layer(
+    name = "hal_backend_layer",
+    file_map = {
+        "backend_selection.mojo": "max/_driver/max_license/device_context_dispatch/backend_selection.mojo",
+    },
+    visibility = ["//visibility:public"],
+)

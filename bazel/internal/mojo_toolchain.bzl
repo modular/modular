@@ -1,6 +1,5 @@
 """An internal Mojo toolchain to point to our local tools."""
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@cfg_workaround.bzl", "CFG_WORKAROUND")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_mojo//mojo:providers.bzl", "MojoInfo", "MojoToolchainInfo")
@@ -28,12 +27,6 @@ def _mojo_toolchain_impl(ctx):
         min_os = ctx.fragments.cpp.minimum_os_version() or ctx.fragments.apple.macos_minimum_os_flag
         if min_os:
             copts.append("--target-triple=arm64-apple-macosx{}".format(min_os))
-
-    hal_device_context = ctx.attr._hal_device_context[BuildSettingInfo].value
-    if hal_device_context:
-        # Mojo code reads this define when a compile elaborates it, so every
-        # Mojo compile needs it, not only the compile of the `max` package.
-        copts.extend(["-D", "HAL_DEVICE_CONTEXT"])
 
     copts_toolchain = ctx.toolchains["@rules_mojo//:copts_toolchain_type"]
     if copts_toolchain:
@@ -130,9 +123,6 @@ mojo_toolchain = rule(
         ),
         "_macos_constraint": attr.label(
             default = Label("@platforms//os:macos"),
-        ),
-        "_hal_device_context": attr.label(
-            default = Label("//:hal_device_context"),
         ),
     },
     toolchains = [

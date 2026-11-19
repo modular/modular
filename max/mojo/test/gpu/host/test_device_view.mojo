@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Tests the `Device` view returned by `DeviceContext.device()`."""
 
+from max._driver.max_license.device_context_dispatch.backend_selection import (
+    HAL_DEVICE_CONTEXT,
+)
 from max.gpu.host import DeviceAttribute, DeviceContext
-from std.sys.defines import is_defined
 from std.testing import (
     assert_equal,
     assert_false,
@@ -22,11 +24,8 @@ from std.testing import (
     TestSuite,
 )
 
-# `--config=hal-device-context` defines `HAL_DEVICE_CONTEXT`; the two backends
-# word the driver's no-architecture error differently.
-comptime _NO_ARCH_ERROR = "failed to get device property 'arch'" if is_defined[
-    "HAL_DEVICE_CONTEXT"
-]() else "Not implemented for device: cpu"
+# The two backends word the driver's no-architecture error differently.
+comptime _NO_ARCH_ERROR = "failed to get device property 'arch'" if HAL_DEVICE_CONTEXT else "Not implemented for device: cpu"
 
 
 def _multiprocessor_count(ctx: DeviceContext) raises -> Int:
