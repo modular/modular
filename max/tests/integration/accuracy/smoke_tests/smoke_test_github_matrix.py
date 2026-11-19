@@ -165,6 +165,7 @@ MODELS: Mapping[str, set[str]] = {
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": _1xB200 | _1xMI355,  # TODO(MODELS-1021)
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": _4xMI355 | _8xB200,
     "reflection/Beam-1.0-501B-A23B-NVFP4": NIGHTLY | _4xB200,
+    "reflection/Beam-1.0-501B-A23B-NVFP4__dflash2": NIGHTLY | VARIANT | MACH | _4xB200,
     "tencent/Hy4-preview-FP8": NIGHTLY | MACH | _8xB200,
     "tencent/Hy4-preview-FP8__mtp": NIGHTLY | VARIANT | MACH | _8xB200,
     "thinkingmachines/Inkling-2-Small": NIGHTLY | _4xB200,

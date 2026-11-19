@@ -90,7 +90,8 @@ PIPELINES: Final[list[PipelineEntry]] = [
         gpu_flag="--devices gpu:0,1,2,3",
         instance_type="bm.gpu.b200.4",
         timeout=210,
-        # Mach only, with the DFlash2 drafter the model ships with.
+        # Mach only, serving the export artifact with the DFlash2 drafter the
+        # model ships with.
         mach_key="reflection/Beam-1.0-501B-A23B-NVFP4__dflash2",
     ),
     PipelineEntry(
