@@ -213,12 +213,14 @@ def FormGraphBlobs
     Each group runs on one device. It ends at the first routine with a result
     that something outside the group reads, other than another declarative
     routine on that device or the block's terminator, such as the graph's
-    output, so no path leaves the group and comes back in. Device graphs are
-    left alone. Runs before `OutlineRoutines`, which outlines the fused
-    routine.
+    output, so no path leaves the group and comes back in. Device graphs and
+    routines on the host, which has no blob launch, are left alone. Runs before
+    `OutlineRoutines`, which outlines the fused routine.
 
     The group size is also limited by the `max-calls` configuration flag. With
-    `max-calls` at 0, no graph blobs will be formed.
+    `max-calls` at 0, no graph blobs will be formed. The pass doesn't check
+    that the target handles graph blobs, so set `max-calls` only for targets
+    whose MAX plugin does.
   }];
 
   let dependentDialects = [

@@ -54,6 +54,7 @@ ResultRange nonChainOutputs(RoutineOp routine) {
 
 // Whether `routine` can join a blob. `symbols` holds the kernel decls. It
 // needs all of:
+// - a device other than the host, which has no blob launch;
 // - one call, to a declarative kernel on one device context;
 // - operands that are tensors, buffers it writes in place under its chain, and
 //   named dims;
@@ -62,6 +63,9 @@ ResultRange nonChainOutputs(RoutineOp routine) {
 //   runs once at init, and a blob runs on every execution.
 bool canJoinBlob(RoutineOp routine, SymbolTable &symbols,
                  const llvm::DenseSet<Value> &invariant) {
+  if (isHostPlaced(MO::getDeviceOrDefaultAny(routine)))
+    return false;
+
   // No result with a data-dependent shape.
   if (!routine.getOutputParamDecls().empty())
     return false;
