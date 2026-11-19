@@ -37,6 +37,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Threading.h"
 #include "mlir/Parser/Parser.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -1319,16 +1320,26 @@ struct ImportPackagesPass
         return;
       }
 
-      for (const auto &path : builtInPathsOr.takeValue()) {
-        OwningOpRef<ModuleOp> pkg = loadPackageModule(ctx, path, module);
+      // One bytecode parse per package, and a package knows nothing of the
+      // others, so the parses run together. `emitDecls` writes the shared
+      // module, so it stays serial and in path order: the registry's
+      // contents, and the error a duplicate registration reports, do not
+      // depend on which parse finished first.
+      llvm::SmallVector<std::string> paths = builtInPathsOr.takeValue();
+      llvm::SmallVector<OwningOpRef<ModuleOp>> pkgs(paths.size());
+      mlir::parallelFor(ctx, 0, paths.size(), [&](size_t i) {
+        pkgs[i] = loadPackageModule(ctx, paths[i], module);
+      });
+      for (const OwningOpRef<ModuleOp> &pkg : pkgs) {
         if (!pkg) {
           signalPassFailure();
           return;
         }
+      }
+      for (OwningOpRef<ModuleOp> &pkg : pkgs)
         emitDecls(builder, symbolTable, *pkg, seenBuiltinRegistrations,
                   seenPrimitives, seenShapeFunctions, opaqueTypeMapping,
                   /*isUserDefined=*/false);
-      }
     }
 
     // Load user-supplied packages (mojo-pkg-paths). In append mode this is
