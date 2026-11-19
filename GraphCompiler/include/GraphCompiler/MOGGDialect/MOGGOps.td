@@ -1546,6 +1546,45 @@ def MOGG_GraphBlobBarrierOp : MOGG_Op<"graph_blob.barrier", [
   let assemblyFormat = "attr-dict";
 }
 
+def MOGG_GraphBlobForeachOp : MOGG_Op<"graph_blob.foreach", [
+  AttrSizedOperandSegments,
+  HasParent<"MOGG::GraphBlobCallOp">,
+  MOGG_CallLike,
+  DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  NoTerminator,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Run a generated elementwise loop in a graph blob launch.";
+  let description = [{
+    Runs its body on every index of `$shape`, split across every thread of the
+    enclosing launch. Each thread runs its own share and doesn't wait for the
+    others. The body and its arguments are those of `mogg.call.foreach`: one
+    argument per `$capturing` tensor, then the index.
+
+    The SIMD widths the loop may run at must divide `$max_simd_width` when it
+    is set, else the GCD of `$dynamic_max_simd_width`'s dims when that is set.
+    At most one of them is set.
+
+    Example:
+    ```mlir
+    mogg.graph_blob.foreach shape(%s) (%idx : !map.index<2>)
+        capturing {%cx = %x : !mogg.tensor, %cy = %y : !mogg.tensor} {
+      %v = mogg.tensor.load %cx[%idx] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.tensor.store %cy[%idx] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+    ```
+  }];
+  let arguments = (ins
+    MOGG_Shape:$shape,
+    Variadic<MOGG_TensorLike>:$capturing,
+    Optional<MOGG_Shape>:$dynamic_max_simd_width,
+    OptionalAttr<I64Attr>:$max_simd_width
+  );
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
   Pure,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,

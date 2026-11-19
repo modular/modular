@@ -86,6 +86,8 @@ static LogicalResult verifyMaxSimdWidth(LaunchOpT op) {
 
 LogicalResult CallForeachOp::verify() { return verifyMaxSimdWidth(*this); }
 
+LogicalResult GraphBlobForeachOp::verify() { return verifyMaxSimdWidth(*this); }
+
 LogicalResult RoutineOp::verify() {
   // A chain result, if present, is last (mirrors `IterElementwiseOp::verify()`
   // / `RoutineOp::maybeGetOutChain()`) and never gets a body block argument.

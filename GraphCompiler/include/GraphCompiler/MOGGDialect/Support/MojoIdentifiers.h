@@ -419,6 +419,7 @@ constexpr MojoStaticValue kParameterSize = "size";
 constexpr MojoStaticValue kParameterLength = "length";
 constexpr MojoStaticValue kParameterSimdWidth = "simd_width";
 constexpr MojoStaticValue kParameterPreferredSimdWidth = "simd_width";
+constexpr MojoStaticValue kParameterDtypes = "dtypes";
 constexpr MojoStaticValue kArgMaxSimdWidth = "max_simd_width";
 constexpr MojoStaticValue kParameterElementAlignment = "element_alignment";
 /// The rowwise cache lambda's alignment parameter.
