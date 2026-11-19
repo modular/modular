@@ -17,11 +17,17 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Threading.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/ThreadPool.h"
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <iterator>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace M {
@@ -106,6 +112,99 @@ void parallelForEach(MLIRContext *ctx, RangeT &&range, FuncT &&func,
         return func(cache, std::forward<decltype(arg)>(arg)), llvm::success();
       },
       cache, [](auto &&...) {});
+}
+
+/// The most chunks that `parallelForEachChunk` and `parallelMapChunks` split a
+/// range into. More chunks than threads keep the load even when a few items
+/// cost far more than the rest.
+inline constexpr size_t kMaxParallelChunks = 512;
+
+namespace Detail {
+template <typename RangeT>
+using RangeItemT = std::remove_cv_t<
+    std::remove_reference_t<decltype(*std::begin(std::declval<RangeT &>()))>>;
+
+inline size_t getNumParallelChunks(size_t numItems) {
+  return std::min(numItems, kMaxParallelChunks);
+}
+
+/// Calls `fn(chunkIndex, chunk)` in parallel for each chunk of `items`.
+template <typename T, typename FnT>
+void parallelForEachIndexedChunk(MLIRContext *ctx, ArrayRef<T> items,
+                                 FnT &&fn) {
+  size_t numChunks = getNumParallelChunks(items.size());
+  mlir::parallelFor(ctx, 0, numChunks, [&](size_t chunk) {
+    SmallVector<T> chunkItems;
+    for (size_t i = chunk; i < items.size(); i += numChunks)
+      chunkItems.push_back(items[i]);
+    fn(chunk, ArrayRef<T>(chunkItems));
+  });
+}
+} // namespace Detail
+
+/// Splits `items` into chunks and calls `fn(ArrayRef<T> chunk)` on each chunk
+/// in parallel. State that `fn` keeps for its chunk, such as a replacer cache,
+/// is reused across the items of that chunk.
+///
+/// The split depends only on the number of items, so a result that depends on
+/// the chunks is the same at every thread count. With `n` chunks, chunk `c`
+/// holds items `c`, `c + n`, `c + 2n` and so on. This interleaving spreads a
+/// run of expensive neighbors over many chunks.
+///
+/// `items` must be a contiguous container of values that are cheap to copy.
+/// `fn` runs on several threads at once. The diagnostics it emits are ordered
+/// by chunk.
+template <typename RangeT, typename FnT>
+void parallelForEachChunk(MLIRContext *ctx, RangeT &&items, FnT &&fn) {
+  ArrayRef<Detail::RangeItemT<RangeT>> itemsRef(items);
+  Detail::parallelForEachIndexedChunk(ctx, itemsRef,
+                                      [&](size_t, auto chunk) { fn(chunk); });
+}
+
+/// Calls `fn` on each chunk as `parallelForEachChunk` does, and returns the
+/// value that `fn` returned for each chunk, in chunk order. A caller that
+/// merges these values in order gets the same result at every thread count.
+///
+/// The result type must be default-constructible.
+template <typename RangeT, typename FnT>
+auto parallelMapChunks(MLIRContext *ctx, RangeT &&items, FnT &&fn) {
+  ArrayRef<Detail::RangeItemT<RangeT>> itemsRef(items);
+  using ResultT = std::decay_t<std::invoke_result_t<FnT &, decltype(itemsRef)>>;
+  SmallVector<ResultT, 0> results(
+      Detail::getNumParallelChunks(itemsRef.size()));
+  Detail::parallelForEachIndexedChunk(
+      ctx, itemsRef,
+      [&](size_t chunk, auto chunkItems) { results[chunk] = fn(chunkItems); });
+  return results;
+}
+
+/// Calls `fn(item)` on each item in parallel and returns the results in item
+/// order. The result type must be default-constructible.
+template <typename RangeT, typename FnT>
+auto parallelMap(MLIRContext *ctx, RangeT &&items, FnT &&fn) {
+  ArrayRef<Detail::RangeItemT<RangeT>> itemsRef(items);
+  using ResultT = std::decay_t<
+      std::invoke_result_t<FnT &, const Detail::RangeItemT<RangeT> &>>;
+  // `std::vector<bool>` packs its elements, so writes to different elements
+  // from different threads would race.
+  SmallVector<ResultT, 0> results(itemsRef.size());
+  mlir::parallelFor(ctx, 0, itemsRef.size(),
+                    [&](size_t i) { results[i] = fn(itemsRef[i]); });
+  return results;
+}
+
+/// Returns true if `pred(item)` is true for an item. `pred` runs on several
+/// threads at once. After a call returns true no new call starts, but calls
+/// that are already running finish.
+template <typename RangeT, typename PredT>
+bool parallelAnyOf(MLIRContext *ctx, RangeT &&items, PredT &&pred) {
+  ArrayRef<Detail::RangeItemT<RangeT>> itemsRef(items);
+  std::atomic<bool> found = false;
+  mlir::parallelFor(ctx, 0, itemsRef.size(), [&](size_t i) {
+    if (!found && pred(itemsRef[i]))
+      found = true;
+  });
+  return found;
 }
 
 } // namespace M
