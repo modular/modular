@@ -22,6 +22,32 @@ define { float } @call_struct_return() {
   ret { float } zeroinitializer
 }
 
+; LLVM 17 reads the denormal mode from string attributes. A mode equal to the
+; default is left out.
+
+; CHECK-LABEL: define void @denormal_default_mode()
+; CHECK-SAME: #[[DENORM_DEFAULT:[0-9]+]]
+define void @denormal_default_mode() denormal_fpenv(preservesign) {
+  ret void
+}
+
+; CHECK-LABEL: define void @denormal_f32_mode()
+; CHECK-SAME: #[[DENORM_F32:[0-9]+]]
+define void @denormal_f32_mode() denormal_fpenv(float: preservesign) {
+  ret void
+}
+
+; CHECK-LABEL: define void @denormal_both_modes()
+; CHECK-SAME: #[[DENORM_BOTH:[0-9]+]]
+define void @denormal_both_modes() denormal_fpenv(positivezero, float: preservesign|ieee) {
+  ret void
+}
+
+; CHECK-LABEL: define void @denormal_ieee() {
+define void @denormal_ieee() denormal_fpenv(ieee) {
+  ret void
+}
+
 ; CHECK-LABEL: define void @test_debuginfo()
 define void @test_debuginfo() {
     #dbg_value({ ptr, { [1 x i32], [1 x i32] }, { [1 x i32], [1 x i32] } } poison, !3, !DIExpression(), !11)
@@ -45,6 +71,9 @@ define void @test_debuginfo() {
 !11 = !DILocation(line: 67, column: 5, scope: !4)
 
 ; CHECK: attributes #[[ATTR0]] = { nocallback nofree nosync nounwind readnone speculatable willreturn }
+; CHECK-DAG: attributes #[[DENORM_DEFAULT]] = { "denormal-fp-math"="preserve-sign,preserve-sign" }
+; CHECK-DAG: attributes #[[DENORM_F32]] = { "denormal-fp-math-f32"="preserve-sign,preserve-sign" }
+; CHECK-DAG: attributes #[[DENORM_BOTH]] = { "denormal-fp-math"="positive-zero,positive-zero" "denormal-fp-math-f32"="preserve-sign,ieee" }
 
 ; CHECK: ![[DBG_LOC]] = !DILocation(line: 67, column: 5, scope: ![[DBG_SUBPROGRAM:.*]])
 ; CHECK: ![[DBG_SUBPROGRAM]] = distinct !DISubprogram(name: "bitcode_writer", linkageName: "test_debuginfo", scope: !{{.*}}, file: !{{.*}}, line: 66, type: ![[DBG_SUBROUTINE:.*]], scopeLine: 66, spFlags: DISPFlagDefinition | DISPFlagOptimized, unit: !{{.*}}, annotations: !{{.*}})

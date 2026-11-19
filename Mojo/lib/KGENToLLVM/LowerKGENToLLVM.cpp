@@ -14,6 +14,7 @@
 #include "CABICallHelpers.h"
 #include "LLVMLoweringUtils.h"
 #include "LowerKGENToLLVMRewriteCABIFns.h"
+#include "LowerKGENToLLVMUtils.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -184,9 +185,10 @@ mapToTypedLLVMFuncAttr(LLVM::LLVMFuncOp func, NamedAttrList &attrs,
                  "' is temporarily not supported via @__llvm_metadata");
   }
 
+  if (suffix == "denormal_fp_math" || suffix == "denormal_fp_math_f32")
+    return setDenormalFPEnv(func, attrs, suffix, value);
+
   static llvm::StringMap<llvm::StringLiteral> allowedAttrsMap = {
-      {"denormal_fp_math", "denormal-fp-math"},
-      {"denormal_fp_math_f32", "denormal-fp-math-f32"},
       {"fp_contract", "fp-contract"},
       {"unsafe_fp_math", "unsafe-fp-math"},
       {"no_infs_fp_math", "no-infs-fp-math"},

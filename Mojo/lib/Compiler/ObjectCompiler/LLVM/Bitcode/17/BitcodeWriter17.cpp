@@ -27,6 +27,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -964,7 +965,27 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
     Record.push_back(VE.getAttributeGroupID(Pair));
     Record.push_back(AttrListIndex);
 
+    auto pushStringAttr = [&](StringRef Kind, StringRef Val) {
+      Record.push_back(Val.empty() ? 3 : 4);
+      Record.append(Kind.begin(), Kind.end());
+      Record.push_back(0);
+      if (!Val.empty()) {
+        Record.append(Val.begin(), Val.end());
+        Record.push_back(0);
+      }
+    };
+
     for (Attribute Attr : AS) {
+      // LLVM 17 has no `denormal_fpenv` attribute and reads the denormal mode
+      // from these strings. A mode equal to LLVM 17's default is left out.
+      if (Attr.hasAttribute(Attribute::DenormalFPEnv)) {
+        DenormalFPEnv Env = Attr.getDenormalFPEnv();
+        if (Env.DefaultMode != DenormalMode::getDefault())
+          pushStringAttr("denormal-fp-math", Env.DefaultMode.str());
+        if (Env.F32Mode != Env.DefaultMode)
+          pushStringAttr("denormal-fp-math-f32", Env.F32Mode.str());
+        continue;
+      }
       if (Attr.isEnumAttribute() || Attr.isIntAttribute()) {
         uint64_t AttrKindEncoding = getAttrKindEncoding(Attr.getKindAsEnum());
         if (AttrKindEncoding != M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING) {
@@ -978,16 +999,7 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
           }
         }
       } else if (Attr.isStringAttribute()) {
-        StringRef Kind = Attr.getKindAsString();
-        StringRef Val = Attr.getValueAsString();
-
-        Record.push_back(Val.empty() ? 3 : 4);
-        Record.append(Kind.begin(), Kind.end());
-        Record.push_back(0);
-        if (!Val.empty()) {
-          Record.append(Val.begin(), Val.end());
-          Record.push_back(0);
-        }
+        pushStringAttr(Attr.getKindAsString(), Attr.getValueAsString());
       } else if (Attr.isTypeAttribute()) {
         Type *Ty = Attr.getValueAsType();
         Record.push_back(Ty ? 6 : 5);

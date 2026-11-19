@@ -54,6 +54,9 @@ kgen.func export @fn_denorm_fp()  <fnAttrs = {llvm.denormal_fp_math = "preserve-
 // CHECK-LABEL: define{{.*}} void @fn_denorm_fp32()
 // CHECK-SAME: #[[DFP32:[0-9]+]]
 kgen.func export @fn_denorm_fp32()  <fnAttrs = {llvm.denormal_fp_math_f32 = "ieee,ieee"}> { hlcf.return }
+// CHECK-LABEL: define{{.*}} void @fn_denorm_fp_both()
+// CHECK-SAME: #[[DFPB:[0-9]+]]
+kgen.func export @fn_denorm_fp_both()  <fnAttrs = {llvm.denormal_fp_math = "positive-zero", llvm.denormal_fp_math_f32 = "preserve-sign,ieee"}> { hlcf.return }
 // CHECK-LABEL: define{{.*}} void @fn_fp_contract()
 // CHECK-SAME: #[[FPC:[0-9]+]]
 kgen.func export @fn_fp_contract()  <fnAttrs = {llvm.fp_contract = "fast"}> { hlcf.return }
@@ -136,8 +139,9 @@ kgen.func export @fn_memory()  <fnAttrs = {llvm.memory = 1 : i64}> { hlcf.return
 // CHECK-DAG: attributes #[[OS]] = { optsize {{.*}} }
 // CHECK-DAG: attributes #[[MS]] = { minsize {{.*}} }
 // CHECK-DAG: attributes #[[SRP]] = { {{.*}}"save-reg-params"{{.*}} }
-// CHECK-DAG: attributes #[[DFP]] = { {{.*}}"denormal-fp-math"="preserve-sign,preserve-sign"{{.*}} }
-// CHECK-DAG: attributes #[[DFP32]] = { {{.*}}"denormal-fp-math-f32"="ieee,ieee"{{.*}} }
+// CHECK-DAG: attributes #[[DFP]] = { denormal_fpenv(preservesign) {{.*}} }
+// CHECK-DAG: attributes #[[DFP32]] = { denormal_fpenv(ieee) {{.*}} }
+// CHECK-DAG: attributes #[[DFPB]] = { denormal_fpenv(positivezero, float: preservesign|ieee) {{.*}} }
 // CHECK-DAG: attributes #[[FPC]] = { {{.*}}"fp-contract"="fast"{{.*}} }
 // CHECK-DAG: attributes #[[PS]] = { {{.*}}"probe-stack"="__chkstk"{{.*}} }
 // CHECK-DAG: attributes #[[NILT]] = { {{.*}}"no-inline-line-tables"="true"{{.*}} }
