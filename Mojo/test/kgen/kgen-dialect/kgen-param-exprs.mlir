@@ -525,6 +525,18 @@ kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <1>
   kgen.param.constant: scalar<index> = <get_alignof(!kgen.simd<0, f32>, #target)>
 
+  // 2^59 * 8 is representable and must still fold. Element type is a KGEN
+  // scalar so this uses SIMD layout (this file's #target has an empty data
+  // layout, which has no integer ABI entries).
+  // CHECK-NEXT: <4611686018427387904>
+  kgen.param.constant: scalar<index> = <get_sizeof(!pop.array<576460752303423488, !kgen.simd<1, si64>>, #target)>
+  // 2^61 * 8 and 2^60 * 8 overflow signed 64-bit size; they must not wrap to
+  // 0 or INT64_MIN.
+  // CHECK-NEXT: get_sizeof({{.*}}2305843009213693952
+  kgen.param.constant: scalar<index> = <get_sizeof(!pop.array<2305843009213693952, !kgen.simd<1, si64>>, #target)>
+  // CHECK-NEXT: get_sizeof({{.*}}1152921504606846976
+  kgen.param.constant: scalar<index> = <get_sizeof(!pop.array<1152921504606846976, !kgen.simd<1, si64>>, #target)>
+
   hlcf.return
 }
 
