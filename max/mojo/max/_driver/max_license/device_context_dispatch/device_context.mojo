@@ -2373,13 +2373,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ), "closure kernels are only available on the legacy DeviceContext"
         return self._impl.compile_function[ClosureType]()
 
-    @deprecated("Use `compile_closure` instead.")
-    @inline(.always)
-    def compile_function[
-        ClosureType: RegisterPassable & def() -> None,
-    ](self) raises -> LegacyDeviceClosureFunction[ClosureType, Self.target]:
-        return self.compile_closure[ClosureType]()
-
     def enqueue_closure[
         ClosureType: RegisterPassable & def() -> None,
     ](
@@ -2415,27 +2408,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
             self._impl,
             f.kernel,
-            closure,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            location=location.or_else(call_location()),
-        )
-
-    @deprecated("Use `enqueue_closure` instead.")
-    @inline(.always)
-    def enqueue_function[
-        ClosureType: RegisterPassable & def() -> None,
-    ](
-        self,
-        f: LegacyDeviceClosureFunction[ClosureType, Self.target],
-        closure: ClosureType,
-        *,
-        grid_dim: Dim,
-        block_dim: Dim,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        self.enqueue_closure[ClosureType](
-            f,
             closure,
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -3041,44 +3013,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location,
             )
 
-    @deprecated("Use `enqueue_closure` instead.")
-    @inline(.always)
-    def enqueue_function[
-        FuncType: DevicePassable & def() -> None,
-        //,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        func: FuncType,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        self.enqueue_closure[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](
-            func,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            func_attribute=func_attribute,
-            location=location.or_else(call_location()),
-        )
-
     def enqueue_closure[
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         //,
@@ -3179,44 +3113,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 func_attribute=func_attribute,
                 location=location,
             )
-
-    @deprecated("Use `enqueue_closure` instead.")
-    @inline(.always)
-    def enqueue_function[
-        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
-        //,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        func: FuncType,
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: Optional[SourceLocation] = None,
-    ) raises where not conforms_to(FuncType, DevicePassable):
-        self.enqueue_closure[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](
-            func,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            func_attribute=func_attribute,
-            location=location.or_else(call_location()),
-        )
 
     @inline(.always)
     def _enqueue_closure_hal[
@@ -3533,24 +3429,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 func,
                 location=location.or_else(call_location()),
             )
-
-    @deprecated("Use `enqueue_closure` instead.")
-    @inline(.always)
-    def enqueue_function[
-        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
-        ExecutionConfigType: ExecutionConfig,
-        //,
-    ](
-        self,
-        execution_config: ExecutionConfigType,
-        func: FuncType,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        self.enqueue_closure(
-            execution_config,
-            func,
-            location=location.or_else(call_location()),
-        )
 
     def execution_time[
         FuncType: def(Self) raises -> None,
