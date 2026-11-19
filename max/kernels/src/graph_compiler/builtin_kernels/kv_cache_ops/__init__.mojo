@@ -28,6 +28,10 @@ import extensibility
 from max.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
 from kv_cache.types import KVCacheStaticParams, KVCollectionT
+from kv_cache.hisparse import (
+    hisparse_gather_group,
+    hisparse_resolve,
+)
 from layout import (
     Coord,
     TileTensor,
@@ -55,10 +59,6 @@ from nn.kv_cache_gather import (
     kv_cache_pack_owned_rows,
     kv_cache_unpack_prefix_rows,
 )
-from kv_cache.hisparse import (
-    hisparse_gather_group,
-    hisparse_resolve,
-)
 from nn.kv_cache_ragged import (
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
@@ -71,10 +71,18 @@ from nn.kv_cache_ragged import (
     kv_matmul_ragged_paged,
 )
 from extensibility import (
+    Fused,
     Input,
     InputTensor,
+    Loadable,
+    LoadAccess,
+    MutableInput,
     Output,
     OutputTensor,
+    Tensor,
+    TileTensorable,
+    unsafe_fused_view,
+    UnsafeFusedView,
 )
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
@@ -87,7 +95,6 @@ from std.logger import Logger
 comptime logger = Logger()
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
 
 
 @inline(.always)

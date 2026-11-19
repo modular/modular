@@ -60,7 +60,7 @@ from layout import (
 )
 from max.gpu.host import DeviceContext, DeviceGraphBuilder
 
-from .kernels import (
+from builtin_kernels._checks import (
     _check_signal_buffer_size,
     _check_tensor_tuple,
     _partitioned_scratch_requirement,

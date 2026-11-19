@@ -44,7 +44,7 @@ from nn.routed_rows_finalize import (
     routed_rows_finalize,
 )
 
-from .monoids import ReduceSum
+from builtin_kernels.monoids import ReduceSum
 
 
 @extensibility.register("norm.routed_rows_rms_norm")

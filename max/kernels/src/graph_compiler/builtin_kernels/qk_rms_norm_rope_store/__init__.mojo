@@ -61,7 +61,7 @@ from nn.head_rms_norm_rope import (
 )
 from nn.kv_cache import generic_get_paged_cache
 
-from .monoids import ReduceSum
+from builtin_kernels.monoids import ReduceSum
 
 
 @always_inline

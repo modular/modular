@@ -57,7 +57,10 @@ from extensibility import (
 )
 from std.builtin.device_passable import DevicePassable
 
-from ._tile_fusion import _LegacyTileComputeOp, _TileStoreConsumer
+from builtin_kernels._tile_fusion import (
+    _LegacyTileComputeOp,
+    _TileStoreConsumer,
+)
 
 comptime SM100 = (
     extensibility.ACCELERATOR

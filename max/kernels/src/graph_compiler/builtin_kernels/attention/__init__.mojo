@@ -41,11 +41,13 @@ from kv_cache.paged_sparse_kv_index_remap import (
 from kv_cache.types import KVCacheStaticParams
 from linalg.mx_format import MXFormat
 from layout import (
-    TileTensor,
-    RowMajorLayout,
-    TensorLayout,
-    TensorEngine,
+    coord_to_index_list,
     DefaultEngine,
+    row_major,
+    RowMajorLayout,
+    TensorEngine,
+    TensorLayout,
+    TileTensor,
     UNKNOWN_VALUE,
 )
 from nn.attention.cpu.mha import flash_attention as nn_flash_attention
@@ -130,7 +132,23 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import DynamicTensor
-from extensibility import Fused, Input, LoadAccess, TensorTuple
+from extensibility import (
+    Fused,
+    Input,
+    InputTensor,
+    Loadable,
+    LoadAccess,
+    MutableInput,
+    Output,
+    Tensor,
+    TensorTuple,
+    TileTensorable,
+    unsafe_fused_view,
+    UnsafeFusedView,
+)
+from extensibility import (
+    _MutableInputTensor as MutableInputTensor,
+)
 from std.logger import Logger
 
 comptime logger = Logger()
@@ -138,7 +156,6 @@ comptime logger = Logger()
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
 from nn.attention.gpu.mla_index_kpool import (
     kpool_append_ragged_paged,
     kpool_compress_kernel,
@@ -149,11 +166,12 @@ from nn.attention.gpu.mla_index_kpool import (
     kpool_tail_update_kernel,
 )
 
-from .kernels import (
+from builtin_kernels._coords import _unsafe_str_to_coord
+from .mha_dispatch import (
     _execute_mha_ragged_paged_scalar_args,
     _unmarshal_mha_decode_dispatch_metadata,
-    _unsafe_str_to_coord,
 )
+from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 
 
 comptime SM100 = (

@@ -22,7 +22,7 @@ from max.gpu.host import DeviceContext
 from std.utils.coord import Coord, DynamicCoord
 
 from algorithm import rowwise
-from .monoids import (
+from builtin_kernels.monoids import (
     ArgMax,
     ArgMin,
     MinMax,

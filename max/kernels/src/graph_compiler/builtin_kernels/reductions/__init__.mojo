@@ -23,7 +23,7 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from .rowwise_reductions import (
+from builtin_kernels.rowwise_reductions import (
     reduce_argmax,
     reduce_argmin,
     reduce_min_and_max,
@@ -36,7 +36,7 @@ from nn.argsort import argsort
 from nn.cumsum import cumsum
 from nn.gather_scatter import _unsafe_normalize_neg_index
 from nn.normalization import apply_qk_rms_norm, group_norm
-from .rowwise_normalization import (
+from builtin_kernels.rowwise_normalization import (
     layer_norm,
     layer_norm_rope_ragged,
     rms_norm_residual_add,
@@ -82,7 +82,6 @@ from layout import UNKNOWN_VALUE
 from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
 
 
 @extensibility.register("mo.reduce.arg_max")

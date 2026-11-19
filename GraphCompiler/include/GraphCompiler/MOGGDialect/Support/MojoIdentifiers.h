@@ -57,6 +57,14 @@ namespace M::MOGG {
 constexpr MojoStaticValue kOpaqueTypeMappingAttrName =
     "mogg.opaque_type_mapping";
 
+/// The built-in kernel packages the registry was built from, under the names
+/// they import as. Written by `mogg-import-packages`, read by `EmitMojo`,
+/// which imports each one so a kernel's fully-qualified path resolves.
+/// `builtin_kernels` is a namespace, so the set is what was found on the
+/// import path rather than a list the compiler carries.
+constexpr MojoStaticValue kBuiltInKernelPackagesAttrName =
+    "mogg.builtin_kernel_packages";
+
 /// The name generated code imports `max._graph_blob` as, the module of the
 /// primitives a graph blob calls.
 constexpr MojoStaticValue kGraphBlobModuleAlias = "_graph_blob";

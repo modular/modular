@@ -211,8 +211,21 @@ ErrorOrSuccess verifyCustomOp(const MojoRegistry &registry,
 /// ops. Backs the public C API `MAXG_verifyCustomOp`.
 ErrorOrSuccess verifyCustomOp(mlir::ModuleOp kernelDecls, mlir::Operation *op);
 
-/// Resolves the paths of the built-in packages (`kernels`, `primitives`) that
+/// One precompiled built-in package: the dotted name it imports under, and the
+/// `.mojoc` it was read from. `builtin_kernels` is a namespace rather than a
+/// package, so one entry of `kMoggRequiredKernelModuleNames` yields one of
+/// these per package under it.
+struct BuiltInKernelPackage {
+  std::string name;
+  std::string path;
+};
+
+/// Resolves the built-in packages (`kernels`, `primitives`) that
 /// `--mogg-import-packages` loads. See also `getKernelPackagePathsForCacheKey`.
+ErrorOr<llvm::SmallVector<BuiltInKernelPackage>>
+getBuiltInKernelPackages(mlir::MLIRContext *ctx);
+
+/// The paths of the above, for callers that need no names.
 ErrorOr<llvm::SmallVector<std::string>>
 getBuiltInKernelPackagePaths(mlir::MLIRContext *ctx);
 

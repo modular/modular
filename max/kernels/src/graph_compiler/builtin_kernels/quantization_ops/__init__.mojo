@@ -41,7 +41,7 @@ from layout import (
 )
 from nn.activations import relu
 from nn.normalization import rms_norm_quantize_dynamic_scaled_fp8
-from .rowwise_normalization import (
+from builtin_kernels.rowwise_normalization import (
     layer_norm_quantize_dynamic_scaled_fp8,
     rms_norm_fused_quantize_dynamic_scaled_fp8,
     rms_norm_quantize_dynamic_scaled_fp8_dual,
@@ -115,15 +115,16 @@ from quantization.qmatmul_k import (
 )
 from extensibility import (
     Fused,
+    get_kernel_simd_width,
     Input,
-    LoadAccess,
     Loadable,
+    LoadAccess,
+    MutableInput,
     Output,
     Tensor,
     TileTensorable,
-    UnsafeFusedView,
-    get_kernel_simd_width,
     unsafe_fused_view,
+    UnsafeFusedView,
 )
 from std.logger import Logger
 
@@ -132,7 +133,6 @@ comptime logger = Logger()
 from std.utils import IndexList
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
 
 
 @extensibility.register(

@@ -20,10 +20,10 @@
 
 from std.collections import OptionalReg
 from std.sys import align_of
-from std.sys.info import simd_width_of, _accelerator_arch
 from std.sys.info import (
-    simd_width_of,
     _accelerator_arch,
+    simd_width_of,
+    size_of,
 )
 import extensibility
 
@@ -108,14 +108,16 @@ from extensibility import (
     Fused,
     Input,
     InputTensor,
+    Loadable,
+    LoadAccess,
     Output,
     OutputTensor,
     Storable,
     StoreAccess,
     Tensor,
     TileTensorable,
-    UnsafeFusedView,
     unsafe_fused_view,
+    UnsafeFusedView,
 )
 from extensibility import (
     _FusedComputeOutputTensor,
@@ -134,7 +136,6 @@ from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
 
 
 @extensibility.register("mo.composite.matmul_fused_partial_rms_norm")

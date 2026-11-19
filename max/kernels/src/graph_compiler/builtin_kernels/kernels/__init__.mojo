@@ -17,7 +17,6 @@
 
 """Registers core tensor graph ops (range, copy, reshape, and related utilities)."""
 
-from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.os import getenv
 from std.random import seed
@@ -30,7 +29,22 @@ import extensibility
 from max.algorithm import elementwise
 from internal_utils.fp8_utils import cast_saturating
 
-from comm import Signal
+# Re-exported, not used here: these were declared in this module before the
+# registrations were split into one package per module, and the packages that
+# call them must not depend on this one.
+from builtin_kernels._checks import (
+    _check_signal_buffer_size,
+    _check_tensor_tuple,
+    _partitioned_scratch_requirement,
+)
+from builtin_kernels._coords import _unsafe_str_to_coord
+from builtin_kernels.concat_shapes import concat_shape_impl
+from builtin_kernels.conv_filter_layout import (
+    _layout_transform_conv_filter_from_fcrs,
+    layout_transform_conv_filter_common,
+    layout_transform_conv_transpose_filter_common,
+)
+
 from extensibility import StaticTensorSpec
 from max.gpu.host import (
     CompletionFlag,
@@ -47,10 +61,6 @@ from layout import (
     ComptimeInt,
     Coord,
     CoordLike,
-    DefaultEngine,
-    RowMajorLayout,
-    TensorEngine,
-    TensorLayout,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -59,9 +69,6 @@ from layout.coord import DynamicCoord
 from nn._ragged_utils import eagle_prefill_shift_tokens
 from nn.arange import arange_shape
 from nn.argmaxmin import argmax
-from nn.conv.conv import pack_filter as _pack_conv_filter
-from nn.conv.conv import pack_filter_from_fcrs as _pack_conv_filter_from_fcrs
-from nn.conv.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from nn.conv.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
@@ -80,13 +87,10 @@ from nn.rope_split_store import (
 )
 from nn.normalization import _rms_norm_impl
 from nn.kv_cache_ragged import (
-    generic_flash_attention_kv_cache_ragged,
-    generic_flash_attention_kv_cache_ragged_sink,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
 )
-from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 from nn.ihc import ihc_collapse_rms_norm, ihc_mix_gemv
 from nn.mhc import (
     hyper_connection_gates,
@@ -241,34 +245,6 @@ def reduce_shape(
     return output_shape
 
 
-@inline(.always)
-def _unsafe_str_to_coord[
-    str_slice: StaticString
-]() -> DynamicCoord[.int64, len(str_slice.split("_"))]:
-    """
-    Convert a string of integers separated by "_" to a coordinate.
-
-    Parameters:
-        str_slice: The string of integers separated by "_".
-
-    Returns:
-        The coordinate.
-    """
-    comptime size = len(str_slice.split("_"))
-    var coord = DynamicCoord[.int64, size]()
-
-    comptime for i in range(size):
-        comptime sub_string = str_slice.split("_")[i]
-        comptime str_len = sub_string.byte_length()
-        var result = 0
-
-        comptime for pos in range(str_len):
-            result = result * 10 + (Int(sub_string.as_bytes()[pos]) - ord("0"))
-        coord[i] = rebind[coord.element_types[i]](Int64(result))
-
-    return coord
-
-
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
 @export
 def export() abi("Mojo"):
@@ -411,7 +387,7 @@ struct NanCheckCountOp:
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert type_of(nan_count_out).rank == 1
         comptime assert type_of(inf_count_out).rank == 1
-        from .nan_check import nan_check_count
+        from builtin_kernels.nan_check import nan_check_count
 
         nan_check_count(
             nan_count_out.to_tile_tensor[.int32](),
@@ -442,7 +418,7 @@ struct NanCheckRaiseOp:
         comptime assert conforms_to(type_of(inf_count), TileTensorable)
         comptime assert type_of(nan_count).rank == 1
         comptime assert type_of(inf_count).rank == 1
-        from .nan_check import nan_check_raise
+        from builtin_kernels.nan_check import nan_check_raise
 
         nan_check_raise[label, type_str](
             nan_count.to_tile_tensor[.int32](),
@@ -1065,57 +1041,6 @@ def random_uniform_shape[
 # ===-----------------------------------------------------------------------===#
 # Concat kernels
 # ===-----------------------------------------------------------------------===#
-
-
-def concat_shape_impl[
-    Ins: TypeList[Trait=Tensor, ...], //
-](axis0: Int, inputs: TensorTuple[*Ins]) raises -> IndexList[Ins[0].rank]:
-    """Computes the concatenated output shape from the input tensor shapes.
-
-    Parameters:
-        Ins: Types of the input tensors, which must share a rank.
-
-    Args:
-        axis0: Axis along which to concatenate; negative values index
-            from the last dimension.
-        inputs: Input tensors to concatenate, all matching in shape except
-            along the concat axis.
-
-    Returns:
-        The output shape with the concat axis dimension summed across
-        all inputs.
-    """
-    comptime rank = Ins[0].rank
-    var axis = normalize_neg_index(axis0, rank)
-
-    @inline(.always)
-    def shape_equal_ignore_axis(
-        s1: IndexList[rank], s2: IndexList[rank]
-    ) {imm} -> Bool:
-        comptime for i in range(rank):
-            if i != axis and s1[i] != s2[i]:
-                return False
-        return True
-
-    var concat_axis_dim_sum = 0
-    var output_shape = rebind[IndexList[rank]](
-        coord_to_index_list(inputs[0].shape())
-    )
-
-    comptime for i in range(len(Ins)):
-        comptime assert Ins[i].rank == rank, "inputs must share a rank"
-        var input_shape = rebind[IndexList[rank]](
-            coord_to_index_list(inputs[i].shape())
-        )
-        concat_axis_dim_sum += input_shape[axis]
-        if not shape_equal_ignore_axis(output_shape, input_shape):
-            raise Error(
-                "[concat] input shapes must match except at concat axis"
-            )
-
-    # compute and return the output shape
-    output_shape[axis] = concat_axis_dim_sum
-    return output_shape
 
 
 # NOTE: there are a lot of similarities between this and the shape func
@@ -2187,122 +2112,6 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 # Expected kernel name format:
 # mo.mha.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def _unmarshal_mha_decode_dispatch_metadata(
-    mha_decode_dispatch_metadata: TileTensor[
-        DType.int64, address_space=.GENERIC, ...
-    ],
-) -> MHADecodeDispatchMetadata:
-    comptime assert mha_decode_dispatch_metadata.rank == 1
-    # The metadata is read through its flat pointer; a non-pointer storage
-    # policy aborts here at run time.
-    var metadata_ptr = mha_decode_dispatch_metadata.ptr
-    return MHADecodeDispatchMetadata(
-        Int(metadata_ptr[0]),
-        Int(metadata_ptr[1]),
-        Int(metadata_ptr[2]),
-        Int(metadata_ptr[3]),
-    )
-
-
-@inline(.always)
-def _execute_mha_ragged_paged_scalar_args[
-    q_dtype: DType,
-    output_dtype: DType,
-    MaskIns: TypeList[Trait=Input & Fused & LoadAccess, ...],
-    //,
-    mask_str: StaticString,
-    sink: Bool = False,
-    local_window_size: Int = -1,
-    SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
-    # `sink_weights` is optional, so its engine cannot be inferred.
-    SinkEngine: TensorEngine = DefaultEngine[element_width=1],
-    v_head_dim: Int = -1,
-](
-    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
-    q: TileTensor[q_dtype, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
-    kv_blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
-    page_stride: TileTensor[
-        mut=False, DType.int64, address_space=.GENERIC, ...
-    ],
-    cache_lengths: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    kv_lookup_table: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    max_prompt_length: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    max_cache_length: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    layer_idx: UInt32,
-    scale: Float32,
-    mha_decode_dispatch_metadata: TileTensor[
-        DType.int64, address_space=.GENERIC, ...
-    ],
-    mask_operands: TensorTuple[*MaskIns],
-    context: DeviceContext,
-    sink_weights: OptionalReg[
-        TileTensor[
-            q_dtype, SinkLayoutType, ImmUntrackedOrigin, Engine=SinkEngine
-        ]
-    ] = None,
-) raises:
-    comptime assert output.rank == 3
-    comptime assert q.rank == 3
-    comptime assert input_row_offsets.rank == 1
-    comptime assert kv_blocks.rank == 6
-    var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
-        mha_decode_dispatch_metadata
-    )
-    var kv_collection = generic_get_paged_cache[v_head_size=v_head_dim](
-        kv_blocks,
-        page_stride,
-        cache_lengths,
-        kv_lookup_table,
-        max_prompt_length,
-        max_cache_length,
-    )
-    comptime if sink:
-        comptime assert (
-            len(MaskIns) == 0
-        ), "sink attention takes no mask operands"
-        generic_flash_attention_kv_cache_ragged_sink[
-            mask_str=mask_str,
-            local_window_size=local_window_size,
-            output_dtype=output_dtype,
-        ](
-            q,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            scale,
-            output,
-            context,
-            sink_weights.value(),
-            decode_dispatch_metadata,
-        )
-    else:
-        generic_flash_attention_kv_cache_ragged[
-            mask_str=mask_str,
-            local_window_size=local_window_size,
-            output_dtype=output_dtype,
-        ](
-            q,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            scale,
-            output,
-            context,
-            decode_dispatch_metadata,
-            mask_operands,
-        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3596,26 +3405,6 @@ struct Struct_mhc_post:
 
 
 # TODO(GEX-1492): use filter_rank+1 instead of packed_filter_rank
-def layout_transform_conv_transpose_filter_common[
-    dtype: DType,
-](
-    packed_filter: TileTensor[mut=True, dtype, ...],
-    filter: TileTensor[dtype, ...],
-):
-    """Packs a transposed-convolution filter into the layout expected by the conv_transpose kernels.
-
-    Parameters:
-        dtype: Element type of the `filter` and `packed_filter` tensors.
-
-    Args:
-        packed_filter: Output tensor holding the packed filter in the
-            layout expected by the conv_transpose kernels.
-        filter: Input transposed-convolution filter tensor to pack.
-    """
-    comptime assert filter.rank + 1 == packed_filter.rank
-    # last param is num_groups which is currently not an available
-    # arg for the MO level op
-    _pack_conv_transpose_filter(filter, packed_filter, 1)
 
 
 @extensibility.register("pack_conv_transpose_filter_shape")
@@ -3652,43 +3441,6 @@ def pack_conv_transpose_filter_shape_shape(
 # Wrapper that take `num_groups` as a parameter.
 # This is required unti `mo.layout.transform` passes `num_groups` as a runtime
 # value.
-def layout_transform_conv_filter_common[
-    dtype: DType, //, num_groups: Int
-](
-    packed_filter: TileTensor[mut=True, dtype, ...],
-    filter: TileTensor[dtype, ...],
-):
-    """Packs a convolution filter into the layout expected by the conv kernels.
-
-    Parameters:
-        dtype: Element type of the `filter` and `packed_filter` tensors.
-        num_groups: Number of convolution groups for groupwise
-            convolution.
-
-    Args:
-        packed_filter: Output tensor holding the packed filter in the
-            layout expected by the conv kernels.
-        filter: Input convolution filter tensor to pack.
-    """
-    comptime assert packed_filter.rank == filter.rank + 1
-
-    # last param is num_groups which is currently not an available
-    # arg for the MO level op
-    _pack_conv_filter(filter, packed_filter, num_groups)
-
-
-def _layout_transform_conv_filter_from_fcrs[
-    dtype: DType, //, num_groups: Int
-](
-    packed_filter: TileTensor[mut=True, dtype, ...],
-    filter: TileTensor[dtype, ...],
-):
-    comptime assert packed_filter.rank == filter.rank + 1
-
-    # With the compiler-level FCRS→RSCF transpose in PatternFusion,
-    # this kernel should no longer be called. But keep it as a fallback
-    # using int64 convention (same as the RSCF path).
-    _pack_conv_filter_from_fcrs(filter, packed_filter, num_groups)
 
 
 # Note: These FCRS/FCQRS kernels are currently unused — the compiler
@@ -4431,50 +4183,6 @@ struct Struct_sampler_update_frequency_data:
 # ===-----------------------------------------------------------------------===#
 # Misc Operations
 # ===-----------------------------------------------------------------------===#
-
-
-def _check_tensor_tuple[size: Int, dtype: DType, rank: Int, *Ts: Tensor]():
-    """Checks that a collective's tensor tuple has one element per device, each
-    of the given dtype and rank."""
-    comptime assert len(Ts) == size, "expected one tensor per device"
-    comptime for i in range(len(Ts)):
-        comptime assert Ts[i].dtype == dtype, "unexpected tensor dtype"
-        comptime assert Ts[i].rank == rank, "unexpected tensor rank"
-
-
-@inline(.always)
-def _check_signal_buffer_size(
-    signal_buffer_size: Int, input_size_bytes: Int
-) raises:
-    # The signal buffer has to be large enough to hold the entire input buffer.
-    var min_signal_buffer_size = size_of[Signal]() + input_size_bytes
-    if signal_buffer_size < min_signal_buffer_size:
-        raise Error(
-            "Expected signal buffer to be at least ",
-            min_signal_buffer_size,
-            " bytes, but got ",
-            signal_buffer_size,
-            (
-                ". This error can appear when running large requests through"
-                " MAX serve without chunked prefill. If so, try enabling"
-                " chunked prefill with --enable-chunked-prefill. Otherwise,"
-                " consider increasing the signal buffer size."
-            ),
-        )
-
-
-def _partitioned_scratch_requirement[
-    num_devices: Int, dtype: DType
-](input_elems: Int) -> Int:
-    """Calculate a trivial scratch memory requirement for comm kernels.
-
-    This applies for comm kernels which simply partition the input tensor between devices.
-    """
-    comptime pessemistic_simd_width = 32
-    var num_vecs = ceildiv(input_elems, pessemistic_simd_width)
-    var vecs_per_device = ceildiv(num_vecs, num_devices)
-
-    return vecs_per_device * pessemistic_simd_width * size_of[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#

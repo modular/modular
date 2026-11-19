@@ -43,7 +43,7 @@ from extensibility import (
 )
 
 from comm.device_collective import _launch_device_collective
-from .kernels import _check_tensor_tuple
+from builtin_kernels._checks import _check_tensor_tuple
 
 from shmem import (
     shmem_init_thread_mpi,

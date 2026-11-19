@@ -99,6 +99,7 @@ from extensibility import (
     StoreAccess,
     Tensor,
     TensorTuple,
+    TileTensorable,
 )
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
@@ -114,8 +115,7 @@ from std.utils.index import Index
 from std.collections import Array, Optional
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
-from .kernels import (
+from builtin_kernels._checks import (
     _check_signal_buffer_size,
     _check_tensor_tuple,
     _partitioned_scratch_requirement,

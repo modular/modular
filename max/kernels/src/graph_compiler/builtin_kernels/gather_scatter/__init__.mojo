@@ -37,9 +37,10 @@ from max.gpu.host import (
 from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
-    CoordLike,
-    TileTensor,
     coord_to_index_list,
+    CoordLike,
+    row_major,
+    TileTensor,
 )
 from layout.coord import DynamicCoord
 from layout.layout import Layout
@@ -100,8 +101,8 @@ comptime logger = Logger()
 from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
-from .kernels import _check_tensor_tuple
+from builtin_kernels._checks import _check_tensor_tuple
+from builtin_kernels.concat_shapes import concat_shape_impl
 
 
 @inline(.always)

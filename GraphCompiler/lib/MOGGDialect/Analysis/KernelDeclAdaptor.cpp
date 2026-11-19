@@ -59,8 +59,14 @@ static constexpr llvm::StringLiteral kStableKey = "stable";
 static mlir::StringAttr buildOpaqueSymbol(mlir::MLIRContext *ctx,
                                           mlir::SymbolRefAttr sym) {
   std::string result = sym.getRootReference().strref().str();
-  for (auto ref : sym.getNestedReferences())
+  for (auto ref : sym.getNestedReferences()) {
+    // A package's `__init__` is addressed by the package's own name, and the
+    // names this is compared against drop it too (see
+    // `getFullyResolvedMojoName`).
+    if (ref.getValue() == "__init__")
+      continue;
     result += "." + ref.getValue().str();
+  }
   return mlir::StringAttr::get(ctx, result);
 }
 

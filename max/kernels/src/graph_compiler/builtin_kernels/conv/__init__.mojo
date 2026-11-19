@@ -67,9 +67,10 @@ from std.utils import IndexList
 from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
-from .kernels import *
-from .kernels import (
+from builtin_kernels.conv_filter_layout import (
     _layout_transform_conv_filter_from_fcrs,
+    layout_transform_conv_filter_common,
+    layout_transform_conv_transpose_filter_common,
 )
 
 

@@ -40,6 +40,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 
 #include <memory>
@@ -467,15 +468,25 @@ public:
   explicit LITModuleResolver(mlir::MLIRContext *ctx)
       : sharedState(sourceMgr, ctx, options, KGEN::FrontendOptions()) {}
 
-  /// Resolve `moduleName` to the path of its precompiled binary package.
-  ErrorOr<std::string> resolveBinaryPackagePath(llvm::StringRef moduleName) {
-    auto modulePath = sharedState.getModuleLoader().resolveModulePath(
+  /// Resolve `moduleName` to the precompiled binary packages it names: the one
+  /// it is, or, for a namespace, every package under it. `builtin_kernels` is a
+  /// namespace so its registrations precompile in parallel, and naming it here
+  /// rather than its packages keeps that list out of the compiler.
+  ErrorOr<llvm::SmallVector<BuiltInKernelPackage>>
+  resolveBinaryPackages(llvm::StringRef moduleName) {
+    KGEN::LIT::ModuleLoader &loader = sharedState.getModuleLoader();
+    auto modulePath = loader.resolveModulePath(
         moduleName, /*workingDir=*/std::filesystem::path());
     if (!modulePath)
       return Error(
           llvm::formatv("Failed to resolve module path for `{}`", moduleName)
               .str());
-    if (!modulePath->isPrecompiled()) {
+
+    if (modulePath->isPrecompiled())
+      return llvm::SmallVector<BuiltInKernelPackage>{
+          {moduleName.str(), modulePath->path}};
+
+    if (!modulePath->isNamespace()) {
       return Error(
           llvm::formatv("Resolved module path for `{}` to source directory "
                         "`{}` but a .mojoc precompiled file was expected "
@@ -483,7 +494,33 @@ public:
                         moduleName, modulePath->path)
               .str());
     }
-    return modulePath->path;
+
+    // Sorted by name, so the registry's contents and the error a duplicate
+    // registration reports do not depend on directory iteration order.
+    llvm::SmallVector<BuiltInKernelPackage> packages;
+    for (const std::string &portion : loader.collectNamespacePortions(
+             *modulePath, /*workingDir=*/std::filesystem::path())) {
+      std::error_code ec;
+      for (llvm::sys::fs::directory_iterator it(portion, ec), e; it != e && !ec;
+           it.increment(ec)) {
+        if (!M::Filesystem::isMojoBinaryPackagePath(it->path()))
+          continue;
+        llvm::StringRef stem =
+            llvm::sys::path::stem(llvm::StringRef(it->path()));
+        packages.push_back({(moduleName + "." + stem).str(), it->path()});
+      }
+    }
+    llvm::sort(packages,
+               [](const BuiltInKernelPackage &a,
+                  const BuiltInKernelPackage &b) { return a.name < b.name; });
+
+    if (packages.empty()) {
+      return Error(llvm::formatv("Resolved `{}` to a namespace with no .mojoc "
+                                 "precompiled packages under it",
+                                 moduleName)
+                       .str());
+    }
+    return packages;
   }
 
   KGEN::LIT::SharedState &getSharedState() { return sharedState; }
@@ -495,14 +532,14 @@ private:
   KGEN::LIT::SharedState sharedState;
 };
 
-ErrorOr<llvm::SmallVector<std::string>>
-resolveBuiltInKernelPackagePaths(LITModuleResolver &resolver) {
-  llvm::SmallVector<std::string> paths;
+ErrorOr<llvm::SmallVector<BuiltInKernelPackage>>
+resolveBuiltInKernelPackages(LITModuleResolver &resolver) {
+  llvm::SmallVector<BuiltInKernelPackage> packages;
   for (llvm::StringRef moduleName : kMoggRequiredKernelModuleNames) {
-    auto pathOr = resolver.resolveBinaryPackagePath(moduleName);
-    if (pathOr.isError())
-      return pathOr.takeError();
-    paths.push_back(*pathOr);
+    auto packagesOr = resolver.resolveBinaryPackages(moduleName);
+    if (packagesOr.isError())
+      return packagesOr.takeError();
+    llvm::append_range(packages, *packagesOr);
   }
 
   // Skipped rather than fatal: a tree without these still has a complete
@@ -510,20 +547,37 @@ resolveBuiltInKernelPackagePaths(LITModuleResolver &resolver) {
   // ops fails later with that op unresolved rather than here with every op
   // unresolved.
   for (llvm::StringRef moduleName : kMoggOptionalKernelModuleNames) {
-    auto pathOr = resolver.resolveBinaryPackagePath(moduleName);
-    if (!pathOr.isError())
-      paths.push_back(*pathOr);
+    auto packagesOr = resolver.resolveBinaryPackages(moduleName);
+    if (!packagesOr.isError())
+      llvm::append_range(packages, *packagesOr);
   }
 
+  return packages;
+}
+
+llvm::SmallVector<std::string>
+pathsOf(llvm::ArrayRef<BuiltInKernelPackage> packages) {
+  llvm::SmallVector<std::string> paths;
+  for (const BuiltInKernelPackage &package : packages)
+    paths.push_back(package.path);
   return paths;
 }
 
 } // namespace
 
+ErrorOr<llvm::SmallVector<BuiltInKernelPackage>>
+M::MOGG::getBuiltInKernelPackages(mlir::MLIRContext *ctx) {
+  LITModuleResolver resolver(ctx);
+  return resolveBuiltInKernelPackages(resolver);
+}
+
 ErrorOr<llvm::SmallVector<std::string>>
 M::MOGG::getBuiltInKernelPackagePaths(mlir::MLIRContext *ctx) {
   LITModuleResolver resolver(ctx);
-  return resolveBuiltInKernelPackagePaths(resolver);
+  auto packagesOr = resolveBuiltInKernelPackages(resolver);
+  if (packagesOr.isError())
+    return packagesOr.takeError();
+  return pathsOf(*packagesOr);
 }
 
 ErrorOr<llvm::SmallVector<std::string>>
@@ -531,10 +585,10 @@ M::MOGG::getKernelPackagePathsForCacheKey(mlir::MLIRContext *ctx) {
   LITModuleResolver resolver(ctx);
 
   // The built-in packages are required; fail loudly if they don't resolve.
-  auto pathsOr = resolveBuiltInKernelPackagePaths(resolver);
-  if (pathsOr.isError())
-    return pathsOr.takeError();
-  llvm::SmallVector<std::string> paths = std::move(*pathsOr);
+  auto packagesOr = resolveBuiltInKernelPackages(resolver);
+  if (packagesOr.isError())
+    return packagesOr.takeError();
+  llvm::SmallVector<std::string> paths = pathsOf(*packagesOr);
 
   // Collect every binary package visible on the import path; the header
   // comment explains why their contents must reach the cache key.

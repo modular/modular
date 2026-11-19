@@ -190,7 +190,13 @@ getFullyResolvedMojoName(KGEN::LIT::ASTDeclInterface op) {
   mlir::MLIRContext *ctx = op->getContext();
   llvm::SmallVector<std::string> names;
   do {
-    names.push_back(op.getDeclName().str());
+    // A package's `__init__` is addressed by the package's own name, so it
+    // contributes no component: `builtin_kernels.monoids.ReduceSum`, not
+    // `builtin_kernels.monoids.__init__.ReduceSum`. Every name built from a
+    // Mojo declaration drops it, so they still compare equal -- see
+    // `buildOpaqueSymbol`.
+    if (op.getDeclName() != "__init__")
+      names.push_back(op.getDeclName().str());
   } while (
       (op = mlir::dyn_cast<KGEN::LIT::ASTDeclInterface>(op->getParentOp())));
 
@@ -807,7 +813,9 @@ static void buildOpaqueTypeMapping(mlir::ModuleOp pkg,
     mlir::Operation *parentOp = structOp->getParentOp();
     while (parentOp) {
       if (auto fileMod = mlir::dyn_cast<KGEN::LIT::FileModuleOp>(parentOp)) {
-        parentNames.push_back(fileMod.getSymName());
+        // Dropped for the same reason as in `getFullyResolvedMojoName`.
+        if (fileMod.getSymName() != "__init__")
+          parentNames.push_back(fileMod.getSymName());
         parentOp = fileMod->getParentOp();
       } else if (auto pkg = mlir::dyn_cast<KGEN::LIT::PackageOp>(parentOp)) {
         parentNames.push_back(pkg.getSymName());
@@ -1313,22 +1321,32 @@ struct ImportPackagesPass
     // module).
     bool loadBuiltIns = !append;
     if (loadBuiltIns) {
-      auto builtInPathsOr = getBuiltInKernelPackagePaths(ctx);
-      if (builtInPathsOr.isError()) {
+      auto builtInPackagesOr = getBuiltInKernelPackages(ctx);
+      if (builtInPackagesOr.isError()) {
         module.emitError("failed to resolve built-in kernel package paths");
         signalPassFailure();
         return;
       }
+      llvm::SmallVector<BuiltInKernelPackage> builtIns =
+          builtInPackagesOr.takeValue();
+
+      // Recorded for `EmitMojo`, which imports each one. Resolving them is
+      // this pass's job, so the names travel with the module rather than
+      // being resolved a second time.
+      llvm::SmallVector<mlir::Attribute> packageNames;
+      for (const BuiltInKernelPackage &package : builtIns)
+        packageNames.push_back(builder.getStringAttr(package.name));
+      module->setAttr(kBuiltInKernelPackagesAttrName,
+                      builder.getArrayAttr(packageNames));
 
       // One bytecode parse per package, and a package knows nothing of the
       // others, so the parses run together. `emitDecls` writes the shared
       // module, so it stays serial and in path order: the registry's
       // contents, and the error a duplicate registration reports, do not
       // depend on which parse finished first.
-      llvm::SmallVector<std::string> paths = builtInPathsOr.takeValue();
-      llvm::SmallVector<OwningOpRef<ModuleOp>> pkgs(paths.size());
-      mlir::parallelFor(ctx, 0, paths.size(), [&](size_t i) {
-        pkgs[i] = loadPackageModule(ctx, paths[i], module);
+      llvm::SmallVector<OwningOpRef<ModuleOp>> pkgs(builtIns.size());
+      mlir::parallelFor(ctx, 0, builtIns.size(), [&](size_t i) {
+        pkgs[i] = loadPackageModule(ctx, builtIns[i].path, module);
       });
       for (const OwningOpRef<ModuleOp> &pkg : pkgs) {
         if (!pkg) {

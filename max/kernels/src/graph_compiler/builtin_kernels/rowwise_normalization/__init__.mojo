@@ -35,7 +35,7 @@ from algorithm.rowwise_types import ReduceTier, at_axis
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.rope import _rope
 
-from .monoids import ReduceMax, ReduceSum, Welford
+from builtin_kernels.monoids import ReduceMax, ReduceSum, Welford
 
 
 # ===----------------------------------------------------------------------=== #
