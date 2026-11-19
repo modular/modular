@@ -40,6 +40,10 @@ class ExecutionSession;
 } // namespace orc
 } // namespace llvm
 
+namespace mlir::LLVM {
+class GlobalOp;
+} // namespace mlir::LLVM
+
 namespace M::KGEN {
 struct SymbolAndMCInfo;
 class TargetBackend;
@@ -212,6 +216,13 @@ private:
 /// Setup the machine properties from the provided target.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
+
+/// Answers `TargetBackend::isSharedMemoryGlobal` for a global that is still in
+/// the LLVM dialect. The backend takes an LLVM IR global and reads its name,
+/// address space and linkage, which a probe in `probeCtx` carries.
+bool isSharedMemoryGlobal(const TargetBackend &backend,
+                          mlir::LLVM::GlobalOp global,
+                          llvm::LLVMContext &probeCtx);
 
 namespace LLVM {
 /// Write the specified module to the specified raw output stream using
