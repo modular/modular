@@ -256,8 +256,8 @@ def test_groups_below_tp_split_and_restore_on_their_own() -> None:
     local = split.local_rows(rows)
     # Pinned: with groups below TP the rows are ``Sharded(0)`` on ``tp``,
     # though no group spans it. Only row-wise ops with ``tp``-replicated
-    # weights and the split's own collectives read them, and the
-    # ``__pcp4_dcp4_mtp`` smoke runs on this placement.
+    # weights and the split's own collectives read them, and PCP4 x DCP4 on
+    # 8xB200 runs on this placement.
     assert local.placements == (Sharded(0),)
     for i in range(8):
         expected = groups[i // dcp][list(_rank_rows(total, i % dcp, dcp))]
@@ -369,7 +369,7 @@ def test_two_dcp_groups_share_one_rows_symbol_per_rank() -> None:
     carrier per rank, not per device: a group's ranks hold the same counts on
     every group, and two declarations of one value would be unified to one
     symbol under a layer subgraph signature that names both (the
-    ``__pcp4_dcp4_mtp`` export failed to compile on that). Every device
+    PCP4 x DCP4 GLM-5.3 export failed to compile on that). Every device
     slices with its rank's carrier."""
     lengths = [5, 7, 4]
     total = sum(lengths)
