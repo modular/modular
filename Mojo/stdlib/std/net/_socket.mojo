@@ -25,6 +25,7 @@ from ._sys.socket_addr import (
     to_sockaddr_storage,
 )
 from ._sys.unix import (
+    MSG_NOSIGNAL,
     accept_socket,
     getsockopt,
     open_socket,
@@ -220,20 +221,19 @@ struct Socket(not Deinitable, Movable):
         """Writes some of `bytes` with the given `MSG_*` flags, and returns how
         many it wrote.
 
+        A send to a peer that has closed raises an error instead of `SIGPIPE`,
+        which would end the process.
+
         macOS ignores `MSG_DONTWAIT` here, and blocks on a full buffer anyway.
         """
 
-        # TODO(https://github.com/modular/modular/issues/7475): a send to a peer
-        # that has closed raises `SIGPIPE`, which ends the process by default.
-        # Suppress it with `MSG_NOSIGNAL` on each send on Linux, and with
-        # `SO_NOSIGPIPE` on macOS, set in `open_socket` and `accept_socket`.
         def attempt() raises IOError {imm} -> Int:
             return check(
                 unix.send(
                     self.unsafe_fd(),
                     bytes.unsafe_ptr(),
                     c_size_t(cap_io_length(len(bytes))),
-                    flags,
+                    flags | MSG_NOSIGNAL,
                 ),
                 "send",
             )

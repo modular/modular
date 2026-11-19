@@ -25,6 +25,7 @@ from std.testing import (
     assert_true,
 )
 from test_utils.mmap import ZeroedMmap
+from std.time import sleep
 
 
 def or_raise[
@@ -265,6 +266,25 @@ def test_read_after_peer_resets_raises() raises:
         error = e^
     var e = or_raise(error^, "the read after the reset succeeded")
     assert_equal(e.kind(), .connection_reset)
+
+
+def test_write_after_peer_closes_raises() raises:
+    var listener = TCPListener(bind=loopback_addr())
+    var client = TCPStream(connect=listener.local_addr())
+    var server, _ = listener.accept()
+    server^.close()
+    # The peer answers the first write with a reset, so a later write raises
+    # once the reset arrives.
+    var error: Optional[IOError] = None
+    for _ in range(100):
+        try:
+            client.write_all("ping".as_bytes())
+        except e:
+            error = e^
+            break
+        sleep(0.01)
+    var e = or_raise(error^, "every write after the close succeeded")
+    assert_true(e.kind() == .broken_pipe or e.kind() == .connection_reset)
 
 
 def test_destroying_a_stream_closes_it() raises:

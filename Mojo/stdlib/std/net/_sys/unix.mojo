@@ -42,6 +42,7 @@ from .linux import (
 )
 from .macos import (
     AF_INET6 as macos_AF_INET6,
+    SO_NOSIGPIPE as macos_SO_NOSIGPIPE,
     sockaddr as macos_sockaddr,
     sockaddr_in as macos_sockaddr_in,
     sockaddr_in6 as macos_sockaddr_in6,
@@ -639,16 +640,26 @@ def accept_socket(
 def _set_up_macos_socket(
     var fd: FileDescriptor,
 ) raises IOError -> FileDescriptor:
-    """Makes a new socket close-on-exec, closing it if that fails."""
+    """Makes a new socket close-on-exec and stops writes to it raising
+    `SIGPIPE`, closing it if either fails."""
     try:
         _ = check(
             fcntl(fd._raw(), FcntlCommands.F_SETFD, FcntlFDFlags.FD_CLOEXEC),
             "fcntl",
         )
-        # TODO(https://github.com/modular/modular/issues/7475): Maybe set
-        # `macos.SO_NOSIGPIPE` socket option, we should already likely set
-        # MSG_NOSIGNAL in each send/recv call so it may not be necessary, but
-        # also it doesn't hurt either.
+        # `Socket.send()` passes `MSG_NOSIGNAL`. This also covers writes that
+        # don't go through it.
+        var on: c_int = 1
+        _ = check(
+            setsockopt(
+                fd._raw(),
+                SOL_SOCKET,
+                macos_SO_NOSIGPIPE,
+                Pointer(to=on).unsafe_bitcast[NoneType](),
+                socklen_t(size_of[c_int]()),
+            ),
+            "setsockopt",
+        )
     except e:
         # ignore an error returned from close, and re-raise the op above
         # that failed.
