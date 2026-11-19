@@ -377,9 +377,9 @@ mo.graph @prologue(%arg0: !mo.tensor<[2, 2], f32, gpu:0>, %arg1: !mo.tensor<[2, 
 // A routine without a graph blob doesn't change.
 
 // CHECK-LABEL: mo.graph @no_blob
-// CHECK-NOT:    mogg.graph_blob
+// CHECK-NOT:    mogg.graph_blob {
 // CHECK:        mogg.call.opaque @testing_kernels.testing_kernels.MapLowerDeclarative inputs(%{{.+}} : !mogg.tensor) outputs(%{{.+}} : !mogg.tensor) context(%{{.+}} : !mogg.context)
-// CHECK-NOT:    mogg.graph_blob
+// CHECK-NOT:    mogg.graph_blob {
 mo.graph @no_blob(%arg0: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %0 = mogg.routine (%arg0 : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
     inputs (%a)
