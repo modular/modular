@@ -2780,49 +2780,25 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the compilation or the launch fails.
         """
         comptime __guard not use_legacy_backend() else:
-            # Leaving `host_args` out when there are none lets a plugin's own
-            # `enqueue_function[func]` overload, which takes no host arguments,
-            # win over the base one that raises for targets that launch through
-            # their own overloads.
-            comptime if HostArgs.length == 0:
-                self._impl.enqueue_function[
-                    func,
-                    link_options=link_options,
-                    dump_asm=dump_asm,
-                    dump_llvm=dump_llvm,
-                    _dump_sass=_dump_sass,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](
-                    *encoded_args,
-                    grid_dim=grid_dim,
-                    block_dim=block_dim,
-                    cluster_dim=cluster_dim,
-                    shared_mem_bytes=shared_mem_bytes,
-                    attributes=attributes^,
-                    constant_memory=constant_memory^,
-                    func_attribute=func_attribute,
-                    location=location,
-                )
-            else:
-                self._impl.enqueue_function[
-                    func,
-                    link_options=link_options,
-                    dump_asm=dump_asm,
-                    dump_llvm=dump_llvm,
-                    _dump_sass=_dump_sass,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](
-                    *encoded_args,
-                    host_args=host_args,
-                    grid_dim=grid_dim,
-                    block_dim=block_dim,
-                    cluster_dim=cluster_dim,
-                    shared_mem_bytes=shared_mem_bytes,
-                    attributes=attributes^,
-                    constant_memory=constant_memory^,
-                    func_attribute=func_attribute,
-                    location=location,
-                )
+            self._impl.enqueue_function[
+                func,
+                link_options=link_options,
+                dump_asm=dump_asm,
+                dump_llvm=dump_llvm,
+                _dump_sass=_dump_sass,
+                _ptxas_info_verbose=_ptxas_info_verbose,
+            ](
+                *encoded_args,
+                host_args=host_args,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                func_attribute=func_attribute,
+                location=location,
+            )
             return
 
         comptime if Self._HALHooks.Enqueuer.overrides:

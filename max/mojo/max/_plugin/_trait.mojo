@@ -489,10 +489,6 @@ trait MaxPluginHooks:
     comptime _handles_closure_kernels: Bool = False
     """Whether this plugin compiles and launches closure kernels."""
 
-    comptime _supports_default_compile_function: Bool = True
-    """Whether `DeviceContext.compile_function[func]` can compile `func`
-    unchanged for this target."""
-
     comptime _supports_external_function: Bool = True
     """Whether a `DeviceExternalFunction` can launch on this target."""
 

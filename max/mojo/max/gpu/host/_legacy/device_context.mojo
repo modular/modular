@@ -5162,13 +5162,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             block_dim, location=call_location()
         )
         comptime plugin = MaxPluginForTarget[Self.target]
-        # Raise rather than assert, so target-generic callers still compile
-        # for a target that launches through its own overloads.
-        comptime if not plugin._supports_default_compile_function:
-            raise Error(
-                "compile-and-enqueue is not supported on this target; use the"
-                " target's compile_function overload"
-            )
         var inferred_func_attribute = self._func_attribute_for_launch(
             func_attribute, shared_mem_bytes
         )
