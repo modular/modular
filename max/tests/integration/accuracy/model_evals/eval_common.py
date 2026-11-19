@@ -33,6 +33,7 @@ import os
 import re
 import statistics
 import sys
+import time
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence, Sized
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -40,7 +41,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from openai import BadRequestError, OpenAI, UnprocessableEntityError
+from openai import (
+    BadRequestError,
+    OpenAI,
+    RateLimitError,
+    UnprocessableEntityError,
+)
 from tqdm import tqdm
 
 # Root identity preamble that MiniMax prepends to every request in their own
@@ -83,7 +89,9 @@ class GenParams:
     ``top_p``, ``seed``, and ``chat_template_kwargs`` are ``Optional``: ``None``
     omits the field entirely (server default). Judges pass ``top_p=None`` since
     they send no ``top_p``. ``return_token_ids`` changes what the server
-    returns, not what it generates.
+    returns, not what it generates. ``rate_limit_retry_s`` is how long
+    :func:`chat_completion` keeps resending a request that the endpoint
+    refused with HTTP 429; 0 sends it once.
     """
 
     max_tokens: int = 98304
@@ -92,6 +100,7 @@ class GenParams:
     seed: int | None = None
     chat_template_kwargs: dict[str, Any] | None = None
     return_token_ids: bool = RETURN_TOKEN_IDS
+    rate_limit_retry_s: float = 0.0
 
 
 def make_client(base_url: str, api_key: str | None = None) -> OpenAI:
@@ -173,20 +182,48 @@ def chat_completion(
     gets the request again without it. The field is also turned off in
     ``params``, which every request of a run shares, so the run goes on
     without token IDs instead of failing every request.
+
+    With ``params.rate_limit_retry_s`` set, a request refused with HTTP 429 is
+    sent again after a backoff until that many seconds have passed. A 429
+    means the gateway or the server refused the request before it started,
+    so unlike other retries this one cannot leave a generation running.
     """
     sent_token_ids = params.return_token_ids
     try:
-        return client.chat.completions.create(
-            **build_chat_kwargs(model, messages, params)
-        )
+        return _create_retrying_429(client, model, messages, params)
     except (BadRequestError, UnprocessableEntityError) as e:
         if not sent_token_ids or "return_token_ids" not in str(e):
             raise
         print(f"::warning::Continuing without token IDs: {e}")
         params.return_token_ids = False
-        return client.chat.completions.create(
-            **build_chat_kwargs(model, messages, params)
-        )
+        return _create_retrying_429(client, model, messages, params)
+
+
+#: First and largest wait between HTTP 429 retries; the wait doubles.
+RATE_LIMIT_BACKOFF_S = (5.0, 60.0)
+
+
+def _create_retrying_429(
+    client: ChatClient,
+    model: str,
+    messages: Sequence[Mapping[str, Any]],
+    params: GenParams,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> Any:
+    deadline = clock() + params.rate_limit_retry_s
+    delay, max_delay = RATE_LIMIT_BACKOFF_S
+    while True:
+        try:
+            return client.chat.completions.create(
+                **build_chat_kwargs(model, messages, params)
+            )
+        except RateLimitError:
+            remaining = deadline - clock()
+            if remaining <= 0:
+                raise
+            sleep(min(delay, remaining))
+            delay = min(delay * 2, max_delay)
 
 
 def reasoning_text(message: Any) -> str | None:
@@ -245,10 +282,11 @@ def dump_config(
     os.makedirs(out_dir, exist_ok=True)
     # return_token_ids is left out: chat_completion can turn it off after this
     # is written, so each row's completion_token_ids records what came back.
+    # rate_limit_retry_s changes how the client waits, not what it sends.
     sent = {
         k: v
         for k, v in dataclasses.asdict(params).items()
-        if k != "return_token_ids"
+        if k not in ("return_token_ids", "rate_limit_retry_s")
     }
     config = {
         "argv": sys.argv[1:],
@@ -355,6 +393,7 @@ RESUME_NEUTRAL_OPTIONS = frozenset(
         "resume",
         "metric_prefix",
         "dataset_file",
+        "rate_limit_retry_s",
     }
 )
 
@@ -644,6 +683,62 @@ def finish_stats(
     }
 
 
+def p90_output_tokens(results: list[dict[str, Any]]) -> float:
+    """Returns the 90th percentile of output tokens over non-error rows."""
+    otoks = [
+        r["completion_tokens"]
+        for r in results
+        if "completion_tokens" in r and "error" not in r
+    ]
+    if len(otoks) < 2:
+        return float(otoks[0]) if otoks else 0.0
+    return round(statistics.quantiles(otoks, n=10, method="inclusive")[8], 1)
+
+
+def binomial_stderr(accuracy: float, n: int) -> float | None:
+    """Returns ``sqrt(p(1-p)/n)``, the SE that treats each row as independent.
+
+    Repeats of one question are correlated, so on a multi-repeat run this
+    understates the uncertainty that :func:`clustered_stderr` measures.
+    """
+    if n <= 0:
+        return None
+    return round((accuracy * (1 - accuracy) / n) ** 0.5, 6)
+
+
+def clustered_stderr(results: list[dict[str, Any]], total: int) -> float | None:
+    """Returns the SE of accuracy with the rows clustered by question.
+
+    Each question's accuracy over its repeats is one observation, so the SE
+    includes how much the score would move with a different draw of
+    questions, which repeats cannot average away. Errored rows count as
+    incorrect, as in the headline accuracy.
+
+    Returns:
+        The SE, or ``None`` when a row has no ``prompt_index``, when the rows
+        do not cover ``total``, or with fewer than two questions.
+    """
+    if len(results) != total or any("prompt_index" not in r for r in results):
+        return None
+    per_question: dict[Any, list[bool]] = {}
+    for r in results:
+        per_question.setdefault(r["prompt_index"], []).append(
+            bool(r.get("correct"))
+        )
+    q = len(per_question)
+    if q < 2:
+        return None
+    accuracy = sum(sum(v) for v in per_question.values()) / total
+    mean_size = total / q
+    # Weighted by repeats, so unequal repeat counts still center on the
+    # headline accuracy.
+    ss = sum(
+        (len(v) / mean_size * (sum(v) / len(v) - accuracy)) ** 2
+        for v in per_question.values()
+    )
+    return round((ss / (q * (q - 1))) ** 0.5, 6)
+
+
 def exact_match_score(
     results: list[dict[str, Any]], total: int, errors: int
 ) -> dict[str, Any]:
@@ -658,12 +753,15 @@ def exact_match_score(
     truncated, mean_finished, p50_finished = truncation_stats(results)
     return {
         "accuracy": accuracy,
+        "stderr_binomial": binomial_stderr(accuracy, total),
+        "stderr_clustered": clustered_stderr(results, total),
         "correct": correct,
         "total": total,
         "answered": total - errors,
         "errors": errors,
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
+        "p90_output_tokens": p90_output_tokens(results),
         "truncated": truncated,
         "stop_ratio": round((total - errors - truncated) / (total - errors), 4)
         if (total - errors) > 0

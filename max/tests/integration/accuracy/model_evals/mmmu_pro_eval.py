@@ -438,6 +438,21 @@ def run_config(
 @click.option("--temperature", type=float, default=1.0, show_default=True)
 @click.option("--top-p", type=float, default=0.95, show_default=True)
 @click.option(
+    "--chat-template-kwargs",
+    default=None,
+    help="JSON object sent as chat_template_kwargs, e.g. "
+    "'{\"reasoning_effort\": 100}'. Unset sends none.",
+)
+@click.option(
+    "--rate-limit-retry-s",
+    type=float,
+    default=0.0,
+    show_default=True,
+    help="Seconds to keep resending a request the endpoint refuses with HTTP "
+    "429, for a gateway that caps concurrency. 0 records the 429 as an "
+    "errored row.",
+)
+@click.option(
     "--metric-prefix",
     default="MMMU_PRO",
     help="Prefix for the GITHUB_ENV metric keys the job summary reads.",
@@ -464,13 +479,22 @@ def main(
     max_tokens: int,
     temperature: float,
     top_p: float,
+    chat_template_kwargs: str | None,
+    rate_limit_retry_s: float,
     metric_prefix: str,
     baseline: float,
 ) -> None:
     """Runs MMMU-Pro against a running OpenAI-compatible server and scores it."""
     client = make_client(base_url)
     params = GenParams(
-        max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        seed=seed,
+        chat_template_kwargs=(
+            json.loads(chat_template_kwargs) if chat_template_kwargs else None
+        ),
+        rate_limit_retry_s=rate_limit_retry_s,
     )
     out_root = Path(out_dir)
 

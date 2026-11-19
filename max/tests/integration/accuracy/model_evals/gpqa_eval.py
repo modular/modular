@@ -307,6 +307,15 @@ def run_eval(
     help="Prefix for the GITHUB_ENV metric keys the job summary reads.",
 )
 @click.option(
+    "--rate-limit-retry-s",
+    type=float,
+    default=0.0,
+    show_default=True,
+    help="Seconds to keep resending a request the endpoint refuses with HTTP "
+    "429, for a gateway that caps concurrency. 0 records the 429 as an "
+    "errored row.",
+)
+@click.option(
     "--resume",
     is_flag=True,
     help="Keep the finished rows already in --out-dir and run only the rest. "
@@ -329,6 +338,7 @@ def main(
     root_preamble: str,
     system_prompt: str,
     metric_prefix: str,
+    rate_limit_retry_s: float,
     resume: bool,
 ) -> None:
     """Runs GPQA-diamond against a running OpenAI-compatible server and scores it."""
@@ -348,6 +358,7 @@ def main(
         chat_template_kwargs=(
             json.loads(chat_template_kwargs) if chat_template_kwargs else None
         ),
+        rate_limit_retry_s=rate_limit_retry_s,
     )
     dump_config(
         out_dir,
