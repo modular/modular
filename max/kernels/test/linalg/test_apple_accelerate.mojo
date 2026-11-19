@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from linalg.matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     apple_matmul,
@@ -19,7 +19,6 @@ from linalg.matmul.cpu.apple_accelerate import (
 from std.memory.alloc import unsafe_alloc
 from std.testing import *
 
-from std.utils.index import Index
 
 comptime alignment = 64
 
@@ -198,7 +197,7 @@ def test_batched_matmul(
                 c.store((batch, i, j), Scalar[c.dtype](0))
                 golden.store((batch, i, j), Scalar[golden.dtype](0))
 
-    var c_shape = Index(batches, m, n)
+    var c_shape = Coord(batches, m, n)
     apple_batched_matmul(c, a, b, c_shape)
     bmm_naive(golden, a, b, batches, m, n, k)
 

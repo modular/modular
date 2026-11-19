@@ -26,11 +26,11 @@ from std.algorithm import vectorize
 
 from max.algorithm import elementwise
 from max.algorithm.functional import (
-    _get_start_indices_of_nth_subvolume,
+    _index_coord,
+    _start_indices_of_nth_element,
     parallelize_over_rows,
 )
 from max.gpu.host import DeviceContext
-from std.utils import IndexList
 
 from layout import Coord, Idx, TileTensor, row_major
 from ...packing import pack_b_ndbuffer
@@ -396,7 +396,7 @@ def apple_gemv[
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
     parallelize_over_rows(
-        process_rows, IndexList[2](N, K), 1, parallelism_grain_size, ctx
+        process_rows, Coord(N, K), 1, parallelism_grain_size, ctx
     )
 
     _ = transposed_b_alloc^
@@ -591,14 +591,13 @@ def apple_matmul[
 
 @inline(.always)
 def apple_batched_matmul[
-    rank: Int,
     *,
     transpose_b: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
     b: TileTensor[mut=False, ...],
-    c_shape_idx: IndexList[rank],
+    c_shape: Coord,
 ) raises:
     """Performs a batched single-precision matmul via the Apple Accelerate library.
 
@@ -607,23 +606,22 @@ def apple_batched_matmul[
     all operands to be `DType.float32`.
 
     Parameters:
-        rank: The rank of the output tensor (must be >= 3).
         transpose_b: Whether to treat B as transposed.
 
     Args:
         c: Output batched tensor tile.
         a: Input A batched tensor tile.
         b: Input B batched tensor tile.
-        c_shape_idx: Shape of the output tensor used to compute batch strides.
+        c_shape: Shape of the output tensor (rank 3 or more) used to compute
+            batch strides.
     """
     _apple_batched_matmul_impl[
         transpose_b=transpose_b, has_epilogue_fn=False, has_compute_fn=False
-    ](c, a, b, c_shape_idx, no_epilogue_fn, no_compute_fn)
+    ](c, a, b, c_shape, no_epilogue_fn, no_compute_fn)
 
 
 @inline(.always)
 def apple_batched_matmul[
-    rank: Int,
     EpilogueFnType: ElementwiseEpilogueFn,
     //,
     *,
@@ -632,17 +630,16 @@ def apple_batched_matmul[
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
     b: TileTensor[mut=False, ...],
-    c_shape_idx: IndexList[rank],
+    c_shape: Coord,
     epilogue_fn: EpilogueFnType,
 ) raises:
     """Performs a batched single-precision matmul via the Apple Accelerate
     library, then applies `epilogue_fn` to the output.
 
-    `epilogue_fn` receives rank-`rank` coordinates in the original
+    `epilogue_fn` receives coordinates in the original
     (uncollapsed) output shape.
 
     Parameters:
-        rank: The rank of the output tensor (must be >= 3).
         EpilogueFnType: Type of `epilogue_fn` (inferred).
         transpose_b: Whether to treat B as transposed.
 
@@ -650,17 +647,17 @@ def apple_batched_matmul[
         c: Output batched tensor tile.
         a: Input A batched tensor tile.
         b: Input B batched tensor tile.
-        c_shape_idx: Shape of the output tensor used to compute batch strides.
+        c_shape: Shape of the output tensor (rank 3 or more) used to compute
+            batch strides.
         epilogue_fn: Epilogue applied element-wise to the output.
     """
     _apple_batched_matmul_impl[
         transpose_b=transpose_b, has_epilogue_fn=True, has_compute_fn=False
-    ](c, a, b, c_shape_idx, epilogue_fn, no_compute_fn)
+    ](c, a, b, c_shape, epilogue_fn, no_compute_fn)
 
 
 @inline(.always)
 def apple_batched_matmul[
-    rank: Int,
     ComputeFnType: ElementwiseComputeFn,
     //,
     *,
@@ -669,17 +666,16 @@ def apple_batched_matmul[
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
     b: TileTensor[mut=False, ...],
-    c_shape_idx: IndexList[rank],
+    c_shape: Coord,
     compute_fn: ComputeFnType,
 ) raises:
     """Performs a batched single-precision matmul via the Apple Accelerate
     library, storing `compute_fn(idx, value)` into `c`.
 
-    `compute_fn` receives rank-`rank` coordinates in the original
+    `compute_fn` receives coordinates in the original
     (uncollapsed) output shape.
 
     Parameters:
-        rank: The rank of the output tensor (must be >= 3).
         ComputeFnType: Type of `compute_fn` (inferred).
         transpose_b: Whether to treat B as transposed.
 
@@ -687,17 +683,17 @@ def apple_batched_matmul[
         c: Output batched tensor tile.
         a: Input A batched tensor tile.
         b: Input B batched tensor tile.
-        c_shape_idx: Shape of the output tensor used to compute batch strides.
+        c_shape: Shape of the output tensor (rank 3 or more) used to compute
+            batch strides.
         compute_fn: Maps each output index and value to the value to store.
     """
     _apple_batched_matmul_impl[
         transpose_b=transpose_b, has_epilogue_fn=False, has_compute_fn=True
-    ](c, a, b, c_shape_idx, no_epilogue_fn, compute_fn)
+    ](c, a, b, c_shape, no_epilogue_fn, compute_fn)
 
 
 @inline(.always)
 def _apple_batched_matmul_impl[
-    rank: Int,
     EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
     //,
@@ -709,19 +705,20 @@ def _apple_batched_matmul_impl[
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
     b: TileTensor[mut=False, ...],
-    c_shape_idx: IndexList[rank],
+    c_shape: Coord,
     epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
 ) raises:
+    comptime rank = type_of(c_shape).rank
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
 
     # Compute batch dimensions by collapsing all but the last two dims.
     var batch_size = 1
     comptime for i in range(rank - 2):
-        batch_size *= Int(c_shape_idx[i])
+        batch_size *= Int(c_shape[i])
 
-    var c_rows = Int(c_shape_idx[rank - 2])
-    var c_cols = Int(c_shape_idx[rank - 1])
+    var c_rows = Int(c_shape[rank - 2])
+    var c_cols = Int(c_shape[rank - 1])
 
     # Extract the last two dims from a and b using their own rank.
     var a_rows = Int(a.dim[a.rank - 2]())
@@ -743,9 +740,9 @@ def _apple_batched_matmul_impl[
         var a2 = a3[batch, :, :]
         var b2 = b3[batch, :, :]
 
-        var batch_coords = _get_start_indices_of_nth_subvolume[2](
-            batch, c_shape_idx
-        )
+        var batch_coords = _start_indices_of_nth_element[
+            rank, type_of(c_shape).element_types, False, subvolume_rank=2
+        ](batch, c_shape)
 
         @inline(.always)
         def epilogue_2d[
@@ -762,7 +759,7 @@ def _apple_batched_matmul_impl[
             local_batch_coords[rank - 2] = Int(out_coords[0])
 
             epilogue_fn[c_type, width, alignment=alignment](
-                Coord(local_batch_coords), out_val
+                _index_coord(local_batch_coords), out_val
             )
 
         @inline(.always)
@@ -780,7 +777,7 @@ def _apple_batched_matmul_impl[
             local_batch_coords[rank - 2] = Int(out_coords[0])
 
             return compute_fn[c_type, width, alignment=alignment](
-                Coord(local_batch_coords), out_val
+                _index_coord(local_batch_coords), out_val
             )
 
         apple_matmul[

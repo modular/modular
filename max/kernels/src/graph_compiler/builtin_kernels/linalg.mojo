@@ -705,9 +705,13 @@ def batch_matmul_shape(
     comptime assert (
         type_of(a).rank == type_of(b).rank
     ), "a and b must share a rank"
-    return batched_matmul_shape[type_of(a).rank](
-        a.to_tile_tensor(),
-        b.to_tile_tensor(),
+    return rebind[IndexList[type_of(a).rank]](
+        coord_to_index_list(
+            batched_matmul_shape[type_of(a).rank](
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+            )
+        )
     )
 
 
@@ -2540,11 +2544,13 @@ def pack_matmul_b_shape_func_shape[
     var kernel_type_m = 0
     comptime if a_shape.element_types[0].is_static_value:
         kernel_type_m = Int(a_shape[0])
-    return pack_matmul_b_shape_func[
-        a_type,
-        c_type,
-        transpose_in_0,
-    ](b_input.to_tile_tensor().as_imm(), kernel_type_m)
+    return coord_to_index_list(
+        pack_matmul_b_shape_func[
+            a_type,
+            c_type,
+            transpose_in_0,
+        ](b_input.to_tile_tensor().as_imm(), kernel_type_m)
+    )
 
 
 @extensibility.register("matmul.dynamic_scaled_fp8")

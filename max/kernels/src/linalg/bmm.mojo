@@ -30,7 +30,10 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
     blockwise_scaled_fp8_matmul_amd_tile as _blockwise_scaled_fp8_matmul_amd_tile,
 )
 from max.algorithm import elementwise, sync_parallelize
-from max.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import (
+    _index_coord,
+    _start_indices_of_nth_element,
+)
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -49,11 +52,10 @@ from layout import (
     Idx,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile
-from std.utils.coord import Coord
+from std.utils.coord import Coord, DynamicCoord
 from layout.layout import Layout
 from std.logger import Logger
 from std.memory import dealloc
@@ -61,7 +63,6 @@ from std.memory.alloc import Alignment, Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from max.gpu.host.info import H100, MI355X, _is_sm10x_gpu
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from .matmul.cpu.apple_accelerate import (
@@ -103,20 +104,32 @@ from .utils_gpu import MatmulConfig, MatmulKernels
 comptime logger = Logger()
 
 
-# Similar to _get_start_indices_of_nth_subvolume but returns only the batch
-# dimensions for matmul, skipping the last 2 dimsnions.
 @inline(.always)
-def _get_batch_dims[
-    rank: Int
-](flat_index: Int, shape: IndexList[rank, ...], out res: type_of(shape)):
-    res = {}
-    var curr_index = flat_index
+def _batch_start_indices[
+    shape_types: TypeList[Trait=CoordLike, ...], //
+](batch: Int, shape: Coord[*shape_types]) -> StaticTuple[
+    Int, Coord[*shape_types].rank
+]:
+    """Returns the start indices of batch `batch` in the uncollapsed `shape`.
 
-    comptime for idx in range(rank - 2):
-        # Count from the back, skipping last two dims.
-        comptime i = rank - idx - 3
-        res[i] = curr_index % shape[i]
-        curr_index //= shape[i]
+    The last two (matrix) indices are zero.
+    """
+    return _start_indices_of_nth_element[
+        Coord[*shape_types].rank, shape_types, False, subvolume_rank=2
+    ](batch, shape)
+
+
+@inline(.always)
+def _nd_output_coord[
+    rank: Int
+](batch_start: StaticTuple[Int, rank], row: Int, col: Int) -> DynamicCoord[
+    .int64, rank
+]:
+    """Returns the uncollapsed output coordinate of `(row, col)` in a batch."""
+    var nd_coords = batch_start
+    nd_coords[rank - 2] = row
+    nd_coords[rank - 1] = col
+    return _index_coord(nd_coords)
 
 
 comptime _slice_types[
@@ -243,10 +256,7 @@ def _batched_matmul_cpu_impl[
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
-    # Extract shape as IndexList for downstream functions.
-    var c_shape = rebind[IndexList[rank]](
-        coord_to_index_list(c_tile.layout.shape_coord())
-    )
+    var c_shape = c_tile.layout.shape_coord()
 
     # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
     # directed to the special Apple-specific implementation.
@@ -268,9 +278,9 @@ def _batched_matmul_cpu_impl[
     # Flatten to 3D TileTensor by collapsing batch dimensions.
     var collapsed_batches = 1
     comptime for i in range(rank - 2):
-        collapsed_batches *= c_shape[i]
-    var mat_rows = c_shape[rank - 2]
-    var mat_cols = c_shape[rank - 1]
+        collapsed_batches *= Int(c_shape[i])
+    var mat_rows = Int(c_shape[rank - 2])
+    var mat_cols = Int(c_shape[rank - 1])
 
     var a_shape = a_tile.layout.shape_coord()
     var b_shape = b_tile.layout.shape_coord()
@@ -376,9 +386,7 @@ def _batched_matmul_cpu_impl[
 
             var b_view = b[batch, :, :]
 
-            var batch_coords = _get_start_indices_of_nth_subvolume[2](
-                batch, c_shape
-            )
+            var batch_coords = _batch_start_indices(batch, c_shape)
 
             @inline(.always)
             def epilogue_2d[
@@ -393,12 +401,11 @@ def _batched_matmul_cpu_impl[
                 # the caller provided the elementwise epilogue def over the original
                 # buffer rank, not the collapsed buffer rank
                 # so un-collapse the batch dims here
-                var nd_coords = batch_coords
-                nd_coords[rank - 1] = Int(out_coords[1])
-                nd_coords[rank - 2] = Int(out_coords[0])
-
                 epilogue_fn[c_type, width, alignment=alignment](
-                    Coord(nd_coords), out_val
+                    _nd_output_coord(
+                        batch_coords, Int(out_coords[0]), Int(out_coords[1])
+                    ),
+                    out_val,
                 )
 
             @inline(.always)
@@ -411,12 +418,11 @@ def _batched_matmul_cpu_impl[
                 comptime assert (
                     out_coords.rank == 2
                 ), "the matmul epilogue contract is rank 2"
-                var nd_coords = batch_coords
-                nd_coords[rank - 1] = Int(out_coords[1])
-                nd_coords[rank - 2] = Int(out_coords[0])
-
                 return compute_fn[c_type, width, alignment=alignment](
-                    Coord(nd_coords), out_val
+                    _nd_output_coord(
+                        batch_coords, Int(out_coords[0]), Int(out_coords[1])
+                    ),
+                    out_val,
                 )
 
             var sub_matmul_config = get_partitioned_matmul[
@@ -592,7 +598,7 @@ def _batched_matmul_cpu_impl[
     t"naive_batched_matmul_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}{"_epilogue_fn" if has_epilogue_fn else ""}{"_compute_fn" if has_compute_fn else ""}",
 )
 def naive_batched_matmul_kernel[
-    rank: Int,
+    CShapeTypes: TypeList[Trait=CoordLike, ...],
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -609,7 +615,7 @@ def naive_batched_matmul_kernel[
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
     a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
-    c_buff_nd_shape: IndexList[rank],
+    c_buff_nd_shape: Coord[*CShapeTypes],
     epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
 ) -> None:
@@ -618,7 +624,7 @@ def naive_batched_matmul_kernel[
     naive scalar accumulation loop over the contraction dimension.
 
     Parameters:
-        rank: Rank of the original (un-collapsed) output tensor.
+        CShapeTypes: Element types of `c_buff_nd_shape`.
         c_type: Output tensor element dtype.
         a_type: LHS input tensor element dtype.
         b_type: RHS input tensor element dtype.
@@ -678,19 +684,15 @@ def naive_batched_matmul_kernel[
         has_epilogue_fn and has_compute_fn
     ), "pass either epilogue_fn or compute_fn, not both"
     comptime if has_epilogue_fn or has_compute_fn:
-        var nd_corrds = _get_start_indices_of_nth_subvolume[2](
-            z, c_buff_nd_shape
+        var nd_coords = _nd_output_coord(
+            _batch_start_indices(z, c_buff_nd_shape), y, x
         )
-        nd_corrds[rank - 1] = x
-        nd_corrds[rank - 2] = y
         comptime if has_compute_fn:
             c_tensor[z, y, x] = compute_fn[c_type, 1, alignment=1](
-                Coord(nd_corrds), val.cast[c_type]()
+                nd_coords, val.cast[c_type]()
             )
         else:
-            epilogue_fn[c_type, 1, alignment=1](
-                Coord(nd_corrds), val.cast[c_type]()
-            )
+            epilogue_fn[c_type, 1, alignment=1](nd_coords, val.cast[c_type]())
     else:
         c_tensor[z, y, x] = val.cast[c_type]()
 
@@ -704,7 +706,7 @@ def naive_batched_matmul_kernel[
     t"batched_matmul_kernel_gpu_{c_type}_{a_type}_{b_type}_{transpose_b}{"_epilogue_fn" if has_epilogue_fn else ""}{"_compute_fn" if has_compute_fn else ""}",
 )
 def batched_matmul_kernel_gpu[
-    rank: Int,
+    CShapeTypes: TypeList[Trait=CoordLike, ...],
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -721,7 +723,7 @@ def batched_matmul_kernel_gpu[
     c_tensor: TileTensor[c_type, CTensorType, MutAnyOrigin],  # m
     a_tensor: TileTensor[a_type, ATensorType, ImmutAnyOrigin],  # m * k
     b_tensor: TileTensor[b_type, BTensorType, ImmutAnyOrigin],  # 1 * k
-    c_buff_nd_shape: IndexList[rank],
+    c_buff_nd_shape: Coord[*CShapeTypes],
     epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
 ):
@@ -731,7 +733,7 @@ def batched_matmul_kernel_gpu[
     `AMDMatmul` kernel on AMD hardware.
 
     Parameters:
-        rank: Rank of the original (un-collapsed) output tensor.
+        CShapeTypes: Element types of `c_buff_nd_shape`.
         c_type: Output tensor element dtype.
         a_type: LHS input tensor element dtype.
         b_type: RHS input tensor element dtype.
@@ -804,12 +806,12 @@ def batched_matmul_kernel_gpu[
         comptime assert (
             out_coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var nd_coords = _get_start_indices_of_nth_subvolume[2](
-            block_idx.z, c_buff_nd_shape
+        var nd_coords = _nd_output_coord(
+            _batch_start_indices(block_idx.z, c_buff_nd_shape),
+            Int(out_coords[0]),
+            Int(out_coords[1]),
         )
-        nd_coords[rank - 1] = Int(out_coords[1])
-        nd_coords[rank - 2] = Int(out_coords[0])
-        epilogue_fn[dtype, width, alignment=1](Coord(nd_coords), val)
+        epilogue_fn[dtype, width, alignment=1](nd_coords, val)
 
     @inline(.always)
     def nd_compute_fn[
@@ -821,12 +823,12 @@ def batched_matmul_kernel_gpu[
         comptime assert (
             out_coords.rank == 2
         ), "the matmul epilogue contract is rank 2"
-        var nd_coords = _get_start_indices_of_nth_subvolume[2](
-            block_idx.z, c_buff_nd_shape
+        var nd_coords = _nd_output_coord(
+            _batch_start_indices(block_idx.z, c_buff_nd_shape),
+            Int(out_coords[0]),
+            Int(out_coords[1]),
         )
-        nd_coords[rank - 1] = Int(out_coords[1])
-        nd_coords[rank - 2] = Int(out_coords[0])
-        return compute_fn[dtype, width, alignment=1](Coord(nd_coords), val)
+        return compute_fn[dtype, width, alignment=1](nd_coords, val)
 
     comptime assert not (
         has_epilogue_fn and has_compute_fn
@@ -1029,13 +1031,13 @@ def _batched_matmul_gpu_impl[
                     comptime assert (
                         out_coords.rank == 2
                     ), "the matmul epilogue contract is rank 2"
-                    var batch_coords = IndexList[rank](0)
-
-                    batch_coords[rank - 1] = Int(out_coords[1])
-                    batch_coords[rank - 2] = Int(out_coords[0])
-
                     epilogue_fn[dtype, width, alignment=1](
-                        Coord(batch_coords), val
+                        _nd_output_coord(
+                            StaticTuple[Int, rank](0),
+                            Int(out_coords[0]),
+                            Int(out_coords[1]),
+                        ),
+                        val,
                     )
 
                 _matmul_gpu[transpose_b=transpose_b](
@@ -1052,13 +1054,13 @@ def _batched_matmul_gpu_impl[
                     comptime assert (
                         out_coords.rank == 2
                     ), "the matmul epilogue contract is rank 2"
-                    var batch_coords = IndexList[rank](0)
-
-                    batch_coords[rank - 1] = Int(out_coords[1])
-                    batch_coords[rank - 2] = Int(out_coords[0])
-
                     return compute_fn[dtype, width, alignment=1](
-                        Coord(batch_coords), val
+                        _nd_output_coord(
+                            StaticTuple[Int, rank](0),
+                            Int(out_coords[0]),
+                            Int(out_coords[1]),
+                        ),
+                        val,
                     )
 
                 _matmul_gpu[transpose_b=transpose_b](
@@ -1072,9 +1074,7 @@ def _batched_matmul_gpu_impl[
     comptime a_k = a_tensor_reshaped.LayoutType._shape_types[2].static_value
     comptime c_n = c_tensor_reshaped.LayoutType._shape_types[2].static_value
 
-    var c_shape = rebind[IndexList[rank]](
-        coord_to_index_list(c_buf.layout.shape_coord())
-    )
+    var c_shape = c_buf.layout.shape_coord()
 
     # SM100 (B200+) batched BF16 matmul dispatch
     comptime use_SM100_kernels = ctx.target._has_blackwell_tcgen05()
@@ -1137,13 +1137,13 @@ def _batched_matmul_gpu_impl[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
                     ](idx)
-                    var nd_coords = _get_start_indices_of_nth_subvolume[2](
-                        Int(idx[0]), c_shape
+                    var nd_coords = _nd_output_coord(
+                        _batch_start_indices(Int(idx[0]), c_shape),
+                        Int(idx[1]),
+                        Int(idx[2]),
                     )
-                    nd_coords[rank - 1] = Int(idx[2])
-                    nd_coords[rank - 2] = Int(idx[1])
                     epilogue_fn[c_type, simd_width, alignment=alignment](
-                        Coord(nd_coords), c_val
+                        nd_coords, c_val
                     )
 
                 elementwise[
@@ -1161,17 +1161,17 @@ def _batched_matmul_gpu_impl[
                     var c_val = c_tensor_reshaped.load[
                         width=simd_width, alignment=byte_alignment
                     ](idx)
-                    var nd_coords = _get_start_indices_of_nth_subvolume[2](
-                        Int(idx[0]), c_shape
+                    var nd_coords = _nd_output_coord(
+                        _batch_start_indices(Int(idx[0]), c_shape),
+                        Int(idx[1]),
+                        Int(idx[2]),
                     )
-                    nd_coords[rank - 1] = Int(idx[2])
-                    nd_coords[rank - 2] = Int(idx[1])
                     c_tensor_reshaped.store[
                         width=simd_width, alignment=byte_alignment
                     ](
                         idx,
                         compute_fn[c_type, simd_width, alignment=alignment](
-                            Coord(nd_coords), c_val
+                            nd_coords, c_val
                         ),
                     )
 
@@ -1196,7 +1196,7 @@ def _batched_matmul_gpu_impl[
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
         comptime batched_matmul_type = batched_matmul_kernel_gpu[
-            rank,
+            type_of(c_shape).element_types,
             c_tensor_reshaped.dtype,
             a_tensor_reshaped.dtype,
             b_tensor_reshaped.dtype,
@@ -1247,7 +1247,7 @@ def _batched_matmul_gpu_impl[
             )
 
             comptime batched_matmul_type = batched_matmul_kernel_gpu[
-                rank,
+                type_of(c_shape).element_types,
                 c_tensor_reshaped.dtype,
                 a_tensor_reshaped.dtype,
                 b_tensor_reshaped.dtype,
@@ -1290,7 +1290,7 @@ def _batched_matmul_gpu_impl[
 
         comptime BLOCK_DIM = 16
         comptime bmm = naive_batched_matmul_kernel[
-            rank,
+            type_of(c_shape).element_types,
             c_type,
             a_type,
             b_type,
@@ -1579,7 +1579,7 @@ def batched_matmul_shape[
     rank: Int
 ](
     a_buff: TileTensor[mut=False, ...], b_buff: TileTensor[mut=False, ...]
-) raises -> IndexList[rank]:
+) raises -> DynamicCoord[.int, rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the
     inputs are compatible.
@@ -1613,10 +1613,10 @@ def batched_matmul_shape[
     if foundMismatch:
         raise Error("[batch_matmul] inputs batch dimensions must match")
 
-    var output_shape = rebind[IndexList[rank]](
-        coord_to_index_list(a_buff.layout.shape_coord())
-    )
-    output_shape[rank - 1] = Int(b_buff.dim[rank - 1]())
+    var output_shape = DynamicCoord[.int, rank]()
+    comptime for i in range(rank - 1):
+        output_shape.replace_dynamic[i](Int(a_buff.dim[i]()))
+    output_shape.replace_dynamic[rank - 1](Int(b_buff.dim[rank - 1]()))
 
     return output_shape
 
