@@ -33,6 +33,7 @@ no ``max`` package installed and therefore cannot import anything from here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import Enum
 from typing import Literal
 
@@ -63,6 +64,14 @@ Backend = (
         "vllm-chat",
     ]
 )
+
+# Route that answers 200 only once a backend can serve, for backends whose
+# ``health`` route answers before then. TokenSpeed's gateway answers every
+# route while its engine still loads, and ``readiness`` waits for the engine.
+SERVER_READY_PATH_MAP: Mapping[str, str] = {
+    "tokenspeed": "readiness",
+    "tokenspeed-chat": "readiness",
+}
 
 
 class BackendEnum(str, Enum):
