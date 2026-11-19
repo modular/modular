@@ -16,23 +16,19 @@
 
 import os
 import re
-import subprocess
 import sys
 from typing import Any
 
 import yaml
+from lint_helpers import list_tracked_files
 
 _VALID_SHA = re.compile("[0-9a-f]{40}")
 
 
 def _get_files() -> list[str]:
-    all_files = (
-        subprocess.check_output(["git", "ls-files"]).decode().splitlines()
-    )
-
     action_files = [
         file
-        for file in all_files
+        for file in list_tracked_files()
         if (".github/workflows/" in file or ".github/actions/" in file)
         and (file.endswith((".yaml", ".yml")))
     ]
