@@ -30,7 +30,6 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
-    DeviceKind,
     DeviceRef,
     TensorValue,
     ops,
@@ -132,14 +131,7 @@ class Signals:
         Args:
             devices: Graph devices that these signals communicate between.
         """
-        # Convert the iterable to a list since we iterate over it twice.
-        devices = list(devices)
-        if not all(dev.device_type == DeviceKind.GPU for dev in devices):
-            raise TypeError(
-                "peer-to-peer signals should be constructed for accelerators"
-            )
-
-        self.devices = devices
+        self.devices = list(devices)
 
     @staticmethod
     def _init_lamport_region(signal_buffers: list[Buffer]) -> None:

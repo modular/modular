@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max.graph import DeviceRef
+from max.graph import DeviceKind, DeviceRef
 
 
 def test_device_ref_hashable_and_equality() -> None:
@@ -48,3 +48,17 @@ def test_device_ref_hashable_cpu() -> None:
 
     s = {c0, c1}
     assert c0_b in s
+
+
+def test_device_kinds_are_distinct() -> None:
+    assert DeviceKind.CPU != DeviceKind.GPU
+    assert hash(DeviceKind.CPU) != hash(DeviceKind.GPU)
+    assert len({DeviceKind.CPU, DeviceKind.GPU}) == 2
+    assert {DeviceKind.CPU: "cpu", DeviceKind.GPU: "gpu"}[
+        DeviceKind.GPU
+    ] == "gpu"
+
+
+def test_device_ref_kinds_hash_apart() -> None:
+    assert DeviceRef.CPU(0) != DeviceRef.GPU(0)
+    assert hash(DeviceRef.CPU(0)) != hash(DeviceRef.GPU(0))
