@@ -86,6 +86,11 @@ def sum(
             f"tensors. Got: {devices=}"
         )
 
+    # A one-device group sums a single tensor. The kernels key their barrier
+    # counter bank on the group size, and bank 1 is reserved, so stage nothing.
+    if group_size == 1 and num_devices > 1:
+        return inputs
+
     graph = Graph.current
 
     # Merge all device chains into one input chain.
