@@ -1440,6 +1440,24 @@ modular_cc_test(
     ],
 )
 
+# The memory manager over fake backing and fake streams, so its driver calls
+# and its rollback after a driver refusal are tested on the CPU. The options
+# come from the test, not the config, so there is no env.
+modular_cc_test(
+    name = "MemoryManagerFakeBackingTest",
+    size = "small",
+    srcs = [
+        "MemoryManagerFakeBackingTest.cpp",
+        "MemoryManagerFakes.h",
+    ],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/MemoryManager",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 # Under --config=hal-device-context every context, the CPU one included, comes
 # from a driver plugin, so the C API tests carry the plugins for the host's
 # accelerator. Gated on HAL so the legacy GPU lanes do not rerun these tests
