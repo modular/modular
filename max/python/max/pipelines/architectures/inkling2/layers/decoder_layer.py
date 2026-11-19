@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 
 from max.dtype import DType
@@ -25,11 +26,15 @@ from max.tensor import Tensor
 
 from ..model_config import ExpertFormat, Inkling2TextConfig
 from .attention import Inkling2Attention
-from .attn_res import attn_res_mix
+from .attn_res import attn_res_mix, attn_res_mix_norm, can_fuse_mix_norm
 from .moe import Inkling2MoE
 from .norm import Inkling2RMSNorm
 from .placement import as_partial, reduce_partial
 from .short_convolution import LayerConvState, ShortConvolution
+
+# The attn_res mixture and the sublayer norm run as one `inkling2_mix_norm`
+# launch per query row; set INKLING2_UNFUSED_MIX_NORM=1 for the unfused ops.
+_FUSED_MIX_NORM = os.environ.get("INKLING2_UNFUSED_MIX_NORM", "") != "1"
 
 
 class _AttentionSite(TransparentModule[..., Tensor]):
@@ -150,6 +155,27 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         if attn_query is None:
             # Layer 0 reads the embeddings, with no mixture.
             mixes = [h] * (1 if self.is_local else 3)
+        elif _FUSED_MIX_NORM and can_fuse_mix_norm(blocks, h):
+            norms = (
+                [self.attn_norm]
+                if self.is_local
+                else [self.q_input_norm, self.k_input_norm, self.v_input_norm]
+            )
+            xs = [
+                attn_res_mix_norm(
+                    blocks,
+                    h,
+                    attn_query,
+                    norm.weight,
+                    query_row=row,
+                    norm_eps=norm.eps,
+                    normalize_values=self.normalize_values,
+                )
+                for row, norm in enumerate(norms)
+            ]
+            if self.is_local:
+                return xs[0], xs[0], xs[0]
+            return xs[0], xs[1], xs[2]
         else:
             mixes = attn_res_mix(
                 [*blocks, h],
@@ -220,11 +246,23 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             blocks = [*blocks, h]
         else:
             residual = h.cast(DType.float32) + residual
-        (mixed,) = attn_res_mix(
-            [*blocks, residual],
-            mlp_query,
-            normalize_values=self.normalize_values,
-        )
+        if _FUSED_MIX_NORM and can_fuse_mix_norm(blocks, residual):
+            mlp_input = attn_res_mix_norm(
+                blocks,
+                residual,
+                mlp_query,
+                self.mlp_norm.weight,
+                query_row=0,
+                norm_eps=self.mlp_norm.eps,
+                normalize_values=self.normalize_values,
+            )
+        else:
+            (mixed,) = attn_res_mix(
+                [*blocks, residual],
+                mlp_query,
+                normalize_values=self.normalize_values,
+            )
+            mlp_input = self.mlp_norm(mixed)
         mlp = (
             self.mlp
             if self.mlp_subgraph is None
@@ -233,7 +271,7 @@ class Inkling2DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         moe = reduce_partial(
             as_partial(
                 self.mlp_sconv(
-                    mlp(self.mlp_norm(mixed)),
+                    mlp(mlp_input),
                     conv.mlp_out,
                     input_row_offsets,
                     positions,

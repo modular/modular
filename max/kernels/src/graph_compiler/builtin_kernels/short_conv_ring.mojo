@@ -27,12 +27,14 @@ from nn.short_conv_ring import (
 @extensibility.register("conv.short_conv_ring")
 struct Struct_short_conv_ring:
     """`x + conv(x)` over a ragged batch, pre-chunk taps from the ring; with
-    `commit`, also writes each sequence's last inputs into its ring slot."""
+    `commit`, also writes each sequence's last inputs into its ring slot. A
+    non-unit `out_divisor` divides the float32 sum before the output rounds."""
 
     @inline(.always)
     @staticmethod
     def execute[
         commit: Bool,
+        out_divisor: Float32 = 1.0,
         //,
     ](
         output: Some[Output & Tensor],
@@ -60,7 +62,7 @@ struct Struct_short_conv_ring:
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(positions).rank == 1
         comptime assert type_of(conv_rows).rank == 2
-        short_conv_ring[commit=commit](
+        short_conv_ring[commit=commit, out_divisor=out_divisor](
             x.to_tile_tensor[dtype](),
             weight.to_tile_tensor[dtype](),
             ring.to_tile_tensor(),

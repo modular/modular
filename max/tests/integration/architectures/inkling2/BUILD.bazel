@@ -24,12 +24,44 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_query_side_projection",
+    size = "enormous",
+    srcs = ["test_query_side_projection.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_vision_input_contract",
     srcs = ["test_vision_input_contract.py"],
     deps = [
         "//max/python/max:tree",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mix_norm_gpu",
+    size = "enormous",
+    srcs = ["test_mix_norm_gpu.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/pipelines/architectures/inkling2",
         requirement("numpy"),
     ],
