@@ -58,7 +58,12 @@ import re
 from collections.abc import Mapping
 
 import numpy as np
-from max.driver import Buffer, DLPackArray, bfloat16_as_uint16_to_float32
+from max.driver import (
+    Buffer,
+    DLPackArray,
+    bfloat16_as_uint16_to_float32,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
@@ -190,6 +195,27 @@ def stack_projections(state_dict: dict[str, WeightData]) -> None:
                 )
 
 
+def _stack_rows(
+    experts: Mapping[int, Mapping[str, np.ndarray]],
+    ids: list[int],
+    keys: tuple[str, ...],
+) -> np.ndarray:
+    """Stacks each expert's ``keys`` tensors, joined along rows, by expert id.
+
+    Virtual devices only compile, so nothing reads these bytes. The zeros are
+    then left unwritten, and pages the OS has not touched take no host memory.
+    """
+    first = [experts[ids[0]][key] for key in keys]
+    out = np.zeros(
+        (len(ids), sum(part.shape[0] for part in first), *first[0].shape[1:]),
+        dtype=first[0].dtype,
+    )
+    if not is_virtual_device_mode():
+        for row, e in zip(out, ids, strict=True):
+            np.concatenate([experts[e][key] for key in keys], axis=0, out=row)
+    return out
+
+
 def stack_experts(
     experts: Mapping[int, Mapping[str, np.ndarray]], prefix: str
 ) -> dict[str, WeightData]:
@@ -202,22 +228,10 @@ def stack_experts(
     ids = sorted(experts)
     if ids != list(range(len(ids))):
         raise ValueError(f"{prefix}: expert ids are not dense: {ids}")
-    gate_up = np.stack(
-        [
-            np.concatenate([experts[e]["w1"], experts[e]["w3"]], axis=0)
-            for e in ids
-        ]
-    )
-    gate_up_scale = np.stack(
-        [
-            np.concatenate(
-                [experts[e]["w1.scale"], experts[e]["w3.scale"]], axis=0
-            )
-            for e in ids
-        ]
-    )
-    down = np.stack([experts[e]["w2"] for e in ids])
-    down_scale = np.stack([experts[e]["w2.scale"] for e in ids])
+    gate_up = _stack_rows(experts, ids, ("w1", "w3"))
+    gate_up_scale = _stack_rows(experts, ids, ("w1.scale", "w3.scale"))
+    down = _stack_rows(experts, ids, ("w2",))
+    down_scale = _stack_rows(experts, ids, ("w2.scale",))
     return {
         f"{prefix}.{GATE_UP_PROJ}.weight": with_dtype(
             gate_up, DType.uint8, f"{prefix}.{GATE_UP_PROJ}.weight"
