@@ -265,8 +265,8 @@ def rms_norm_fused_residual_cpu[
         simd_width: Int
     ](row: Int, col: Int) {var shape, var input_fn} -> SIMD[dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        return input_fn[simd_width](Coord(indices))
+        indices.replace_dynamic[rank - 1](col)
+        return input_fn[simd_width](indices)
 
     @inline(.always)
     def residual_input_fn_2d[
@@ -275,8 +275,8 @@ def rms_norm_fused_residual_cpu[
         dtype, simd_width
     ]:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        return residual_input_fn[simd_width](Coord(indices))
+        indices.replace_dynamic[rank - 1](col)
+        return residual_input_fn[simd_width](indices)
 
     @inline(.always)
     def output_fn_2d[
@@ -285,8 +285,8 @@ def rms_norm_fused_residual_cpu[
         var shape, var output_fn
     } -> None:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        output_fn[simd_width, alignment](Coord(indices), val)
+        indices.replace_dynamic[rank - 1](col)
+        output_fn[simd_width, alignment](indices, val)
 
     @inline(.always)
     def output_residual_fn_2d[
@@ -295,16 +295,16 @@ def rms_norm_fused_residual_cpu[
         var shape, var output_residual_fn
     } -> None:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        output_residual_fn[simd_width, alignment](Coord(indices), val)
+        indices.replace_dynamic[rank - 1](col)
+        output_residual_fn[simd_width, alignment](indices, val)
 
     @inline(.always)
     def residual_read_fn_2d[
         sw: Int
     ](row: Int, col: Int) {var shape, var residual_read_fn} -> SIMD[dtype, sw]:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        return residual_read_fn[sw](Coord(indices))
+        indices.replace_dynamic[rank - 1](col)
+        return residual_read_fn[sw](indices)
 
     # Call the 2D core implementation
     _rms_norm_fused_residual_cpu_2d[multiply_before_cast=multiply_before_cast](
@@ -733,8 +733,8 @@ def rms_norm_fused_residual_gpu[
         var shape, var output_fn
     } -> None:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        output_fn[simd_width, alignment](Coord(indices), val)
+        indices.replace_dynamic[rank - 1](col)
+        output_fn[simd_width, alignment](indices, val)
 
     @inline(.always)
     def output_residual_fn_2d[
@@ -743,16 +743,16 @@ def rms_norm_fused_residual_gpu[
         var shape, var output_residual_fn
     } -> None:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        output_residual_fn[simd_width, alignment](Coord(indices), val)
+        indices.replace_dynamic[rank - 1](col)
+        output_residual_fn[simd_width, alignment](indices, val)
 
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) {var shape, var input_fn} -> SIMD[dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        return input_fn[simd_width](Coord(indices))
+        indices.replace_dynamic[rank - 1](col)
+        return input_fn[simd_width](indices)
 
     @inline(.always)
     def residual_input_fn_2d[
@@ -761,8 +761,8 @@ def rms_norm_fused_residual_gpu[
         dtype, simd_width
     ]:
         var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
-        indices[rank - 1] = col
-        return residual_input_fn[simd_width](Coord(indices))
+        indices.replace_dynamic[rank - 1](col)
+        return residual_input_fn[simd_width](indices)
 
     comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     comptime warp_size = ctx.default_device_info.warp_size

@@ -983,19 +983,16 @@ def _concat_inner_most_single_dim[
         var index = _get_start_indices_of_nth_subvolume_static(
             idx, output.layout.shape_coord()
         )
-        var in_coord = Coord(index)
-
         comptime for i in range(num_inputs):
             var out_index = index
-            out_index[output.rank - 1] = i
-            var out_coord = Coord(out_index)
+            out_index.replace_dynamic[output.rank - 1](i)
 
             comptime if has_epilogue:
                 epilogue_fn[dtype, 1, alignment=1](
-                    out_coord, inputs[i].load[width=1](in_coord)
+                    out_index, inputs[i].load[width=1](index)
                 )
             else:
-                output.store(out_coord, inputs[i].load[width=1](in_coord))
+                output.store(out_index, inputs[i].load[width=1](index))
 
 
 @inline(.always)
@@ -1349,11 +1346,11 @@ def _fused_concat_inner_most_single_dim[
 
         comptime for i in range(num_inputs):
             var out_index = index
-            out_index[rank - 1] = i
+            out_index.replace_dynamic[rank - 1](i)
 
             output_0_fn[dtype, width=1, alignment=1](
-                Coord(out_index),
-                input_fn[i, 1](Coord(index)),
+                out_index,
+                input_fn[i, 1](index),
             )
 
 
@@ -1405,11 +1402,11 @@ def _fused_dual_concat_inner_most_single_dim[
 
             comptime for i in range(size_0):
                 var out_index = index
-                out_index[rank - 1] = i
+                out_index.replace_dynamic[rank - 1](i)
 
                 output_0_fn[dtype, width=1, alignment=1](
-                    Coord(out_index),
-                    input_fn_0[i, 1](Coord(index)),
+                    out_index,
+                    input_fn_0[i, 1](index),
                 )
 
         if idx < _shape_product(input_shapes_1[0], 0, rank):
@@ -1421,11 +1418,11 @@ def _fused_dual_concat_inner_most_single_dim[
 
             comptime for i in range(size_1):
                 var out_index = index
-                out_index[rank - 1] = i
+                out_index.replace_dynamic[rank - 1](i)
 
                 output_1_fn[dtype, width=1, alignment=1](
-                    Coord(out_index),
-                    input_fn_1[i, 1](Coord(index)),
+                    out_index,
+                    input_fn_1[i, 1](index),
                 )
 
 

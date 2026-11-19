@@ -14,9 +14,9 @@
 
 from std.math import ceildiv
 from std.math.uutils import udivmod, ufloordiv, umod
-from std.utils import IndexList
 
 from layout import Coord, CoordLike
+from std.utils.coord import DynamicCoord
 
 
 # Static-divisor n-th subvolume start-index decomposition.
@@ -28,13 +28,13 @@ from layout import Coord, CoordLike
 # `1..rank-subvolume_rank-1` are decomposed; dim 0 is the final quotient), and
 # bit-identical to it for the shapes that reach it. The difference is only in
 # the shape argument: here it arrives as a `Coord` that carries BOTH the static
-# dims (in its type) AND the runtime values, instead of a plain `IndexList`.
+# dims (in its type) AND the runtime values, instead of runtime values only.
 #
 # For dims whose extent is statically known in the `Coord` type
 # (`element_types[i].is_static_value`), the divisor becomes a compile-time
 # literal, so the `divmod` strength-reduces to a magic-multiply + shift
 # (verified: SASS `IMAD.HI`/`SHF`, no `IDIV`/`MUFU.RCP`) instead of the runtime
-# Newton-reciprocal divide that an `IndexList` divisor forces. Dynamic dims fall
+# Newton-reciprocal divide that a runtime-only divisor forces. Dynamic dims fall
 # back to the runtime value carried in the `Coord`, matching the MAX baseline.
 #
 # The flat index `n` stays runtime, so the *result* indices are runtime; only
@@ -46,7 +46,7 @@ from layout import Coord, CoordLike
 # values are read at runtime here.
 #
 # Uses unconditional `umod`/`ufloordiv` (unlike `_get_start_indices_of_nth_subvolume`,
-# which picks signed/unsigned off `IndexList._int_type`): a flat index and
+# which picks signed/unsigned off the index element type): a flat index and
 # tensor extents are always non-negative, so unsigned is not just safe but
 # required for the compile-time-divisor magic-multiply fold to fire.
 #
@@ -55,23 +55,23 @@ from layout import Coord, CoordLike
 @inline(.always)
 def _get_start_indices_of_nth_subvolume_static[
     element_types: TypeList[Trait=CoordLike, ...], //, subvolume_rank: Int = 1
-](n: Int, shape: Coord[*element_types]) -> IndexList[shape.rank]:
+](n: Int, shape: Coord[*element_types]) -> DynamicCoord[DType.int, shape.rank]:
     comptime rank = shape.rank
     comptime assert (
         subvolume_rank <= rank
     ), "subvolume rank cannot be greater than indices rank"
     comptime assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
-    var res = IndexList[rank]()
+    var res = DynamicCoord[DType.int, rank]()
 
     # Match `_get_start_indices_of_nth_subvolume`'s fast paths so behavior is
     # bit-identical for the shapes that reach them.
     comptime if rank == 2 and subvolume_rank == 1:
-        res[0] = n
+        res.replace_dynamic[0](n)
         return res
 
     comptime if rank - 1 == subvolume_rank:
-        res[0] = n
+        res.replace_dynamic[0](n)
         return res
 
     comptime if rank == subvolume_rank:
@@ -84,16 +84,18 @@ def _get_start_indices_of_nth_subvolume_static[
         comptime if ElemT.is_static_value:
             # Compile-time divisor -> magic-multiply + shift (no `IDIV`).
             comptime divisor = ElemT.static_value
-            res[i] = umod(curr, divisor)
+            res.replace_dynamic[i](umod(curr, divisor))
             curr = ufloordiv(curr, divisor)
         else:
             # Dynamic dim: read the divisor from the runtime leaf value carried
             # in the `Coord`. Nothing folds here, so the quotient and the
             # remainder must come out of ONE division.
             var divisor = Int(shape[i])
-            curr, res[i] = udivmod(curr, divisor)
+            var rem: Int
+            curr, rem = udivmod(curr, divisor)
+            res.replace_dynamic[i](rem)
 
-    res[0] = curr
+    res.replace_dynamic[0](curr)
     return res
 
 

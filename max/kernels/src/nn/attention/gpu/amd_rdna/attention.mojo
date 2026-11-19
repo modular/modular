@@ -26,7 +26,6 @@ from std.algorithm.functional import unswitch
 from max.gpu import block_idx, lane_id, thread_idx
 from std.memory import unsafe_stack_allocation
 from std.sys import align_of, simd_width_of
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from layout import (
@@ -67,7 +66,7 @@ def _mask_apply_rdna[
     masked: Bool,
     accum_type: DType,
     token_gen: Bool,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     num_m_mmas: Int,
     num_n_mmas: Int,
     mask_t: MHAMask,
@@ -238,7 +237,11 @@ struct AttentionRDNA[
     comptime depth = Self.config.depth
     comptime accum_type = get_accum_type[Self.q_type]()
 
-    comptime mma_shape = IndexList[3](RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K)
+    comptime mma_shape: Tuple[Int, Int, Int] = (
+        RDNA_MMA_M,
+        RDNA_MMA_N,
+        RDNA_MMA_K,
+    )
 
     # Per-lane C/D fragment: 1 row x 8 cols.
     comptime frag_num_rows = 1
@@ -412,7 +415,7 @@ struct AttentionRDNA[
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
             Self.q_type,
-            (Self.mma_shape[0], Self.mma_shape[1], Self.mma_shape[2]),
+            Self.mma_shape,
             group_size=Self.k_group_size,
             transpose_b=True,
         ],
@@ -425,7 +428,7 @@ struct AttentionRDNA[
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
             Self.q_type,
-            (Self.mma_shape[0], Self.mma_shape[1], Self.mma_shape[2]),
+            Self.mma_shape,
             group_size=Self.k_group_size,
             transpose_b=False,
         ],
