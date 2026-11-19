@@ -24,6 +24,7 @@
 #include "mlir/Transforms/Passes.h"
 
 using namespace M;
+using namespace M::MLRT;
 
 int main(int argc, char **argv) {
   DialectRegistry registry;

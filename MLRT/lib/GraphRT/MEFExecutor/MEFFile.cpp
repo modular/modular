@@ -31,6 +31,7 @@
 #define DEBUG_TYPE "mef"
 
 using namespace M;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // MEFFileReader
@@ -257,7 +258,7 @@ MEFInvokable *MEFFileImpl::getInvokableByID(size_t number) const {
 
 /// Return true if the specified file contents look like it is a MEF file, by
 /// checking the magic number.
-bool M::isMEFFile(llvm::StringRef contents) {
+bool M::MLRT::isMEFFile(llvm::StringRef contents) {
   return MEF::hasMEFMagicNumber(contents);
 }
 

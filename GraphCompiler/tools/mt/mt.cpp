@@ -35,6 +35,7 @@
 #include <filesystem>
 
 using namespace M;
+using namespace M::MLRT;
 using llvm::MemoryBuffer;
 
 namespace {

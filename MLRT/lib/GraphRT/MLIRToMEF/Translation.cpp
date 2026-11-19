@@ -23,8 +23,9 @@
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 using namespace M;
+using namespace M::MLRT;
 
-void M::registerMLIRToMEFTranslation(DialectRegistry &otherDialects) {
+void M::MLRT::registerMLIRToMEFTranslation(DialectRegistry &otherDialects) {
   static llvm::cl::opt<bool> enableMEFMetadata(
       "enable-mef-metadata",
       llvm::cl::desc("Enable metadata sections for better MEF2MLIR"),

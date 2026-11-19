@@ -21,7 +21,7 @@
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/SymbolExport.h"
 
-namespace M {
+namespace M::MLRT {
 
 //===----------------------------------------------------------------------===//
 // PrimitiveProfilerEntry
@@ -363,7 +363,8 @@ private:
 #define ADD_PRIMITIVE(registry, name, fn)                                      \
   do {                                                                         \
     (registry).add(                                                            \
-        name, ::M::Detail::PrimitiveImpl<decltype(&(fn)), &(fn)>::invoke);     \
+        name,                                                                  \
+        ::M::MLRT::Detail::PrimitiveImpl<decltype(&(fn)), &(fn)>::invoke);     \
   } while (0)
 
 namespace Detail {
@@ -864,7 +865,7 @@ struct PrimitiveImpl<Return (*)(Args...), implFn> {
 };
 } // namespace Detail
 
-} // namespace M
+} // namespace M::MLRT
 
 namespace llvm {
 
@@ -922,24 +923,30 @@ struct BaseMEFAttrCastOptional
 };
 
 template <typename To>
-struct CastInfo<To, ::M::MEFDynamicAttr>
-    : public BaseMEFAttrCast<::M::MEFAttr<To>, ::M::MEFDynamicAttr> {};
+struct CastInfo<To, ::M::MLRT::MEFDynamicAttr>
+    : public BaseMEFAttrCast<::M::MLRT::MEFAttr<To>,
+                             ::M::MLRT::MEFDynamicAttr> {};
 
 template <typename To>
-struct CastInfo<To, const ::M::MEFDynamicAttr>
-    : public BaseMEFAttrCast<::M::MEFAttr<To>, ::M::MEFDynamicAttr> {};
+struct CastInfo<To, const ::M::MLRT::MEFDynamicAttr>
+    : public BaseMEFAttrCast<::M::MLRT::MEFAttr<To>,
+                             ::M::MLRT::MEFDynamicAttr> {};
 
 template <typename To>
-struct CastInfo<::M::MEFAttr<To>, ::M::MEFDynamicAttr>
-    : public BaseMEFAttrCast<::M::MEFAttr<To>, ::M::MEFDynamicAttr> {};
+struct CastInfo<::M::MLRT::MEFAttr<To>, ::M::MLRT::MEFDynamicAttr>
+    : public BaseMEFAttrCast<::M::MLRT::MEFAttr<To>,
+                             ::M::MLRT::MEFDynamicAttr> {};
 
 template <typename To>
-struct CastInfo<To, std::optional<::M::MEFDynamicAttr>>
-    : public BaseMEFAttrCastOptional<::M::MEFAttr<To>, ::M::MEFDynamicAttr> {};
+struct CastInfo<To, std::optional<::M::MLRT::MEFDynamicAttr>>
+    : public BaseMEFAttrCastOptional<::M::MLRT::MEFAttr<To>,
+                                     ::M::MLRT::MEFDynamicAttr> {};
 
 template <typename To>
-struct CastInfo<::M::MEFAttr<To>, std::optional<::M::MEFDynamicAttr>>
-    : public BaseMEFAttrCastOptional<::M::MEFAttr<To>, ::M::MEFDynamicAttr> {};
+struct CastInfo<::M::MLRT::MEFAttr<To>,
+                std::optional<::M::MLRT::MEFDynamicAttr>>
+    : public BaseMEFAttrCastOptional<::M::MLRT::MEFAttr<To>,
+                                     ::M::MLRT::MEFDynamicAttr> {};
 
 template <typename To, typename From>
 struct BaseMEFAttrPointerCast
@@ -956,12 +963,14 @@ struct BaseMEFAttrPointerCast
 };
 
 template <typename To>
-struct CastInfo<To, const ::M::MEFDynamicAttr *>
-    : public BaseMEFAttrPointerCast<::M::MEFAttr<To>, ::M::MEFDynamicAttr> {};
+struct CastInfo<To, const ::M::MLRT::MEFDynamicAttr *>
+    : public BaseMEFAttrPointerCast<::M::MLRT::MEFAttr<To>,
+                                    ::M::MLRT::MEFDynamicAttr> {};
 
 template <typename To>
-struct CastInfo<::M::MEFAttr<To>, const ::M::MEFDynamicAttr *>
-    : public BaseMEFAttrPointerCast<::M::MEFAttr<To>, ::M::MEFDynamicAttr> {};
+struct CastInfo<::M::MLRT::MEFAttr<To>, const ::M::MLRT::MEFDynamicAttr *>
+    : public BaseMEFAttrPointerCast<::M::MLRT::MEFAttr<To>,
+                                    ::M::MLRT::MEFDynamicAttr> {};
 
 } // namespace llvm
 

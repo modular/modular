@@ -19,7 +19,7 @@
 #ifndef MLRT_GRAPHRT_PRIMITIVES_H
 #define MLRT_GRAPHRT_PRIMITIVES_H
 
-namespace M {
+namespace M::MLRT {
 class PrimitiveRegistry;
 
 /// This registers the 'test' dialect primitives, intended for writing executor
@@ -39,6 +39,6 @@ inline void registerAllGraphRTPrimitives(PrimitiveRegistry &registry) {
   registerGraphRTControlFlowPrimitives(registry);
 }
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_PRIMITIVES_H

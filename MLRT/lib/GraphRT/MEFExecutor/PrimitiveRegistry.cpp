@@ -17,17 +17,18 @@
 #include "llvm/ADT/StringRef.h"
 
 using namespace M;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // PrimitiveRegistry::Impl
 //===----------------------------------------------------------------------===//
 
-namespace M {
+namespace M::MLRT {
 struct PrimitiveRegistry::Impl {
   bool isFinalized = false;
   std::vector<std::pair<StringLiteral, PrimitiveImplFn>> prims;
 };
-} // namespace M
+} // namespace M::MLRT
 
 //===----------------------------------------------------------------------===//
 // PrimitiveRegistry

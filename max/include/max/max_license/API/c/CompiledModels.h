@@ -170,7 +170,7 @@ private:
 /// that are loaded from the compiled MEF but not yet initialized.
 struct UninitializedModel {
   UninitializedModel(M::BufferRef buffer, ModelList models,
-                     RCRef<MEFFile> handle)
+                     RCRef<MLRT::MEFFile> handle)
       : compiledModelBuffer(std::move(buffer)), models(std::move(models)),
         mefHandle(std::move(handle)) {}
 
@@ -195,7 +195,7 @@ private:
 
   M::BufferRef compiledModelBuffer;
   ModelList models;
-  RCRef<MEFFile> mefHandle;
+  RCRef<MLRT::MEFFile> mefHandle;
 };
 
 /// The internal type created when compiling one or more models from the public

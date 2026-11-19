@@ -56,6 +56,7 @@
 #include "mlir/Support/Timing.h"
 
 using namespace M;
+using namespace M::MLRT;
 using namespace MO;
 
 void M::MO::loadDialects(mlir::DialectRegistry &registry) {

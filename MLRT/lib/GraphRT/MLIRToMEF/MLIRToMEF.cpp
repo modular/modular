@@ -41,6 +41,7 @@
 #include <climits>
 
 using namespace M;
+using namespace M::MLRT;
 
 /// This holds an offset into a MEF section.
 struct MEFOffset {
@@ -1787,8 +1788,8 @@ void MEFModuleEmitter::emitInvokableIndex() {
 ///
 /// On error, this emits the error message through the MLIR error handler,
 /// and returns an empty vector.
-ConcatenationTree M::translateMLIRToMEF(ModuleOp module,
-                                        bool enableMEFMetadata) {
+ConcatenationTree M::MLRT::translateMLIRToMEF(ModuleOp module,
+                                              bool enableMEFMetadata) {
   MEFModuleEmitter emitter(module);
 
   // Build the entities table.

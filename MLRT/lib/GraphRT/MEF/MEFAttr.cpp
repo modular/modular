@@ -14,7 +14,8 @@
 #include "MLRT/GraphRT/MEF/MEFAttr.h"
 
 using namespace M;
-using namespace Detail;
+using namespace M::MLRT;
+using namespace M::MLRT::Detail;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -22,7 +23,7 @@ using namespace Detail;
 
 /// Given a pointer to the start of a MEF array or string attribute, return the
 /// length of array or string by decoding the prefix encoded VBR.
-size_t M::decodeMEFArrayLength(const uint8_t *dataPtr) {
+size_t M::MLRT::decodeMEFArrayLength(const uint8_t *dataPtr) {
   // The attribute's kind is between the VBR and the actual value, so we have to
   // make sure to subtract that offset (hence the -2).
   const uint8_t *lenPtr = dataPtr - 2;

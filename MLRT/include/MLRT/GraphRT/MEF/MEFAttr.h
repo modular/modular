@@ -22,7 +22,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace M {
+namespace M::MLRT {
 
 //===----------------------------------------------------------------------===//
 // MEFDecoder
@@ -375,7 +375,7 @@ public:
   template <typename ValueType>
   ErrorOrSuccess decode(ValueType *result) const {
     using EncodedType = typename llvm::function_traits<
-        decltype(&M::MEFDecoder<ValueType>::decode)>::template arg_t<0>;
+        decltype(&M::MLRT::MEFDecoder<ValueType>::decode)>::template arg_t<0>;
     using InnerType =
         typename Detail::MEFAttrDynCastRet<EncodedType>::InnerType;
 
@@ -648,6 +648,6 @@ private:
 
 using MEFDictionaryAttr = MEFAttr<Detail::Dictionary>;
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEF_MEFATTR_H

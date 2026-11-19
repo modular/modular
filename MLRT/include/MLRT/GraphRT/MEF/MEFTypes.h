@@ -24,7 +24,7 @@
 #include "Support/SymbolExport.h"
 #include "mlir/IR/Builders.h"
 
-namespace M {
+namespace M::MLRT {
 
 /// This class represents an unknown type encoded into a MEF file, it can be
 /// dynamically casted to other types for processing.
@@ -188,16 +188,16 @@ public:
   }
 };
 
-} // namespace M
+} // namespace M::MLRT
 
 namespace llvm {
 
 template <typename T>
-struct CastInfo<T, ::M::MEFType>
-    : public CastIsPossible<T, ::M::MEFType>,
-      public DefaultDoCastIfPossible<std::optional<T>, ::M::MEFType,
-                                     CastInfo<T, ::M::MEFType>> {
-  static std::optional<T> doCast(const ::M::MEFType &f) {
+struct CastInfo<T, ::M::MLRT::MEFType>
+    : public CastIsPossible<T, ::M::MLRT::MEFType>,
+      public DefaultDoCastIfPossible<std::optional<T>, ::M::MLRT::MEFType,
+                                     CastInfo<T, ::M::MLRT::MEFType>> {
+  static std::optional<T> doCast(const ::M::MLRT::MEFType &f) {
     return T(f.getPointer(), f.getAttrEnd());
   }
   static std::optional<T> castFailed() { return std::nullopt; }

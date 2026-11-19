@@ -15,6 +15,7 @@
 #include "Support/ML/TensorSpec.h"
 #include "llvm/ADT/SmallVector.h"
 using namespace M;
+using namespace M::MLRT;
 
 /// Return the encoded size of this type in bytes.
 size_t MEFType::getEncodedSizeInBytes() const {

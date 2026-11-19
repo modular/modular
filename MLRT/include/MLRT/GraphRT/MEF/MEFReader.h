@@ -25,7 +25,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/MathExtras.h"
 
-namespace M {
+namespace M::MLRT {
 
 /// This helper class implements low level binary parsing logic for a byte
 /// range.  The general protocol for failable parsing routines is that they
@@ -257,6 +257,6 @@ private:
   llvm::unique_function<void(Error) const> errorFunction;
 };
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEF_MEFREADER_H

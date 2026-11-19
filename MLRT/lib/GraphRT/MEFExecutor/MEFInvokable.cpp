@@ -29,6 +29,7 @@
 #include <cassert>
 
 using namespace M;
+using namespace M::MLRT;
 
 #define DEBUG_TYPE "mef"
 

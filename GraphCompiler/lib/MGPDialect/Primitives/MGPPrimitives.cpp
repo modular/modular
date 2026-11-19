@@ -144,10 +144,10 @@ llvm::SmallVector<void *> getKernelInputs(OperandTy &operands,
 
     size_t byteCount = 1;
     if (attr.getAttrKind() == MEF::AttributeKind::kString) {
-      byteCount = M::decodeMEFArrayLength(attr.get());
+      byteCount = M::MLRT::decodeMEFArrayLength(attr.get());
     } else if (((uint8_t)attr.getAttrKind()) &
                ((uint8_t)MEF::AttributeKind::mArrayType)) {
-      byteCount = M::decodeMEFArrayLength(attr.get()) *
+      byteCount = M::MLRT::decodeMEFArrayLength(attr.get()) *
                   M::MEF::getWidthInBits(attr.getAttrKind()) / 8;
     } else {
       ASSERT_STREAM(attr.getAttrKind() != MEF::AttributeKind::kBool &&

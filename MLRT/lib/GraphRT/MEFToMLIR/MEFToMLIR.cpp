@@ -33,6 +33,7 @@
 #include <cstring>
 #include <numeric>
 using namespace M;
+using namespace M::MLRT;
 
 // MEF requires 64-byte aligned buffers for parsing
 static constexpr size_t kMEFBufferAlignment = 64;
@@ -1049,7 +1050,7 @@ bool MEFToMLIRConverter::parseRegionBody(Region *region, size_t numResults,
 /// Read the specified a MEF file from the specified binary buffer, and
 /// returning the created module on success.  On failure, report an error at the
 /// specified location and return null.
-ModuleOp M::translateMEFToMLIR(ArrayRef<uint8_t> buffer, Location loc) {
+ModuleOp M::MLRT::translateMEFToMLIR(ArrayRef<uint8_t> buffer, Location loc) {
   loc.getContext()->loadDialect<MEF::MEFDialect>();
 
   // Check if the buffer is already 64-byte aligned

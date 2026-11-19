@@ -24,6 +24,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Tools/mlir-translate/MlirTranslateMain.h"
 using namespace M;
+using namespace M::MLRT;
 
 int main(int argc, char **argv) {
   DialectRegistry extraDialectsForMLIRToMEF;
