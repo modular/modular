@@ -52,7 +52,7 @@ from std.sys.compile import DebugLevel, OptimizationLevel
 from std.sys.info import CompilationTarget
 from std.sys.defines import _is_bool_like
 
-from std.reflection import call_location, get_linkage_name, SourceLocation
+from std.reflection import call_location, SourceLocation
 from std.builtin.rebind import downcast
 from std.builtin.device_passable import (
     DevicePassable,
@@ -4819,93 +4819,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
         )
 
         return LegacyDeviceBuffer[dtype](cpp_handle, device_ptr.value())
-
-    @inline(.always)
-    def compile_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *,
-        compile_options: StaticString = (Self.target.default_compile_options()),
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *,
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: LegacyDeviceFunction[
-            func,
-            Self.FunctionWrapper,
-            target=Self.target,
-            compile_options=compile_options,
-            link_options=link_options,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ],
-    ) raises:
-        """Compiles the provided function for execution on this device.
-
-        Parameters:
-            declared_arg_types: Types of the arguments to pass to the device function.
-            func: The function to compile.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func_attribute: An attribute to use when compiling the code (such
-                as maximum shared memory size).
-
-        Returns:
-            A compiled `DeviceFunction` parameterized over the
-            (possibly wrapped) kernel, ready to be enqueued via
-            `enqueue_function`.
-
-        Raises:
-            If the operation fails.
-        """
-        if case .Some(attr) = func_attribute:
-            assert (
-                attr.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-                or attr.value
-                <= Int32(
-                    self.default_device_info.shared_memory_per_multiprocessor
-                )
-            ), "Requested more than available shared memory."
-
-        comptime result_type = type_of(result)
-        comptime if Self.FunctionWrapper != _IdentityWrapper:
-            # Surface the user kernel's name (not the wrapper name) as the
-            # dispatch printName for device-level profiling.
-            comptime user_name = get_linkage_name[func, target=Self.target]()
-            result = result_type(
-                self,
-                func_attribute=func_attribute,
-                name=user_name,
-            )
-        else:
-            result = result_type(
-                self,
-                func_attribute=func_attribute,
-            )
-
-        result.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
 
     def load_function[
         ret_type: AnyType,

@@ -32,6 +32,7 @@ from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 from std.reflection import (
     SourceLocation,
     call_location,
+    get_linkage_name,
 )
 from std.memory.unsafe import bitcast
 from std.sys import bit_width_of, size_of
@@ -85,7 +86,7 @@ from max.gpu.host.nvidia import (
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
 from max.gpu.host._legacy.dim import Dim
-from max.gpu.host._legacy.func_attribute import FuncAttribute
+from max.gpu.host._legacy.func_attribute import Attribute, FuncAttribute
 from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from max.gpu.host._legacy.device_context import (
     LegacyDeviceContext,
@@ -93,7 +94,7 @@ from max.gpu.host._legacy.device_context import (
     _LegacyDeviceContextScope,
 )
 from max.gpu.host._driver_common import _DumpPath
-from max.gpu.host._launch_args import DeviceFunctionWrapper
+from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
 from max.gpu.host._driver_common import (
     StreamPriorityRange as _OverlayStreamPriorityRange,
     _check_dim_in_range,
@@ -2310,8 +2311,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Parameters:
             declared_arg_types: Types of the arguments of the kernel.
             func: The function to compile.
-            compile_options: The compile options for the function.
-            link_options: The link options for the function.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -2324,26 +2326,52 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 PTX assembly (default `False`).
 
         Args:
-            func_attribute: An attribute to use when compiling the function.
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
 
         Returns:
-            The compiled function.
+            A compiled `DeviceFunction` parameterized over the
+            (possibly wrapped) kernel, ready to be enqueued via
+            `enqueue_function`.
 
         Raises:
-            If the compilation fails.
+            If the operation fails.
         """
         comptime if use_legacy_backend():
-            result = type_of(result)(
-                _impl=self._impl.compile_function[
-                    func,
-                    compile_options=compile_options,
-                    link_options=link_options,
-                    dump_asm=dump_asm,
-                    dump_llvm=dump_llvm,
-                    _dump_sass=_dump_sass,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](func_attribute=func_attribute)
-            )
+            if case .Some(attr) = func_attribute:
+                assert (
+                    attr.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+                    or attr.value
+                    <= Int32(
+                        Self.default_device_info.shared_memory_per_multiprocessor
+                    )
+                ), "Requested more than available shared memory."
+
+            comptime if Self.FunctionWrapper != _IdentityWrapper:
+                # Surface the user kernel's name (not the wrapper name) as the
+                # dispatch printName for device-level profiling.
+                comptime user_name = get_linkage_name[
+                    func, target=Self.target
+                ]()
+                result = type_of(result)(
+                    _impl=type_of(result)._Legacy(
+                        self._impl,
+                        func_attribute=func_attribute,
+                        name=user_name,
+                    )
+                )
+            else:
+                result = type_of(result)(
+                    _impl=type_of(result)._Legacy(
+                        self._impl, func_attribute=func_attribute
+                    )
+                )
+
+            result._impl.dump_rep[
+                dump_asm=dump_asm,
+                dump_llvm=dump_llvm,
+                _dump_sass=_dump_sass,
+            ]()
         else:
             # The HAL backend ignores the compile options, link options and
             # dump flags; they are accepted for parity with the legacy backend.
@@ -2799,7 +2827,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 block_dim, location=call_location()
             )
             comptime plugin = MaxPluginForTarget[Self.target]
-            var gpu_kernel = self._impl.compile_function[
+            var gpu_kernel = self.compile_function[
                 func,
                 dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
@@ -2817,13 +2845,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 ), "host_args is not supported on this target"
                 plugin.enqueue_function_fn(
                     self,
-                    DeviceFunction[
-                        func,
-                        Self._Legacy.FunctionWrapper,
-                        target=Self.target,
-                        link_options=link_options,
-                        _ptxas_info_verbose=_ptxas_info_verbose,
-                    ](_legacy=gpu_kernel),
+                    gpu_kernel,
                     *encoded_args,
                     grid_dim=grid_dim,
                     block_dim=block_dim,
@@ -2835,7 +2857,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 )
             else:
                 gpu_kernel._call_with_pack_checked(
-                    self._impl,
+                    self,
                     *encoded_args,
                     host_args=host_args,
                     grid_dim=grid_dim,
