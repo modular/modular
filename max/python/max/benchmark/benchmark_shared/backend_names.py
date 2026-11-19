@@ -38,7 +38,9 @@ from typing import Literal
 
 # Locally launched inference frameworks that the config generator fans
 # manifests out over.
-FrameworkName = Literal["atom", "mach", "modular", "sglang", "trtllm", "vllm"]
+FrameworkName = Literal[
+    "atom", "mach", "modular", "sglang", "tokenspeed", "trtllm", "vllm"
+]
 
 # Server backends the load generator can target. Superset of ``FrameworkName``
 # that adds the externally managed ``mcloud`` endpoint (not a locally launched
@@ -56,6 +58,7 @@ Backend = (
         "atom-chat",
         "modular-chat",
         "sglang-chat",
+        "tokenspeed-chat",
         "trtllm-chat",
         "vllm-chat",
     ]
@@ -84,4 +87,5 @@ class BackendEnum(str, Enum):
     SGLANG = "sglang"
     ATOM = "atom"
     MACH = "mach"
+    TOKENSPEED = "tokenspeed"
     TRTLLM = "trtllm"

@@ -135,6 +135,8 @@ CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
     "vllm-chat": "/reset_prefix_cache",
     "sglang": "/flush_cache",
     "sglang-chat": "/flush_cache",
+    "tokenspeed": "/flush_cache",
+    "tokenspeed-chat": "/flush_cache",
 }
 
 BenchmarkTask = Literal[
@@ -499,7 +501,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
-        description="Backend to use for benchmarking. Choices: atom, atom-chat, mach, mcloud, modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
+        description="Backend to use for benchmarking. Choices: atom, atom-chat, mach, mcloud, modular, modular-chat, sglang, sglang-chat, tokenspeed, tokenspeed-chat, trtllm, trtllm-chat, vllm, vllm-chat",
         json_schema_extra={
             "group": "Backend and API Configuration",
             "group_description": "Configuration for backend selection and API endpoints",
