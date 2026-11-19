@@ -34,7 +34,7 @@ from types import MappingProxyType
 from typing import Any, ClassVar, Protocol, TypeVar
 
 from max import tree
-from max.driver import Buffer, is_virtual_device_mode
+from max.driver import Buffer, Device, Usage, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import CompilationStopped, InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
@@ -46,6 +46,7 @@ from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
+from .graph_specs import GraphSpec
 from .interfaces.pipeline_model import (
     ModelLoadContext,
     compile_ep_init,
@@ -61,6 +62,7 @@ __all__ = [
     "ExpertParallelExchange",
     "ExpertParallelInputs",
     "ModuleRuntime",
+    "allocate_static_buffers",
     "batch_context_length_types",
     "ep_input_tree",
     "initialize_ep_comm_buffers",
@@ -82,6 +84,32 @@ class ConstantInputs:
 
     input_types: tree.Tree[TensorType | BufferType]
     buffers: tree.Tree[Buffer]
+    initializer: GraphSpec | None = None
+    devices: tuple[Device, ...] = ()
+    _initialized: bool = dataclasses.field(
+        default=False, init=False, compare=False
+    )
+
+    def __del__(self) -> None:
+        # Custom kernels dereference these host pointers directly. Their
+        # allocation cannot retire until all consuming device streams drain.
+        if getattr(self, "_initialized", False):
+            for device in self.devices:
+                device.synchronize()
+
+    def initialize(
+        self,
+        compiled: CompiledCallable[..., Any],
+        session: InferenceSession | None = None,
+    ) -> None:
+        """Fills the owned buffers once, before a decoder can read them."""
+        if self._initialized or is_virtual_device_mode():
+            return
+        if self.initializer is None:
+            raise ValueError("constant inputs declare no static initializer")
+        object.__setattr__(self, "_execution_owner", (session, compiled))
+        compiled.execute_raw(*tree.leaves(self.buffers))
+        object.__setattr__(self, "_initialized", True)
 
     def __post_init__(self) -> None:
         if is_virtual_device_mode() and not self.buffers:
@@ -90,6 +118,49 @@ class ConstantInputs:
             return
         _, structure = tree.flatten(self.input_types)
         structure.flatten_up_to(self.buffers)
+
+
+def allocate_static_buffers(
+    input_types: tree.Tree[TensorType | BufferType], devices: Sequence[Device]
+) -> tree.Tree[Buffer]:
+    """Allocates statically shaped CPU deployment buffers pinned to the GPU.
+
+    A virtual export records the declarations without allocating the buffers.
+    """
+    if is_virtual_device_mode():
+        return {}
+    if not devices or devices[0].is_host:
+        raise ValueError(
+            "static buffers require an accelerator for host pinning"
+        )
+
+    def allocate(spec: TensorType | BufferType) -> Buffer:
+        if (
+            not isinstance(spec, TensorType | BufferType)
+            or not spec.device.is_cpu()
+        ):
+            raise ValueError("static resources must be CPU tensors or buffers")
+        try:
+            shape = tuple(int(dim) for dim in spec.shape)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "static buffers require static dimensions"
+            ) from error
+        if any(dim <= 0 for dim in shape):
+            raise ValueError(
+                "static buffers require positive static dimensions"
+            )
+        buffer = Buffer(
+            shape=shape,
+            dtype=spec.dtype,
+            device=devices[0],
+            usage=Usage.STAGING,
+        )
+        if not buffer.pinned:
+            raise ValueError("static buffer allocation is not pinned")
+        return buffer
+
+    return tree.map(allocate, input_types)
 
 
 @dataclass(frozen=True)

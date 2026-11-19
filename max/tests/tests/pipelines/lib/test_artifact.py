@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import stat
@@ -36,8 +37,10 @@ from max._artifact.batch_processor import BatchProcessorDims
 from max._artifact.block_diffusion import BlockDiffusionMetadata
 from max._artifact.codec import encode, prefix_files
 from max._artifact.engine_config import (
+    CapturedHostInput,
     EngineCaptureConfig,
     EngineConfig,
+    EngineParallelConfig,
     EnginePrefillContextParallel,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
@@ -56,7 +59,6 @@ from max._artifact.kv_cache import (
 )
 from max._artifact.metadata import ARTIFACT_VERSION
 from max._artifact.model_artifact import ModelArtifact
-from max._artifact.overlap_helpers import OverlapHelpers
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.sampling_defaults import SamplingDefaults
 from max._artifact.serialization import deserialize, serialize
@@ -521,7 +523,6 @@ def test_component_types() -> None:
         "weight_loader": WeightNaming,
         "vision": VisionMetadata,
         "sampling_defaults": SamplingDefaults,
-        "overlap_helpers": OverlapHelpers,
         "block_diffusion": BlockDiffusionMetadata,
     }
     assert FakeArtifact.component_types() == {
@@ -535,7 +536,6 @@ def test_component_types() -> None:
         "weight_loader": WeightNaming,
         "vision": VisionMetadata,
         "sampling_defaults": SamplingDefaults,
-        "overlap_helpers": OverlapHelpers,
         "block_diffusion": BlockDiffusionMetadata,
         "scratch": FakeComponent,
         "extra": FakeComponent,
@@ -596,37 +596,69 @@ def test_batch_processor_dims_must_be_positive_integers(
         BatchProcessorDims.__deserialize__({"dims": {"total_seq_len": size}})
 
 
+def _parallel(
+    dp: int = 1,
+    tp: int = 2,
+    ep: int = 1,
+    dcp: int = 1,
+    pcp: int = 1,
+    dcp_interleave: int = 1,
+) -> EngineParallelConfig:
+    return EngineParallelConfig(
+        dp=dp, tp=tp, ep=ep, dcp=dcp, pcp=pcp, dcp_interleave=dcp_interleave
+    )
+
+
+PCP = EnginePrefillContextParallel(
+    min_step_tokens=7168, min_rows_per_request=8, max_batch_context=262144
+)
+_PCP_RECORD = {
+    "min_step_tokens": 7168,
+    "min_rows_per_request": 8,
+    "max_batch_context": 262144,
+}
+
+SPECULATIVE = EngineSpeculativeConfig(
+    speculative_method="mtp",
+    num_speculative_tokens=3,
+    draft_proposal="argmax",
+    acceptance_mode="stochastic",
+    reasoning_parser="gemma4",
+    draft_query_len=1,
+    proposer="sequential",
+    verify_widths=(1, 3),
+    mixed_verify_width=2,
+    # Mixed values, so a swapped field cannot pass.
+    verify_takes_prefill_rows=True,
+    verify_commits_long_rows=False,
+    successor_replay=True,
+)
+
 ENGINE_CONFIG = EngineConfig(
     max_batch_size=16,
     max_length=4096,
     max_batch_input_tokens=8192,
+    prefill_token_budget=8000,
     max_batch_total_tokens=None,
     devices=(DeviceSpec.accelerator(0), DeviceSpec.accelerator(1)),
-    data_parallel_degree=1,
-    ep_size=1,
+    parallel=_parallel(),
+    capture=EngineCaptureConfig(
+        max_batch_size=16,
+        prefill_max_tokens=4096,
+        host_inputs={
+            "spec_decode.min_top_p": CapturedHostInput("pinned", 0.0),
+            "paged_kv.max_cache_length": CapturedHostInput("shape"),
+            "spec_decode.max_k": CapturedHostInput("pinned", -1),
+        },
+        cache_bound="bucketed",
+    ),
     sampling=EngineSamplingConfig(
         needs_bitmask_constraints=True,
         enable_variable_logits=False,
         enable_penalties=False,
     ),
-    speculative=EngineSpeculativeConfig(
-        speculative_method="mtp",
-        num_speculative_tokens=3,
-        draft_proposal="argmax",
-        acceptance_mode="stochastic",
-        reasoning_parser="gemma4",
-        # Mixed values, so a swapped field cannot pass.
-        verify_takes_prefill_rows=True,
-        verify_commits_long_rows=False,
-        successor_replay=True,
-    ),
-    capture=EngineCaptureConfig(mla_decode=True, cache_bound="bucketed"),
-    device_graph_capture=True,
-    prefill_context_parallel=EnginePrefillContextParallel(
-        min_step_tokens=7168,
-        min_rows_per_request=8,
-        max_batch_context=262144,
-    ),
+    speculative=SPECULATIVE,
+    prefix_caching=False,
 )
 
 
@@ -638,10 +670,31 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
             "max_batch_size": 16,
             "max_length": 4096,
             "max_batch_input_tokens": 8192,
+            "prefill_token_budget": 8000,
             "max_batch_total_tokens": None,
             "devices": [{"type": "gpu", "id": 0}, {"type": "gpu", "id": 1}],
-            "data_parallel_degree": 1,
-            "ep_size": 1,
+            "parallel": {
+                "dp": 1,
+                "tp": 2,
+                "ep": 1,
+                "dcp": 1,
+                "pcp": 1,
+                "dcp_interleave": 1,
+            },
+            "capture": {
+                "max_batch_size": 16,
+                "prefill_max_tokens": 4096,
+                # Sorted by name; only a pinned input carries a value.
+                "host_inputs": {
+                    "paged_kv.max_cache_length": {
+                        "mode": "shape",
+                        "value": None,
+                    },
+                    "spec_decode.max_k": {"mode": "pinned", "value": -1},
+                    "spec_decode.min_top_p": {"mode": "pinned", "value": 0.0},
+                },
+                "cache_bound": "bucketed",
+            },
             "sampling": {
                 "needs_bitmask_constraints": True,
                 "enable_variable_logits": False,
@@ -653,123 +706,290 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
                 "draft_proposal": "argmax",
                 "acceptance_mode": "stochastic",
                 "reasoning_parser": "gemma4",
+                "draft_query_len": 1,
+                "proposer": "sequential",
+                "verify_widths": [1, 3],
+                "mixed_verify_width": 2,
                 "verify_takes_prefill_rows": True,
                 "verify_commits_long_rows": False,
                 "successor_replay": True,
             },
-            "capture": {"mla_decode": True, "cache_bound": "bucketed"},
-            "device_graph_capture": True,
-            "prefill_context_parallel": {
-                "min_step_tokens": 7168,
-                "min_rows_per_request": 8,
-                "max_batch_context": 262144,
-            },
+            "prefill_context_parallel": None,
+            "prefix_caching": False,
         }
     }
     assert deserialize(dest).engine_config == ENGINE_CONFIG
 
 
-def test_an_artifact_before_the_capture_record_qualifies_nothing(
+@pytest.mark.parametrize(
+    "devices, parallel",
+    [
+        # TP4 / EP4, one replica.
+        (4, _parallel(tp=4, ep=4)),
+        # DP4 / EP4: four one-device replicas sharing the experts.
+        (4, _parallel(dp=4, tp=1, ep=4)),
+        # DP8 / EP8.
+        (8, _parallel(dp=8, tp=1, ep=8)),
+        # DP2 x TP4 with DCP4 interleaved by page.
+        (8, _parallel(dp=2, tp=4, dcp=4, dcp_interleave=128)),
+        # DCP2 without PCP.
+        (2, _parallel(tp=2, dcp=2, dcp_interleave=1)),
+    ],
+)
+def test_parallel_layouts_round_trip(
+    tmp_path: Path, devices: int, parallel: EngineParallelConfig
+) -> None:
+    config = dataclasses.replace(
+        ENGINE_CONFIG,
+        devices=tuple(DeviceSpec.accelerator(i) for i in range(devices)),
+        parallel=parallel,
+        # PCP ranks come with the record of when a step takes them.
+        prefill_context_parallel=PCP if parallel.pcp > 1 else None,
+    )
+    dest = serialize(ModelArtifact(engine_config=config), tmp_path / "a")
+    section = json.loads((dest / "artifact.json").read_text())["engine_config"]
+    assert section["parallel"] == dataclasses.asdict(parallel)
+    assert section["prefill_context_parallel"] == (
+        _PCP_RECORD if parallel.pcp > 1 else None
+    )
+    assert deserialize(dest).engine_config == config
+
+
+@pytest.mark.parametrize(
+    "devices, degrees, match",
+    [
+        (4, {"dp": 2, "tp": 1}, "4 devices for dp 2 x tp 1"),
+        (4, {"tp": 4, "dcp": 3}, "must divide"),
+        (4, {"tp": 4, "dcp": 2, "pcp": 2}, "PCP is not supported"),
+        (4, {"tp": 4, "dcp": 2, "pcp": 4}, "PCP is not supported"),
+        (2, {"tp": 2, "dcp_interleave": 64}, "needs a decode context"),
+        (4, {"tp": 4, "ep": 3}, "expert-parallel degree 3"),
+        (2, {"tp": 2, "ep": 0}, "positive"),
+    ],
+)
+def test_inconsistent_parallel_layouts_are_refused(
+    devices: int, degrees: dict[str, int], match: str
+) -> None:
+    with pytest.raises(ArtifactError, match=match):
+        dataclasses.replace(
+            ENGINE_CONFIG,
+            devices=tuple(DeviceSpec.accelerator(i) for i in range(devices)),
+            parallel=_parallel(**degrees),
+        )
+
+
+def test_the_pcp_record_comes_only_with_pcp_ranks() -> None:
+    with pytest.raises(ArtifactError, match="prefill_context_parallel"):
+        dataclasses.replace(ENGINE_CONFIG, prefill_context_parallel=PCP)
+
+
+def test_inconsistent_parallel_layouts_are_refused_at_load(
     tmp_path: Path,
 ) -> None:
     dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
     sections = json.loads((dest / "artifact.json").read_text())
-    del sections["engine_config"]["capture"]
-    _rewrite_sections(dest, sections)
-    engine_config = deserialize(dest).engine_config
-    assert engine_config is not None
-    assert engine_config.capture == EngineCaptureConfig()
-
-
-def test_an_unknown_capture_cache_bound_is_rejected(tmp_path: Path) -> None:
-    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
-    sections = json.loads((dest / "artifact.json").read_text())
-    sections["engine_config"]["capture"]["cache_bound"] = "sometimes"
+    sections["engine_config"]["parallel"]["dp"] = 2
     _rewrite_sections(dest, sections)
     with pytest.raises(ArtifactError, match="component 'engine_config'"):
         deserialize(dest)
 
 
-def test_an_artifact_before_device_graph_capture_reads_false(
-    tmp_path: Path,
+def test_block_spec_facts_round_trip(tmp_path: Path) -> None:
+    speculative = dataclasses.replace(
+        SPECULATIVE,
+        speculative_method="dflash2",
+        num_speculative_tokens=15,
+        draft_proposal="sampled",
+        acceptance_mode="greedy",
+        reasoning_parser=None,
+        draft_query_len=15,
+        proposer="block",
+        verify_widths=(0, 4, 8, 15),
+        mixed_verify_width=None,
+        verify_takes_prefill_rows=False,
+    )
+    config = dataclasses.replace(ENGINE_CONFIG, speculative=speculative)
+    dest = serialize(ModelArtifact(engine_config=config), tmp_path / "a")
+    section = json.loads((dest / "artifact.json").read_text())["engine_config"]
+    assert section["speculative"]["proposer"] == "block"
+    assert section["speculative"]["draft_query_len"] == 15
+    # A schedule that skips the drafter verifies 0 drafts.
+    assert section["speculative"]["verify_widths"] == [0, 4, 8, 15]
+    assert section["speculative"]["mixed_verify_width"] is None
+    assert deserialize(dest).engine_config == config
+
+
+def test_a_plain_pipeline_records_no_speculative_facts(tmp_path: Path) -> None:
+    config = dataclasses.replace(
+        ENGINE_CONFIG,
+        speculative=None,
+        prefill_token_budget=None,
+        capture=EngineCaptureConfig(max_batch_size=0, prefill_max_tokens=0),
+    )
+    dest = serialize(ModelArtifact(engine_config=config), tmp_path / "a")
+    section = json.loads((dest / "artifact.json").read_text())["engine_config"]
+    assert section["speculative"] is None
+    assert section["capture"] == {
+        "max_batch_size": 0,
+        "prefill_max_tokens": 0,
+        "host_inputs": {},
+        "cache_bound": "aligned",
+    }
+    assert deserialize(dest).engine_config == config
+
+
+@pytest.mark.parametrize(
+    "changes, match",
+    [
+        ({"verify_widths": ()}, "verify_widths"),
+        ({"verify_widths": (3, 1)}, "verify_widths"),
+        ({"verify_widths": (1, 1)}, "verify_widths"),
+        ({"verify_widths": (0,)}, "a width above 0"),
+        ({"verify_widths": (-1, 3)}, "verify_widths"),
+        ({"mixed_verify_width": 4}, "mixed_verify_width 4"),
+        ({"mixed_verify_width": -1}, "mixed_verify_width -1"),
+        (
+            {"mixed_verify_width": 0, "verify_takes_prefill_rows": False},
+            "takes prefill rows",
+        ),
+        ({"verify_widths": (4,)}, "exceeds the 3 drafted"),
+        ({"draft_query_len": 0}, "draft_query_len"),
+    ],
+)
+def test_inconsistent_spec_facts_are_refused(
+    changes: dict[str, Any], match: str
 ) -> None:
-    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
-    sections = json.loads((dest / "artifact.json").read_text())
-    del sections["engine_config"]["device_graph_capture"]
-    _rewrite_sections(dest, sections)
-    engine_config = deserialize(dest).engine_config
-    assert engine_config is not None
-    assert not engine_config.device_graph_capture
+    with pytest.raises(ArtifactError, match=match):
+        dataclasses.replace(SPECULATIVE, **changes)
 
 
-def test_an_artifact_before_prefill_context_parallel_reads_none(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "changes, match",
+    [
+        ({"prefill_token_budget": 0}, "must be positive"),
+        ({"prefill_token_budget": 8193}, "compiled input capacity"),
+        # Rust refuses an artifact whose capture exceeds its batch size.
+        (
+            {
+                "capture": EngineCaptureConfig(
+                    max_batch_size=17, prefill_max_tokens=4096
+                )
+            },
+            "capture of 17 rows exceeds the batch size 16",
+        ),
+        (
+            {
+                "capture": EngineCaptureConfig(
+                    max_batch_size=16, prefill_max_tokens=8001
+                )
+            },
+            "exceeds the prefill token budget 8000",
+        ),
+        (
+            {
+                "prefill_token_budget": None,
+                "capture": EngineCaptureConfig(
+                    max_batch_size=16, prefill_max_tokens=8193
+                ),
+            },
+            "exceeds the prefill token budget 8192",
+        ),
+    ],
+)
+def test_prefill_budget_and_capture_must_fit_the_input_capacity(
+    changes: dict[str, Any], match: str
 ) -> None:
-    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
-    sections = json.loads((dest / "artifact.json").read_text())
-    del sections["engine_config"]["prefill_context_parallel"]
-    _rewrite_sections(dest, sections)
-    engine_config = deserialize(dest).engine_config
-    assert engine_config is not None
-    assert engine_config.prefill_context_parallel is None
+    with pytest.raises(ArtifactError, match=match):
+        dataclasses.replace(ENGINE_CONFIG, **changes)
 
 
-def test_an_artifact_before_the_verify_facts_reads_all_false(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "build, match",
+    [
+        (lambda: CapturedHostInput("pinned"), "pinned host input needs"),
+        (lambda: CapturedHostInput("shape", 1), "shape host input takes no"),
+        (
+            lambda: EngineCaptureConfig(
+                max_batch_size=1,
+                prefill_max_tokens=0,
+                host_inputs={"max_k": CapturedHostInput("shape")},
+            ),
+            "not <group kind>.<field>",
+        ),
+        (
+            lambda: EngineCaptureConfig(
+                max_batch_size=1,
+                prefill_max_tokens=0,
+                host_inputs={"a.b.c": CapturedHostInput("shape")},
+            ),
+            "not <group kind>.<field>",
+        ),
+    ],
+)
+def test_malformed_captured_host_inputs_are_refused(
+    build: Callable[[], object], match: str
 ) -> None:
-    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
-    sections = json.loads((dest / "artifact.json").read_text())
-    del sections["engine_config"]["speculative"]["verify_takes_prefill_rows"]
-    del sections["engine_config"]["speculative"]["verify_commits_long_rows"]
-    del sections["engine_config"]["speculative"]["successor_replay"]
-    _rewrite_sections(dest, sections)
-    engine_config = deserialize(dest).engine_config
-    assert engine_config is not None
-    assert engine_config.speculative is not None
-    assert not engine_config.speculative.verify_takes_prefill_rows
-    assert not engine_config.speculative.verify_commits_long_rows
-    assert not engine_config.speculative.successor_replay
+    # The Rust loader refuses the same records (EngineConfig::validate).
+    with pytest.raises(ArtifactError, match=match):
+        build()
 
 
-def test_a_wrong_typed_verify_fact_is_rejected(tmp_path: Path) -> None:
-    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
-    sections = json.loads((dest / "artifact.json").read_text())
-    sections["engine_config"]["speculative"]["verify_takes_prefill_rows"] = 1
-    _rewrite_sections(dest, sections)
-    with pytest.raises(ArtifactError, match="component 'engine_config'"):
-        deserialize(dest)
-
-
-def test_engine_config_reads_an_artifact_exported_before_the_mode(
-    tmp_path: Path,
-) -> None:
-    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
-    sections = json.loads((dest / "artifact.json").read_text())
-    del sections["engine_config"]["speculative"]["acceptance_mode"]
-    _rewrite_sections(dest, sections)
-    engine_config = deserialize(dest).engine_config
-    assert isinstance(engine_config, EngineConfig)
-    speculative = engine_config.speculative
-    assert speculative is not None
-    assert speculative.acceptance_mode is None
+def test_prefill_capture_needs_decode_capture() -> None:
+    with pytest.raises(ArtifactError, match="max_batch_size is 0"):
+        EngineCaptureConfig(max_batch_size=0, prefill_max_tokens=128)
 
 
 @pytest.mark.parametrize(
     "edit",
     [
         lambda section: section.update(bogus=1),
-        lambda section: section.pop("ep_size"),
+        lambda section: section.pop("parallel"),
+        lambda section: section.pop("prefill_token_budget"),
+        lambda section: section.update(data_parallel_degree=1),
+        lambda section: section.update(device_graph_capture=True),
+        lambda section: section["parallel"].pop("dcp"),
+        lambda section: section["parallel"].update(tp=2.0),
+        lambda section: section["capture"].pop("prefill_max_tokens"),
+        lambda section: section["capture"].pop("host_inputs"),
+        lambda section: section["capture"]["host_inputs"].update(
+            {"a.b": {"mode": "baked", "value": None}}
+        ),
+        lambda section: section["capture"]["host_inputs"].update(
+            {"a.b": {"mode": "pinned", "value": "-1"}}
+        ),
+        lambda section: section["capture"]["host_inputs"].update(
+            {"a.b": {"mode": "shape"}}
+        ),
+        lambda section: section["capture"].update(max_batch_size=True),
+        lambda section: section["capture"].pop("cache_bound"),
+        lambda section: section["capture"].update(cache_bound="sometimes"),
         lambda section: section["sampling"].update(enable_penalties=1),
         lambda section: section["devices"].append({"type": "tpu", "id": 0}),
         lambda section: section["speculative"].update(
             acceptance_mode="sampled"
         ),
+        lambda section: section["speculative"].pop("acceptance_mode"),
         lambda section: section["speculative"].update(draft_proposal="greedy"),
-        lambda section: section.update(device_graph_capture=1),
-        lambda section: section["prefill_context_parallel"].pop(
-            "max_batch_context"
+        lambda section: section["speculative"].update(proposer="tree"),
+        lambda section: section["speculative"].pop("draft_query_len"),
+        lambda section: section["speculative"].update(verify_widths=3),
+        lambda section: section["speculative"].pop("mixed_verify_width"),
+        lambda section: section["speculative"].update(mixed_verify_width=1.0),
+        lambda section: section["speculative"].pop("successor_replay"),
+        lambda section: section["speculative"].update(
+            verify_takes_prefill_rows=1
         ),
-        lambda section: section["prefill_context_parallel"].update(bogus=1),
+        lambda section: section.pop("prefill_context_parallel"),
+        # A PCP record without pcp ranks, and one short a field.
+        lambda section: section.update(
+            prefill_context_parallel=dict(_PCP_RECORD)
+        ),
+        lambda section: section.update(
+            prefill_context_parallel={
+                "min_step_tokens": 7168,
+                "min_rows_per_request": 8,
+            }
+        ),
     ],
 )
 def test_malformed_engine_config_rejected(
@@ -906,21 +1126,6 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
     assert deserialize(dest).kv_cache == KV_CACHE
 
 
-def test_an_artifact_before_context_parallel_reads_unsplit(
-    tmp_path: Path,
-) -> None:
-    dest = serialize(ModelArtifact(kv_cache=KV_CACHE), tmp_path / "a")
-    sections = json.loads((dest / "artifact.json").read_text())
-    for cache in sections["kv_cache"]["caches"]:
-        cache.pop("context_parallel", None)
-    _rewrite_sections(dest, sections)
-    kv_cache = deserialize(dest).kv_cache
-    assert kv_cache is not None
-    latent = kv_cache.caches[2]
-    assert isinstance(latent, MLAKVCache)
-    assert latent.context_parallel is None
-
-
 @pytest.mark.parametrize(
     "edit",
     [
@@ -932,6 +1137,7 @@ def test_an_artifact_before_context_parallel_reads_unsplit(
         lambda section: section["caches"][2].update(sparse_kv_form="fp4"),
         lambda section: section["caches"][3]["regions"][0].pop("row_shape"),
         lambda section: section["caches"][2]["context_parallel"].pop("degree"),
+        lambda section: section["caches"][1].pop("context_parallel"),
     ],
 )
 def test_malformed_kv_cache_rejected(
@@ -945,20 +1151,88 @@ def test_malformed_kv_cache_rejected(
         deserialize(dest)
 
 
-def test_an_mla_cache_before_its_sparse_form_reads_none(
-    tmp_path: Path,
-) -> None:
+@pytest.mark.parametrize("field", ["sparse_kv_form", "dispatch_unread"])
+def test_a_cache_field_is_required(tmp_path: Path, field: str) -> None:
     dest = serialize(ModelArtifact(kv_cache=KV_CACHE), tmp_path / "a")
     sections = json.loads((dest / "artifact.json").read_text())
-    latent = sections["kv_cache"]["caches"][2]
-    assert latent["sparse_kv_form"] == "plain"
-    del latent["sparse_kv_form"]
+    del sections["kv_cache"]["caches"][2][field]
     _rewrite_sections(dest, sections)
-    kv_cache = deserialize(dest).kv_cache
-    assert kv_cache is not None
-    mla = kv_cache.caches[2]
-    assert isinstance(mla, MLAKVCache)
-    assert mla.sparse_kv_form is None
+    with pytest.raises(ArtifactError, match="component 'kv_cache'"):
+        deserialize(dest)
+
+
+def test_compressed_scratch_and_windowed_mla_caches_round_trip(
+    tmp_path: Path,
+) -> None:
+    def mla(name: str, group: str, **changes: Any) -> MLAKVCache:
+        fields = _attention_fields(name, group)
+        fields["leaves"] = (
+            dataclasses.replace(
+                fields["leaves"][0],
+                group=changes.pop("leaf_group", "full"),
+                window_size=changes.get("window_size"),
+            ),
+        )
+        return MLAKVCache(
+            **fields | changes, num_q_heads=64, sparse_indices_stride=None
+        )
+
+    layout = KVCacheLayout(
+        page_size=256,
+        caches=(
+            # A sliding window.
+            mla(
+                "target.swa",
+                "sliding_window_group(128)",
+                window_size=128,
+                leaf_group="sliding_window",
+            ),
+            # Compressed: four tokens to a slot.
+            mla("target.c4a", "full_group", slots_per_page=64),
+            # A per-request scratch state.
+            mla(
+                "target.c4a_state",
+                "scratch_group",
+                scratch=True,
+                leaf_group="scratch",
+            ),
+            mla("target.idx_c4a", "full_group", slots_per_page=64),
+            dataclasses.replace(
+                KV_CACHE.caches[0],
+                name="draft",
+                leaves=(
+                    dataclasses.replace(
+                        KV_CACHE.caches[0].leaves[0],
+                        leaf_id="draft.full_group",
+                    ),
+                ),
+            ),
+        ),
+    )
+    dest = serialize(ModelArtifact(kv_cache=layout), tmp_path / "a")
+    caches = json.loads((dest / "artifact.json").read_text())["kv_cache"][
+        "caches"
+    ]
+    assert [cache["name"] for cache in caches] == [
+        "target.swa",
+        "target.c4a",
+        "target.c4a_state",
+        "target.idx_c4a",
+        "draft",
+    ]
+    assert caches[0]["window_size"] == 128
+    assert caches[1]["slots_per_page"] == 64
+    assert caches[2]["scratch"] is True
+    assert deserialize(dest).kv_cache == layout
+
+
+def test_another_format_version_is_refused(tmp_path: Path) -> None:
+    dest = serialize(ModelArtifact(kv_cache=KV_CACHE), tmp_path / "a")
+    metadata = json.loads((dest / "metadata.json").read_text())
+    metadata["artifact_version"] = ARTIFACT_VERSION - 1
+    (dest / "metadata.json").write_text(json.dumps(metadata))
+    with pytest.raises(ArtifactError, match="format version"):
+        deserialize(dest)
 
 
 def test_format_spec_stored_unchanged(tmp_path: Path) -> None:

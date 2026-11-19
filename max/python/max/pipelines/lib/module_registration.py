@@ -1258,6 +1258,14 @@ class ModuleV3DecoderPipelineModel(
         """
         self._session = session
         models = super().load_graphs(session)
+        constants = getattr(self.batch_processor, "constant_inputs", None)
+        if (
+            isinstance(constants, ConstantInputs)
+            and constants.initializer is not None
+        ):
+            initializer = self.compiled_modules[GraphRole.STATIC_INIT]
+            assert isinstance(initializer, CompiledCallable)
+            constants.initialize(initializer, session)
         # A pipeline stage after the first compiles no VISION graph.
         vision_model = self.compiled_graphs.get(GraphRole.VISION)
         if (
@@ -1671,6 +1679,13 @@ class ModuleV3DecoderPipelineModel(
         if stage is not None and not stage.is_last and stage.trace_only:
             raise_stage_traced(_returned_types(spec))
         specs: dict[str, GraphSpec] = {GraphRole.DECODER: spec}
+        if constants is not None and constants.initializer is not None:
+            specs[GraphRole.STATIC_INIT] = constants.initializer
+            if entries := self.weight_naming.get(GraphRole.DECODER):
+                self.weight_naming = {
+                    **self.weight_naming,
+                    GraphRole.STATIC_INIT: entries,
+                }
         if vision_spec is not None:
             specs[GraphRole.VISION] = vision_spec
         return specs

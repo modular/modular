@@ -90,6 +90,9 @@ class GraphRole(str, Enum):
     A registration that adds it serves through
     :class:`~max.pipelines.lib.pipeline_variants.block_diffusion_text_generation.BlockDiffusionTextGenerationPipeline`."""
 
+    STATIC_INIT = "static_init"
+    """Initializes immutable deployment buffers once before any decoder step."""
+
     EP_INIT = "ep_init"
     """The one-time expert-parallel setup graph run at engine startup."""
 

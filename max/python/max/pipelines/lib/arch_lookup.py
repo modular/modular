@@ -550,20 +550,14 @@ class SupportedArchitecture:
     architecture name or the speculative method. A pairing not listed is named
     ``unified_{method}``."""
 
-    mla_decode_capture: bool = False
-    """Whether an engine may capture this architecture's MLA decode graph.
+    capture_cache_bound: Literal["aligned", "bucketed"] = "aligned"
+    """The host cache bound a replayed decode step keeps.
 
-    Set it once the MLA kernels' launch shape is shown to follow only what a
-    capture key holds; ``max export`` records it in the pipeline artifact.
-    """
-
-    capture_cache_bound: Literal["live", "context", "bucketed"] = "live"
-    """The host cache bound a captured decode bakes in: the batch's own, the
-    context limit, or the batch's power-of-two bucket.
-
-    A graph whose kernels size their launches from the bound pins it, since a
-    replay runs no host code to raise it; ``max export`` records it in the
-    pipeline artifact.
+    ``aligned`` stages the step's cache length aligned up to a probed one,
+    as MAX Serve's capture runner does. ``bucketed`` stages the next power
+    of two over the bound plus the step's query rows, less those rows, and
+    keys the capture on it, for kernels that pick their launch arm from the
+    bound. ``max export`` records it in the pipeline artifact.
     """
 
     unread_dispatch_caches: tuple[str, ...] = ()

@@ -1037,6 +1037,17 @@ class PipelineConfig(ConfigFileModel):
     )
     """Build the module and skip generation setup."""
 
+    artifact_export: bool = Field(
+        default=False,
+        description=(
+            "The pipeline is built for ``max export``'s pipeline artifact, "
+            "which ``max export`` sets. An architecture whose artifact graphs "
+            "take inputs MAX Serve's don't reads it when it initializes its "
+            "config; MAX Serve never sets it."
+        ),
+    )
+    """Whether the pipeline is built for a pipeline artifact."""
+
     tokenizer_impl: str | None = Field(
         default=None,
         description=(
