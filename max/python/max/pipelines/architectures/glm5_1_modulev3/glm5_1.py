@@ -40,7 +40,9 @@ from ..deepseekV3_2_modulev3.deepseekV3_2 import (
 from .model_config import Glm5_1Config
 
 
-class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
+class Glm5_1Decoder(
+    Module[[DecoderInputs], DecoderOutputs | tuple[Tensor, ...]]
+):
     """GLM-5.x's sparse-MLA decoder, shared with DeepSeek-V3.2.
 
     It runs tensor-parallel attention over a ``tp`` mesh, one attention
@@ -52,6 +54,7 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
     graph_name: ClassVar[str] = "DeepseekV3_2"
     supports_data_parallel: ClassVar[bool] = True
     supports_multi_device_replicas: ClassVar[bool] = True
+    supports_pipeline_stages: ClassVar[bool] = True
 
     def __init__(self, config: Glm5_1Config) -> None:
         super().__init__()
@@ -73,8 +76,14 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
         self.config = config
         self.kv_params = config.kv_params
 
-    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
-        """Runs the decoder over the batch."""
+    def forward(
+        self, inputs: DecoderInputs
+    ) -> DecoderOutputs | tuple[Tensor, ...]:
+        """Runs the decoder over the batch.
+
+        A pipeline stage before the last returns each device's hidden
+        states, which the next stage takes as its stage boundary.
+        """
         mesh = self.config.mesh
         assert mesh is not None
         assert inputs.batch_context_lengths is not None
@@ -134,5 +143,12 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
             input_row_offsets_i64,
             comm_buffers,
             hisparse,
+            boundary=(
+                None
+                if inputs.stage_boundary is None
+                else list(inputs.stage_boundary)
+            ),
         )
+        if not self.language_model.last:
+            return outputs
         return self.language_model.module_outputs(outputs)

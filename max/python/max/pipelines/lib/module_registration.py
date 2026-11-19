@@ -932,6 +932,14 @@ _GroupedOutputs: TypeAlias = (
 names them."""
 
 
+_Decoder: TypeAlias = (
+    Module[[DecoderInputs], DecoderOutputs]
+    | Module[[DecoderInputs], DecoderOutputs | tuple[Tensor, ...]]
+)
+"""A decoder module. One that builds pipeline stages returns a tuple in place
+of its outputs on a stage before the last."""
+
+
 class _DecoderGraph(
     Module[[DecoderGraphInputs], _GroupedOutputs | DecoderOutputs]
 ):
@@ -948,7 +956,7 @@ class _DecoderGraph(
 
     def __init__(
         self,
-        decoder: Module[[DecoderInputs], DecoderOutputs],
+        decoder: _Decoder,
         *,
         lora_manager: LoRAManagerV3 | None = None,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -972,7 +980,10 @@ class _DecoderGraph(
             self.lora_manager.bind_inputs(self.model, fields.lora)
         outputs = self.model(fields)
         if not self.last_stage:
-            return outputs
+            # Only the export reads a stage's tuple, so the graph keeps the
+            # last stage's output type for its other callers.
+            return cast(DecoderOutputs, outputs)
+        assert isinstance(outputs, DecoderOutputs)
         return _grouped_outputs(outputs, self.return_hidden_states)
 
 

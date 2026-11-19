@@ -37,6 +37,11 @@ from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
+from max.pipelines.lib.pipeline_parallel import (
+    PartitionSpec,
+    PipelineStage,
+    stage_layers,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.registration_runtime import (
     ExpertParallelDeploymentConfig,
@@ -173,6 +178,54 @@ class HiSparseInputs:
 
     params: HiSparseParams
     """The static sizes the resolve and gather compile with."""
+
+
+def stage_indexer_types(
+    indexer_types: Sequence[str], layers: range
+) -> list[str]:
+    """Returns the schedule of the layers one pipeline stage builds.
+
+    A stage's caches hold only its own layers, so its indexer slots and
+    HiSparse gather widths count from its first layer. An empty schedule
+    stays empty: every layer is full.
+
+    Args:
+        indexer_types: The whole decoder's schedule from
+            :func:`resolve_indexer_types`, or empty.
+        layers: The decoder layers the stage builds.
+    """
+    if not indexer_types:
+        return []
+    return [indexer_types[i] for i in layers]
+
+
+def stage_latent_slots(
+    indexer_types: Sequence[str],
+    num_layers: int,
+    stage: PipelineStage | None,
+) -> int:
+    """Returns how many layers a pipeline stage's MLA latent cache holds.
+
+    The stages of a pipeline share one KV pool, which needs the same
+    latent-to-indexer proportion on every stage. A stage starts on a ``full``
+    layer and holds whole selection groups (a ``full`` layer and the
+    ``shared`` layers that reuse its top-k), so slots for the widest group per
+    ``full`` layer cover its layers. A stage that holds the narrower leading
+    groups gets spare slots past its last layer.
+
+    Args:
+        indexer_types: The whole decoder's schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The whole decoder's layer count.
+        stage: The stage the config builds, or ``None`` for the whole model.
+    """
+    if stage is None or stage.num_stages == 1:
+        return len(stage.layers) if stage is not None else num_layers
+    widest = max(hisparse_gather_groups(indexer_types, num_layers))
+    full = num_indexer_cache_layers(
+        stage_indexer_types(indexer_types, stage.layers), len(stage.layers)
+    )
+    return widest * full
 
 
 def num_indexer_cache_layers(
@@ -394,6 +447,11 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     takes the three HiSparse input groups after the expert-parallel tail.
     """
 
+    layer_ids: range | None = None
+    """The decoder layers this config builds: every layer, unless it builds
+    one pipeline stage. Weight names stay global; the KV caches hold only
+    these layers."""
+
     def __post_init__(self) -> None:
         super().__post_init__()
         dcp = self.decode_context_parallel_degree
@@ -466,6 +524,47 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             )
         if self.hisparse is not None:
             self._check_hisparse()
+        if self.layer_ids not in (None, range(self.num_hidden_layers)):
+            self._check_pipeline_stage()
+
+    def _check_pipeline_stage(self) -> None:
+        """Refuses a pipeline stage the decoder does not build.
+
+        A stage hands the next its residual stream as one tensor for one
+        replica, so it runs without data or context parallelism.
+        """
+        if (
+            self.data_parallel_degree > 1
+            or self.decode_context_parallel_degree > 1
+        ):
+            raise ValueError(
+                "a pipeline stage runs one replica without context"
+                " parallelism (got data_parallel_degree"
+                f" {self.data_parallel_degree},"
+                " decode_context_parallel_degree"
+                f" {self.decode_context_parallel_degree})."
+            )
+        if self.hisparse is not None:
+            raise ValueError("hisparse is not supported on a pipeline stage.")
+
+    @classmethod
+    def construct_partition_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> PartitionSpec:
+        """Returns where the decoder may be cut into pipeline stages.
+
+        A ``shared`` layer reuses the top-k selection of the ``full`` layer
+        before it, and that selection is an activation, not a cache entry.
+        A stage therefore starts on a ``full`` layer.
+        """
+        num_layers = int(huggingface_config.num_hidden_layers)
+        schedule = resolve_indexer_types(huggingface_config, num_layers)
+        return PartitionSpec(
+            num_layers=num_layers,
+            forbidden_cuts=frozenset(
+                i for i, kind in enumerate(schedule) if kind == "shared"
+            ),
+        )
 
     def _check_hisparse(self) -> None:
         """Refuses a HiSparse deployment this graph does not build.
@@ -670,14 +769,23 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             if dcp > 1
             else None
         )
+        num_layers = mla_kv_params.num_layers
+        layers = stage_layers(pipeline_config, num_layers)
+        whole_schedule = resolve_indexer_types(huggingface_config, num_layers)
         mla_kv_params = replace(
             mla_kv_params,
+            num_layers=stage_latent_slots(
+                whole_schedule,
+                num_layers,
+                pipeline_config.model.pipeline_stage,
+            ),
             sparse_indices_stride=sparse_selection_width(
                 mla_kv_params, huggingface_config.index_topk
             ),
             sparse_physical_indices=True,
             context_parallel=context_parallel,
         )
+        schedule = stage_indexer_types(whole_schedule, layers)
 
         # Always store the indexer's K cache in float8_e4m3fn.
         indexer_cache_dtype = DType.float8_e4m3fn
@@ -712,12 +820,7 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             # Only ``full`` layers run the indexer, so only they hold a slot
             # (see :func:`indexer_cache_layer_map`); the graph-API config and
             # the fused MTP graph size it the same way.
-            num_layers=num_indexer_cache_layers(
-                resolve_indexer_types(
-                    huggingface_config, mla_kv_params.num_layers
-                ),
-                mla_kv_params.num_layers,
-            ),
+            num_layers=num_indexer_cache_layers(schedule, len(layers)),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             # Set to True because there is only a key-cache, and one KV head.
@@ -859,4 +962,5 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             ),
             quantization_encoding=quantization_encoding,
             hisparse=hisparse,
+            layer_ids=stage_layers(pipeline_config, config.num_hidden_layers),
         )
