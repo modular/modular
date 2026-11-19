@@ -106,6 +106,59 @@ def f(pair):
     assert_mojo_format(source, expected)
 
 
+def test_mojo_formats_multiple_if_clauses():
+    source = """\
+def f(enabled, user):
+    if enabled;case .Some(value)=user;value.can_access():
+        serve(value)
+    elif enabled;case .Some(value)=fallback:
+        serve(value)
+"""
+    expected = """\
+def f(enabled, user):
+    if enabled;
+      case .Some(value) = user;
+      value.can_access():
+        serve(value)
+    elif enabled;
+      case .Some(value) = fallback:
+        serve(value)
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_multiple_guard_clauses():
+    source = """\
+def f(enabled, user):
+    __guard enabled;case .Some(value)=user else:
+        return
+    serve(value)
+"""
+    expected = """\
+def f(enabled, user):
+    __guard enabled;
+      case .Some(value) = user else:
+        return
+    serve(value)
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_multiple_comptime_if_clauses():
+    source = """\
+def f[T: AnyType, enabled: Bool]():
+    comptime if enabled;case ==Int=T:
+        pass
+"""
+    expected = """\
+def f[T: AnyType, enabled: Bool]():
+    comptime if enabled;
+      case == Int = T:
+        pass
+"""
+    assert_mojo_format(source, expected)
+
+
 def test_mojo_formats_while_case():
     source = """\
 def f(pair):

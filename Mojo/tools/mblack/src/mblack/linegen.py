@@ -384,8 +384,11 @@ class LineGenerator(Visitor[Line]):
         ):
             # Visit child statement's children directly to avoid the
             # initial line break that visit_if_stmt/for_stmt add.
-            for child in internal_stmt.children:
-                yield from self.visit(child)
+            if self._has_conditional_clauses(internal_stmt):
+                yield from self._visit_conditional_stmt_children(internal_stmt)
+            else:
+                for child in internal_stmt.children:
+                    yield from self.visit(child)
         else:
             # Simple case (alias_stmt_body, comptime_assert_stmt_body):
             # visit normally, then consume the trailing NEWLINE.
@@ -409,6 +412,116 @@ class LineGenerator(Visitor[Line]):
         internal_stmt = next(children)
         for child in internal_stmt.children:
             yield from self.visit(child)
+
+    def _has_conditional_clauses(self, node: Node) -> bool:
+        """Return whether `node` has semicolon-separated conditional clauses."""
+        return any(
+            isinstance(child, Leaf) and child.type == token.SEMI
+            for child in node.children
+        )
+
+    def _visit_conditional_clauses(
+        self, node: Node, is_continuation: bool
+    ) -> Iterator[Line]:
+        """Emit conditional clauses with a two-space continuation indent."""
+        for child in node.children:
+            if isinstance(child, Leaf) and child.type == token.SEMI:
+                child.prefix = ""
+                self.current_line.append(child, preformatted=True)
+                yield from self.line()
+                is_continuation = True
+                continue
+
+            # The grammar uses an indentation level to make a continuation
+            # header parseable. It is represented as two spaces when formatted.
+            if isinstance(child, Leaf) and child.type in (
+                token.NEWLINE,
+                token.INDENT,
+            ):
+                continue
+
+            yield from self.visit(child)
+            if is_continuation:
+                self.current_line.indent_offset = 2
+                is_continuation = False
+
+    def _visit_conditional_clause_tail(
+        self, node: Node, is_continuation: bool
+    ) -> Iterator[Line]:
+        """Emit the portion of a conditional after its first semicolon."""
+        skip_continuation_dedent = False
+        saw_conditions = False
+        for child in node.children:
+            if not saw_conditions and isinstance(child, Node):
+                yield from self._visit_conditional_clauses(
+                    child, is_continuation
+                )
+                is_continuation = False
+                saw_conditions = True
+                skip_continuation_dedent = (
+                    bool(child.children)
+                    and isinstance(child.children[0], Leaf)
+                    and child.children[0].type == token.NEWLINE
+                )
+                continue
+
+            if (
+                skip_continuation_dedent
+                and isinstance(child, Leaf)
+                and child.type == token.DEDENT
+            ):
+                skip_continuation_dedent = False
+                continue
+
+            yield from self.visit(child)
+
+    def _visit_conditional_stmt_children(self, node: Node) -> Iterator[Line]:
+        """Emit a conditional statement containing multiple clauses."""
+        is_continuation = False
+        for child in node.children:
+            if isinstance(child, Leaf) and child.type == token.SEMI:
+                child.prefix = ""
+                self.current_line.append(child, preformatted=True)
+                yield from self.line()
+                is_continuation = True
+                continue
+
+            if is_continuation and isinstance(child, Node):
+                yield from self._visit_conditional_clause_tail(
+                    child, is_continuation
+                )
+                is_continuation = False
+                continue
+
+            yield from self.visit(child)
+
+    def visit_if_stmt(self, node: Node) -> Iterator[Line]:
+        """Visit an if statement."""
+        if not self._has_conditional_clauses(node):
+            yield from self.visit_stmt(
+                node, keywords={"if", "else", "elif"}, parens={"if", "elif"}
+            )
+            return
+
+        normalize_invisible_parens(
+            node, parens_after={"if", "elif"}, preview=self.mode.preview
+        )
+        yield from self.line()
+        yield from self._visit_conditional_stmt_children(node)
+
+    def visit_guard_stmt(self, node: Node) -> Iterator[Line]:
+        """Visit a guard statement."""
+        if not self._has_conditional_clauses(node):
+            yield from self.visit_stmt(
+                node, keywords={"__guard"}, parens={"__guard"}
+            )
+            return
+
+        normalize_invisible_parens(
+            node, parens_after={"__guard"}, preview=self.mode.preview
+        )
+        yield from self.line()
+        yield from self._visit_conditional_stmt_children(node)
 
     def visit_decorators(self, node: Node) -> Iterator[Line]:
         """Visit decorators."""
@@ -676,14 +789,8 @@ class LineGenerator(Visitor[Line]):
             v, keywords=set(), parens={"assert", ","}
         )
         # comptime_stmt is handled by the visit_comptime_stmt method below.
-        self.visit_if_stmt = partial(
-            v, keywords={"if", "else", "elif"}, parens={"if", "elif"}
-        )
         self.visit_while_stmt = partial(
             v, keywords={"while", "else"}, parens={"while"}
-        )
-        self.visit_guard_stmt = partial(
-            v, keywords={"__guard"}, parens={"__guard"}
         )
         self.visit_for_stmt = partial(
             v, keywords={"for", "else"}, parens={"for", "in"}

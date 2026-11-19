@@ -99,6 +99,27 @@ def describe_guard_optional(opt: Optional[Int]) -> String:
     return String("some:", value)
 
 
+def classify_if_clauses(enabled: Bool, opt: Optional[Int]) -> String:
+    if enabled;
+      case .Some(value) = opt;
+      value > 0:
+        return String("positive:", value)
+    elif enabled;
+      case .Some(value) = opt;
+      value <= 0:
+        return String("nonpositive:", value)
+    else:
+        return "unavailable"
+
+
+def describe_guard_clauses(enabled: Bool, opt: Optional[Int]) -> String:
+    __guard enabled;
+      case .Some(value) = opt;
+      value > 0 else:
+        return "unavailable"
+    return String("positive:", value)
+
+
 def make_linear_payload_pair() -> Tuple[LinearPayload, LinearPayload]:
     return (LinearPayload(17), LinearPayload(25))
 
@@ -232,6 +253,21 @@ def classify_if_case_type[T: AnyType]() -> String:
         return "string"
     else:
         return "other"
+
+
+def classify_comptime_if_clauses[T: AnyType, enabled: Bool]() -> String:
+    comptime if enabled;
+      case == Int = T:
+        return "integer"
+    else:
+        return "other"
+
+
+def classify_comptime_guard_clauses[T: AnyType, enabled: Bool]() -> String:
+    comptime __guard enabled;
+      case == Int = T else:
+        return "other"
+    return "integer"
 
 
 def classify_comptime_if_case_pair[pair: Tuple[Int, Int]]() -> String:
@@ -425,6 +461,34 @@ def test_guard():
     print(describe_guard_optional(Optional(42)))
     # CHECK: none
     print(describe_guard_optional(Optional[Int](None)))
+
+
+def test_conditional_clauses():
+    # CHECK-LABEL: == test_conditional_clauses
+    print("== test_conditional_clauses")
+
+    # CHECK: positive:4
+    print(classify_if_clauses(True, Optional(4)))
+    # CHECK: nonpositive:0
+    print(classify_if_clauses(True, Optional(0)))
+    # CHECK: unavailable
+    print(classify_if_clauses(False, Optional(4)))
+
+    # CHECK: positive:4
+    print(describe_guard_clauses(True, Optional(4)))
+    # CHECK: unavailable
+    print(describe_guard_clauses(True, Optional(0)))
+    # CHECK: unavailable
+    print(describe_guard_clauses(False, Optional(4)))
+
+    # CHECK: integer
+    print(classify_comptime_if_clauses[Int, True]())
+    # CHECK: other
+    print(classify_comptime_if_clauses[Int, False]())
+    # CHECK: integer
+    print(classify_comptime_guard_clauses[Int, True]())
+    # CHECK: other
+    print(classify_comptime_guard_clauses[String, True]())
 
 
 def test_enum_like_token():
@@ -691,6 +755,7 @@ def test_comptime_match():
 def main():
     test_optional()
     test_guard()
+    test_conditional_clauses()
     test_enum_like_token()
     test_literals_guards_or()
     test_tuples_and_structs()

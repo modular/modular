@@ -224,6 +224,21 @@ def _join_dot_continuation(
     return None
 
 
+def _join_conditional_clause_continuation(
+    prev: str, line: str, head_indent: int
+) -> str | None:
+    """Join a semicolon-separated conditional clause onto its header.
+
+    Conditional clauses use a two-space continuation indent, but the
+    lib2to3-based grammar treats a newline as the end of the header.
+    """
+    if not prev.rstrip().endswith(";"):
+        return None
+    if len(line) - len(line.lstrip()) <= head_indent:
+        return None
+    return prev + " " + line.lstrip()
+
+
 # Normalizers are applied in order; the *first* one that returns a
 # non-None replacement wins and the rest are skipped.  Each receives the
 # previous result line (with any trailing comment already stripped), the
@@ -236,6 +251,7 @@ _MOJO_LINE_NORMALIZERS = [
     _join_trailing_operator,
     _join_string_continuation,
     _join_dot_continuation,
+    _join_conditional_clause_continuation,
 ]
 
 

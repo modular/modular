@@ -10,6 +10,11 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- `if`, `comptime if`, and `__guard` now support semicolon-separated
+  condition clauses that mix Boolean conditions and `case` patterns. Clauses
+  evaluate left to right, and successful pattern bindings are available to
+  later clauses and the successful path.
+
 - Added the experimental `__guard` statement for early exits from Boolean
   conditions and `case` patterns. Its `else` body must not fall through, so
   bindings from a successful pattern remain in scope on the normal path. This
