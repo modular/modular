@@ -471,6 +471,14 @@ This version is still a work in progress.
   attributes, such as the ones `pdl_launch_attributes()` returns for
   programmatic dependent launch.
 
+- Added `DeviceContext.compile_closure()` and `DeviceContext.enqueue_closure()`
+  for kernels that capture state from their enclosing scope. The overloads of
+  `compile_function()` and `enqueue_function()` that take a closure are
+  deprecated, so write `ctx.enqueue_closure(kernel, grid_dim=1, block_dim=256)`
+  where you wrote `ctx.enqueue_function(kernel, grid_dim=1, block_dim=256)`.
+  Kernels that don't capture state keep using `compile_function()` and
+  `enqueue_function()`.
+
 - A bare `DeviceContext` is now an unbound parameterized type, not a concrete
   type.
 

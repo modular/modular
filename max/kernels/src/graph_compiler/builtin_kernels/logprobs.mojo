@@ -356,7 +356,7 @@ struct LogProbabilitiesRagged:
                     )
 
             comptime block_size = 64
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 raw_lp_kernel,
                 grid_dim=ceildiv(num_output_tokens, block_size),
                 block_dim=block_size,

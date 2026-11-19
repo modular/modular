@@ -354,7 +354,7 @@ def compress_windows_ragged_paged[
                     y = q
             output.store((w, c), y.cast[dtype]())
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=rows,
         block_dim=threads,

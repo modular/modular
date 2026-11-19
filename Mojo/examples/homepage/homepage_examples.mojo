@@ -108,7 +108,7 @@ def run_gpu_programming_example() raises:
 
     # Launch the compiled function on the GPU. The last two named parameters
     # are the dimensions of the grid in blocks, and the block dimensions.
-    ctx.enqueue_function(wrapper, grid_dim=(num_blocks), block_dim=(BLOCK_SIZE))
+    ctx.enqueue_closure(wrapper, grid_dim=(num_blocks), block_dim=(BLOCK_SIZE))
 
     # Move the output tensor back onto the CPU so that we can read the results.
     with result_buffer.map_to_host() as host_buffer:

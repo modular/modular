@@ -3216,7 +3216,7 @@ def foreach_fusion_tile[
     var grid_m = shape[0] // TM
     var grid_n = shape[1] // TN
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         adapter,
         grid_dim=(grid_n, grid_m),
         block_dim=(TM * TN),

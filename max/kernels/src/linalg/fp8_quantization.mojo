@@ -329,7 +329,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scale_ub.cast[scales_dtype](),
             )
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 scales_kernel,
                 grid_dim=(num_rows, num_cols // group_size, 1),
                 block_dim=num_threads,
@@ -347,7 +347,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 Int32(num_rows),
             )
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 reduce_kernel,
                 grid_dim=1,
                 block_dim=num_threads,
@@ -365,7 +365,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scales.address_space_cast[.GENERIC](),
             )
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 quant_kernel,
                 grid_dim=(num_rows, num_cols // group_size, 1),
                 block_dim=num_threads,
@@ -387,7 +387,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_rows,
             )
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 kernel,
                 grid_dim=(num_rows, num_cols // group_size, 1),
                 block_dim=num_threads,
@@ -557,7 +557,7 @@ def quantize_dynamic_scaled_fp8[
                 )
                 grid_rows = min(grid_rows, grid_row_cap)
 
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 kernel,
                 grid_dim=(grid_rows, num_groups, 1),
                 block_dim=num_threads,
@@ -961,7 +961,7 @@ def quantize_dynamic_scaled_fp8_grouped_mx[
             passes_per_warp,
         )
 
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             kernel,
             grid_dim=(num_rows, ceildiv(passes, passes_per_warp), 1),
             block_dim=num_threads,
@@ -1475,7 +1475,7 @@ def batched_quantize_dynamic_scaled_fp8[
         scale_ub.cast[scales_dtype](),
     )
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=(num_rows, num_cols // group_size, batch_size),
         block_dim=num_threads,

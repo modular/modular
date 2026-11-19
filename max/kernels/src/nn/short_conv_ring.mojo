@@ -290,7 +290,7 @@ def short_conv_ring[
         String(t"short_conv_ring.channels_{channels}"),
         task_id=get_safe_task_id(context),
     ):
-        context.enqueue_function(
+        context.enqueue_closure(
             kernel,
             grid_dim=total_seq_len * Int(channel_blocks),
             block_dim=_BLOCK,
@@ -526,7 +526,7 @@ def _launch_fused_qk_rms_norm_short_conv[
                             channel,
                         )
 
-    context.enqueue_function(
+    context.enqueue_closure(
         kernel,
         grid_dim=Int(q_rows + 2 * kv_rows),
         block_dim=warps_per_block * WARP_SIZE,

@@ -625,7 +625,7 @@ def _enqueue_rms_norm_fused_residual_gpu_block[
     launch_block_dim: Int,
     shared_mem_size: Int,
 ) raises:
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         _FusedResidualBlockKernel[
             simd_width=simd_width,
             max_warps_per_block=max_warps_per_block,
