@@ -1253,6 +1253,13 @@ def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+  private:
+    /// Prints the body as a legacy tile traits functor and binds it to the
+    /// tensor's epilogue.
+    ::mlir::LogicalResult emitLegacyTileTraitEpilogue(EmitMojoState &state);
+  }];
 }
 
 def MOGG_TensorGetPtrOp : MOGG_Op<"tensor.get_ptr", [
@@ -2465,6 +2472,7 @@ def MOGG_IndexConcatSelectOp : MOGG_Op<"index.concat.select", [
     attr-dict `:` qualified(type($index)) `->` type($result)
     $inputs
   }];
+
 }
 
 #endif // GENERICML_GRAPHCOMPILER_MOGGDIALECT_MOGGOPS_TD

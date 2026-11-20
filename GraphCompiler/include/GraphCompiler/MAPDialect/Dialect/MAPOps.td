@@ -215,6 +215,16 @@ def MAP_IterEpilogueOp : MAP_Op<"iter.epilogue", [
 
   let hasCustomAssemblyFormat = 1;
   let hasCanonicalizer = 1;
+
+  let extraClassDeclaration = [{
+  private:
+    /// The tile half of `lowerToMOGG`.
+    ::mlir::LogicalResult lowerTile(
+        ::M::MAP::MAPToMOGGState &state, bool isCompute,
+        ::mlir::Value outShape, ::llvm::ArrayRef<::mlir::Value> moggCaptures,
+        ::mlir::Value outputPtr,
+        ::M::MOGG::TensorArgContractAttr contractAttr);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -438,6 +448,45 @@ def MAP_IterElementwiseBodyOp : MAP_Op<"iter.elementwise.body", [
   let hasCustomAssemblyFormat = 1;
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+  private:
+    /// The captures, lowered: each (kernel I/O or hoisted view) is defined,
+    /// and so lowered, earlier in the block.
+    ::llvm::SmallVector<::mlir::Value>
+    lowerCaptures(::M::MAP::MAPToMOGGState &state);
+
+    /// Lowers this body into `call`'s region, whose block takes one argument
+    /// per capture, then the index.
+    ::mlir::LogicalResult lowerBody(::mlir::Operation *call,
+                                    ::M::MAP::MAPToMOGGState &state,
+                                    ::llvm::ArrayRef<::mlir::Value> capturing,
+                                    ::mlir::Type indexType);
+
+    /// The callee and device of this body's `ForeachOpT` kernel.
+    template <typename ForeachOpT>
+    std::pair<::mlir::FlatSymbolRefAttr, ::mlir::StringAttr>
+    calleeFor(::M::MAP::MAPToMOGGState &state);
+
+    /// Lowers this body into a `mogg.call.foreach`, passing on its width
+    /// limit.
+    ::mlir::LogicalResult buildSimdCall(::M::MAP::MAPToMOGGState &state,
+                                        ::mlir::Value loopShape,
+                                        ::mlir::Type indexType);
+
+    /// Lowers this body into a `mogg.call.foreach.tile`.
+    ::mlir::LogicalResult buildTileCall(::M::MAP::MAPToMOGGState &state,
+                                        ::mlir::Value loopShape,
+                                        ::mlir::Type indexType);
+
+    /// The tile half of `lowerToMOGG`.
+    ::mlir::LogicalResult lowerTileBody(::M::MAP::MAPToMOGGState &state,
+                                        ::mlir::Value loopShape);
+
+    /// Checks this body against what the tile foreach driver supports.
+    ::mlir::LogicalResult verifyTileBody(::mlir::Value output,
+                                         ::llvm::ArrayRef<::mlir::Value> inputs);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

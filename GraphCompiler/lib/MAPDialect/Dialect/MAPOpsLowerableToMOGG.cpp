@@ -594,21 +594,19 @@ static bool transformsStoreIndex(Block &body) {
   });
 }
 
-// The tile half of `IterEpilogueOp::lowerToMOGG`.
-static LogicalResult
-lowerTileEpilogue(IterEpilogueOp epilogue, MAPToMOGGState &state,
-                  MOGG::KernelOutputFusionLambdaType kind, Value outShape,
-                  ArrayRef<Value> moggCaptures, Value outputPtr,
-                  MOGG::TensorArgContractAttr contractAttr) {
-  MLIRContext *ctx = epilogue.getContext();
-  Location loc = epilogue.getLoc();
-  Block &epiBody = epilogue.getBody().front();
+// The tile half of `lowerToMOGG`.
+LogicalResult
+IterEpilogueOp::lowerTile(MAPToMOGGState &state, bool isCompute, Value outShape,
+                          ArrayRef<Value> moggCaptures, Value outputPtr,
+                          MOGG::TensorArgContractAttr contractAttr) {
+  MLIRContext *ctx = getContext();
+  Location loc = getLoc();
+  Block &epiBody = getBody().front();
   Block::BlockArgListType epiArgs = epiBody.getArguments();
   size_t numCaptures = moggCaptures.size();
   size_t numParams = epiArgs.size() - numCaptures;
-  bool isCompute = kind == MOGG::KernelOutputFusionLambdaType::ComputeTile;
   Type outElemType =
-      cast<MO::TensorType>(epilogue.getResult().getType()).getElementType();
+      cast<MO::TensorType>(getResult().getType()).getElementType();
 
   auto tileOp = MOGG::TileCreateEpilogueOp::create(
       state.builder, loc, MOGG::TensorType::get(ctx), outShape, moggCaptures,
@@ -658,7 +656,7 @@ lowerTileEpilogue(IterEpilogueOp epilogue, MAPToMOGGState &state,
   }
 
   state.builder.setInsertionPointAfter(tileOp);
-  state.mapping.map(epilogue.getResult(), tileOp.getTensor());
+  state.mapping.map(getResult(), tileOp.getTensor());
   return success();
 }
 
@@ -725,9 +723,10 @@ LogicalResult IterEpilogueOp::lowerToMOGG(MAPToMOGGState &state) {
       state.builder, loc, MOGG::PointerType::get(ctx),
       state.mapping.lookup(intermediateTensor));
 
+  bool isComputeTile = kind == MOGG::KernelOutputFusionLambdaType::ComputeTile;
   if (isTile)
-    return lowerTileEpilogue(*this, state, kind, outShape, moggCaptures,
-                             outputPtr, contractAttr);
+    return lowerTile(state, isComputeTile, outShape, moggCaptures, outputPtr,
+                     contractAttr);
 
   // A downgraded `_LegacyComputeOutput` slot (`OutputLegacyForCompute`) keeps
   // a store body, which emit wraps as a store fusion.
@@ -999,44 +998,41 @@ LogicalResult TransposeStrideOp::lowerToMOGG(MAPToMOGGState &state) {
 // Checks a standalone body against what the tile foreach driver supports.
 // TODO(GEX-4488): delete once `foreach_fusion_tile` supports any rank and mixed
 // dtypes.
-static LogicalResult verifyIterElementwiseBody(IterElementwiseBodyOp foreach,
-                                               Value output,
-                                               ArrayRef<Value> inputs) {
+LogicalResult IterElementwiseBodyOp::verifyTileBody(Value output,
+                                                    ArrayRef<Value> inputs) {
   if (inputs.empty())
-    return foreach.emitOpError("a tile foreach needs a tensor input");
+    return emitOpError("a tile foreach needs a tensor input");
   auto outTy = MO::dynCastFromTensorLike(output.getType());
   auto inTy = MO::dynCastFromTensorLike(inputs.front().getType());
   if (!outTy || !inTy)
-    return foreach.emitOpError("a tile foreach reads and writes tensors");
+    return emitOpError("a tile foreach reads and writes tensors");
   if (outTy.getRank() != 2)
-    return foreach.emitOpError("a tile foreach supports rank-2 outputs only");
+    return emitOpError("a tile foreach supports rank-2 outputs only");
   if (inTy.getElementType() != outTy.getElementType())
-    return foreach.emitOpError("a tile foreach cannot change dtype");
+    return emitOpError("a tile foreach cannot change dtype");
   return success();
 }
 
-// `foreach`'s captures, lowered: each (kernel I/O or hoisted view) is defined,
-// and so lowered, earlier in the block.
-static SmallVector<Value> lowerCaptures(IterElementwiseBodyOp foreach,
-                                        MAPToMOGGState &state) {
+// The captures, lowered: each (kernel I/O or hoisted view) is defined, and so
+// lowered, earlier in the block.
+SmallVector<Value> IterElementwiseBodyOp::lowerCaptures(MAPToMOGGState &state) {
   SmallVector<Value> capturing;
-  for (Value v : foreach.getCaptures())
+  for (Value v : getCaptures())
     capturing.push_back(state.mapping.lookup(v));
   return capturing;
 }
 
-// Lowers `foreach`'s body into `callForeach`'s region, whose block takes one
-// argument per capture, then the index.
-static LogicalResult lowerForeachBody(IterElementwiseBodyOp foreach,
-                                      Operation *callForeach,
-                                      MAPToMOGGState &state,
-                                      ArrayRef<Value> capturing,
-                                      Type indexType) {
-  Location loc = foreach.getLoc();
-  Block &body = foreach.getBody().front();
+// Lowers this body into `call`'s region, whose block takes one argument per
+// capture, then the index.
+LogicalResult IterElementwiseBodyOp::lowerBody(Operation *call,
+                                               MAPToMOGGState &state,
+                                               ArrayRef<Value> capturing,
+                                               Type indexType) {
+  Location loc = getLoc();
+  Block &body = getBody().front();
   Block::BlockArgListType captureBlockArgs =
       body.getArguments().take_back(capturing.size());
-  Block *foreachBlock = state.builder.createBlock(&callForeach->getRegion(0));
+  Block *foreachBlock = state.builder.createBlock(&call->getRegion(0));
   for (auto [i, v] : llvm::enumerate(captureBlockArgs))
     state.mapping.map(v,
                       foreachBlock->addArgument(capturing[i].getType(), loc));
@@ -1047,18 +1043,18 @@ static LogicalResult lowerForeachBody(IterElementwiseBodyOp foreach,
   if (failed(state.lowerRegionBody(body)))
     return failure();
 
-  state.builder.setInsertionPointAfter(callForeach);
+  state.builder.setInsertionPointAfter(call);
   return success();
 }
 
-// The callee and device of a foreach kernel, which is single-device, so it has
-// exactly one context.
+// The callee and device of this body's `ForeachOpT` kernel, which is
+// single-device, so it has exactly one context.
 template <typename ForeachOpT>
-static std::pair<FlatSymbolRefAttr, StringAttr>
-foreachCallee(IterElementwiseBodyOp foreach, MAPToMOGGState &state) {
+std::pair<FlatSymbolRefAttr, StringAttr>
+IterElementwiseBodyOp::calleeFor(MAPToMOGGState &state) {
   MOGG::PrimitiveDeclOp prim =
       state.registry.lookupPrimitive(ForeachOpT::getOperationName());
-  return {FlatSymbolRefAttr::get(foreach.getContext(), prim.getSymName()),
+  return {FlatSymbolRefAttr::get(getContext(), prim.getSymName()),
           state.builder.getStringAttr(state.device.getLabel())};
 }
 
@@ -1083,72 +1079,70 @@ static std::pair<IntegerAttr, Value> lowerSimdWidth(TypedAttr width,
           buildShape(loc, MOSH::ShapeAttr::get(dims, shapeType), state)};
 }
 
-// Lowers `foreach` into a `mogg.call.foreach`, passing on its SIMD width.
-static LogicalResult buildSimdForeach(IterElementwiseBodyOp foreach,
-                                      MAPToMOGGState &state, Value loopShape,
-                                      Type indexType) {
-  Location loc = foreach.getLoc();
-  SmallVector<Value> capturing = lowerCaptures(foreach, state);
-  auto [maxSimdWidth, dynamicMaxSimdWidth] = lowerSimdWidth(
-      foreach.getMaxSimdWidthAttr(), foreach.getShape().getType(), loc, state);
-  auto [callee, device] = foreachCallee<MOGG::CallForeachOp>(foreach, state);
+// Lowers this body into a `mogg.call.foreach`, passing on its SIMD width.
+LogicalResult IterElementwiseBodyOp::buildSimdCall(MAPToMOGGState &state,
+                                                   Value loopShape,
+                                                   Type indexType) {
+  Location loc = getLoc();
+  SmallVector<Value> capturing = lowerCaptures(state);
+  auto [maxSimdWidth, dynamicMaxSimdWidth] =
+      lowerSimdWidth(getMaxSimdWidthAttr(), getShape().getType(), loc, state);
+  auto [callee, device] = calleeFor<MOGG::CallForeachOp>(state);
   auto callForeach = MOGG::CallForeachOp::create(
       state.builder, loc, callee, loopShape, state.contextArgs.front(),
       capturing, dynamicMaxSimdWidth, device, maxSimdWidth);
-  return lowerForeachBody(foreach, callForeach, state, capturing, indexType);
+  return lowerBody(callForeach, state, capturing, indexType);
 }
 
-// Lowers `foreach` into a `mogg.call.foreach.tile`, which carries no SIMD
+// Lowers this body into a `mogg.call.foreach.tile`, which carries no SIMD
 // width: running such a loop at its tile width could cross the boundaries a
 // width stands for.
-static LogicalResult buildTileForeach(IterElementwiseBodyOp foreach,
-                                      MAPToMOGGState &state, Value loopShape,
-                                      Type indexType) {
-  if (GCDAttr::getSimplified(foreach.getMaxSimdWidthAttr()))
-    return foreach.emitOpError("a tile foreach cannot set max_simd_width");
-  SmallVector<Value> capturing = lowerCaptures(foreach, state);
-  auto [callee, device] =
-      foreachCallee<MOGG::CallForeachTileOp>(foreach, state);
+LogicalResult IterElementwiseBodyOp::buildTileCall(MAPToMOGGState &state,
+                                                   Value loopShape,
+                                                   Type indexType) {
+  if (GCDAttr::getSimplified(getMaxSimdWidthAttr()))
+    return emitOpError("a tile foreach cannot set max_simd_width");
+  SmallVector<Value> capturing = lowerCaptures(state);
+  auto [callee, device] = calleeFor<MOGG::CallForeachTileOp>(state);
   auto callForeach = MOGG::CallForeachTileOp::create(
-      state.builder, foreach.getLoc(), callee, loopShape,
-      state.contextArgs.front(), capturing, device);
-  return lowerForeachBody(foreach, callForeach, state, capturing, indexType);
+      state.builder, getLoc(), callee, loopShape, state.contextArgs.front(),
+      capturing, device);
+  return lowerBody(callForeach, state, capturing, indexType);
 }
 
-// The tile half of `IterElementwiseBodyOp::lowerToMOGG`.
-static LogicalResult lowerTileForeach(IterElementwiseBodyOp foreach,
-                                      MAPToMOGGState &state, Value loopShape) {
-  Block &body = foreach.getBody().front();
-  ValueRange captures = foreach.getCaptures();
+// The tile half of `lowerToMOGG`.
+LogicalResult IterElementwiseBodyOp::lowerTileBody(MAPToMOGGState &state,
+                                                   Value loopShape) {
+  Block &body = getBody().front();
+  ValueRange captures = getCaptures();
   Block::BlockArgListType captureBlockArgs =
       body.getArguments().take_back(captures.size());
 
   if (transformsStoreIndex(body))
-    return foreach.emitOpError(
-        "a tile foreach cannot transform its store index");
+    return emitOpError("a tile foreach cannot transform its store index");
 
   // TODO(GEX-4488): drop once `foreach_fusion_tile` supports multiple outputs.
   auto stores = body.getOps<StoreOp>();
   if (!llvm::hasSingleElement(stores))
-    return foreach.emitOpError("a tile foreach body must store exactly once");
+    return emitOpError("a tile foreach body must store exactly once");
   auto storeArg = dyn_cast<BlockArgument>((*stores.begin()).getTensor());
   auto storeIt = storeArg ? llvm::find(captureBlockArgs, storeArg)
                           : captureBlockArgs.end();
   if (storeIt == captureBlockArgs.end())
-    return foreach.emitOpError("a tile foreach body must store to a capture");
+    return emitOpError("a tile foreach body must store to a capture");
   size_t outIdx = storeIt - captureBlockArgs.begin();
   SmallVector<Value> inputs;
   for (auto [i, cap] : llvm::enumerate(captures))
     if (i != outIdx)
       inputs.push_back(cap);
-  if (failed(verifyIterElementwiseBody(foreach, captures[outIdx], inputs)))
+  if (failed(verifyTileBody(captures[outIdx], inputs)))
     return failure();
 
   auto index = cast<MAP::IndexType>(body.getArgument(0).getType());
   return state.withTileBody([&] {
-    return buildTileForeach(
-        foreach, state, loopShape,
-        MOGG::TileCoordType::get(foreach.getContext(), index.getRank()));
+    return buildTileCall(
+        state, loopShape,
+        MOGG::TileCoordType::get(getContext(), index.getRank()));
   });
 }
 
@@ -1164,9 +1158,9 @@ LogicalResult IterElementwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
   IndexShapeCaptures::build(getBody(), loc, state).bindInScope(state);
 
   if (state.tileBasedFusionEnabled)
-    return lowerTileForeach(*this, state, loopShape);
-  return buildSimdForeach(*this, state, loopShape,
-                          getBody().front().getArgument(0).getType());
+    return lowerTileBody(state, loopShape);
+  return buildSimdCall(state, loopShape,
+                       getBody().front().getArgument(0).getType());
 }
 
 // map.iter.rowwise.body -> mogg.call.rowwise.
