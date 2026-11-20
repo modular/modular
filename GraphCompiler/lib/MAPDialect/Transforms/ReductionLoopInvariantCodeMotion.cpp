@@ -50,7 +50,8 @@ bool isRowValue(IterMapOp phase, Value value) {
 void hoistLoad(IterRowwiseOp dst, IterMapOp phase, LoadOp load,
                RewriterBase &rewriter) {
   std::optional<SmallVector<int64_t>> dims =
-      traceLoopDims(load.getIndex(), phase.getIndexArg());
+      IndexTransformOpInterface::traceLoopDims(load.getIndex(),
+                                               phase.getIndexArg());
   if (!dims || llvm::is_contained(*dims, dst.getAxis()) ||
       !isRowValue(phase, load.getTensor()))
     return;

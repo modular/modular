@@ -432,7 +432,7 @@ def MAP_IterElementwiseBodyOp : MAP_Op<"iter.elementwise.body", [
 
   let arguments = (ins MOSH_ShapeAttr:$shape,
                        Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures,
-                       OptionalAttr<MAP_WidthLimitAttr>:$max_simd_width);
+                       OptionalAttr<MAP_SimdWidthAttr>:$max_simd_width);
   let regions = (region SizedRegion<1>:$body);
 
   let hasCustomAssemblyFormat = 1;
@@ -573,7 +573,7 @@ def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
   let arguments = (ins MOSH_ShapeAttr:$shape,
                        I64Attr:$axis,
                        Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures,
-                       OptionalAttr<MAP_WidthLimitAttr>:$max_simd_width);
+                       OptionalAttr<MAP_SimdWidthAttr>:$max_simd_width);
   let regions = (region SizedRegion<1>:$body);
 
   let hasCustomAssemblyFormat = 1;
@@ -992,7 +992,7 @@ def MAP_SliceSelectOp : MAP_Op<"index.slice.select", [
   NoTerminator,
   RecursiveMemoryEffects,
   // The verifier keeps the innermost dim whole, so the body's index has the
-  // loop's innermost coordinate and its width limits hold as they are.
+  // loop's innermost coordinate and its SIMD width hold as it is.
   MAP_MaxSimdWidthInterface,
   DeclareOpInterfaceMethods<MAP_DynamicShapeIndexOpInterface>,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,

@@ -1062,34 +1062,34 @@ foreachCallee(IterElementwiseBodyOp foreach, MAPToMOGGState &state) {
           state.builder.getStringAttr(state.device.getLabel())};
 }
 
-// A body's width limit as a launch takes it: a static limit as a number, one
+// A body's SIMD width as a launch takes it: a static width as a number, one
 // with run-time dims as a shape whose dims' GCD the launch takes, which gives
-// each dim its `!mogg.dim` value. Neither for no limit.
-static std::pair<IntegerAttr, Value> lowerWidthLimit(TypedAttr limit,
-                                                     MOSH::ShapeType shapeType,
-                                                     Location loc,
-                                                     MAPToMOGGState &state) {
-  TypedAttr widthLimit = MAP::simplifyWidthLimit(limit);
-  if (!widthLimit)
+// each dim its `!mogg.dim` value. Neither for no width.
+static std::pair<IntegerAttr, Value> lowerSimdWidth(TypedAttr width,
+                                                    MOSH::ShapeType shapeType,
+                                                    Location loc,
+                                                    MAPToMOGGState &state) {
+  TypedAttr simplified = GCDAttr::getSimplified(width);
+  if (!simplified)
     return {};
   if (std::optional<int64_t> constant =
-          MOSH::ShapeAttr::getStaticDim(widthLimit))
+          MOSH::ShapeAttr::getStaticDim(simplified))
     return {*constant ? state.builder.getI64IntegerAttr(*constant)
                       : IntegerAttr(),
             Value()};
   SmallVector<TypedAttr> dims;
-  MAP::collectWidthLimitDims(widthLimit, dims);
+  GCDAttr::collectDims(simplified, dims);
   return {IntegerAttr(),
           buildShape(loc, MOSH::ShapeAttr::get(dims, shapeType), state)};
 }
 
-// Lowers `foreach` into a `mogg.call.foreach`, passing on its width limit.
+// Lowers `foreach` into a `mogg.call.foreach`, passing on its SIMD width.
 static LogicalResult buildSimdForeach(IterElementwiseBodyOp foreach,
                                       MAPToMOGGState &state, Value loopShape,
                                       Type indexType) {
   Location loc = foreach.getLoc();
   SmallVector<Value> capturing = lowerCaptures(foreach, state);
-  auto [maxSimdWidth, dynamicMaxSimdWidth] = lowerWidthLimit(
+  auto [maxSimdWidth, dynamicMaxSimdWidth] = lowerSimdWidth(
       foreach.getMaxSimdWidthAttr(), foreach.getShape().getType(), loc, state);
   auto [callee, device] = foreachCallee<MOGG::CallForeachOp>(foreach, state);
   auto callForeach = MOGG::CallForeachOp::create(
@@ -1098,14 +1098,14 @@ static LogicalResult buildSimdForeach(IterElementwiseBodyOp foreach,
   return lowerForeachBody(foreach, callForeach, state, capturing, indexType);
 }
 
-// Lowers `foreach` into a `mogg.call.foreach.tile`, which has no width limit
-// to pass on: running such a loop at its tile width could cross the
-// boundaries a limit stands for.
+// Lowers `foreach` into a `mogg.call.foreach.tile`, which carries no SIMD
+// width: running such a loop at its tile width could cross the boundaries a
+// width stands for.
 static LogicalResult buildTileForeach(IterElementwiseBodyOp foreach,
                                       MAPToMOGGState &state, Value loopShape,
                                       Type indexType) {
-  if (MAP::simplifyWidthLimit(foreach.getMaxSimdWidthAttr()))
-    return foreach.emitOpError("a tile foreach cannot take a SIMD width limit");
+  if (GCDAttr::getSimplified(foreach.getMaxSimdWidthAttr()))
+    return foreach.emitOpError("a tile foreach cannot set max_simd_width");
   SmallVector<Value> capturing = lowerCaptures(foreach, state);
   auto [callee, device] =
       foreachCallee<MOGG::CallForeachTileOp>(foreach, state);
@@ -1187,9 +1187,9 @@ LogicalResult IterRowwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
   for (Value v : captures)
     capturing.push_back(state.mapping.lookup(v));
 
-  // A width limit, as for a foreach.
+  // A width, as for a foreach.
   auto [maxSimdWidth, dynamicMaxSimdWidth] =
-      lowerWidthLimit(getMaxSimdWidthAttr(), getShape().getType(), loc, state);
+      lowerSimdWidth(getMaxSimdWidthAttr(), getShape().getType(), loc, state);
 
   auto callRowwise = MOGG::CallRowwiseOp::create(
       state.builder, loc, rowShape, getAxisAttr(), state.contextArgs.front(),

@@ -59,7 +59,7 @@ BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
     if (in[d] == out[d + lead])
       result.push_back(dims[d + lead]);
     else if (isStaticOne(in[d]))
-      result.push_back(kPinnedCoordinate);
+      result.push_back(IndexTransformOpInterface::kPinnedCoordinate);
     else
       return std::nullopt;
   }
@@ -81,7 +81,8 @@ ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
   SmallVector<int64_t> inDims = nonUnitDims(in), outDims = nonUnitDims(out);
   if (inDims.size() != outDims.size())
     return std::nullopt;
-  SmallVector<int64_t> result(in.getRank(), kPinnedCoordinate);
+  SmallVector<int64_t> result(in.getRank(),
+                              IndexTransformOpInterface::kPinnedCoordinate);
   for (auto [inDim, outDim] : llvm::zip(inDims, outDims)) {
     if (in[inDim] != out[outDim])
       return std::nullopt;

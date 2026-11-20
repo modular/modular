@@ -179,15 +179,17 @@ Block::BlockArgListType IterElementwiseOp::getOutputBlockArgs() {
   return getBody().front().getArguments().slice(getInputs().size(), numOutputs);
 }
 
-bool MAP::computesIndex(Operation *op) {
-  auto isIndex = [](Type type) { return isa<IndexType>(type); };
+// Whether `op` produces an index or hands one to its regions: index
+// computation the width inference can't follow.
+static bool computesIndex(Operation *op) {
+  auto isIndex = [](Type type) { return isa<MAP::IndexType>(type); };
   return llvm::any_of(op->getResultTypes(), isIndex) ||
          llvm::any_of(op->getRegions(), [&](Region &region) {
            return llvm::any_of(region.getArgumentTypes(), isIndex);
          });
 }
 
-TypedAttr MAP::getMaxSimdWidth(Region &region) {
+TypedAttr MaxSimdWidthInterface::ofRegion(Region &region) {
   MLIRContext *ctx = region.getContext();
   SmallVector<TypedAttr> widths;
   for (Operation &op : region.getOps()) {
@@ -200,7 +202,7 @@ TypedAttr MAP::getMaxSimdWidth(Region &region) {
     if (computesIndex(&op))
       return MOSH::ShapeAttr::getDim(ctx, 1);
     for (Region &nested : op.getRegions())
-      widths.push_back(getMaxSimdWidth(nested));
+      widths.push_back(ofRegion(nested));
   }
   return GCDAttr::getSimplified(ctx, widths);
 }
@@ -361,14 +363,14 @@ TypedAttr ConcatSelectOp::getMaxSimdWidth() {
     for (MOSH::ShapeAttr in : spec.getInputShapes()) {
       TypedAttr extent = in.getValues()[axis];
       // An expression of parameters can't be passed to the kernel as a
-      // limit; width 1 is always valid.
-      if (!isWidthLimit(extent))
+      // width; width 1 is always valid.
+      if (!GCDAttr::isSimdWidth(extent))
         return MOSH::ShapeAttr::getDim(ctx, 1);
       widths.push_back(extent);
     }
   }
   for (Region &region : getInputs())
-    widths.push_back(MAP::getMaxSimdWidth(region));
+    widths.push_back(MaxSimdWidthInterface::ofRegion(region));
   return GCDAttr::getSimplified(ctx, widths);
 }
 

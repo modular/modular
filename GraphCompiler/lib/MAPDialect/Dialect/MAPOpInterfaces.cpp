@@ -25,7 +25,8 @@
 #include "GraphCompiler/MAPDialect/Dialect/MAPTypes.h"
 
 std::optional<llvm::SmallVector<int64_t>>
-M::MAP::traceLoopDims(mlir::Value index, mlir::Value loopIdx) {
+M::MAP::IndexTransformOpInterface::traceLoopDims(mlir::Value index,
+                                                 mlir::Value loopIdx) {
   if (index == loopIdx)
     return llvm::to_vector(llvm::seq<int64_t>(
         0, mlir::cast<IndexType>(index.getType()).getRank()));

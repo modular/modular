@@ -306,6 +306,17 @@ def MAP_IndexTransformOpInterface : OpInterface<"IndexTransformOpInterface"> {
       "return std::nullopt;"
     >,
   ];
+
+  let extraClassDeclaration = [{
+    /// In `mapLoopDims`, a coordinate that is 0 for every element.
+    static constexpr int64_t kPinnedCoordinate = -1;
+
+    /// The loop dimension each coordinate of `index` is (see `mapLoopDims`),
+    /// following the index transforms from `loopIdx`. Nullopt when one of them
+    /// doesn't map loop dimensions.
+    static std::optional<::llvm::SmallVector<int64_t>>
+    traceLoopDims(::mlir::Value index, ::mlir::Value loopIdx);
+  }];
 }
 
 def MAP_DynamicShapeIndexOpInterface
@@ -355,8 +366,8 @@ def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
     `map.iter.rowwise.body`) that limits the SIMD width the kernel may run at,
     or whose regions see an index other than the kernel's own.
 
-    `getMaxSimdWidth` returns a limit, a number every width must divide (see
-    `MAP::GCDAttr`), for the op and everything nested in its regions,
+    `getMaxSimdWidth` returns a SIMD width, a number every width must divide
+    (see `MAP::GCDAttr`), for the op and everything nested in its regions,
     stated for the index the op itself sees; null means no limit. An op
     implementing the interface vouches for
     its regions' index arguments: it translates what its regions require into
@@ -366,7 +377,7 @@ def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
     Every other index in a kernel body, an op's index result or the index
     argument of a region of an op without the interface, is index computation
     the width inference can't follow, and limits the width to 1 (see
-    `getMaxSimdWidth(Region &)`).
+    `MaxSimdWidthInterface::ofRegion`).
   }];
 
   let cppNamespace = "::M::MAP";
@@ -378,11 +389,20 @@ def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
       [{}], [{
         ::llvm::SmallVector<::mlir::TypedAttr> widths;
         for (::mlir::Region &region : $_op->getRegions())
-          widths.push_back(::M::MAP::getMaxSimdWidth(region));
+          widths.push_back(
+              ::M::MAP::MaxSimdWidthInterface::ofRegion(region));
         return ::M::MAP::GCDAttr::getSimplified($_op->getContext(), widths);
       }]
     >,
   ];
+
+  let extraClassDeclaration = [{
+    /// The SIMD width `region`'s ops need, stated for `region`'s own index:
+    /// the GCD of what each op implements the interface for requires, and 1
+    /// for index computation the width inference can't follow. Null for no
+    /// limit; not in normal form.
+    static ::mlir::TypedAttr ofRegion(::mlir::Region &region);
+  }];
 }
 
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPOPINTERFACES_TD

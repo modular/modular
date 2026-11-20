@@ -404,7 +404,8 @@ bool readsOwnRow(ArrayRef<int64_t> dims, int64_t rank, int64_t axis) {
   if (static_cast<int64_t>(dims.size()) != rank)
     return false;
   for (auto [k, d] : llvm::enumerate(dims))
-    if (d != (int64_t(k) == axis ? kPinnedCoordinate : int64_t(k)))
+    if (d != (int64_t(k) == axis ? IndexTransformOpInterface::kPinnedCoordinate
+                                 : int64_t(k)))
       return false;
   return true;
 }
@@ -536,7 +537,9 @@ bool canFuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
     for (Operation *user : body.getArgument(i).getUsers()) {
       auto load = dyn_cast<LoadOp>(user);
       std::optional<SmallVector<int64_t>> dims =
-          load ? traceLoopDims(load.getIndex(), loopIdx) : std::nullopt;
+          load ? IndexTransformOpInterface::traceLoopDims(load.getIndex(),
+                                                          loopIdx)
+               : std::nullopt;
       if (!dims || !(perRow ? readsOwnRow(*dims, rank, axis)
                             : readsSameElement(*dims, rank)))
         return false;
@@ -638,7 +641,8 @@ bool readsOwnRowOnly(IterRowwiseOp consumer, BlockArgument arg) {
       return true;
     auto phase = load->getParentOfType<RowwisePhaseOpInterface>();
     std::optional<SmallVector<int64_t>> dims =
-        phase ? traceLoopDims(load.getIndex(), phase.getIndexArg())
+        phase ? IndexTransformOpInterface::traceLoopDims(load.getIndex(),
+                                                         phase.getIndexArg())
               : std::nullopt;
     return dims && readsOwnRow(*dims, rank, axis);
   });

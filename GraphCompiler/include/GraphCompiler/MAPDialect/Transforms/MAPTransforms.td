@@ -280,7 +280,7 @@ def InferMaxSimdWidth
     Runs last in the MAP pipeline, after `LoopInvariantViewMotion` has hoisted
     every load-side view out of the loop bodies. Sets each
     `map.iter.elementwise.body`'s and `map.iter.rowwise.body`'s
-    `max_simd_width` to the limit every SIMD width of the kernel must divide,
+    `max_simd_width` to a number every SIMD width of the kernel must divide,
     from `MAP::MaxSimdWidthInterface`, simplified; leaves it unset when nothing
     limits the width.
 
