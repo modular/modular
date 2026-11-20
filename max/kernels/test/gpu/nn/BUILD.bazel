@@ -777,6 +777,7 @@ _GPU_MEMORY = {
     "test_mla_prefill_per_token_scale_fp8.mojo": "4",
     "test_mla_prefill_sparse_kv_fp8_gather.mojo": "4",
     "test_mla_prefill_sparse_qkv_fp8.mojo": "3",
+    "test_moe_gather_quantize.mojo": "3",
     "test_rms_norm.mojo": "3",
     "test_rope_split_store.mojo": "3",
     "test_topk_warp_isa_amd.mojo": "4",
