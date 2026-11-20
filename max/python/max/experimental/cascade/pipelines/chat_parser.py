@@ -41,7 +41,7 @@ cannot disagree.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterable, AsyncIterator, Mapping
+from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
 from enum import Enum
 from typing import Annotated
 
@@ -361,6 +361,42 @@ class ChatChunkParser:
                 )
 
 
+class _StopStrings:
+    """Cut a text stream before the first of a request's stop strings.
+
+    Holds back a suffix that may still grow into a stop string.
+    """
+
+    def __init__(self, stops: Sequence[str]) -> None:
+        # An empty string would match at once.
+        self._stops = [stop for stop in stops if stop]
+        self._held = ""
+        self.matched = False
+
+    def feed(self, text: str) -> str:
+        """Returns the text that can be emitted; sets ``matched`` on a match."""
+        buffer = self._held + text
+        cut = min(
+            (i for stop in self._stops if (i := buffer.find(stop)) != -1),
+            default=None,
+        )
+        if cut is not None:
+            self._held = ""
+            self.matched = True
+            return buffer[:cut]
+        holdback = max(
+            (partial_tag_overlap(buffer, stop) for stop in self._stops),
+            default=0,
+        )
+        self._held = buffer[len(buffer) - holdback :]
+        return buffer[: len(buffer) - holdback]
+
+    def finish(self) -> str:
+        """Returns the held-back text, which never became a stop string."""
+        held, self._held = self._held, ""
+        return held
+
+
 class ChatParserWorker(Worker):
     """Parse a model's text stream into structured chunks on the worker pool.
 
@@ -380,11 +416,18 @@ class ChatParserWorker(Worker):
         text_iter: AsyncIterable[RawTextChunk],
         tools_enabled: bool,
         tool_schemas: dict[str, dict[str, object]],
+        # Required, not defaulted: the decorator's overloads resolve on arity,
+        # so a default would let callers drop ``stop`` unseen.
+        stop: list[str] | None,
     ) -> AsyncIterator[GenAIChunk]:
         """Split a detokenizer's raw text deltas into structured chunks."""
         parser = ChatChunkParser(self.config, tool_schemas, tools_enabled)
+        stops = _StopStrings(stop or [])
         async for delta in text_iter:
-            for chunk in parser.feed(delta.text, delta.num_tokens):
+            for chunk in parser.feed(stops.feed(delta.text), delta.num_tokens):
                 yield chunk
-        for chunk in parser.finish():
+            if stops.matched:
+                # The request's scope closes the upstream streams.
+                break
+        for chunk in [*parser.feed(stops.finish()), *parser.finish()]:
             yield chunk

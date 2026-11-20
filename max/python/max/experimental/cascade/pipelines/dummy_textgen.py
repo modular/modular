@@ -104,10 +104,12 @@ class DummyTextGenPipeline(GenAIPipeline):
     ) -> AsyncIterable[GenAIChunk]:
         """Run text generation from a conversation."""
         tokens = await self.tokenizer.encode(req.messages)
-        gen_tokens = await self.transformer.decode(req.text, tokens)
+        gen_tokens = await self.transformer.decode(
+            req.text.model_copy(update={"stop": None}), tokens
+        )
         text = await self.tokenizer.decode_streaming(gen_tokens)
         return await self.parser.parse_stream(
-            text, req.tools_enabled, req.tool_schemas()
+            text, req.tools_enabled, req.tool_schemas(), req.text.stop
         )
 
 

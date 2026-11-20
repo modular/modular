@@ -293,7 +293,8 @@ class TextGenOptions(BaseModel):
 
     # Stopping criteria.
     stop: list[str] | None = None
-    """Strings that terminate generation when produced."""
+    """Strings that end the response. The pipeline's parser matches them;
+    model workers never see them."""
 
     stop_token_ids: list[int] | None = None
     """Token ids that terminate generation when produced."""
