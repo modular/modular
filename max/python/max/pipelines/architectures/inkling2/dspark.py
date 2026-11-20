@@ -524,12 +524,13 @@ class Inkling2DSpark(Module[..., Tensor]):
                 DType.bfloat16
             )
             # bf16(base + bias), softcapped in float32, rounded once more.
+            # The softcap is elementwise, so each device caps its own
+            # vocabulary shard and the gather moves bfloat16 instead of
+            # float32.
             summed = (base_all[:, step, :] + bias).cast(DType.float32)
-            # The head's vocabulary shards over the mesh, as the target's
-            # does; gather it before the softcap and the tail slice.
-            if summed.is_distributed:
-                summed = F.allgather(summed, tensor_axis=-1)
             logits = (cap * F.tanh(summed / cap)).cast(DType.bfloat16)
+            if logits.is_distributed:
+                logits = F.allgather(logits, tensor_axis=-1)
             if padded:
                 logits = logits[:, :unpadded_vocab_size]
             picked = (
