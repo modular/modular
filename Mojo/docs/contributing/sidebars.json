@@ -15,6 +15,7 @@
         "contribution-process",
         "issue-pr-etiquette",
         "faq",
+        "building-on-intel-macs",
         {
           "label": "Standard library",
           "type": "category",
