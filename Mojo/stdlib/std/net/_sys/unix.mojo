@@ -17,9 +17,11 @@ platforms, Linux and macOS.
 from std.ffi import (
     c_int,
     c_long,
+    c_short,
     c_size_t,
     c_ssize_t,
     c_uint,
+    c_ulong,
     external_call,
 )
 from std.io import FileDescriptor, IOError, RawFileDescriptor
@@ -561,6 +563,43 @@ def socketpair(
 ) -> c_int:
     """C `socketpair(2)`: creates a pair of connected sockets."""
     return external_call["socketpair", c_int](domain, type, protocol, sv)
+
+
+# ===----------------------------------------------------------------------=== #
+# `poll` (`<poll.h>`)
+# ===----------------------------------------------------------------------=== #
+
+comptime POLLIN: c_short = 0x1
+"""Data other than high-priority data can be read."""
+comptime POLLPRI: c_short = 0x2
+"""High-priority data can be read."""
+comptime POLLOUT: c_short = 0x4
+"""Data can be written."""
+comptime POLLERR: c_short = 0x8
+"""An error occurred (reported in `revents` only)."""
+comptime POLLHUP: c_short = 0x10
+"""The peer hung up (reported in `revents` only)."""
+comptime POLLNVAL: c_short = 0x20
+"""The descriptor isn't open (reported in `revents` only)."""
+
+comptime nfds_t = Scalar[
+    platform_map[T=DType, "nfds_t", linux=c_ulong.dtype, macos=c_uint.dtype]()
+]
+"""C `nfds_t`: the number of entries in a `pollfd` array."""
+
+
+@fieldwise_init
+struct pollfd(TrivialRegisterPassable, Writable):
+    """C `struct pollfd`: a descriptor for `poll` to watch."""
+
+    var fd: c_int
+    var events: c_short
+    var revents: c_short
+
+
+def poll(fds: MutPointer[pollfd, _], nfds: nfds_t, timeout: c_int) -> c_int:
+    """C `poll(2)`: waits for one of a set of descriptors to become ready."""
+    return external_call["poll", c_int](fds, nfds, timeout)
 
 
 def open_socket(

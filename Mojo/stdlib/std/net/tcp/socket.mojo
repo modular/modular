@@ -213,9 +213,6 @@ struct TCPSocket(Movable):
             If the connection fails, such as when nothing listens at `addr` or
             `addr` isn't of the socket's IP version.
         """
-        # TODO(https://github.com/modular/modular/issues/7474): on macOS, a
-        # `connect` that a signal interrupts can raise for a connection that
-        # succeeds; see `Socket.connect()`.
         # The stream owns the socket from here, so it closes on any error.
         var stream = TCPStream(self._socket^)
         stream._socket.connect(addr)
