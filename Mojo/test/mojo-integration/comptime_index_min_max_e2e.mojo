@@ -11,10 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo %s | FileCheck %s
+# RUN: mojo build --target-triple x86_64-unknown-linux-gnu --emit=llvm -o %t %s
+# RUN: mojo build --target-triple aarch64-unknown-linux-gnu --emit=llvm -o %t %s
+# RUN: mojo build --target-triple arm64-apple-macosx --emit=llvm -o %t %s
 
 # Compile-time `min`/`max` of `Int`/`UInt` must work even when 32-bit and
-# 64-bit arithmetic disagree.
+# 64-bit arithmetic disagree. The values need a 64-bit `Int`, so this builds
+# for each supported 64-bit target.
 
 
 def smaller(a: Int, b: Int) -> Int:
@@ -22,12 +25,6 @@ def smaller(a: Int, b: Int) -> Int:
 
 
 def main():
-    # CHECK: min: 11
-    comptime a = smaller(11, 1 << 40)
-    print("min:", a)
-    # CHECK: max: 1099511627776
-    comptime b = max(11, 1 << 40)
-    print("max:", b)
-    # CHECK: umin: 3
-    comptime c = min(UInt(1 << 40), UInt(3))
-    print("umin:", c)
+    comptime assert smaller(11, 1 << 40) == 11
+    comptime assert max(11, 1 << 40) == 1 << 40
+    comptime assert min(UInt(1 << 40), UInt(3)) == 3
