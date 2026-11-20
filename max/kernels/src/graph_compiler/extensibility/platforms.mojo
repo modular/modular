@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Names for the platform predicates that kernel registrations use most.
 
-Each alias is a `PlatformPredicate` built from the atoms in
+Each alias is a full condition built from the atoms in
 `extensibility.platform_predicates`. Pass one to `@extensibility.register` as
 `cond`, or combine aliases with `&` and `|`. Name a more specific platform
 predicate with `comptime` where it is used:
 
 ```mojo
-comptime B200 = ACCELERATOR & CUDA & model("NVIDIA B200")
+comptime B200 = ACCELERATOR & CUDA & arch("sm_100a") & model("NVIDIA B200")
 ```
 """
 
