@@ -49,6 +49,7 @@ from max.support.image import hash_image
 from transformers import AutoTokenizer
 
 from .context import KimiK3TextAndVisionContext
+from .vision_config import has_vision_tower
 from .vision_processor import (
     KimiK3VisionProcessor,
     VisionOutput,
@@ -307,15 +308,10 @@ def kimi_k3_tokenizer(
     **kwargs: object,
 ) -> TextTokenizer | KimiK3VLTokenizer:
     """Selects text-only tokenization when the checkpoint has no image tower."""
-    # The registered HF config shim turns an absent or null `vision_config`
-    # into an empty object, so test for the geometry.
-    hf_vision_config = getattr(
-        pipeline_config.model.huggingface_config, "vision_config", None
-    )
     tokenizer_type = (
-        TextTokenizer
-        if getattr(hf_vision_config, "patch_size", None) is None
-        else KimiK3VLTokenizer
+        KimiK3VLTokenizer
+        if has_vision_tower(pipeline_config.model.huggingface_config)
+        else TextTokenizer
     )
     return tokenizer_type(
         model_path,

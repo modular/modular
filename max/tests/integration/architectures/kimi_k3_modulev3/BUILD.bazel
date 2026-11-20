@@ -171,6 +171,20 @@ modular_py_test(
     ],
 )
 
+# hf_config_shims.py is shared by many models, so this catches a shim edit
+# that changes how a text-only K3 config reads its vision section.
+modular_py_test(
+    name = "vision_config_tests_cpu",
+    srcs = ["test_vision_config.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
 modular_py_test(
     name = "resolution_tests_cpu",
     srcs = ["test_resolution.py"],

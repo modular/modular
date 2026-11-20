@@ -14,8 +14,8 @@
 
 Wraps :class:`~.model.KimiK3ModelConfig` instead of re-declaring its shape
 fields, so the two configs share one source of truth rather than drifting
-apart. No vision support, but composable later as a VLM wrapper's
-``llm_config``. Every method accepts either the top-level multimodal
+apart. The optional vision config describes the checkpoint's image tower.
+Every method accepts either the top-level multimodal
 ``config.json`` or an already-extracted text sub-config, via
 :meth:`_get_text_config`.
 
@@ -85,6 +85,7 @@ from .state_cache import (
     attn_cache,
     kda_state_regions,
 )
+from .vision_config import KimiK3VisionConfig
 
 __all__ = ["KimiK3Config"]
 
@@ -118,6 +119,7 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
     registry always resolves a value before this config is built."""
 
     quantization_encoding: SupportedEncoding | None = None
+    vision_config: KimiK3VisionConfig | None = None
 
     max_tokens_per_expert: int = 8192
     """Rows one forward can route to an expert, which sizes the routed
@@ -730,6 +732,9 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
             ep_size=pipeline_config.runtime.ep_size,
             spec_num_draft_tokens=(
                 kimi_k3_spec_num_draft_tokens(pipeline_config)
+            ),
+            vision_config=KimiK3VisionConfig.initialize_from_config(
+                pipeline_config, huggingface_config
             ),
         )
         config_instance = replace(
