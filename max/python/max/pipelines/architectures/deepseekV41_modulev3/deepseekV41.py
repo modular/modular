@@ -526,11 +526,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 bias=False,
                 tp_axis=_dp_axis_name(mesh) if self.dp > 1 else None,
             )
-            if (
-                self.dp > 1
-                and config.raw_checkpoint_weights
-                and config.replicate_spec_head
-            ):
+            if self.dp > 1 and config.replicate_spec_head:
                 # Replica-local heads read different rows; loading the full
                 # checkpoint weight on each device avoids per-step collectives.
                 self.head.weight = self.head.weight.to(
@@ -1230,15 +1226,19 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
     def replicated_head_weight(self) -> Tensor:
         """Returns a whole LM head on every device that reads local rows.
 
-        Artifact exports load replicated storage directly. Bare-MEF graphs
-        retain their sharded weight ABI and join the stored head in the graph.
+        Raises:
+            ValueError: If the head shards the vocabulary, as it does
+                unless ``replicate_spec_head`` is set.
         """
         weight = self.head.weight
         if weight.is_distributed and any(
             isinstance(placement, Sharded) and placement.axis == 0
             for placement in weight.placements
         ):
-            return F.allgather(weight, tensor_axis=0)
+            raise ValueError(
+                "replica-local logits need the LM head on every device;"
+                " set replicate_spec_head"
+            )
         return weight
 
     def logits_per_replica(self, hidden: Tensor) -> Tensor:

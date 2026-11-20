@@ -884,6 +884,9 @@ def test_real_fused_dspark_named_history_virtual_sm100(
             raw_checkpoint_weights=True,
             artifact_export=True,
             data_parallel_degree=dp,
+            # As the pipeline config derives it from the per-replica draft
+            # head below.
+            replicate_spec_head=dp > 1,
             dspark_trailing_inputs=declarations,
             **DeepseekV41Config.resolve_text_fields(text),
         )

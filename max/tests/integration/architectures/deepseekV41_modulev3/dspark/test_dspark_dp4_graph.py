@@ -42,6 +42,7 @@ from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
+from max.nn.legacy.comm import Signals
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     DSparkDrafter,
 )
@@ -254,6 +255,138 @@ def test_dp4_sampled_head_samples_on_one_device() -> None:
         ]
         staged = module.trace(*inputs)
     assert "sampler.gumbel_argmax_from_probs" in str(staged)
+
+
+class _ReplicaHead(Module[..., tuple[Tensor, ...]]):
+    """The proposer's per-replica ``head`` over a replicated LM head."""
+
+    def __init__(
+        self,
+        drafter: DSparkDrafter,
+        config: DeepseekV41Config,
+        replica_probs: bool,
+    ) -> None:
+        super().__init__()
+        self.drafter = drafter
+        self.config = config
+        self.replica_probs = replica_probs
+
+    def forward(self, *inputs: Tensor) -> tuple[Tensor, ...]:
+        mesh = self.drafter.mesh
+        block_hs = Tensor.from_shard_values(
+            inputs[:_DP], DeviceMapping(mesh, (Sharded(0),))
+        )
+        head_weight = Tensor.from_shard_values(
+            inputs[_DP : 2 * _DP], DeviceMapping.replicated(mesh)
+        )
+        splits, next_tokens, seed, temperature, top_k, top_p = inputs[
+            2 * _DP : 2 * _DP + 6
+        ]
+        signals = [x._graph_value for x in inputs[2 * _DP + 6 :]]
+        target = SimpleNamespace(
+            head=SimpleNamespace(weight=head_weight),
+            replicated_head_weight=lambda: head_weight,
+        )
+        proposer = DSparkDeepseekV41Proposer(
+            self.drafter,
+            cast(Any, target),
+            self.config,
+            per_replica_head=True,
+            per_replica_probs=self.replica_probs,
+        )
+        sampler = SampledDraftSampler(
+            seed=TensorValue(seed),
+            temperature=TensorValue(temperature),
+            top_k=TensorValue(top_k),
+            top_p=TensorValue(top_p),
+            vocab_size=self.config.vocab_size,
+        )
+        drafts = proposer.head(
+            cast(
+                Any,
+                SimpleNamespace(
+                    data_parallel_splits=splits, signal_buffers=signals
+                ),
+            ),
+            block_hs,
+            cast(Any, SimpleNamespace(next_tokens=TensorValue(next_tokens))),
+            sampler,
+        )
+        # Drafts keep the drafter's dtype, as the vocab-sharded head's do.
+        assert drafts.dtype == DType.int32
+        if not self.replica_probs:
+            return (
+                Tensor.from_graph_value(drafts),
+                Tensor.from_graph_value(sampler.distributions()),
+            )
+        dists = sampler.replica_distributions
+        assert dists is not None
+        for replica, dist in enumerate(dists):
+            assert dist.device == DeviceRef.from_device(mesh.devices[replica])
+        return (
+            Tensor.from_graph_value(drafts),
+            *(Tensor.from_graph_value(dist) for dist in dists),
+        )
+
+
+@pytest.mark.parametrize("replica_probs", [False, True])
+def test_dp4_replica_head_samples_on_every_device(replica_probs: bool) -> None:
+    """A per-replica sampled draft stages one sampler per device.
+
+    Each rank draws its own rows every position from its whole copy of
+    the LM head, so the graph holds a draw per device per position and
+    never joins the head weight. With per-replica distributions each one
+    stays on the device that drew it.
+    """
+    config = dataclasses.replace(_small_config(), vocab_size=128)
+    text = _text()
+    with _virtual_devices(_DP):
+        devices = tuple(Accelerator(i) for i in range(_DP))
+        refs = [DeviceRef.from_device(d) for d in devices]
+        mesh = DeviceMesh(devices, (_DP,), ("dp",))
+        with F.lazy(), default_device(mesh), default_dtype(DType.bfloat16):
+            drafter = DSparkDrafter(
+                config,
+                mesh,
+                rope=RopeParams.from_text_config(text),
+                data_parallel_degree=_DP,
+            )
+            module = _ReplicaHead(drafter, config, replica_probs)
+        inputs: list[TensorType | BufferType] = []
+        inputs += [
+            TensorType(
+                DType.bfloat16,
+                [f"dspark_block_rows_r{r}", config.hidden_size],
+                refs[r],
+            )
+            for r in range(_DP)
+        ]
+        inputs += [
+            TensorType(
+                DType.bfloat16, [config.vocab_size, config.hidden_size], refs[r]
+            )
+            for r in range(_DP)
+        ]
+        inputs += [TensorType(DType.int64, [_DP + 1], DeviceRef.CPU())]
+        inputs += [
+            TensorType(dtype, ["batch_size"], refs[0])
+            for dtype in (
+                DType.int64,
+                DType.uint64,
+                DType.float32,
+                DType.int64,
+                DType.float32,
+            )
+        ]
+        inputs += Signals(refs).input_types()
+        staged = str(module.trace(*inputs))
+    draws = staged.count("sampler.gumbel_argmax_from_probs")
+    assert draws == _DP * config.dspark_block_size
+    # Only the drafted tokens, and the distributions unless each replica
+    # keeps its own, cross the mesh.
+    assert staged.count("mo.distributed.allgather") == (
+        1 if replica_probs else 2
+    )
 
 
 class _StageBlock(Module[..., Tensor]):

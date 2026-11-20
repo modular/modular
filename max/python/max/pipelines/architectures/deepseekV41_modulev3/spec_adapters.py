@@ -942,10 +942,9 @@ class DSparkDeepseekV41Proposer:
                 sampler.adopt_distributions(
                     ops.allgather(distributions, batch.signal_buffers)[0]
                 )
-        return ops.cast(
-            ops.allgather(drafted, batch.signal_buffers)[0],
-            accepted.next_tokens.dtype,
-        ).rebind([accepted.next_tokens.shape[0], self.block_size])
+        return ops.allgather(drafted, batch.signal_buffers)[0].rebind(
+            [accepted.next_tokens.shape[0], self.block_size]
+        )
 
 
 def verify(
