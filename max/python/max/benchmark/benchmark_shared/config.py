@@ -180,6 +180,7 @@ PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
 # Override endpoint per backend for video tasks (text-to-video and
 # image-to-video). For vllm-omni use the dedicated /v1/videos/sync endpoint.
 VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
+    "mach": "/v1/responses",
     "vllm": "/v1/videos/sync",
     "vllm-chat": "/v1/videos/sync",
     "sglang": "/v1/videos",
