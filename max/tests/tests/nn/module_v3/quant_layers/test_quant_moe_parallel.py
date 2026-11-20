@@ -1270,6 +1270,8 @@ def test_glm_nvfp4_one_device_runs_the_experts_without_an_exchange(
     assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
     assert out.dtype == DType.bfloat16
     assert "ep.dispatch" not in graph and "ep.combine" not in graph
+    # Each token row quantizes once for all of its experts.
+    assert "quantize.dynamic.block.scaled.from_sources" in graph
 
 
 def test_glm_fp8_one_device_keeps_the_float32_moe(

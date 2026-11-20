@@ -16551,6 +16551,8 @@ def grouped_quantize_dynamic_block_scaled(
     out_type: DType = DType.uint8,
     indices: TensorValue | None = None,
     indices_divisor: int = 1,
+    restore: TensorValue | None = None,
+    top_k: int = 0,
 ) -> tuple[TensorValue, TensorValue]:
     """Grouped dynamic NVFP4/MXFP4/MXFP8 quantization for MoE experts.
 
@@ -16578,6 +16580,14 @@ def grouped_quantize_dynamic_block_scaled(
             Passing the routing slot order from
             :func:`moe_create_indices` with the top-k as the divisor reads
             each slot's token row without a separate division kernel.
+        restore: Optional sorted position of each routing slot, as
+            :func:`moe_create_indices` returns it, in place of ``indices``.
+            Shape: ``[tokens * top_k]``, dtype ``uint32``. Input row ``t``
+            goes to the output rows ``restore[t * top_k + k]``: each token
+            row is read and quantized once rather than once per slot, with
+            the same result as ``indices`` set to the matching slot order.
+            NVFP4 only, with a column count that is a multiple of 64.
+        top_k: Routing slots per token, which ``restore`` needs.
         sf_vector_size: The block size for the scaling factors.
         scales_type: Scale factor dtype. ``float8_e4m3fn`` for NVFP4.
         out_type: Output dtype. ``uint8`` for packed FP4.
@@ -16596,11 +16606,24 @@ def grouped_quantize_dynamic_block_scaled(
     if out_type not in (DType.uint8, DType.float8_e4m3fn):
         raise ValueError("out_type must be uint8 (FP4x2) or float8_e4m3fn")
 
+    if indices is not None and restore is not None:
+        raise ValueError("pass indices or restore, not both")
     if indices is not None:
         if indices.dtype not in (DType.int32, DType.uint32):
             raise ValueError("indices dtype must be int32 or uint32")
         if indices_divisor < 1:
             raise ValueError("indices_divisor must be positive")
+    if restore is not None:
+        if restore.dtype != DType.uint32:
+            raise ValueError("restore dtype must be uint32")
+        if top_k < 1:
+            raise ValueError("restore needs a positive top_k")
+        if (out_type, scales_type, sf_vector_size) != (
+            DType.uint8,
+            DType.float8_e4m3fn,
+            16,
+        ):
+            raise ValueError("restore supports NVFP4 only")
 
     if not _is_sm10x_gpu():
         # route to the fallback kernel
@@ -16613,7 +16636,8 @@ def grouped_quantize_dynamic_block_scaled(
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
     SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
-    num_rows = indices.shape[0] if indices is not None else input.shape[0]
+    slots = indices if indices is not None else restore
+    num_rows = slots.shape[0] if slots is not None else input.shape[0]
     total_m_tiles = ceildiv(num_rows, Dim(SF_MN_GROUP_SIZE))
     # A row belongs to exactly one group, so the number of non-empty groups
     # is bounded by both the group count and the row count; padding one tile
@@ -16637,6 +16661,12 @@ def grouped_quantize_dynamic_block_scaled(
         op_name = "quantization.grouped.quantize.dynamic.block.scaled.with_row_indices"
         values.append(indices)
         parameters["row_index_divisor"] = indices_divisor
+    elif restore is not None:
+        op_name = (
+            "quantization.grouped.quantize.dynamic.block.scaled.from_sources"
+        )
+        values.append(restore)
+        parameters["top_k"] = top_k
 
     result = ops.custom(
         op_name,

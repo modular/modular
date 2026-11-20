@@ -64,6 +64,7 @@ from linalg.block_scaled_quantization import (
     quantize_dynamic_block_scaled,
     quantize_block_scaled_with_amax,
     grouped_quantize_dynamic_scaled_fp4_async,
+    grouped_quantize_dynamic_scaled_fp4_from_sources,
     grouped_quantize_nvfp4_row_amax,
     block_scales_interleave,
     quantize_dynamic_block_scaled_mxfp4,
@@ -1887,6 +1888,68 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
             sf_tensor.to_tile_tensor[.float32](),
             context,
             row_indices.to_tile_tensor().as_unsafe_any_origin().as_imm(),
+        )
+
+
+@extensibility.register(
+    "quantization.grouped.quantize.dynamic.block.scaled.from_sources"
+)
+struct Struct_grouped_quantize_dynamic_block_scaled_from_sources:
+    """Registers the `quantization.grouped.quantize.dynamic.block.scaled.from_sources` graph op with the graph compiler.
+
+    Source-row variant of
+    `quantization.grouped.quantize.dynamic.block.scaled.with_row_indices` for
+    an MoE fan-out: input row `t` goes to the output rows
+    `restore[t * top_k + k]`, the sorted positions `moe.create.indices`
+    gives the token's slots. It reads and quantizes each input row once
+    where the row-indices variant does so once per slot, and its outputs
+    are that variant's, byte for byte, given the matching slot order.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        top_k: Int,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        row_offsets: Some[Input & Tensor],
+        scales_offsets: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        sf_tensor: Some[Input & Tensor],
+        restore: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(sf_tensor), TileTensorable)
+        comptime assert conforms_to(type_of(restore), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+        comptime assert type_of(scales_offsets).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(sf_tensor).rank == 1
+        comptime assert type_of(restore).rank == 1
+        comptime assert (
+            context.target.is_gpu()
+        ), "grouped quantize dynamic block scaled only supports GPUs"
+
+        grouped_quantize_dynamic_scaled_fp4_from_sources[top_k=top_k](
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
+            row_offsets.to_tile_tensor[.uint32](),
+            scales_offsets.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            sf_tensor.to_tile_tensor[.float32](),
+            restore.to_tile_tensor[.uint32](),
+            context,
         )
 
 

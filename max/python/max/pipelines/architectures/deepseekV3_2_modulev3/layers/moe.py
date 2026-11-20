@@ -143,23 +143,24 @@ class DeepseekV3_2LocalExpertsMoE(ExpertParallelMoE):
         )
         top_k = self.num_experts_per_token
         topk_idx, topk_weight = self.gate(x)
-        order, start, restore, expert_ids, usage, scales_offset = (
+        _, start, restore, expert_ids, usage, scales_offset = (
             moe_create_indices(
                 topk_idx.reshape([-1]).cast(DType.int32),
                 self.num_experts,
                 needs_scales_offset=True,
             )
         )
-        # The quantize reads each slot's token row through the order, so
-        # the sorted copy of ``x`` never materializes.
+        # Every expert shares the one input scale, so each token row is
+        # quantized once and its bytes go to its slots' sorted rows: the
+        # sorted copy of ``x`` never materializes.
         data, scales = grouped_quantize_dynamic_block_scaled(
             x,
             row_offsets=start,
             scales_offsets=scales_offset,
             expert_ids=expert_ids,
             sf_tensor=dispatch_scales[0],
-            indices=order,
-            indices_divisor=top_k,
+            restore=restore,
+            top_k=top_k,
         )
         tokens = NVFP4Activation(
             data=data,
