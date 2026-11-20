@@ -1,6 +1,6 @@
 // RUN: rm -rf %t && mkdir -p %t
 // RUN: env MODULAR_DEBUG=ir-output-dir=%t mo-opt %s \
-// RUN:   --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
+// RUN:   --mogg-import-packages \
 // RUN:   --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers \
 // RUN:   --map-outline-structured-kernel-bodies \
 // RUN:   --canonicalize --cse --map-to-mogg \
@@ -9,44 +9,39 @@
 // RUN:   -verify-each=false
 // RUN: cat %t/*.mojo | FileCheck %s
 
-// The concat+window epilogue, as emitted into its store functor: the concat
-// store, then the select. The select calls its primitive with the slice's
-// static starts (the negative one as written) and steps as comptime params,
-// and its in- and out-shapes as runtime `Coord` args -- functor fields typed
-// by each shape's static/dynamic split, built from the concat's own extents
-// and the window's -- and emits its body, the window store at the
-// primitive's index, only where its in-slice bit is set: on the `else` of
-// `not` the bit, the branch sense of an early return. The runtime in-shape
-// is what resolves the negative start.
+// A strided window of a matmul's fused add, as emitted into the matmul's store
+// functor. The select calls its primitive with the slice's static starts and
+// steps as comptime params and its static in- and out-shapes as `Coord`s built
+// in place. It emits its body, the relu and the window store at the
+// primitive's index, only where the in-slice bit is set: on the `else` of
+// `not` the bit. The whole stores of both adds follow at the functor's index.
 
-// CHECK:      def __{{.*}}, [[B:arg__[0-9]+]]: Int, {{arg__[0-9]+}}: Int, [[T:arg__[0-9]+]]: Int,
-// CHECK:      var [[OUT_COORD:var__+[0-9]+]] = layout.Coord(Scalar[DType.int]([[B]]), layout.Idx[8], layout.Idx[16])
-// CHECK:      var [[IN_COORD:var__+[0-9]+]] = layout.Coord(Scalar[DType.int]([[B]]), Scalar[DType.int]([[T]]), layout.Idx[16])
-// CHECK:      var {{var__+[0-9]+}} = OutputStoreFunctor_{{[0-9]+}}[{{.*}}]({{.*}}, [[IN_COORD]], [[OUT_COORD]])
-
-// CHECK:      struct OutputStoreFunctor_{{[0-9]+}}[spec__0: {{.*}}, spec__1: {{.*}}]
-// CHECK:      var [[IN_FIELD:var__[0-9]+]]: layout.Coord[Int, Int, layout.ComptimeInt[16]]
-// CHECK-NEXT: var [[OUT_FIELD:var__[0-9]+]]: layout.Coord[Int, layout.ComptimeInt[8], layout.ComptimeInt[16]]
-// CHECK:      managed_tensor_slice.simd_store_into_tensor_pointer[static_spec = Self.spec__0, simd_width = simd_width, element_alignment = element_alignment](self.{{var__[0-9]+}}, self.{{var__[0-9]+}}, self.{{var__[0-9]+}}, rebind[{{.*}}](std.utils.coord.coord_to_index_list([[IDX:[a-zA-Z0-9_]+]])), rebind[{{.*}}]([[VAL:var__+[0-9]+]]))
-// CHECK-NEXT: var [[IDX_LIST:var__+[0-9]+]] = rebind[std.utils.IndexList[3]](std.utils.coord.coord_to_index_list([[IDX]]))
-// CHECK-NEXT: comptime [[STARTS:param___[0-9]+]] = layout.Coord(layout.Idx[0], layout.Idx[-8], layout.Idx[0])
-// CHECK-NEXT: comptime [[STEPS:param___[0-9]+]] = layout.Coord(layout.Idx[1], layout.Idx[1], layout.Idx[1])
-// CHECK-NEXT: var [[INV:var__+[0-9]+]] = builtin_primitives.primitives.mogg_index_slice_select[static_starts = [[STARTS]], static_steps = [[STEPS]]]([[IDX_LIST]], self.[[IN_FIELD]], self.[[OUT_FIELD]])
-// CHECK-NEXT: var [[J:var__+[0-9]+]] = layout.Coord([[INV]][0])
-// CHECK-NEXT: var [[SEL:var__+[0-9]+]] = [[INV]][1]
+// CHECK:      struct OutputStoreFunctor_{{[0-9]+}}
+// CHECK:      var [[IDX_LIST:var_+[0-9]+]] = rebind[std.utils.IndexList[2]](std.utils.coord.coord_to_index_list(idx))
+// CHECK-NEXT: var [[IN:var_+[0-9]+]] = layout.Coord(layout.Idx[8], layout.Idx[16])
+// CHECK-NEXT: var [[OUT:var_+[0-9]+]] = layout.Coord(layout.Idx[4], layout.Idx[16])
+// CHECK-NEXT: comptime [[STARTS:param_+[0-9]+]] = layout.Coord(layout.Idx[1], layout.Idx[0])
+// CHECK-NEXT: comptime [[STEPS:param_+[0-9]+]] = layout.Coord(layout.Idx[2], layout.Idx[1])
+// CHECK-NEXT: var [[INV:var_+[0-9]+]] = builtin_primitives.primitives.mogg_index_slice_select[static_starts = [[STARTS]], static_steps = [[STEPS]]]([[IDX_LIST]], [[IN]], [[OUT]])
+// CHECK-NEXT: var [[J:var_+[0-9]+]] = layout.Coord([[INV]][0])
+// CHECK-NEXT: var [[SEL:var_+[0-9]+]] = [[INV]][1]
 // CHECK-NEXT: if not [[SEL]]:
 // CHECK-NEXT:   pass
 // CHECK-EMPTY:
 // CHECK-NEXT: else:
-// CHECK-NEXT:   managed_tensor_slice.simd_store_into_tensor_pointer[static_spec = Self.spec__1, simd_width = simd_width, element_alignment = element_alignment](self.{{var__[0-9]+}}, self.{{var__[0-9]+}}, self.{{var__[0-9]+}}, rebind[{{.*}}](std.utils.coord.coord_to_index_list([[J]])), rebind[{{.*}}]([[VAL]]))
-mo.graph @concat_slice_window<B, S, T -> OB, OT>(
-  %cache: !mo.tensor<[B, 8, 16], f32>,
-  %new: !mo.tensor<[B, S, 16], f32>,
-  %stops: !mo.tensor<[3], si64>
-) -> (!mo.tensor<[OB, OT, 16], f32>, !mo.tensor<[OB, 8, 16], f32>) {
-  %starts = mo.constant <#M.dense_array<0, -8, 0> : tensor<3xsi64>> : !mo.tensor<[3], si64>
-  %steps = mo.constant <#M.dense_array<1, 1, 1> : tensor<3xsi64>> : !mo.tensor<[3], si64>
-  %concat = mo.custom [symbol = "fused_variadic_inputs", device = #M.device_ref<"cpu", 0>, parameters = {axis = 1}](%cache, %new) : (!mo.tensor<[B, 8, 16], f32>, !mo.tensor<[B, S, 16], f32>) -> !mo.tensor<[B, T, 16], f32>
-  %slice = mo.slice(%concat, %starts, %stops, %steps) : (!mo.tensor<[B, T, 16], f32>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>) -> !mo.tensor<[B, 8, 16], f32>
-  mo.output<B, T> %concat, %slice : !mo.tensor<[B, T, 16], f32>, !mo.tensor<[B, 8, 16], f32>
+// CHECK-NEXT:   var [[RELU:var_+[0-9]+]] = builtin_kernels.elementwise.ReLU.elementwise[dtype = DType.float32]({{var_+[0-9]+}})
+// CHECK-NEXT:   managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}](std.utils.coord.coord_to_index_list([[J]])), rebind[{{.*}}]([[RELU]]))
+// CHECK-EMPTY:
+// CHECK-NEXT: managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}](std.utils.coord.coord_to_index_list(idx)), {{.*}}
+// CHECK-NEXT: managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}](std.utils.coord.coord_to_index_list(idx)), {{.*}}
+mo.graph @matmul_window(%p: !mo.tensor<[8, 8], f32>, %q: !mo.tensor<[8, 16], f32>, %b: !mo.tensor<[8, 16], f32>, %c: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
+  %starts = mo.constant <#M.dense_array<1, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stops = mo.constant <#M.dense_array<8, 16> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %steps = mo.constant <#M.dense_array<2, 1> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %mm = mo.matmul(%p, %q) : (!mo.tensor<[8, 8], f32>, !mo.tensor<[8, 16], f32>) -> !mo.tensor<[8, 16], f32>
+  %x = mo.add(%mm, %b) : !mo.tensor<[8, 16], f32>
+  %z = mo.add(%mm, %c) : !mo.tensor<[8, 16], f32>
+  %w = mo.slice(%x, %starts, %stops, %steps) : (!mo.tensor<[8, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 16], f32>
+  %y = mo.relu(%w) : !mo.tensor<[4, 16], f32>
+  mo.output %x, %z, %y : !mo.tensor<[8, 16], f32>, !mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>
 }
