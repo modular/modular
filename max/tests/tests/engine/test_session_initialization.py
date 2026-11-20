@@ -60,13 +60,13 @@ def test_session_thread_argument(
             f"[runtime]\nnum_threads = {setting}\n"
         )
     _run(
-        f"""
+        rf"""
         import warnings
         import pytest
         from max.engine import InferenceSession
 
         warnings.simplefilter("error", DeprecationWarning)
-        with pytest.raises(ValueError, match=r"runtime[.]num_threads={configured}"):
+        with pytest.raises(ValueError, match=r"runtime[.]num_threads={configured}\b"):
             InferenceSession(num_threads=1)
 
         session = InferenceSession()
