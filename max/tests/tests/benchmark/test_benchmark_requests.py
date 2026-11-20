@@ -25,6 +25,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
+import max.benchmark.benchmark_shared.request as request_module
+import msgspec
 import pytest
 from max.benchmark.benchmark_serving import validate_task_and_endpoint
 from max.benchmark.benchmark_shared.config import (
@@ -43,6 +45,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     TextContentBlock,
 )
 from max.benchmark.benchmark_shared.request import (
+    ChatWireHistory,
     OpenAIChatCompletionsRequestDriver,
     OpenAICompletionsRequestDriver,
     OpenAIStreamRecorder,
@@ -75,7 +78,11 @@ from max.benchmark.benchmark_shared.request import (
     tag_response_format_outcome,
 )
 from pytest_mock import MockerFixture
-from tests.benchmark.benchmark_fakes import StreamBody, make_request_input
+from tests.benchmark.benchmark_fakes import (
+    StreamBody,
+    make_request_input,
+    sent_json,
+)
 from tqdm.asyncio import tqdm
 
 
@@ -1000,6 +1007,49 @@ def _streaming_response(
     return response
 
 
+class _CountingClock:
+    """A stand-in for the ``time`` module whose ``perf_counter`` counts reads.
+
+    Lets a test name the order of two clock reads instead of comparing real
+    timestamps, which two adjacent calls can tie.
+    """
+
+    def __init__(self) -> None:
+        self._now = 0.0
+
+    def perf_counter(self) -> float:
+        self._now += 1.0
+        return self._now
+
+
+def _record_encode_times(
+    mocker: MockerFixture, clock: _CountingClock
+) -> list[float]:
+    """Replaces the module's ``msgspec`` with one that logs each encode.
+
+    Only this module's reference is swapped, so the rest of the process keeps
+    the real encoder. The log holds the fake clock's reading per call, in
+    order.
+    """
+    encode_times: list[float] = []
+
+    def counting_encode(obj: object) -> bytes:
+        encode_times.append(clock.perf_counter())
+        return msgspec.json.encode(obj)
+
+    mocker.patch.object(
+        request_module,
+        "msgspec",
+        SimpleNamespace(
+            json=SimpleNamespace(
+                encode=counting_encode, decode=msgspec.json.decode
+            ),
+            Raw=msgspec.Raw,
+        ),
+    )
+    return encode_times
+
+
 class TestRequestDriver:
     """Test cases for RequestDriver classes."""
 
@@ -1335,9 +1385,9 @@ class TestRequestDriver:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("prompt", "images", "expected"),
+        ("prompt", "images", "prompt_carries_image", "expected"),
         [
-            pytest.param("hi", [], False, id="text-only"),
+            pytest.param("hi", [], False, False, id="text-only"),
             pytest.param(
                 "hi",
                 [
@@ -1346,6 +1396,7 @@ class TestRequestDriver:
                         "image_url": {"url": "data:image/jpeg;base64,AAA"},
                     }
                 ],
+                False,
                 True,
                 id="attached",
             ),
@@ -1369,6 +1420,7 @@ class TestRequestDriver:
                 ],
                 [],
                 True,
+                True,
                 id="resent-with-history",
             ),
         ],
@@ -1380,6 +1432,7 @@ class TestRequestDriver:
         mocker: MockerFixture,
         prompt: str | list[ChatMessage],
         images: list[OpenAIImage],
+        prompt_carries_image: bool,
         expected: bool,
     ) -> None:
         """A turn that only resends an earlier image still carries one."""
@@ -1388,7 +1441,9 @@ class TestRequestDriver:
             prompt=prompt,
             prompt_len=1,
             max_tokens=8,
+            ignore_eos=False,
             images=images,
+            prompt_carries_image=prompt_carries_image,
         )
 
         mock_aiohttp_session.setup_post_response(
@@ -1792,6 +1847,81 @@ class TestRequestDriver:
         ]
         assert len(result.pending_tpot_ends) == 0
 
+    def test_sampling_fields_are_cached_on_the_values(self) -> None:
+        """Callers rebuild an equal ``SamplingConfig`` per request, so the
+        cache keys on the values; an identity key would rebuild every time."""
+        driver = OpenAICompletionsRequestDriver()
+        first = driver._sampling_fields(SamplingConfig(temperature=0.5))
+        assert first == {"temperature": 0.5}
+        assert driver._sampling_fields(SamplingConfig(temperature=0.5)) is first
+        # A different config must not read the cached fields.
+        assert driver._sampling_fields(SamplingConfig(temperature=0.7)) == {
+            "temperature": 0.7
+        }
+
+    def test_sampling_fields_follow_an_in_place_edit(self) -> None:
+        """A mutated config must not keep reading the cached fields.
+
+        Caching the config object would compare it to itself, which always
+        matches, so the cache would serve the pre-edit fields forever.
+        """
+        driver = OpenAICompletionsRequestDriver()
+        sampling = SamplingConfig(temperature=0.5)
+        assert driver._sampling_fields(sampling) == {"temperature": 0.5}
+
+        sampling.temperature = 0.9
+
+        assert driver._sampling_fields(sampling) == {"temperature": 0.9}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("driver_class", "api_url", "chunk"),
+        [
+            pytest.param(
+                OpenAICompletionsRequestDriver,
+                "http://localhost:8000/completions",
+                b'data: {"choices": [{"text": "hi"}]}\n\n',
+                id="completions",
+            ),
+            pytest.param(
+                OpenAIChatCompletionsRequestDriver,
+                "http://localhost:8000/v1/chat/completions",
+                b'data: {"choices": [{"delta": {"content": "hi"}}]}\n\n',
+                id="chat",
+            ),
+        ],
+    )
+    async def test_the_window_opens_before_the_body_is_encoded(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+        driver_class: type[RequestDriver],
+        api_url: str,
+        chunk: bytes,
+    ) -> None:
+        """Serialization stays inside the window, as it is on main.
+
+        On main the payload reaches aiohttp as ``json=``, so aiohttp encodes it
+        after the recorder has stamped the start. Encoding the body up front
+        must not move that cost out of TTFT and latency.
+        """
+        clock = _CountingClock()
+        encode_times = _record_encode_times(mocker, clock)
+        mocker.patch.object(request_module, "time", clock)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, [chunk, b"data: [DONE]\n\n"])
+        )
+
+        result = await driver_class().request(make_request_input(api_url))
+
+        assert result.success is True
+        assert encode_times, "the driver must encode the body itself"
+        assert result.request_submit_time is not None
+        assert result.request_submit_time < encode_times[-1], (
+            "the request's start stamp must precede the body's encode"
+        )
+
     @pytest.mark.asyncio
     async def test_trtllm_ttft_is_the_first_chunk_not_the_bookkeeping(
         self, mock_aiohttp_session: Any, mocker: MockerFixture
@@ -1843,6 +1973,36 @@ class TestRequestDriver:
         # after the appends would report 3.0 - 1.0 for the first chunk.
         assert result.ttft == pytest.approx(1.0)
         assert result.latency == pytest.approx(2.0)
+
+
+class TestChatWireHistory:
+    """Unit tests for the cached wire form of a growing chat history."""
+
+    def test_each_turn_extends_the_array_it_sent(self) -> None:
+        history = ChatWireHistory()
+        first = history.encode([ChatMessage(role="user", content="hi")])
+        assert json.loads(bytes(first)) == [{"role": "user", "content": "hi"}]
+
+        messages = [
+            ChatMessage(role="user", content="hi"),
+            ChatMessage(role="assistant", content="hello"),
+        ]
+        assert json.loads(bytes(history.encode(messages))) == [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ]
+
+    def test_a_shorter_history_is_rejected(self) -> None:
+        """The cache only appends, so a history that lost a message would
+        otherwise resend it from the cached prefix."""
+        history = ChatWireHistory()
+        messages = [
+            ChatMessage(role="user", content="hi"),
+            ChatMessage(role="assistant", content="hello"),
+        ]
+        history.encode(messages)
+        with pytest.raises(ValueError, match="only grows"):
+            history.encode(messages[:1])
 
 
 class TestBuildFinalPayload:
@@ -1933,7 +2093,7 @@ class TestDriverExtraBody:
             )
         )
         assert result.success is True
-        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        sent = sent_json(mock_aiohttp_session.post)
         assert sent["stop"] == ["}"]
         assert sent["chat_template_kwargs"] == {"reasoning_effort": "low"}
         assert sent["vendor_ext"] == {"flags": ["a", "b"]}
@@ -1964,9 +2124,17 @@ class TestDriverExtraBody:
             )
         )
         assert result.success is True
-        sent = mock_aiohttp_session.post.call_args[1]["json"]
+        sent = sent_json(mock_aiohttp_session.post)
         assert sent["stop"] == ["}"]
         assert sent["vendor_ext"] == {"flags": ["a", "b"]}
+        # The completions driver sends a bare byte body, so the runner sets
+        # the content type.
+        assert (
+            mock_aiohttp_session.post.call_args.kwargs["headers"][
+                "Content-Type"
+            ]
+            == "application/json"
+        )
 
     @pytest.mark.asyncio
     async def test_trtllm_driver_merges_extra_body(
@@ -2739,7 +2907,7 @@ async def test_cache_warmup_empty_stream_requires_completed_generation(
         assert result.error == ""
     else:
         assert result.error
-    payload = mock_aiohttp_session.post.call_args.kwargs["json"]
+    payload = sent_json(mock_aiohttp_session.post)
     assert "is_cache_warmup" not in payload
     assert payload["max_tokens"] == 1
     # Without it the server sends no usage chunk, and the warmup cannot tell a

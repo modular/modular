@@ -44,6 +44,7 @@ from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
     BaseRequestFuncOutput,
     ChatMessage,
+    ChatWireHistory,
     RequestCounter,
     RequestDriver,
     RequestFuncInput,
@@ -125,6 +126,9 @@ async def chat_session_driver(
         max_tokens=0,
         ignore_eos=True,
         lora_id=lora_id,
+        # The history below only ever grows, so the driver can reuse the wire
+        # form of the messages already sent and pay for the new one alone.
+        wire_history=ChatWireHistory(),
     )
     content_idx = 0  # Assume user initiates the conversation
 
@@ -158,6 +162,9 @@ async def chat_session_driver(
                 ],
             )
         )
+        # Sticky: a prefix image is resent with every later turn's history.
+        if messages[content_idx].images:
+            request_func_input.prompt_carries_image = True
         # Synthetic placeholder for the assistant response.
         assistant_content = messages[content_idx + 1].content
         if not assistant_content:
@@ -206,6 +213,8 @@ async def chat_session_driver(
                 ],
             )
         )
+        if messages[content_idx].images:
+            request_func_input.prompt_carries_image = True
         request_func_input.prompt = message_history
         request_func_input.prompt_len = chat_len
         request_func_input.max_tokens = output_len
@@ -360,6 +369,8 @@ async def prerun_warmup_turns(
         chat_len = 0
         content_idx = 0
         pending_request: RequestFuncInput | None = None
+        prompt_end = 0
+        prompt_carries_image = False
         while content_idx < prefix_end_idx and content_idx + 1 < len(messages):
             chat_len += messages[content_idx].num_tokens
             output_len = messages[content_idx + 1].num_tokens
@@ -374,6 +385,11 @@ async def prerun_warmup_turns(
                     ],
                 )
             )
+            if messages[content_idx].images:
+                prompt_carries_image = True
+            # History keeps growing below, so the slice this request sends is
+            # taken once after the loop rather than copied per turn.
+            prompt_end = len(message_history)
             # Overwrite each iteration; only the last fitting turn's
             # request fires. Its prompt covers every earlier prefix.
             pending_request = RequestFuncInput(
@@ -383,7 +399,7 @@ async def prerun_warmup_turns(
                 if use_session_id_as_cache_salt
                 else None,
                 sampling=sampling,
-                prompt=list(message_history),
+                prompt=message_history,
                 images=[],
                 api_url=api_url,
                 prompt_len=chat_len,
@@ -391,11 +407,15 @@ async def prerun_warmup_turns(
                 max_tokens=_cap_output_len(output_len, max_output_len),
                 ignore_eos=True,
                 tools=messages[content_idx].tools,
+                prompt_carries_image=prompt_carries_image,
                 is_cache_warmup=True,
+                # wire_history stays None on purpose: this fires once per
+                # session, so a cache it filled would never be read again.
             )
             assistant_content = messages[content_idx + 1].content
             if not assistant_content:
-                assistant_content = " ".join(["token"] * max(output_len, 1))
+                # Same text as " ".join(["token"] * n), without the list.
+                assistant_content = ("token " * max(output_len, 1)).rstrip()
             message_history.append(
                 ChatMessage(
                     role="assistant",
@@ -405,6 +425,7 @@ async def prerun_warmup_turns(
             chat_len += output_len
             content_idx += 2
         if pending_request is not None:
+            pending_request.prompt = message_history[:prompt_end]
             requests_to_fire.append(pending_request)
 
     if not requests_to_fire:

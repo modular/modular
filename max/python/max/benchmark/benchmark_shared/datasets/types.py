@@ -73,11 +73,9 @@ class ImageURLDetail(BaseModel):
 class ImageContentBlock(BaseModel):
     """An OpenAI image content block."""
 
-    # Images are carried in the separate RequestFuncInput.images field and
-    # appended to the payload after serialisation; they appear in content lists
-    # only at the wire layer, not in prompts constructed by this codebase.
-    # The model is defined here so ChatMessage.content can represent the full
-    # OpenAI content-block union and round-trip correctly.
+    # A dataset's turn images reach the wire in RequestFuncInput.images, which
+    # is attached to the first user message before encoding, or in a multi-turn
+    # history's own messages, which carry them so every later turn resends them.
     type: Literal["image_url"] = "image_url"
     image_url: ImageURLDetail
 

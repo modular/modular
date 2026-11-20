@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Iterable, Sequence
 from pathlib import Path
-from typing import NamedTuple
-from unittest.mock import MagicMock
+from typing import Any, NamedTuple
+from unittest.mock import MagicMock, Mock
 
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
@@ -120,6 +120,21 @@ def make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
 def write_blob(path: Path, **fields: object) -> None:
     """Writes ``fields`` as a JSON object, standing in for a benchmark result."""
     path.write_text(json.dumps(fields))
+
+
+# One JSON request body as a test sees it: an object whose values are
+# arbitrarily nested, which is what ``json.loads`` hands back.
+SentBody = dict[str, Any]
+
+
+def sent_json(post: Mock) -> SentBody:
+    """The JSON body a mocked aiohttp ``post`` carried."""
+    return sent_bodies(post)[-1]
+
+
+def sent_bodies(post: Mock) -> list[SentBody]:
+    """The JSON bodies a mocked aiohttp ``post`` carried, in call order."""
+    return [json.loads(call.kwargs["data"]) for call in post.call_args_list]
 
 
 class StreamBody:
@@ -287,6 +302,7 @@ def make_request_input(
     ignore_eos: bool = False,
     response_format: ResponseFormat | None = None,
     tools: list[dict[str, object]] | None = None,
+    prompt_carries_image: bool = False,
 ) -> RequestFuncInput:
     """Returns a text request with default sampling."""
     return RequestFuncInput(
@@ -301,6 +317,7 @@ def make_request_input(
         ignore_eos=ignore_eos,
         response_format=response_format,
         tools=tools,
+        prompt_carries_image=prompt_carries_image,
     )
 
 

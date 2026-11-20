@@ -21,6 +21,7 @@ images to outgoing requests, and --dry-run workload stats reporting them.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
@@ -41,8 +42,10 @@ from max.benchmark.benchmark_shared.datasets.types import (
 )
 from max.benchmark.benchmark_shared.multi_turn import chat_session_driver
 from max.benchmark.benchmark_shared.request import (
+    ChatWireHistory,
     OpenAIChatCompletionsRequestDriver,
     RequestCounter,
+    RequestFuncInput,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     print_workload_stats,
@@ -51,9 +54,9 @@ from pytest_mock import MockerFixture
 from tests.benchmark.benchmark_fakes import (
     CapturingDriver,
     FakeTokenizer,
+    StreamBody,
     fake_loader,
-    make_request_input,
-    mock_chat_stream,
+    sent_json,
 )
 
 
@@ -135,26 +138,52 @@ async def test_serialized_payload_carries_the_image(
     drops images during serialization, which is the failure this whole
     feature is exposed to.
     """
+    mocker.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
     image: OpenAIImage = {
         "type": "image_url",
         "image_url": {"url": "data:image/jpeg;base64,AAA"},
     }
-    request_input = make_request_input(
-        "http://localhost:8000/v1/chat/completions",
+    wire = ChatWireHistory()
+    request_input = RequestFuncInput(
+        model="test-model",
+        session_id=None,
+        sampling=SamplingConfig(),
         prompt=[
             ChatMessage(role="system", content=[TextContentBlock(text="sys")]),
             ChatMessage(role="user", content=[TextContentBlock(text="hi")]),
         ],
-        max_tokens=16,
         images=[image],
+        api_url="http://localhost:8000/v1/chat/completions",
+        prompt_len=10,
+        max_tokens=16,
+        ignore_eos=False,
+        wire_history=wire,
     )
-    client = mock_chat_stream(
-        mocker, [b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n']
+
+    session_class = mocker.patch(
+        "max.benchmark.benchmark_shared.request.aiohttp.ClientSession"
     )
+    client = session_class.return_value.__aenter__.return_value
+
+    def post(**_: Any) -> Any:
+        response = mocker.AsyncMock()
+        response.status = 200
+        response.content = StreamBody(
+            [
+                b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n',
+                b"data: [DONE]\n\n",
+            ]
+        )
+        post_ctx = mocker.AsyncMock()
+        post_ctx.__aenter__ = mocker.AsyncMock(return_value=response)
+        post_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
+        return post_ctx
+
+    client.post = mocker.Mock(side_effect=post)
 
     await OpenAIChatCompletionsRequestDriver().request(request_input)
 
-    payload = client.post.call_args.kwargs["json"]
+    payload = sent_json(client.post)
     roles = [m["role"] for m in payload["messages"]]
     user_message = payload["messages"][roles.index("user")]
     assert image in user_message["content"], (
@@ -164,3 +193,14 @@ async def test_serialized_payload_carries_the_image(
     assert image not in system_message["content"], (
         "the image must not land on the system message"
     )
+
+    # This turn's images are spliced into freshly dumped messages, so it cannot
+    # use the history's encoding. The next turn, which carries no images, takes
+    # the cached path: nothing from the splice may have been cached with it.
+    request_input.images = []
+    await OpenAIChatCompletionsRequestDriver().request(request_input)
+    next_payload = sent_json(client.post)
+    next_roles = [m["role"] for m in next_payload["messages"]]
+    assert next_payload["messages"][next_roles.index("user")]["content"] == [
+        {"type": "text", "text": "hi"}
+    ], "a turn's image must not leak into the cached history"

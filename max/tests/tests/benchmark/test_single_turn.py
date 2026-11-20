@@ -19,6 +19,13 @@ import time
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
+from max.benchmark.benchmark_shared.datasets import SampledRequest
+from max.benchmark.benchmark_shared.datasets.types import (
+    ChatMessage,
+    ImageContentBlock,
+    ImageURLDetail,
+    TextContentBlock,
+)
 from max.benchmark.benchmark_shared.request import RequestFuncInput
 from max.benchmark.benchmark_shared.single_turn import (
     build_single_turn_request_input,
@@ -236,6 +243,53 @@ def test_build_single_turn_request_input_records_the_adapter(
     assert isinstance(built, RequestFuncInput)
     assert built.model == (lora_id or "base-model")
     assert built.lora_id == lora_id
+
+
+@pytest.mark.parametrize(
+    ("prompt_formatted", "expected"),
+    [
+        pytest.param("hi", False, id="text"),
+        pytest.param(
+            [
+                ChatMessage(
+                    role="user",
+                    content=[
+                        TextContentBlock(text="what is this?"),
+                        ImageContentBlock(
+                            image_url=ImageURLDetail(
+                                url="data:image/jpeg;base64,AAA"
+                            )
+                        ),
+                    ],
+                )
+            ],
+            True,
+            id="image-in-content",
+        ),
+    ],
+)
+def test_build_single_turn_request_input_marks_a_prompt_with_an_image(
+    prompt_formatted: str | list[ChatMessage], expected: bool
+) -> None:
+    """batch-job attaches images to the prompt messages and leaves
+    ``encoded_images`` empty, so the flag has to come from the messages."""
+    built = build_single_turn_request_input(
+        benchmark_task="text-generation",
+        request=SampledRequest(
+            prompt_formatted=prompt_formatted,
+            prompt_len=1,
+            output_len=8,
+            encoded_images=[],
+            ignore_eos=True,
+        ),
+        model_id="base-model",
+        lora_id=None,
+        api_url="http://localhost:8000/v1/chat/completions",
+        sampling=SamplingConfig(),
+        max_output_len=None,
+    )
+    assert isinstance(built, RequestFuncInput)
+    assert built.prompt_carries_image is expected
 
 
 @pytest.mark.parametrize(

@@ -58,6 +58,7 @@ from .config import (
 )
 from .datasets.types import (
     ChatMessage,
+    ImageContentBlock,
     OpenAIImage,
     PixelGenerationImageOptions,
 )
@@ -118,6 +119,12 @@ class BaseRequestFuncInput(ABC):
         """Get the output type for the request function input."""
 
 
+# The payload fields a ``SamplingConfig`` contributes: one scalar per set field.
+SamplingFields = Mapping[str, float | int]
+# The four ``SamplingConfig`` values a cached ``SamplingFields`` was built from.
+SamplingFieldsKey = tuple[float | None, float | None, float | None, int | None]
+
+
 def _apply_sampling_to_request_payload(
     payload: dict[str, Any], sampling: SamplingConfig
 ) -> None:
@@ -138,10 +145,54 @@ def _apply_sampling_to_request_payload(
 SerializedChatMessage = MutableMapping[str, Any]
 
 
+class ChatWireHistory:
+    """Encodes each message once; the history only grows.
+
+    A benchmark run appends one message per turn and re-sends the whole
+    conversation each time, so each message must be serialized exactly once.
+    The cache holds the array's elements and closes it per request.
+
+    The cache cannot tell a rewritten message from a new one, because it never
+    looks at a message it has already encoded: an edit to an earlier message
+    goes out unchanged. Only a *shorter* history is caught, by ``encode``
+    raising, and that error is meant to abort the run. A caller that dropped
+    messages mid-run has broken the invariant that a session's prompt extends
+    the previous one, so every later measurement would be attributed to the
+    wrong request.
+    """
+
+    def __init__(self) -> None:
+        # The messages encoded so far, as a JSON array missing its closer.
+        self._encoded = bytearray(b"[")
+        self._count = 0
+
+    def encode(self, messages: Sequence[ChatMessage]) -> msgspec.Raw:
+        """The JSON array of *messages*, ready to splice into a body.
+
+        Raises:
+            ValueError: If *messages* is shorter than what was already
+                encoded. The cache only appends, so a shorter history means
+                the caller dropped messages, and reusing the prefix would send
+                them anyway.
+        """
+        if len(messages) < self._count:
+            raise ValueError(
+                f"Cannot encode {len(messages)} messages after "
+                f"{self._count} were already sent: the cached history only "
+                "grows."
+            )
+        for message in messages[self._count :]:
+            if self._count:
+                self._encoded += b", "
+            self._encoded += msgspec.json.encode(message.model_dump())
+            self._count += 1
+        return msgspec.Raw(self._encoded + b"]")
+
+
 def _attach_images_to_first_user_message(
     messages: Sequence[SerializedChatMessage],
     images: Sequence[OpenAIImage],
-) -> None:
+) -> bool:
     """Attach images to the first user message, normalizing string content.
 
     Neither "index 0" nor "content is a list" holds in general: a conversation
@@ -152,6 +203,9 @@ def _attach_images_to_first_user_message(
     augmentation skips prompts with no user message rather than counting
     tokens for images it knows would be dropped here, so reaching a drop
     means sampling and sending disagree about the prompt shape.
+
+    Returns:
+        Whether *images* reached the payload.
     """
     target = next((m for m in messages if m.get("role") == "user"), None)
     if target is None:
@@ -159,7 +213,7 @@ def _attach_images_to_first_user_message(
             "Dropping %d image(s): the conversation has no user message.",
             len(images),
         )
-        return
+        return False
     content = target.get("content")
     if isinstance(content, str):
         target["content"] = [{"type": "text", "text": content}]
@@ -169,17 +223,44 @@ def _attach_images_to_first_user_message(
             len(images),
             type(content).__name__,
         )
-        return
+        return False
     target["content"].extend(images)
+    return True
 
 
-def _messages_carry_image(messages: Sequence[SerializedChatMessage]) -> bool:
-    return any(
-        isinstance(part, Mapping) and part.get("type") == "image_url"
-        for message in messages
-        if isinstance(content := message.get("content"), list)
+def prompt_carries_image(prompt: str | list[ChatMessage]) -> bool:
+    """Whether *prompt*'s messages carry an image content part."""
+    return isinstance(prompt, list) and any(
+        isinstance(part, ImageContentBlock)
+        for message in prompt
+        if isinstance(content := message.content, list)
         for part in content
     )
+
+
+def _chat_messages_json(
+    prompt: str | list[ChatMessage],
+    images: Sequence[OpenAIImage],
+    history: ChatWireHistory | None,
+) -> tuple[msgspec.Raw, bool]:
+    """The ``messages`` array of a chat body, encoded.
+
+    Returns:
+        The array, and whether *images* were added to it.
+    """
+    if history is not None and not images and isinstance(prompt, list):
+        return history.encode(prompt), False
+    messages: list[SerializedChatMessage]
+    if isinstance(prompt, str):
+        messages = [
+            {"role": "user", "content": [{"type": "text", "text": prompt}]}
+        ]
+    else:
+        messages = [msg.model_dump() for msg in prompt]
+    attached = bool(images) and _attach_images_to_first_user_message(
+        messages, images
+    )
+    return msgspec.Raw(msgspec.json.encode(messages)), attached
 
 
 def _build_final_payload(
@@ -217,6 +298,8 @@ class RequestFuncInput(BaseRequestFuncInput):
     max_tokens: int | None
     ignore_eos: bool
     response_format: ResponseFormat | None = None
+    # Whether ``prompt`` already carries an image part from an earlier turn.
+    prompt_carries_image: bool = False
     # Forwarded as the chat-completions ``tools`` field. Plain ``list[dict]``
     # so datasets can pass through OpenAI-shaped or server-specific schemas
     # without translation; ignored by non-chat drivers.
@@ -227,6 +310,10 @@ class RequestFuncInput(BaseRequestFuncInput):
     # Cache seeding needs a completed generation, even if its tokens are
     # special tokens that the server does not expose as text.
     is_cache_warmup: bool = False
+    # Wire form of ``prompt``'s messages already sent, for a growing history.
+    wire_history: ChatWireHistory | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         """Returns the output class this driver produces."""
@@ -467,6 +554,40 @@ class RequestDriver(ABC):
         self.tokenizer = tokenizer
         self.extra_body = extra_body
         self.backend = backend
+        # Per-run constants that the drivers would otherwise rebuild on every
+        # request. The wrapper drivers below delegate and never read them.
+        self._sampling_cache: (
+            tuple[SamplingFieldsKey, SamplingFields] | None
+        ) = None
+        self._auth: Mapping[str, str] | None = None
+
+    def _sampling_fields(self, sampling: SamplingConfig) -> SamplingFields:
+        """The request payload fields *sampling* contributes, built once per run.
+
+        Keyed on the four values, not the object: callers rebuild an equal
+        ``SamplingConfig`` per request, so identity would miss every time, and
+        holding the object itself would keep reporting the old fields after
+        an in-place edit, because comparing it to itself always matches.
+        """
+        key = (
+            sampling.temperature,
+            sampling.thinking_temperature,
+            sampling.top_p,
+            sampling.top_k,
+        )
+        cached = self._sampling_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        fields: dict[str, float | int] = {}
+        _apply_sampling_to_request_payload(fields, sampling)
+        self._sampling_cache = (key, fields)
+        return fields
+
+    def _auth_headers(self) -> Mapping[str, str]:
+        """The run's bearer auth headers, read from the environment once."""
+        if self._auth is None:
+            self._auth = openai_bearer_auth_headers()
+        return self._auth
 
     @abstractmethod
     async def request(
@@ -918,6 +1039,10 @@ class OpenAIStreamRecorder:
         max_tokens: The request's output-token budget, or ``None`` if it set
             none. A budget of at most two tokens lets a measured response
             without visible text succeed; see :meth:`finish`.
+        start: When the request was submitted, as a ``time.perf_counter()``
+            value. A caller that spends time building the request passes the
+            stamp it took before that work, so TTFT and latency cover it; the
+            default reads the clock now.
     """
 
     def __init__(
@@ -928,6 +1053,7 @@ class OpenAIStreamRecorder:
         tokenizer: PreTrainedTokenizerBase | None = None,
         is_cache_warmup: bool = False,
         max_tokens: int | None = None,
+        start: float | None = None,
     ) -> None:
         self.output = RequestFuncOutput()
         self.output.prompt_len = prompt_len
@@ -936,7 +1062,7 @@ class OpenAIStreamRecorder:
         self._generated_text: list[str] = []
         self._generated_chars = 0
         self._ttft = 0.0
-        self._st = time.perf_counter()
+        self._st = time.perf_counter() if start is None else start
         self.output.request_submit_time = self._st
         self._most_recent_timestamp = self._st
         self._has_content = False
@@ -1137,16 +1263,27 @@ class OpenAIStreamRecorder:
         return self.output
 
 
+def _body_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """*headers* with the JSON content type a ``json=`` body used to set.
+
+    A pre-serialized body no longer lets aiohttp infer the content type, so the
+    caller sets it here. The request's own headers win, and the dict passed in
+    is left alone: the drivers cache their auth headers per run.
+    """
+    return {"Content-Type": "application/json", **headers}
+
+
 async def _run_openai_stream_request(
     *,
     api_url: str,
-    payload: dict[str, Any],
+    body: bytes,
     headers: Mapping[str, str],
     prompt_len: int,
     chat: bool,
     tokenizer: PreTrainedTokenizerBase | None = None,
     is_cache_warmup: bool = False,
     max_tokens: int | None = None,
+    start: float | None = None,
 ) -> RequestFuncOutput:
     recorder = OpenAIStreamRecorder(
         prompt_len=prompt_len,
@@ -1154,11 +1291,12 @@ async def _run_openai_stream_request(
         tokenizer=tokenizer,
         is_cache_warmup=is_cache_warmup,
         max_tokens=max_tokens,
+        start=start,
     )
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         try:
             async with session.post(
-                url=api_url, json=payload, headers=headers
+                url=api_url, data=body, headers=_body_headers(headers)
             ) as response:
                 if response.status != 200:
                     return recorder.fail(response.reason or "")
@@ -1202,45 +1340,46 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
         )
 
-        base_payload: dict[
-            str,
-            bool | str | int | float | list[ChatMessage] | dict[str, bool],
-        ] = {
+        payload: dict[str, object] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "best_of": 1,
             "stream": True,
             "stream_options": {"include_usage": True},
             "ignore_eos": request_func_input.ignore_eos,
+            **self._sampling_fields(request_func_input.sampling),
         }
 
         if request_func_input.max_tokens is not None:
-            base_payload["max_tokens"] = request_func_input.max_tokens
-        _apply_sampling_to_request_payload(
-            base_payload, request_func_input.sampling
-        )
-        payload = _build_final_payload(base_payload, self.extra_body)
+            payload["max_tokens"] = request_func_input.max_tokens
+        payload = _build_final_payload(payload, self.extra_body)
 
-        headers = openai_bearer_auth_headers()
-
+        # The clock starts before the encode. On main aiohttp serialises the
+        # payload inside ``session.post``, after the recorder has stamped the
+        # start, so TTFT and latency include the encode; starting the clock
+        # after one here would silently drop it from the measurement.
+        start = time.perf_counter()
+        body = msgspec.json.encode(payload)
         return await _run_openai_stream_request(
             api_url=api_url,
-            payload=payload,
-            headers=headers,
+            body=body,
+            headers=self._auth_headers(),
             prompt_len=request_func_input.prompt_len,
             chat=False,
             tokenizer=self.tokenizer,
             is_cache_warmup=request_func_input.is_cache_warmup,
             max_tokens=request_func_input.max_tokens,
+            start=start,
         )
 
 
 async def _run_atom_nonstream_chat_request(
     *,
     api_url: str,
-    payload: dict[str, Any],
+    body: bytes,
     headers: Mapping[str, str],
     prompt_len: int,
+    start: float | None = None,
 ) -> RequestFuncOutput:
     """ATOM workaround: non-streaming chat request using server-reported timing.
 
@@ -1254,28 +1393,28 @@ async def _run_atom_nonstream_chat_request(
     """
     output = RequestFuncOutput()
     output.prompt_len = prompt_len
-    output.request_submit_time = time.perf_counter()
+    output.request_submit_time = time.perf_counter() if start is None else start
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         try:
             async with session.post(
-                url=api_url, json=payload, headers=headers
+                url=api_url, data=body, headers=_body_headers(headers)
             ) as response:
                 if response.status != 200:
                     output.error = response.reason or ""
                     output.success = False
                     return output
-                body = await response.json()
+                response_body = await response.json()
         except Exception:
             output.success = False
             output.error = "".join(traceback.format_exception(*sys.exc_info()))
             return output
 
     try:
-        message = body["choices"][0].get("message") or {}
+        message = response_body["choices"][0].get("message") or {}
     except (KeyError, IndexError, TypeError):
         output.success = False
-        output.error = f"Malformed chat completion response: {body!r}"
+        output.error = f"Malformed chat completion response: {response_body!r}"
         return output
 
     # Merge reasoning/reasoning_content/content (ATOM puts <mm:think> in content).
@@ -1294,7 +1433,7 @@ async def _run_atom_nonstream_chat_request(
             and isinstance(fn := tc.get("function"), dict)
         )
     )
-    usage = body.get("usage") or {}
+    usage = response_body.get("usage") or {}
     ttft_s = usage.get("ttft_s")
     tpot_s = usage.get("tpot_s")
     latency_s = usage.get("latency_s")
@@ -1351,80 +1490,72 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             "OpenAI Chat Completions API URL must end with 'chat/completions'."
         )
 
-        if isinstance(request_func_input.prompt, str):  # question only
-            content = [{"type": "text", "text": request_func_input.prompt}]
-            messages_data = [
-                {"role": "user", "content": content},
-            ]
-        else:  # conversation
-            messages_data = [
-                msg.model_dump() for msg in request_func_input.prompt
-            ]
+        messages_json, images_attached = _chat_messages_json(
+            request_func_input.prompt,
+            request_func_input.images,
+            request_func_input.wire_history,
+        )
 
-        base_payload: dict[
-            str,
-            bool | str | int | float | list[dict[str, Any]] | dict[str, Any],
-        ] = {
+        payload: dict[str, object] = {
             "model": request_func_input.model,
-            "messages": messages_data,
+            "messages": messages_json,
             "stream": True,
             "stream_options": {"include_usage": True},
             "ignore_eos": request_func_input.ignore_eos,
+            **self._sampling_fields(request_func_input.sampling),
         }
 
         if request_func_input.max_tokens is not None:
-            base_payload["max_tokens"] = request_func_input.max_tokens
-        _apply_sampling_to_request_payload(
-            base_payload, request_func_input.sampling
-        )
+            payload["max_tokens"] = request_func_input.max_tokens
         if request_func_input.response_format is not None:
-            # Convert TypedDict to plain dict so mypy accepts the assignment into
-            # base_payload (since a TypedDict is stricter than a dict[str, Any]).
-            base_payload["response_format"] = dict(
-                request_func_input.response_format
-            )
+            payload["response_format"] = request_func_input.response_format
         if request_func_input.tools:
-            base_payload["tools"] = request_func_input.tools
-        if request_func_input.images:
-            _attach_images_to_first_user_message(
-                messages_data, request_func_input.images
-            )
-        payload = _build_final_payload(base_payload, self.extra_body)
+            payload["tools"] = request_func_input.tools
+        payload = _build_final_payload(payload, self.extra_body)
 
         headers = {
             "Content-Type": "application/json",
-            **openai_bearer_auth_headers(),
+            **self._auth_headers(),
         }
         if request_func_input.session_id:
             headers["X-Session-ID"] = request_func_input.session_id
         if request_func_input.cache_salt:
             headers["X-Cache-Salt"] = request_func_input.cache_salt
 
+        # Stamped before the encode, which main leaves inside the measured
+        # window; see the note in OpenAICompletionsRequestDriver.request.
+        start = time.perf_counter()
         if self.backend == "atom":
             # ATOM doesn't per-token-stream chat/completions: send non-streaming
             # and read timing from `usage`. TODO(ATOM): remove once it streams.
             nonstream_payload = dict(payload)
             nonstream_payload["stream"] = False
             nonstream_payload.pop("stream_options", None)
+            body = msgspec.json.encode(nonstream_payload)
             output = await _run_atom_nonstream_chat_request(
                 api_url=api_url,
-                payload=nonstream_payload,
+                body=body,
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
+                start=start,
             )
         else:
+            body = msgspec.json.encode(payload)
             output = await _run_openai_stream_request(
                 api_url=api_url,
-                payload=payload,
+                body=body,
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
                 chat=True,
                 tokenizer=self.tokenizer,
                 is_cache_warmup=request_func_input.is_cache_warmup,
                 max_tokens=request_func_input.max_tokens,
+                start=start,
             )
         output.tools_offered = "tools" in payload
-        output.carries_image = _messages_carry_image(messages_data)
+        output.carries_image = (
+            images_attached or request_func_input.prompt_carries_image
+        )
         return output
 
 
@@ -1539,7 +1670,7 @@ class OpenResponsesRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            **openai_bearer_auth_headers(),
+            **self._auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
@@ -1631,7 +1762,7 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            **openai_bearer_auth_headers(),
+            **self._auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
@@ -1839,7 +1970,10 @@ class SglangVideoRequestDriver(RequestDriver):
         schema = get_video_request_schema(
             options.request_schema if options else None
         )
-        headers = dict(openai_bearer_auth_headers())
+        # image-to-video uploads the conditioning image, which requires
+        # multipart/form-data; text-to-video stays JSON. Let aiohttp set the
+        # multipart Content-Type (with boundary) for the form path.
+        headers = dict(self._auth_headers())
         if request_func_input.input_image_paths and schema is None:
             post_kwargs: dict[str, Any] = {
                 "data": _build_sglang_video_form(request_func_input)
@@ -1998,7 +2132,7 @@ class VllmOmniPixelGenerationRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            **openai_bearer_auth_headers(),
+            **self._auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
@@ -2118,7 +2252,8 @@ class VllmOmniVideoRequestDriver(RequestDriver):
         else:
             post_data = payload
 
-        headers = openai_bearer_auth_headers()
+        # A copy per request: the cached dict is shared by every request.
+        headers = dict(self._auth_headers())
 
         output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
