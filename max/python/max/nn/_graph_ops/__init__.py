@@ -19070,10 +19070,11 @@ def learnable_2d_interp_pos_emb(
     weight: TensorValueLike,
     grid_thws: TensorValueLike,
     time_weight: TensorValueLike,
+    interpolation_mode: str = "bicubic",
 ) -> TensorValue:
     """Applies learnable 2D interpolated position embedding (Kimi K2.5).
 
-    For each video described by ``grid_thws``, bicubic-interpolates ``weight``
+    For each video described by ``grid_thws``, interpolates ``weight``
     from (H, W) to (h, w), optionally adds temporal sincos embedding when
     ``t > 1``, and adds the result element-wise to ``x``.
 
@@ -19083,13 +19084,22 @@ def learnable_2d_interp_pos_emb(
         grid_thws: Per-video ``(t, h, w)`` of shape ``(N, 3)``, dtype int64.
         time_weight: 1D sincos temporal embedding of shape
             ``(num_frames, dim)``, dtype float32.
+        interpolation_mode: Spatial interpolation, ``"bicubic"`` or
+            ``"bilinear"``. Bilinear rounds the positional intermediate to
+            the input dtype before adding the patch embeddings.
 
     Returns:
         Tensor of shape ``(L, dim)`` with position embeddings added.
 
     Raises:
-        ValueError: On invalid input shapes or dtypes.
+        ValueError: On invalid input shapes or dtypes, or an unsupported
+            ``interpolation_mode``.
     """
+    if interpolation_mode not in ("bicubic", "bilinear"):
+        raise ValueError(
+            "interpolation_mode must be 'bicubic' or 'bilinear', got"
+            f" {interpolation_mode!r}"
+        )
     x = TensorValue(x)
     weight = TensorValue(weight)
     grid_thws = TensorValue(grid_thws)
@@ -19112,6 +19122,7 @@ def learnable_2d_interp_pos_emb(
         "learnable_2d_interp_pos_emb",
         device=x.device,
         values=[x, weight, grid_thws, time_weight],
+        parameters={"bilinear": interpolation_mode == "bilinear"},
         out_types=[
             TensorType(
                 dtype=x.dtype,

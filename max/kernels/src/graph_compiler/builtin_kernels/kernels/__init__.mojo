@@ -4233,7 +4233,7 @@ struct EaglePrefillShiftTokens:
 
 
 @extensibility.register("learnable_2d_interp_pos_emb")
-struct Learnable2DInterpPosEmb:
+struct Learnable2DInterpPosEmb[bilinear: Bool = False]:
     """Registers the `learnable_2d_interp_pos_emb` graph op with the graph compiler.
     """
 
@@ -4262,7 +4262,7 @@ struct Learnable2DInterpPosEmb:
         comptime assert type_of(grid_thws).rank == 2
         comptime assert type_of(time_weight).rank == 2
 
-        learnable_2d_interp_pos_emb[dtype](
+        learnable_2d_interp_pos_emb[dtype, Self.bilinear](
             output.to_tile_tensor(),
             x.to_tile_tensor[dtype](),
             weight.to_tile_tensor[dtype](),

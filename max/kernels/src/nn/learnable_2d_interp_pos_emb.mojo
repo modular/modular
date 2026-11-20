@@ -17,8 +17,9 @@ Equivalent to ``Learnable2DInterpPosEmbDivided_fixed.forward()`` from
 ``nvidia/Kimi-K2.5-NVFP4/modeling_kimi_k25.py``.
 
 For each video described by ``grid_thws``:
-  1. Bicubic-interpolates the learnable 2D weight grid from (H, W) to (h, w).
-     When ``(h, w) == (H, W)`` the grid is used directly.
+  1. Interpolates the learnable 2D weight grid from (H, W) to (h, w),
+     bicubically by default or bilinearly when ``bilinear`` is set. When
+     ``(h, w) == (H, W)`` the grid is used directly.
   2. If ``t > 1`` adds a 1D sincos temporal embedding per frame.
   3. Adds the result element-wise to ``x``.
 
@@ -30,7 +31,7 @@ Tensor layout (all row-major):
   - ``output``:      (L, dim)           x + interpolated position embedding
 """
 
-from std.math import clamp, floor
+from std.math import clamp, floor, max, min
 
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
@@ -67,7 +68,7 @@ def _cubic_weight(x: Float32) -> Float32:
 # ---------------------------------------------------------------------------
 
 
-@__name(t"learnable_2d_interp_pos_emb_{dtype}")
+@__name(t"learnable_2d_interp_pos_emb_{dtype}_{bilinear}")
 def _gpu_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
@@ -85,6 +86,7 @@ def _gpu_kernel[
     TimeLayoutType: TensorLayout,
     time_origin: ImmOrigin,
     TimeEngine: TensorEngine,
+    bilinear: Bool = False,
 ](
     output: TileTensor[
         dtype, OutputLayoutType, output_origin, Engine=OutputEngine
@@ -106,11 +108,13 @@ def _gpu_kernel[
 ):
     """GPU kernel: one block per output position, threads stride over dim.
 
-    output[l, d] = x[l, d] + bicubic(weight, hh, ww)[d]
+    output[l, d] = x[l, d] + interp(weight, hh, ww)[d]
                    + (time_weight[tt, d] if t > 1 else 0)
 
-    Bicubic uses half-pixel coords and Catmull-Rom kernel (a = -0.75),
-    or falls back to direct lookup when (h, w) == (H, W).
+    Both modes use half-pixel coords. Bicubic uses the Catmull-Rom kernel
+    (a = -0.75); bilinear clamps source coords at zero and rounds the
+    interpolated value to ``dtype``. Either falls back to direct lookup when
+    (h, w) == (H, W).
 
     Args:
         output: (L, dim) output tensor on device.
@@ -164,7 +168,7 @@ def _gpu_kernel[
         var scale_h = Float32(_H) / Float32(h)
         var scale_w = Float32(_W) / Float32(w)
 
-        # Precompute bicubic mapping for this spatial position.
+        # Precompute the half-pixel coordinates for this position.
         var ih_floor: Int = 0
         var iw_floor: Int = 0
         var dy: Float32 = 0
@@ -172,6 +176,9 @@ def _gpu_kernel[
         if not no_interp:
             var in_h = (Float32(hh) + 0.5) * scale_h - 0.5
             var in_w = (Float32(ww) + 0.5) * scale_w - 0.5
+            comptime if bilinear:
+                in_h = max(in_h, 0.0)
+                in_w = max(in_w, 0.0)
             ih_floor = Int(floor(in_h))
             iw_floor = Int(floor(in_w))
             dy = in_h - Float32(ih_floor)
@@ -182,6 +189,19 @@ def _gpu_kernel[
             var pos_val: Float32
             if no_interp:
                 pos_val = Float32(weight[hh, ww, d][0])
+            elif bilinear:
+                var y0 = min(ih_floor, _H - 1)
+                var x0 = min(iw_floor, _W - 1)
+                var y1 = min(y0 + 1, _H - 1)
+                var x1 = min(x0 + 1, _W - 1)
+                var w00 = Float32(weight[y0, x0, d][0])
+                var w01 = Float32(weight[y0, x1, d][0])
+                var w10 = Float32(weight[y1, x0, d][0])
+                var w11 = Float32(weight[y1, x1, d][0])
+                # Match the reference's rounding at BF16 interpolation ties.
+                var top = (w01 - w00).fma(dx, w00)
+                var bottom = (w11 - w10).fma(dx, w10)
+                pos_val = (bottom - top).fma(dy, top)
             else:
                 var val: Float32 = 0
                 comptime for i in range(4):
@@ -192,6 +212,10 @@ def _gpu_kernel[
                         var wx = _cubic_weight(Float32(j) - 1.0 - dx)
                         val += Float32(weight[yp, xp, d][0]) * wy * wx
                 pos_val = val
+
+            comptime if bilinear:
+                # The reference materializes interpolation before adding x.
+                pos_val = Float32(Scalar[dtype](pos_val))
 
             var time_val: Float32 = 0
             if t > 1:
@@ -209,6 +233,7 @@ def _gpu_kernel[
 
 def learnable_2d_interp_pos_emb[
     dtype: DType,
+    bilinear: Bool = False,
 ](
     output: TileTensor[mut=True, dtype, ...],
     x: TileTensor[dtype, ...],
@@ -219,12 +244,14 @@ def learnable_2d_interp_pos_emb[
 ) raises:
     """Applies learnable 2D interpolated position embedding on GPU.
 
-    For each video described by ``grid_thws``, bicubic-interpolates ``weight``
+    For each video described by ``grid_thws``, interpolates ``weight``
     from (_H, _W) to (h, w), optionally adds temporal sincos embedding, and
     adds the result element-wise to ``x``.
 
     Parameters:
         dtype: Element type of ``x``, ``weight``, and ``output``.
+        bilinear: Uses bilinear interpolation with a dtype-rounded positional
+            intermediate. Defaults to the existing bicubic behavior.
 
     Args:
         output: (L, dim) output tensor.
@@ -265,6 +292,7 @@ def learnable_2d_interp_pos_emb[
         time_weight.LayoutType,
         ImmOrigin(time_weight.origin),
         time_weight.Engine,
+        bilinear,
     ]
     ctx.enqueue_function[kernel](
         output,
