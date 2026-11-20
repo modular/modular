@@ -75,8 +75,9 @@ max/kernels/test/gpu/compute_sanitizer/run_sanitizer.sh memcheck \
 ```
 
 Knobs: `CS_JOBS` (local parallelism), `CS_GPU` (pin to one physical GPU),
-`CS_RESULTS_DIR`, `COMPUTE_SANITIZER` (path to the binary). For the stress tool:
-`STRESS_REPS`, `STRESS_JOBS`.
+`CS_RESULTS_DIR`, `COMPUTE_SANITIZER` (path to the binary), `CS_SHARD` (`k/n`
+sweeps only slice `k` of `n`, so one lane can run on several machines). For
+the stress tool: `STRESS_REPS`, `STRESS_JOBS`.
 
 The nightly racecheck lane uses Compute Sanitizer 2026.3 from CUDA 13.4.
 Earlier versions can report false positives involving cluster and `mbarrier`
