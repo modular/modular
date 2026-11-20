@@ -39,6 +39,7 @@ from uuid import uuid4
 
 import numpy as np
 import psutil
+import uvloop
 from cyclopts import App, Parameter
 from cyclopts.config import Env
 from transformers import PreTrainedTokenizerBase
@@ -1566,7 +1567,7 @@ def _run_benchmark_sweep(
 
                 logger.info("mc=%s seed=%d", mc, args.seed)
 
-                result, ok = asyncio.run(benchmark(args, session, mc, rr))
+                result, ok = uvloop.run(benchmark(args, session, mc, rr))
                 iteration_results.append(result)
                 if not ok:
                     validation_passed = False

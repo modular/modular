@@ -29,6 +29,7 @@ modular_py_library(
         requirement("tiktoken"),
         requirement("transformers"),
         requirement("requests"),
+        requirement("uvloop"),
     ],
 )
 

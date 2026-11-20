@@ -14,10 +14,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+import uvloop
 from max.benchmark.benchmark_serving import (
     BenchmarkSession,
     EndCondition,
@@ -381,9 +383,12 @@ def test_run_benchmark_sweep_yields_labeled_failure_without_result() -> None:
         orig_skip_last=None,
     )
 
+    loops: list[asyncio.AbstractEventLoop] = []
+
     async def failed_benchmark(
         *args: object, **kwargs: object
     ) -> tuple[BenchmarkResult, bool]:
+        loops.append(asyncio.get_running_loop())
         return BenchmarkResult(task_type="text", max_concurrency=4), False
 
     with (
@@ -410,6 +415,7 @@ def test_run_benchmark_sweep_yields_labeled_failure_without_result() -> None:
     assert run.labels is not None
     assert run.labels.tokenizer_id == "myorg/session-tokenizer"
     assert run.labels.model_id == "myorg/model"
+    assert isinstance(loops[-1], uvloop.Loop)
 
 
 def test_run_benchmark_sweep_samples_every_level_from_the_base_seed() -> None:

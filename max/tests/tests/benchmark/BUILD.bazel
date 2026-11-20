@@ -50,6 +50,7 @@ modular_py_test(
         requirement("requests"),
         requirement("tqdm"),
         requirement("transformers"),
+        requirement("uvloop"),
     ],
 )
 
