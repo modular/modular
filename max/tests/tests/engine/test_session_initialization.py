@@ -61,11 +61,18 @@ def test_session_thread_argument(
         )
     _run(
         rf"""
+        import ctypes
         import warnings
         import pytest
         from max.engine import InferenceSession
 
         warnings.simplefilter("error", DeprecationWarning)
+        size_t_bits = 8 * ctypes.sizeof(ctypes.c_size_t)
+        with pytest.raises(ValueError, match="does not match runtime[.]num_threads="):
+            InferenceSession(num_threads=2**size_t_bits - 1)
+        for count in (-1, 2**size_t_bits):
+            with pytest.raises(ValueError, match="num_threads must be between"):
+                InferenceSession(num_threads=count)
         with pytest.raises(ValueError, match=r"runtime[.]num_threads={configured}\b"):
             InferenceSession(num_threads=1)
 

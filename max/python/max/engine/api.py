@@ -723,6 +723,13 @@ class InferenceSession:
         precompiled_mefs: str | Path | Iterable[str | Path] | None = None,
         export_mefs: str | Path | None = None,
     ) -> None:
+        if num_threads is not None:
+            max_threads = np.iinfo(np.uintp).max
+            if not 0 <= num_threads <= max_threads:
+                raise ValueError(
+                    f"num_threads must be between 0 and {max_threads}. "
+                    "Omit it to use runtime.num_threads."
+                )
         if precompiled_mefs is not None and export_mefs is not None:
             raise ValueError(
                 "pass at most one of precompiled_mefs and export_mefs: a "
