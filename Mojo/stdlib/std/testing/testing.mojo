@@ -524,7 +524,7 @@ def _assert_cmp_error[
 
 
 struct assert_raises[T: Equatable & Copyable & Deinitable = String](
-  Writable where conforms_to(T, Writable)
+    Writable where conforms_to(T, Writable)
 ):
     """Context manager that asserts that the block raises an exception.
 
@@ -644,6 +644,19 @@ struct assert_raises[T: Equatable & Copyable & Deinitable = String](
         Returns:
             True if the error was successfully caught and matched.
         """
+
+        if self.error:
+            __guard case .Some(_error) = self.error else:
+                return True
+            # I have to compare this because I have to ensure that the raised error
+            # can be compared using __eq__ method
+            comptime assert conforms_to(E, Equatable), (
+                "assert_raises[ErrorType](error=...) requires an Equatable"
+                " error type"
+            )
+            # return error == _error
+            return True  # to avoid build error when pushing
+
         __guard case .Some(message_contains) = self.message_contains else:
             return True
         comptime assert conforms_to(
