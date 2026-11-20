@@ -64,6 +64,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_rowwise_reductions_fuzz.py",
     "test_runtime_source_notes.py",
     "test_nms.py",
+    "test_op_log_trace_names.py",
     "test_scatter.py",
     "test_side_stream_host_wait_capture.py",
     "test_splitk_matmul_device_graph.py",
@@ -610,6 +611,24 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+# Op log output for a single-matmul graph: the compiler wraps the kernel
+# dispatch in an op-level scope and the kernel opens its own, so the two
+# LAUNCH lines must name the graph op and the kernel separately.
+modular_py_test(
+    name = "test_op_log_trace_names",
+    srcs = [
+        "conftest.py",
+        "test_op_log_trace_names.py",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
     ],
 )
 
