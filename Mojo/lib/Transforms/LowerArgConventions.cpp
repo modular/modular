@@ -48,13 +48,6 @@ namespace M::KGEN {
 #include "Mojo/KGENPasses.h.inc"
 } // namespace M::KGEN
 
-static StructType getIfParamPack(Type type) {
-  if (auto packStruct = ::dyn_cast<StructType>(type))
-    if (packStruct.getIsParamPack())
-      return packStruct;
-  return {};
-}
-
 /// If the specified value has uses, replace them with a dummy value.
 static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
                                  TypedAttr value = {}) {
@@ -306,8 +299,7 @@ transformNonResultValue(Transform *transform, unsigned operandIndex,
 
   /// LOWER PACK. Split the pack vararg into its elements.
   if (packEltConvention) {
-    auto packStruct = getIfParamPack(type);
-    assert(packStruct && "packEltConvention without a param pack");
+    auto packStruct = cast<StructType>(type);
     assert(convention == ArgConvention::ImmReg &&
            "Unexpected convention for a pack");
 

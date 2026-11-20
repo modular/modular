@@ -623,7 +623,7 @@ namespace M::MOGG {
 
 static bool isStaticStringLoweredPattern(Type ty) {
   auto structTy = dyn_cast<KGEN::StructType>(ty);
-  if (!structTy || structTy.getIsParamPack())
+  if (!structTy)
     return false;
 
   std::optional<SmallVector<Type>> elementTypes = structTy.getElementTypes();

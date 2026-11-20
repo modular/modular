@@ -444,9 +444,6 @@ void KGENParamPrinter::printStructBody(AsmPrinter &p, StructType type) {
 
   printIsMemoryOnly(p, type.getIsMemoryOnly());
 
-  if (type.getIsParamPack())
-    p << " isParamPack";
-
   if (type.isLayoutDomain() && !printsAsTypes)
     p << " layout";
   else if (type.isValueDomain())

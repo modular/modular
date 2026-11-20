@@ -781,9 +781,7 @@ def strided_store[
 
 
 struct _RegisterPackType[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[
-        `!kgen.struct<`, ~Self.Ts.values, ` isParamPack>`
-    ]
+    comptime _mlir_type = __mlir_type[`!kgen.struct<`, ~Self.Ts.values, `>`]
 
     var _mlir_value: Self._mlir_type
 

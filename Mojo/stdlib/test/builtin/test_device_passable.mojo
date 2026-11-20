@@ -79,7 +79,7 @@ struct TupleBox(ImplicitlyCopyable, TrivialRegisterPassable):
 
 # A register-passable aggregate holding a `DevicePassable` member (`ScaledInt`,
 # which doubles on encode) next to a `Coord` field. `Coord`'s storage is the
-# reflection-opaque `_RegTuple` (`!kgen.struct<... isParamPack>`), which
+# reflection-opaque `_RegTuple` (`!kgen.struct<...>`), which
 # `_contains_device_passable_field` must not try to field-walk. `Coord` carries
 # only plain integer data, so it is bit-copied unchanged.
 @fieldwise_init

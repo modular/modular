@@ -1608,7 +1608,7 @@ struct Tuple[*element_types: Movable](
         `!kgen.struct<:`,
         _MLIR.KGENParamListType[Movable],
         Self.element_types.values,
-        ` isParamPack>`,
+        `>`,
     ]
     var _mlir_value: Self._mlir_type
 

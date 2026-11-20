@@ -2263,7 +2263,7 @@ def LIT_RefPackFromPointerPackOp : LITOp<"ref.pack.from_pointer_pack", [Pure]> {
 
     ```mlir
     %0 = lit.ref.pack.from_pointer_pack %pack
-      : !kgen.struct<[pointer<index>, pointer<f32>]> isParamPack>
+      : !kgen.struct<(pointer<index>, pointer<f32>)>
      -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin>
     ```
   }];
