@@ -45,6 +45,7 @@ from ..model_config import DeepseekV3_2Config, HiSparseInputs
 from .mlp import DeepseekV3_2MLP
 from .moe import (
     DeepseekV3_2ExpertParallelMoE,
+    DeepseekV3_2LocalExpertsMoE,
     DeepseekV3_2MoE,
     DeepseekV3_2TensorParallelMoE,
 )
@@ -84,12 +85,26 @@ def _get_mlp(
         and layer_idx >= config.first_k_dense_replace
         and layer_idx % config.moe_layer_freq == 0
     )
+    nvfp4_experts = (
+        layer_quant_config is not None
+        and layer_quant_config.format == QuantFormat.NVFP4
+    )
+    # One device holding every NVFP4 expert, as a pipeline stage does, runs
+    # the expert-parallel path's local kernels: its tokens need no exchange.
+    local_experts = (
+        use_moe
+        and nvfp4_experts
+        and ep_config is None
+        and config.mesh is not None
+        and config.mesh.num_devices == 1
+    )
     # The graph-API model shards its router and shared expert into the plain
     # DeepSeek-V3 ones, so its expert-parallel deployments run the gate GEMM
     # in bfloat16 (casting the logits to float32) and the shared-expert
     # SwiGLU in bfloat16. Match that for the NVFP4 checkpoints it serves; the
-    # others keep the float32 variants they were validated with.
-    plain_v3_numerics = (
+    # others keep the float32 variants they were validated with. A device
+    # holding every expert takes them too, to match that path bit for bit.
+    plain_v3_numerics = local_experts or (
         ep_config is not None
         and quant_cfg is not None
         and quant_cfg.format == QuantFormat.NVFP4
@@ -126,6 +141,8 @@ def _get_mlp(
             return DeepseekV3_2ExpertParallelMoE(
                 **moe_kwargs, ep_config=ep_config
             )
+        if local_experts:
+            return DeepseekV3_2LocalExpertsMoE(**moe_kwargs)
         if (
             mode is not ParallelismMode.DP_EP
             and config.mesh is not None

@@ -55,6 +55,8 @@ from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
 )
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe import (
+    DeepseekV3_2LocalExpertsMoE,
+    DeepseekV3_2MoE,
     DeepseekV3_2TensorParallelMoE,
 )
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe_gate import (
@@ -1172,14 +1174,24 @@ def test_glm_router_outputs_keep_input_placement(
 
 
 def _glm_moe_layer(
-    mock_accelerator: MagicMock, quant_config: QuantConfig, dispatch: DType
-) -> ExpertParallelMoE:
-    """Builds the GLM-5.x expert-parallel MoE layer for ``quant_config``."""
-    devices = [mock_accelerator(0), mock_accelerator(1)]
+    mock_accelerator: MagicMock,
+    quant_config: QuantConfig,
+    dispatch: DType | None = None,
+) -> QuantizedMoE:
+    """Builds the GLM-5.x MoE layer for ``quant_config``.
+
+    With a ``dispatch`` dtype, two devices run it expert-parallel. Without
+    one, a single device holds every expert, as a pipeline stage does.
+    """
+    devices = [mock_accelerator(i) for i in range(1 if dispatch is None else 2)]
     mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
-    ep_config = _ep_config(
-        dispatch, len(devices), dispatch_quant_config=quant_config
-    )
+    ep_config = None
+    mode = ParallelismMode.TP_TP
+    if dispatch is not None:
+        ep_config = _ep_config(
+            dispatch, len(devices), dispatch_quant_config=quant_config
+        )
+        mode = ParallelismMode.TP_EP
     config = SimpleNamespace(
         quant_config=quant_config,
         n_routed_experts=_NUM_EXPERTS,
@@ -1199,13 +1211,8 @@ def _glm_moe_layer(
         mesh=mesh,
     )
     with default_dtype(DType.bfloat16), default_device(mesh):
-        layer = _get_mlp(
-            cast(DeepseekV3_2Config, config),
-            ParallelismMode.TP_EP,
-            0,
-            ep_config,
-        )
-    assert isinstance(layer, ExpertParallelMoE)
+        layer = _get_mlp(cast(DeepseekV3_2Config, config), mode, 0, ep_config)
+    assert isinstance(layer, QuantizedMoE)
     return layer
 
 
@@ -1234,6 +1241,65 @@ def test_glm_fp8_ep_router_and_shared_expert_in_float32(
         )
     assert isinstance(layer.gate, DeepseekV3_2TopKRouter)
     assert isinstance(layer.shared_experts, DeepseekV3_2MLP)
+
+
+def test_glm_nvfp4_one_device_runs_the_experts_without_an_exchange(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """One device holding every NVFP4 expert takes the EP numerics.
+
+    A pipeline stage has no token exchange, so it runs the expert-parallel
+    path's local kernels, with its bfloat16 router and shared expert, and
+    traces no dispatch or combine.
+    """
+    with F.lazy():
+        layer = _glm_moe_layer(mock_accelerator, nvfp4_quant_config)
+        assert isinstance(layer, DeepseekV3_2LocalExpertsMoE)
+        assert not isinstance(layer.gate, DeepseekV3_2TopKRouter)
+        assert type(layer.shared_experts) is QuantizedMLP
+        with default_dtype(DType.bfloat16), default_device(layer.mesh):
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=DeviceMapping(layer.mesh, (Replicated(),)),
+            )
+            out = layer(x)
+        graph = str(Graph.current._mlir_op)
+    assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
+    assert out.dtype == DType.bfloat16
+    assert "ep.dispatch" not in graph and "ep.combine" not in graph
+
+
+def test_glm_fp8_one_device_keeps_the_float32_moe(
+    mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
+) -> None:
+    with F.lazy():
+        layer = _glm_moe_layer(mock_accelerator, fp8_quant_config)
+    assert type(layer) is DeepseekV3_2MoE
+    assert isinstance(layer.gate, DeepseekV3_2TopKRouter)
+    assert isinstance(layer.shared_experts, DeepseekV3_2MLP)
+
+
+def test_glm_local_experts_moe_rejects_a_multi_device_mesh(
+    mock_accelerator: MagicMock, nvfp4_quant_config: QuantConfig
+) -> None:
+    devices = (mock_accelerator(0), mock_accelerator(1))
+    mesh = DeviceMesh(devices, (len(devices),), (TP,))
+    with (
+        F.lazy(),
+        default_dtype(DType.bfloat16),
+        default_device(mesh),
+        pytest.raises(ValueError, match="one device"),
+    ):
+        DeepseekV3_2LocalExpertsMoE(
+            hidden_dim=_HIDDEN_DIM,
+            num_experts=_NUM_EXPERTS,
+            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+            moe_dim=_MOE_DIM,
+            quant_config=nvfp4_quant_config,
+        )
 
 
 # --------------------------------------------------------------------------- #
