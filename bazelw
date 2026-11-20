@@ -5,6 +5,14 @@ set -euo pipefail
 readonly version="1.30.0"
 
 arch="$(uname -m)"
+if [[ $OSTYPE == darwin* ]]; then
+  # uname -m says x86_64 under Rosetta; hw.optional.arm64 is 1 on Apple silicon.
+  if [[ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+    arch="arm64"
+  else
+    arch="x86_64"
+  fi
+fi
 if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
   readonly bazel_arch="arm64"
 else
