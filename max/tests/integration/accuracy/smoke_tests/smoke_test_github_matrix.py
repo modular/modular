@@ -70,7 +70,6 @@ MACH = {"MACH"}
 MODELS: Mapping[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": _1xB200 | _1xMI355,
     "allenai/olmOCR-2-7B-1025-FP8": _1xB200 | _1xMI355,
-    "amd/Kimi-K2.7-Code-MXFP4": NIGHTLY | _4xMI355,
     "amd/MiniMax-M3-MXFP4": NIGHTLY | _4xMI355,
     "ByteDance-Seed/academic-ds-9B": DISABLE,  # TODO(SERVOPT-1120)
     "deepseek-ai/DeepSeek-V2-Lite-Chat": DISABLE,  # TODO(SERVOPT-1120)
@@ -132,8 +131,6 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/Gemma-4-31B-IT-NVFP4": NIGHTLY | _1xB200 | _2xB200,
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": NIGHTLY | VARIANT | _1xB200,
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": NIGHTLY | VARIANT | _8xB200,
-    "nvidia/Kimi-K2.7-Code-NVFP4": NIGHTLY | _8xB200,
-    "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": VARIANT | _8xB200,
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": _8xB200,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": NIGHTLY | VARIANT | _1xMI355 | _2xMI355,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": NIGHTLY | VARIANT | _1xB200 | _2xB200,

@@ -117,7 +117,6 @@ def test_nightly_8xb200_pinned() -> None:
     assert scheduled == {
         "MiniMaxAI/MiniMax-M3-MXFP8__mtp",
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
-        "nvidia/Kimi-K2.7-Code-NVFP4",
         "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
     }
 
