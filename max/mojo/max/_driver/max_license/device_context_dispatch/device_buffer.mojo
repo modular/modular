@@ -23,6 +23,7 @@ from std.os import abort
 from std.sys import is_gpu, size_of
 
 from max._driver.max_license.hal import Buffer, Context, get_device_spec
+from max._driver.max_license.hal.extensions.traits import SupportsHostPointerV1
 from max.gpu.host._driver_handles import (
     _DeviceBufferPtr as _HALDeviceBufferPtr,
 )
@@ -499,12 +500,30 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If this device's memory is not host-accessible.
         """
-        comptime assert (
-            use_legacy_backend()
-        ), "unsafe_host_ptr is only available on the legacy DeviceContext"
-        return rebind[Pointer[Scalar[Self.dtype], origin]](
-            self._impl.unsafe_host_ptr()
-        )
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
+            return rebind[Pointer[Scalar[Self.dtype], origin]](
+                self._impl.unsafe_host_ptr()
+            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        # A backend without the extension raises rather than failing to
+        # compile, matching the legacy `DeviceContext`.
+        comptime Ext = type_of(self._impl._inner[]._context[].extensions())
+        comptime if conforms_to(Ext, SupportsHostPointerV1):
+            ref ext = self._impl._inner[]._context[].extensions()
+            var host_ptr = ext.unsafe_host_ptr(self._impl._inner[]._buffer)
+            return (
+                host_ptr.unsafe_bitcast[Scalar[Self.dtype]]()
+                .unsafe_mut_cast[mut]()
+                .unsafe_origin_cast[origin]()
+            )
+        else:
+            raise Error(
+                "DeviceBuffer.unsafe_host_ptr: this device's HAL plugin does"
+                " not support host pointers"
+            )
 
     def context(self) raises -> DeviceContext[]:
         """Returns the device context associated with this buffer.
