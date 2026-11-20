@@ -3158,6 +3158,12 @@ public:
     options.elaborationErrorVerbose = errorVerbose;
     options.elaborationMaxDepth = maxDepth;
 
+    // The standalone pass can enable debug info without CompilationOptions.
+    // Nested compile_assembly calls must preserve that debug info too.
+    if (elaborateDebugInfo &&
+        options.debugLevel == CompilationOptions::kNoDebug)
+      options.debugLevel = CompilationOptions::kFullDebugInfo;
+
     // Now, construct and run the elaborator.
     if (useParametricInterpreter) {
       ParametricElaborator impl(symtab, paramCache, target, options,
