@@ -1055,6 +1055,76 @@ struct Span[
                 ptr.unsafe_offset(processed + i).unsafe_write(func(vec))
 
     @__allow_legacy_custom_self_type
+    def map_reduce[
+        dtype: DType,
+        map_dtype: DType,
+        accum_dtype: DType,
+        MapFn: def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[map_dtype, w],
+        ReduceFn: def(SIMD[map_dtype, _]) -> Scalar[accum_dtype],
+        AccumFn: def(Scalar[accum_dtype], Scalar[accum_dtype]) -> Scalar[
+            accum_dtype
+        ],
+        //,
+    ](
+        self: Span[Scalar[dtype], _, address_space=_],
+        map_fn: MapFn,
+        reduce_fn: ReduceFn,
+        accum_fn: AccumFn = lambda (
+            lhs: Scalar[accum_dtype], rhs: Scalar[accum_dtype]
+        ) -> Scalar[accum_dtype]: (lhs + rhs),
+        *,
+        start: Scalar[accum_dtype] = 0,
+    ) -> Scalar[accum_dtype]:
+        """Maps each element, reduces each SIMD chunk, then accumulates.
+
+        Parameters:
+            dtype: Element dtype of the span.
+            map_dtype: DType produced by `map_fn`.
+            accum_dtype: DType of the accumulator.
+            MapFn: Type of the elementwise map.
+            ReduceFn: Type of the per-chunk reduction.
+            AccumFn: Type of the scalar accumulation.
+
+        Args:
+            map_fn: Maps each element of a loaded SIMD chunk.
+            reduce_fn: Reduces one mapped chunk to an accumulator value.
+            accum_fn: Combines the accumulator with a chunk value. Defaults to
+                addition.
+            start: Runtime value the accumulator starts from.
+
+        Returns:
+            The reduced scalar.
+
+        Examples:
+
+        ```mojo
+        var data = Span([1, 2, 3, 4])
+        var start = 10
+        var total = data.map_reduce(
+            lambda [w: SIMDLength](chunk: SIMD[DType.int, w]) -> SIMD[DType.int, w]:
+                chunk,
+            lambda (chunk: SIMD[DType.int, _]) -> Scalar[DType.int]: chunk.reduce_add(),
+            start=start,
+        )
+        print(total) # 20
+        ```
+        """
+
+        comptime simd_width = simd_width_of[dtype]()
+        var ptr = self.unsafe_ptr().as_imm()
+        var length = len(self)
+        var acc = start
+
+        def run[
+            width: Int
+        ](idx: Int) {mut acc, imm ptr, imm map_fn, imm reduce_fn, imm accum_fn}:
+            var mapped = map_fn[width](ptr.unsafe_load[width=width](idx))
+            acc = accum_fn(acc, reduce_fn(mapped))
+
+        vectorize[simd_width](length, run)
+        return acc
+
+    @__allow_legacy_custom_self_type
     def count[
         dtype: DType,
         //,
@@ -1073,17 +1143,9 @@ struct Span[
             The amount of times the function returns `True`.
         """
 
-        comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr().as_imm()
-        var length = len(self)
-        var count = 0
-
-        def do_count[width: Int](idx: Int) {mut count, imm ptr, imm func}:
-            var mask = func[width](ptr.unsafe_load[width=width](idx))
-            count += mask.reduce_bit_count()
-
-        vectorize[simdwidth](length, do_count)
-        return count
+        return self.map_reduce(
+            func, lambda (mask: SIMD[.bool, _]) -> Int: mask.reduce_bit_count()
+        )
 
     @inline(.always)
     def unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
