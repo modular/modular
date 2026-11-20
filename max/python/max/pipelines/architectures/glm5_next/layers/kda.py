@@ -418,7 +418,6 @@ def kda_core(
     ring_rows: Tensor | None = None,
     verify_width: Tensor | None = None,
     capture: CaptureSink[KdaReplayInputs] | None = None,
-    pin_decode_fma: bool = False,
     position: int | None = None,
 ) -> Tensor:
     """Runs one device's heads: conv, recurrence, gated norm.
@@ -428,9 +427,7 @@ def kda_core(
     ``q``'s dtype, the input of the row-parallel ``o_proj``. Both pools are
     mutated in place, except under a verify (``verify_width`` set), which
     records the recurrence into ``ring_pool`` and appends its replay inputs
-    to ``capture`` for the rollback. ``pin_decode_fma`` pins the decode
-    kernel's fused multiply-adds, which only a test of decode against the
-    verify ring needs: a speculative graph never takes the decode branch.
+    to ``capture`` for the rollback.
     """
     dtype = q.dtype
     qkv_dim = int(q.shape[-1])
@@ -529,7 +526,10 @@ def kda_core(
             gate_mode=gate_mode,
             beta_mode="logits",
             state_layout=STATE_LAYOUT,
-            pin_fma=pin_decode_fma,
+            # The verify ring spells every multiply-add as an explicit fma, and
+            # MTP's tokens are this model's greedy tokens only if decode does
+            # the same. NVIDIA pins inside the kernel; AMD takes this flag.
+            pin_fma=True,
         )
 
     def chunk(qkv_io: tuple[Tensor, Tensor, Tensor] | None = None) -> Tensor:
@@ -669,9 +669,6 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         self.o_proj = row_parallel(Linear(qkv_dim, hidden, bias=False))
         self.verify: KdaVerify | None = None
         """Set by the speculative target around its verify, else ``None``."""
-        self.pin_decode_fma = False
-        """Whether decode pins its fused multiply-adds so its state matches a
-        verify ring's bit for bit; the pinned kernel is slower on AMD."""
 
     def forward(
         self, x: Tensor, state: KdaStateAccess, input_row_offsets: Tensor
@@ -684,7 +681,6 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
             head_dim=self.head_dim,
             norm_eps=self.norm_eps,
             gate_mode=self.gate_mode,
-            pin_decode_fma=self.pin_decode_fma,
             position=state.position,
         )
         normed = F.call_on_mesh(core, x.mesh, out_specs=head_split)(

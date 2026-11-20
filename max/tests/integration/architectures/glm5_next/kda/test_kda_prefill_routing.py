@@ -291,6 +291,18 @@ def test_gfx950_bf16_pool_stays_sequential(
     _assert_sequential(_core_mlir(pool_dtype=DType.bfloat16))
 
 
+def test_gfx950_decode_pins_its_fmas(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plain decode spells its multiply-adds as the verify ring does.
+
+    The ring reproduces ``kda_decode`` bit for bit only under ``pin_fma``, so
+    without it the model's MTP tokens drift from its own greedy tokens. NVIDIA
+    pins inside the kernel; AMD takes the parameter.
+    """
+    _patch_accelerator(monkeypatch, "hip", "gfx950")
+    (line,) = _op_lines(_core_mlir(), "kda_decode")
+    assert re.search(r"pin_fma\s*=\s*true", line), line
+
+
 def _ops(mlir: str, symbol: str) -> int:
     return len(re.findall(rf'symbol\s*=\s*"{re.escape(symbol)}"', mlir))
 
