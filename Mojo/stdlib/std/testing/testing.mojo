@@ -627,7 +627,7 @@ struct assert_raises[T: Equatable & Copyable & Deinitable = String](
         """
         raise Error("AssertionError: Didn't raise at ", self.call_location)
 
-    def __exit__[E: AnyType](self, error: E) raises -> Bool:
+    def __exit__[E: AnyType](self, expected_error: E) raises -> Bool:
         """Exit the context manager with an error.
 
         Works with `Error` and any custom `Writable` error type. When
@@ -638,32 +638,24 @@ struct assert_raises[T: Equatable & Copyable & Deinitable = String](
             E: The error type.
 
         Args:
-            error: The error raised.
-
-        Raises:
-            Error: If `contains` is set and the error message doesn't
-                include the expected string, or if `contains` is set
-                but the error type is not `Writable`.
+            expected_error: The error raised.
 
         Returns:
             True if the error was successfully caught and matched.
         """
 
-        if self.error:
-            __guard case .Some(_error) = self.error else:
-                return True
+        if case .Some(_error) = self.error:
             # I have to compare this because I have to ensure that the raised error
             # can be compared using __eq__ method
             comptime assert conforms_to(E, Equatable), (
                 "assert_raises[ErrorType](error=...) requires an Equatable"
                 " error type"
             )
-            # return error == _error
-            return True  # to avoid build error when pushing
+            return expected_error == _error
 
         __guard case .Some(message_contains) = self.message_contains else:
             return True
         comptime assert conforms_to(
             E, Writable
         ), "assert_raises(contains=...) requires a Writable error type"
-        return message_contains in String(error)
+        return message_contains in String(expected_error)

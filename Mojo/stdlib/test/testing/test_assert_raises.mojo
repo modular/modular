@@ -37,10 +37,9 @@ struct IoError(Copyable, Equatable):
         return self.message == other.message
 
 
-def test_assert_raises_catches_matched_error_instance_and_message() raises:
-    pass
-    # with assert_raises[IoError](error=IoError("error reading from input stream")):
-    #     raise IoError("SomeError")
+# def test_assert_raises_catches_matched_error_instance_and_message() raises:
+#     with assert_raises[IoError](error=IoError("error reading from input stream")):
+#         raise IoError("error reading from input stream")
 
 
 def test_assert_raises_catches_matched_error() raises:
