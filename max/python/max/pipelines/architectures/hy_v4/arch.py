@@ -47,4 +47,5 @@ hy_v4_arch = SupportedArchitecture(
     config=HYV4Config,
     tool_parser="hy_v4",
     reasoning_parser="hy_v4",
+    mach_only=True,
 )

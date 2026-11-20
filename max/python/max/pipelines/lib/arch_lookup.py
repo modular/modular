@@ -425,6 +425,13 @@ class SupportedArchitecture:
     unconstrained.
     """
 
+    mach_only: bool = False
+    """Whether only Mach serves this architecture.
+
+    ``max export`` builds its pipeline artifact for Mach, and ``max serve``
+    refuses the architecture with an error that points to Mach.
+    """
+
     tokenizer_family: (
         tuple[str, str | None]
         | Callable[[HuggingFaceRepo], tuple[str, str | None] | None]

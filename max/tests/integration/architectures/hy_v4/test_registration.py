@@ -65,6 +65,10 @@ def test_the_registered_input_order_keeps_the_prefill_length_before_kv() -> (
     assert leaves[4] == cache
 
 
+def test_only_mach_serves_hy4() -> None:
+    assert hy_v4_arch.mach_only
+
+
 @pytest.mark.parametrize("ep_size", [1, 4])
 def test_local_expert_sharding_accepts_both_existing_ep_settings(
     ep_size: int,

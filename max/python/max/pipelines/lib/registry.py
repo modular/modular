@@ -530,6 +530,24 @@ class PipelineRegistry:
             or arch
         )
 
+    def refuse_mach_only(self, pipeline_config: PipelineConfig) -> None:
+        """Raises if Mach, not ``max serve``, serves the config's architecture.
+
+        Args:
+            pipeline_config: The config to serve.
+
+        Raises:
+            ValueError: If the architecture is
+                :attr:`~max.pipelines.lib.arch_lookup.SupportedArchitecture.mach_only`.
+        """
+        arch = self.architecture_for_config(pipeline_config)
+        if arch is not None and arch.mach_only:
+            raise ValueError(
+                f"{arch.name} is served on Mach only: max serve does not serve it."
+                " Export it with `max export` and serve the artifact on Mach"
+                " (mach/docs/serving.md#serving-a-pipeline-artifact)."
+            )
+
     def get_active_huggingface_config(
         self,
         huggingface_repo: HuggingFaceRepo,
