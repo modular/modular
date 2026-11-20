@@ -50,9 +50,10 @@ DriverResult<M_driver_driver_t> M_driver_driver::create() {
   return driver.release();
 }
 
+// Counts CUDA ordinals rather than NVML devices: `cuDeviceGet` honors
+// `CUDA_VISIBLE_DEVICES` and NVML does not, so an NVML count can name devices
+// that cannot be opened.
 DriverResult<int64_t> M_driver_driver::deviceCount() {
-  // NVML counts every GPU on the host. cuDeviceGet takes only the ones
-  // CUDA_VISIBLE_DEVICES leaves.
   int count = 0;
   if (CUresult r = rawCuda.cuDeviceGetCount(&count); r != CUDA_SUCCESS)
     return tl::unexpected(cudaErrorStatus(this, r, "cuDeviceGetCount"));
