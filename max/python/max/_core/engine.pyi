@@ -628,8 +628,8 @@ class InferenceSession:
     Args:
         devices: The devices used for compilation and execution.
         custom_extensions: The paths to custom Mojo extension libraries.
-        num_threads: The number of execution threads. Defaults to 0,
-            which lets the runtime choose automatically.
+        num_threads: A nonzero value must match the process-wide
+            ``runtime.num_threads`` setting. Defaults to 0.
     """
 
     def __init__(

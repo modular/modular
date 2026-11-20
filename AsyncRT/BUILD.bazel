@@ -176,6 +176,7 @@ modular_shared_library(
         "//Support:ADT",
         "//Support:Base",
         "//Support:BinaryID",
+        "//Support:Configuration",
         "//Support:SymbolExport",
         "//Support:Threading",
         "//Support:TimeProfiler",

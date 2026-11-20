@@ -19,6 +19,7 @@ import os
 import signal
 import sys
 import threading
+import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
@@ -671,11 +672,12 @@ class InferenceSession:
     Args:
         devices: A list of devices on which to run inference. The host CPU
             is always included automatically.
-        num_threads: The number of execution threads for the process-wide
-            runtime. Set this before another runtime user creates a CPU device.
-            Defaults to ``None``, which lets the runtime choose automatically.
-            Later sessions must request a compatible runtime configuration;
-            omitted settings use defaults rather than inheriting existing values.
+        num_threads: Deprecated. Omit this argument to use the process-wide
+            ``runtime.num_threads`` setting. For example, run
+            ``MODULAR_RUNTIME_NUM_THREADS=1 python app.py`` and call
+            ``InferenceSession()`` in the app. Passing ``0`` or a matching
+            positive count emits a :exc:`DeprecationWarning`. A different
+            positive count raises :exc:`ValueError`.
         custom_extensions: The extensions to load for the model. Supports
             paths to a ``.mojoc`` custom ops library or a ``.mojo`` source file.
         precompiled_mefs: A directory of compiled-graph artifacts written by an
@@ -743,8 +745,6 @@ class InferenceSession:
             if device not in seen_devices:
                 final_devices.append(device)
                 seen_devices.add(device)
-        # The native constructor adds the host CPU after configuring the
-        # process runtime, so CPU() cannot initialize it with defaults first.
 
         custom_extensions_final = []
 
@@ -758,6 +758,13 @@ class InferenceSession:
             custom_extensions_final,
             num_threads or 0,
         )
+        if num_threads is not None:
+            warnings.warn(
+                "InferenceSession(num_threads=...) is deprecated. Omit num_threads "
+                "and use MODULAR_RUNTIME_NUM_THREADS to configure CPU threads.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # Register async-safe Python stack trace handler
         # This enables Python stack traces in crash reports without GIL deadlocks

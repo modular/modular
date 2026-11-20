@@ -13,6 +13,7 @@
 
 #include "AsyncRT/Runtime/Globals/RuntimeGlobal.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
+#include "Support/Configuration.h"
 
 #include <mutex>
 
@@ -36,6 +37,18 @@ static CPUDeviceOptions &storedGlobalCPUDeviceCreationOptionsImpl() {
 }
 
 } // namespace
+
+size_t CPUDeviceOptions::getConfiguredNumThreads() {
+  static const size_t count = []() -> size_t {
+    if (auto config = Config::open(); !config.isError()) {
+      size_t value;
+      if (!config->getValue("runtime.num_threads").getAsInteger(10, value))
+        return value;
+    }
+    return 0;
+  }();
+  return count;
+}
 
 std::mutex &getGlobalCPUDeviceMutex() { return getGlobalCPUDeviceMutexImpl(); }
 

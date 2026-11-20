@@ -27,123 +27,76 @@ from pathlib import Path
 import pytest
 
 
-def _run(script: str, config_dir: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+def _run(script: str, config_dir: Path, num_threads: int | None = None) -> None:
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(sys.path),
+        "MODULAR_HOME": str(config_dir),
+    }
+    if num_threads is None:
+        env.pop("MODULAR_RUNTIME_NUM_THREADS", None)
+    else:
+        env["MODULAR_RUNTIME_NUM_THREADS"] = str(num_threads)
+    result = subprocess.run(
         [sys.executable, "-c", textwrap.dedent(script)],
         capture_output=True,
         text=True,
-        check=False,
         timeout=180,
-        env={
-            **os.environ,
-            "PYTHONPATH": os.pathsep.join(sys.path),
-            # Isolate local modular.cfg settings and any inherited thread count.
-            "MODULAR_HOME": str(config_dir),
-            "MODULAR_RUNTIME_NUM_THREADS": "0",
-        },
+        env=env,
     )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
-def _assert_success(result: subprocess.CompletedProcess[str]) -> None:
-    assert result.returncode == 0, (
-        f"subprocess failed rc={result.returncode}\n"
-        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-
-
-@pytest.mark.parametrize("num_threads", [1, 2])
-def test_explicit_thread_count_initializes_host_device_and_graph(
-    num_threads: int, tmp_path: Path
-) -> None:
-    result = _run(
+@pytest.mark.parametrize("configured", [0, 2], ids=["unset", "config-file"])
+def test_session_thread_argument(configured: int, tmp_path: Path) -> None:
+    if configured:
+        (tmp_path / "modular.cfg").write_text(
+            f"[runtime]\nnum_threads = {configured}\n"
+        )
+    _run(
         f"""
-        import resource
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        import warnings
+        import pytest
         from max.engine import InferenceSession
-        session = InferenceSession(num_threads={num_threads})
 
-        # Inspect the host device only after reproducing the issue: constructing
-        # CPU() first would establish a different initialization order.
-        from max.driver import CPU
-        assert session.devices == [CPU()]
-        from max.graph import Graph
-        with Graph("after_explicit_session"):
-            pass
-        """,
-        tmp_path,
-    )
-    _assert_success(result)
+        warnings.simplefilter("error", DeprecationWarning)
+        with pytest.raises(ValueError, match=r"runtime[.]num_threads={configured}"):
+            InferenceSession(num_threads=1)
 
-
-@pytest.mark.parametrize("num_threads", [1, 2])
-def test_compatible_sessions_reuse_configuration(
-    num_threads: int, tmp_path: Path
-) -> None:
-    result = _run(
-        f"""
-        from max.engine import InferenceSession
-        first = InferenceSession(num_threads={num_threads})
-        matching = InferenceSession(num_threads={num_threads})
-        assert first.devices == matching.devices
-        """,
-        tmp_path,
-    )
-    _assert_success(result)
-
-
-def test_default_sessions_and_graph(tmp_path: Path) -> None:
-    result = _run(
-        """
-        from max.engine import InferenceSession
-        first = InferenceSession()
-        second = InferenceSession()
-        zero = InferenceSession(num_threads=0)
-        assert first.devices == second.devices == zero.devices
-        from max.graph import Graph
-        with Graph("after_default_session"):
-            pass
-        """,
-        tmp_path,
-    )
-    _assert_success(result)
-
-
-def test_graph_before_default_session(tmp_path: Path) -> None:
-    result = _run(
-        """
-        from max.graph import Graph
-        with Graph("before_default_session"):
-            pass
-        from max.engine import InferenceSession
         session = InferenceSession()
+        assert InferenceSession(num_threads=None).devices == session.devices
+        with pytest.warns(DeprecationWarning, match="Omit num_threads") as caught:
+            assert InferenceSession(num_threads=0).devices == session.devices
+        assert caught[0].filename == "<string>"
         """,
         tmp_path,
     )
-    _assert_success(result)
 
 
-@pytest.mark.parametrize("num_threads", [None, 2])
-def test_thread_configuration_conflict_is_rejected(
-    num_threads: int | None, tmp_path: Path
+@pytest.mark.parametrize("num_threads", [1, 2])
+@pytest.mark.parametrize(
+    "first",
+    ["InferenceSession()", "CPU()", 'Graph("first")'],
+    ids=["session-first", "cpu-first", "graph-first"],
+)
+def test_runtime_initialization_order(
+    first: str, num_threads: int, tmp_path: Path
 ) -> None:
-    result = _run(
+    _run(
         f"""
-        import resource
-        # The expected native fatal error must not leave a core dump in CI.
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        import os
+        import pytest
+        from max.driver import CPU
         from max.engine import InferenceSession
-        first = InferenceSession(num_threads=1)
-        print("FIRST_SESSION_READY", flush=True)
-        conflicting = InferenceSession(num_threads={num_threads!r})
+        from max.graph import Graph
+
+        first = {first}
+        os.environ["MODULAR_RUNTIME_NUM_THREADS"] = "3"
+        with pytest.warns(DeprecationWarning):
+            session = InferenceSession(devices=[CPU()], num_threads={num_threads})
+        with Graph("after_session"):
+            assert session.devices == [CPU()]
         """,
         tmp_path,
+        num_threads,
     )
-    diagnostics = (
-        f"rc={result.returncode}\n"
-        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    )
-    # An import failure or an abort in the first session must not count as
-    # successfully rejecting the second session's incompatible request.
-    assert "FIRST_SESSION_READY" in result.stdout, diagnostics
-    assert result.returncode != 0, diagnostics
-    assert "differentInit::Options" in result.stderr, diagnostics

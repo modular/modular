@@ -51,15 +51,12 @@ static CPUDeviceOptions
 getOrCreateCPUDeviceOptions(const Engine::Config &config,
                             StringRef profileFilename) {
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
-  cpuDeviceOptions.numThreads = config.getNumThreads();
   cpuDeviceOptions.maxThreads = config.getMaxThreads();
   cpuDeviceOptions.tcmallocAllocator =
       config.getAllocatorType() == (int)kCaching;
   cpuDeviceOptions.threadBusyWaitTime = config.getThreadBusyWaitTime().count();
   cpuDeviceOptions.profileFilename = profileFilename;
   cpuDeviceOptions.poolName = config.getContextName();
-  if (cpuDeviceOptions.numThreads == 1)
-    cpuDeviceOptions.withSingleThreaded();
   // Previously mainWillDonate was required to be false in order to avoid the
   // Runtime created by the Engine from overwriting the Runtime created by the
   // Mojo stdlib during startup, this is no longer the case. Though there is

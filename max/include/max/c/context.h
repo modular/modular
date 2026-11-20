@@ -23,11 +23,8 @@
 
 /// Creates a new runtime config.
 ///
-/// This configures runtime details such as the number of threads and log level.
-///
-/// By default, the config object's number of threads will be set to `0`, which
-/// is internally used to refer to the number of physical processors in the
-/// first socket in the system. You can change this with `M_setNumThreads()`.
+/// The CPU thread count is configured process-wide with `runtime.num_threads`.
+/// Its default value, `0`, lets the runtime choose automatically.
 ///
 /// You need this as an argument for `M_newRuntimeContext()`.
 ///

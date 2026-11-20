@@ -14,6 +14,7 @@
 #include "_core/Engine/InferenceSession.h"
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/AnyAsyncValueRef.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "GraphCompiler/Driver/Device/DeviceExecution.h"
 #include "GraphCompiler/Support/Telemetry.h"
 #include "Init/DevelopmentSignalHandler.h"
@@ -541,9 +542,15 @@ std::vector<Driver::Python::Buffer> ModelHandle::executePreparedDeviceTensors(
 M::Core::InferenceSession::InferenceSession(
     std::vector<Driver::Python::PyDeviceTy> &&devices,
     std::vector<std::filesystem::path> &&customExtensions, size_t numThreads) {
-  // Establish the process threading configuration before creating the
-  // implicit host device, which also acquires the shared CPU runtime.
-  runtimeConfig.setNumThreads(numThreads);
+  if (numThreads != 0) {
+    size_t configured = AsyncRT::CPUDeviceOptions::getConfiguredNumThreads();
+    if (numThreads != configured)
+      throw std::invalid_argument(
+          "num_threads=" + std::to_string(numThreads) +
+          " does not match runtime.num_threads=" + std::to_string(configured) +
+          ". Set MODULAR_RUNTIME_NUM_THREADS before starting the process.");
+  }
+
   auto maxContextOr = Engine::Context::getOrCreateMaxContext(runtimeConfig);
   if (maxContextOr.isError()) {
     throw std::invalid_argument(maxContextOr.takeError().get());

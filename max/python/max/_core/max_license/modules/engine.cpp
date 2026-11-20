@@ -812,8 +812,8 @@ void M::Graph::Python::bindEngineModule(nb::module_ m) {
       Args:
           devices: The devices used for compilation and execution.
           custom_extensions: The paths to custom Mojo extension libraries.
-          num_threads: The number of execution threads. Defaults to 0,
-              which lets the runtime choose automatically.
+          num_threads: A nonzero value must match the process-wide
+              ``runtime.num_threads`` setting. Defaults to 0.
   )nbdoc")
       .def(nb::init<std::vector<Driver::Python::PyDeviceTy> &&,
                     std::vector<std::filesystem::path> &&, size_t>(),

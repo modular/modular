@@ -15,6 +15,8 @@
 
 #include "gtest/gtest.h"
 
+#include <cstdlib>
+
 using namespace M;
 using namespace M::AsyncRT;
 
@@ -25,6 +27,28 @@ CPUDeviceRef createTestCPUDevice() {
                                        AsyncRT::CPUDeviceOptions()
                                            .withLeakCheckedAllocator()
                                            .withMainWillNotDonate());
+}
+
+TEST(CPUDeviceDeathTest, ConfiguredThreadCountSelectsWorkQueue) {
+  // Re-execute for each count because the runtime caches it process-wide.
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  for (size_t count : {1u, 2u}) {
+    EXPECT_EXIT(
+        {
+          setenv("MODULAR_RUNTIME_NUM_THREADS", std::to_string(count).c_str(),
+                 1);
+          CPUDeviceOptions options;
+          EXPECT_EQ(options.numThreads, count);
+          EXPECT_EQ(options.workQueueType,
+                    count == 1 ? CPUDeviceOptions::WorkQueueType::kSingleThread
+                               : CPUDeviceOptions::WorkQueueType::kThreadPool);
+          EXPECT_EQ(
+              createTestCPUDevice()->getWorkQueue()->getParallelismLevel(),
+              count);
+          std::_Exit(::testing::Test::HasFailure() ? 1 : 0);
+        },
+        ::testing::ExitedWithCode(0), "");
+  }
 }
 
 /// `getOrCreateCPUDevice` installs a single global CPUDevice; a second call on

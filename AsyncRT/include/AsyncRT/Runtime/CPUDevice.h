@@ -96,7 +96,10 @@ struct MODULAR_CXX_EXPORT CPUDeviceOptions {
     kSOProfiler
   };
 
-  size_t numThreads = 0;
+  /// Process-wide runtime.num_threads setting, or zero for automatic selection.
+  static size_t getConfiguredNumThreads();
+
+  size_t numThreads = getConfiguredNumThreads();
   size_t maxThreads = 0;
 
   /// Filepath to write profile to, which enables profiling only if set.
@@ -141,7 +144,8 @@ struct MODULAR_CXX_EXPORT CPUDeviceOptions {
   bool tcmallocAllocator = true;
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
-  WorkQueueType workQueueType{CPUDeviceOptions::WorkQueueType::kThreadPool};
+  WorkQueueType workQueueType = numThreads == 1 ? WorkQueueType::kSingleThread
+                                                : WorkQueueType::kThreadPool;
   /// When true and workQueueType is kThreadPool, creates a partitioned
   /// WorkQueue per NUMA node and wraps them in a DelegateThreadPoolWorkQueue.
   bool numaPartitioned = false;
