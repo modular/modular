@@ -166,26 +166,28 @@ executeExecutableModel(const ExecutableModel &executableModel,
   return TensorMap(std::move(resultMap), cpuDevice);
 }
 
-ErrorOr<Engine::Context>
-Engine::Context::create(const M::Engine::Config &config) {
+ErrorOr<ContextRef>
+Engine::Context::getOrCreateMaxContext(const M::Engine::Config &config) {
+  if (ContextRef ctx = config.getMaxContext()) {
+    return std::move(ctx);
+  }
+
+  Init::Options options;
   std::string profileFilename =
       llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
+  options.withCPUDeviceOptions(
+      getOrCreateCPUDeviceOptions(config, profileFilename));
+  options.withForceDisableCrashReporting(!config.isCrashLogEnabled());
+  return Init::getOrCreateContext("max-engine", options);
+}
 
-  ContextRef maxContext;
-  if (ContextRef ctx = config.getMaxContext()) {
-    maxContext = std::move(ctx);
-  } else {
-    Init::Options options;
-    CPUDeviceOptions rtOptions =
-        getOrCreateCPUDeviceOptions(config, profileFilename);
-    options.withCPUDeviceOptions(rtOptions);
-    options.withForceDisableCrashReporting(!config.isCrashLogEnabled());
-
-    auto contextOr = Init::getOrCreateContext("max-engine", options);
-    if (contextOr.isError())
-      return contextOr.takeError();
-    maxContext = contextOr.takeValue();
+ErrorOr<Engine::Context>
+Engine::Context::create(const M::Engine::Config &config) {
+  auto contextOr = getOrCreateMaxContext(config);
+  if (contextOr.isError()) {
+    return contextOr.takeError();
   }
+  ContextRef maxContext = contextOr.takeValue();
   auto runtimeContext = Engine::Context(config, maxContext.copy());
   auto &maxTelemetryContext =
       runtimeContext.maxContext
