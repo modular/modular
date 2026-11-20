@@ -13,10 +13,10 @@
 from std.ffi import _DLHandle
 
 from ..status import HALError
-from .traits import HALExtensions
+from .traits import HALExtensions, SupportsHostPointerV1
 
 
-struct CPUHALExtensions(HALExtensions):
+struct CPUHALExtensions(HALExtensions, SupportsHostPointerV1):
     """`HALExtensions` implementation for the host CPU."""
 
     def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:

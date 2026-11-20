@@ -22,14 +22,20 @@ from .completion_flag import (
     RawPluginCompletionFlagReset,
     load_optional,
 )
-from .traits import HALExtensions, SupportsCompletionFlagResetV1
+from .traits import (
+    HALExtensions,
+    SupportsCompletionFlagResetV1,
+    SupportsHostPointerV1,
+)
 
 
 struct MetalExtensionFunctions(RawPluginComponent):
     pass
 
 
-struct MetalHALExtensions(HALExtensions, SupportsCompletionFlagResetV1):
+struct MetalHALExtensions(
+    HALExtensions, SupportsCompletionFlagResetV1, SupportsHostPointerV1
+):
     """`HALExtensions` implementation for Apple Metal backends."""
 
     comptime FlagGroup = RawPluginCompletionFlag

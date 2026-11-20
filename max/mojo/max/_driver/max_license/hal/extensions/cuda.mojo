@@ -28,6 +28,7 @@ from .traits import (
     HALExtensions,
     SupportsCompletionFlagAddressV1,
     SupportsCompletionFlagResetV1,
+    SupportsHostPointerV1,
     SupportsPeerAccessV1,
 )
 
@@ -40,6 +41,7 @@ struct CUDAHALExtensions(
     HALExtensions,
     SupportsCompletionFlagAddressV1,
     SupportsCompletionFlagResetV1,
+    SupportsHostPointerV1,
     SupportsPeerAccessV1,
 ):
     """`HALExtensions` implementation for NVIDIA CUDA backends."""

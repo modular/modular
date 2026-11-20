@@ -25,7 +25,14 @@ M_driver_status_t M_driver_memory::getProperty(llvm::StringRef name,
     return M_DRIVER_STATUS_SUCCESS;
   }
   if (name == M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS) {
+    if (mBuffer->storageMode() == MTL::StorageModePrivate)
+      return M_DRIVER_STATUS_INVALID_ARG;
     *static_cast<void **>(value) = hostAddress();
+    return M_DRIVER_STATUS_SUCCESS;
+  }
+  if (name == M_DRIVER_MEMORY_PROPERTY_HOST_REACHABLE) {
+    *static_cast<bool *>(value) =
+        mBuffer->storageMode() != MTL::StorageModePrivate;
     return M_DRIVER_STATUS_SUCCESS;
   }
   return M_DRIVER_STATUS_UNKNOWN_PROPERTY_NAME;

@@ -192,6 +192,18 @@ typedef M_driver_status_t (*M_driver_memory_free_async_func_ptr_t)(
 #define M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS "host_address"
 
 /**
+ * Whether the host may dereference this allocation through
+ * M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS. The value is a `bool`.
+ *
+ * Do not infer reachability from a failed "host_address" query, which also
+ * fails for an invalid handle. The plugin answers per allocation, because one
+ * context can hold memory of both kinds. Metal and CPU allocations are
+ * reachable; CUDA and HIP report only pinned memory reachable. A plugin whose
+ * extension set offers host pointers must answer this property.
+ */
+#define M_DRIVER_MEMORY_PROPERTY_HOST_REACHABLE "host_reachable"
+
+/**
  * Retrieve a memory property.
  *
  * @param[in] property_name The name of the property as a null-terminated
