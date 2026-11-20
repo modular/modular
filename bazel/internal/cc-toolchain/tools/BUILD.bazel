@@ -62,7 +62,8 @@ declare_tools()
         actual = select({
             "//:linux_aarch64": ":linux-aarch64-{}".format(tool),
             "//:linux_x86_64": ":linux-x86_64-{}".format(tool),
-            "@platforms//os:macos": ":macos-{}".format(tool),
+            "//:macos_arm64": ":macos-{}".format(tool),
+            "//:macos_x86_64": ":macos-x86_64-{}".format(tool),
         }),
         tags = [
             "manual",
@@ -94,8 +95,12 @@ builtin_module_map(
             "@clang-linux-x86_64//:include_dir",
             "@sysroot-jammy-x86_64//sysroot:root",
         ],
-        "@platforms//os:macos": [
+        "//:macos_arm64": [
             "@clang-macos//:include_dir",
+            "@sysroot-macos//sysroot:root",
+        ],
+        "//:macos_x86_64": [
+            "@clang-macos-x86_64//:include_dir",
             "@sysroot-macos//sysroot:root",
         ],
     }),

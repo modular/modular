@@ -278,6 +278,8 @@ use_repo(compat, "cc_compatibility_proxy")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+intel_mac_toolchain = use_repo_rule("//bazel/internal/cc-toolchain:intel_mac_toolchain.bzl", "intel_mac_toolchain")
+
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 libkineto_repository = use_repo_rule("//bazel/public-patches:libkineto.bzl", "libkineto_repository")
@@ -938,6 +940,18 @@ http_archive(
     build_file = "//bazel/public-patches:clang.BUILD",
     sha256 = "52c8f5c2ccf68a146bfe4f719671e5aa4073c6306a4f96d2a06c8352a4555ec6",
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.5/52c8f5c2ccf68a146bfe4f719671e5aa4073c6306a4f96d2a06c8352a4555ec6/llvm-macos.tar.xz",
+)
+
+# The Intel Mac toolchain: clang, lld, LLVM tools and tcmalloc. Modular does not
+# ship one, so Intel Mac users build it with the bootstrap script and set
+# MODULAR_INTEL_MAC_TOOLCHAIN (see bazel/internal/cc-toolchain/intel_mac_toolchain.bzl). Without it, this repo
+# only holds placeholders, so analysis and queries still work.
+intel_mac_toolchain(
+    name = "clang-macos-x86_64",
+    build_files = [
+        "//bazel/public-patches:clang.BUILD",
+        "//bazel/public-patches:gperftools-macos.BUILD",
+    ],
 )
 
 SHELLCHECK_VERSION = "v0.11.0"
