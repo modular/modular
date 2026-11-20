@@ -71,6 +71,7 @@ from max.benchmark.benchmark_shared.request import (
     _build_vllm_omni_pixel_generation_payload,
     _build_vllm_omni_video_payload,
     _count_generated_media,
+    _record_message_channels,
     async_request_lora_load,
     async_request_lora_unload,
     compute_chunk_tpots,
@@ -423,6 +424,253 @@ class TestOpenAIStreamRecorder:
         assert output.generated_text == "Hello world"
         assert output.latency > 0.0
         assert output.prompt_len == 10
+
+    def test_records_each_chat_channel_for_replay(self) -> None:
+        """Reasoning, content and tool calls are kept apart for replay, and a
+        tool call streamed in fragments is reassembled by its index."""
+        recorder = OpenAIStreamRecorder(prompt_len=10, chat=True)
+        for delta in (
+            {"reasoning_content": "Look at "},
+            {"reasoning_content": "the file."},
+            {"content": "Running it."},
+            {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "call_0",
+                        "type": "function",
+                        "function": {"name": "run_shell", "arguments": ""},
+                    }
+                ]
+            },
+            {
+                "tool_calls": [
+                    {"index": 0, "function": {"arguments": '{"command":'}}
+                ]
+            },
+            {"tool_calls": [{"index": 0, "function": {"arguments": '"ls"}'}}]},
+        ):
+            recorder.on_read([json.dumps({"choices": [{"delta": delta}]})])
+        recorder.on_read(["[DONE]"])
+
+        output = recorder.finish()
+
+        assert output.reasoning_text == "Look at the file."
+        assert output.reasoning_field == "reasoning_content"
+        assert output.content_text == "Running it."
+        assert [call.model_dump() for call in output.tool_calls] == [
+            {
+                "id": "call_0",
+                "type": "function",
+                "function": {
+                    "name": "run_shell",
+                    "arguments": '{"command":"ls"}',
+                },
+            }
+        ]
+        assert output.generated_text == (
+            'Look at the file.Running it.run_shell{"command":"ls"}'
+        )
+
+    def test_records_the_reasoning_key_the_server_used(self) -> None:
+        recorder = OpenAIStreamRecorder(prompt_len=10, chat=True)
+        for delta in ({"reasoning": "plan"}, {"content": "done"}):
+            recorder.on_read([json.dumps({"choices": [{"delta": delta}]})])
+
+        output = recorder.finish()
+
+        assert output.reasoning_field == "reasoning"
+        assert output.reasoning_text == "plan"
+        assert output.content_text == "done"
+
+    def test_records_the_reasoning_key_from_the_first_fragment(self) -> None:
+        """A later fragment does not move the reasoning to another key."""
+        recorder = OpenAIStreamRecorder(prompt_len=10, chat=True)
+        for delta in (
+            {"reasoning": "plan"},
+            {"reasoning_content": " more"},
+        ):
+            recorder.on_read([json.dumps({"choices": [{"delta": delta}]})])
+
+        output = recorder.finish()
+
+        assert output.reasoning_field == "reasoning"
+        assert output.reasoning_text == "plan more"
+
+    def test_takes_the_tool_call_id_from_its_first_fragment(self) -> None:
+        """Only the first fragment's id is kept, not the repeats after it."""
+        recorder = OpenAIStreamRecorder(prompt_len=10, chat=True)
+        for delta in (
+            {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "call_0",
+                        "function": {"name": "run_shell", "arguments": "{}"},
+                    }
+                ]
+            },
+            {"tool_calls": [{"index": 0, "id": "call_0"}]},
+        ):
+            recorder.on_read([json.dumps({"choices": [{"delta": delta}]})])
+
+        output = recorder.finish()
+
+        assert [call.id for call in output.tool_calls] == ["call_0"]
+
+    def test_synthesizes_a_tool_call_id_when_the_server_sends_none(
+        self,
+    ) -> None:
+        """A call without an id still gets one its result can answer."""
+        recorder = OpenAIStreamRecorder(prompt_len=10, chat=True)
+        for delta in (
+            {
+                "tool_calls": [
+                    {"function": {"name": "run_shell", "arguments": "{}"}}
+                ]
+            },
+            {
+                "tool_calls": [
+                    {"index": 1, "function": {"name": "run", "arguments": "{}"}}
+                ]
+            },
+        ):
+            recorder.on_read([json.dumps({"choices": [{"delta": delta}]})])
+
+        output = recorder.finish()
+
+        # The first fragment has no index either, so it continues the last
+        # call and gets the id the synthesized one names it by.
+        assert [call.id for call in output.tool_calls] == ["call_0", "call_1"]
+
+    def test_index_less_tool_calls_in_separate_deltas_stay_apart(self) -> None:
+        """Two calls streamed without an index do not collapse into one."""
+        recorder = OpenAIStreamRecorder(prompt_len=10, chat=True)
+        for delta in (
+            {
+                "tool_calls": [
+                    {
+                        "id": "call_a",
+                        "function": {
+                            "name": "run_shell",
+                            "arguments": '{"cmd":',
+                        },
+                    }
+                ]
+            },
+            {"tool_calls": [{"function": {"arguments": '"ls"}'}}]},
+            {
+                "tool_calls": [
+                    {
+                        "id": "call_b",
+                        "function": {"name": "read", "arguments": "{}"},
+                    }
+                ]
+            },
+        ):
+            recorder.on_read([json.dumps({"choices": [{"delta": delta}]})])
+
+        output = recorder.finish()
+
+        assert [
+            (call.id, call.function.name, call.function.arguments)
+            for call in output.tool_calls
+        ] == [
+            ("call_a", "run_shell", '{"cmd":"ls"}'),
+            ("call_b", "read", "{}"),
+        ]
+
+    def test_records_a_non_streamed_message_by_field(self) -> None:
+        output = RequestFuncOutput()
+        _record_message_channels(
+            output,
+            {
+                "content": None,
+                "reasoning": "plan",
+                "tool_calls": [
+                    {
+                        "id": "call_0",
+                        "type": "function",
+                        "function": {"name": "run_shell", "arguments": "{}"},
+                    }
+                ],
+            },
+        )
+
+        assert output.reasoning_field == "reasoning"
+        assert output.reasoning_text == "plan"
+        assert output.content_text == ""
+        assert [c.function.name for c in output.tool_calls] == ["run_shell"]
+
+    def test_a_non_streamed_call_without_an_id_still_gets_one(self) -> None:
+        """Replay needs an id even when the server sent none, as streaming does."""
+        output = RequestFuncOutput()
+        _record_message_channels(
+            output,
+            {
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "run_shell", "arguments": "{}"}},
+                    {"function": {"name": "read", "arguments": "{}"}},
+                ],
+            },
+        )
+
+        assert [call.id for call in output.tool_calls] == ["call_0", "call_1"]
+
+    @pytest.mark.parametrize(
+        ("call", "why"),
+        [
+            pytest.param(
+                {"function": {"name": "run_shell", "arguments": {}}},
+                "arguments as an object",
+                id="object_arguments",
+            ),
+            pytest.param(
+                {
+                    "type": "custom",
+                    "function": {"name": "run_shell", "arguments": "{}"},
+                },
+                "a type the API does not define",
+                id="custom_type",
+            ),
+            pytest.param(
+                {"name": "run_shell"},
+                "no function",
+                id="missing_function",
+            ),
+            pytest.param(
+                {"function": {"name": 5, "arguments": "{}"}},
+                "a name that is not a string",
+                id="non_string_name",
+            ),
+        ],
+    )
+    def test_a_non_streamed_call_the_client_cannot_read_falls_back_to_text(
+        self, call: dict[str, Any], why: str
+    ) -> None:
+        """A malformed call drops the calls, it does not fail the whole run.
+
+        This runs outside any request's ``try``, so raising here would take
+        every sibling session down with it. The turn replays as text instead.
+        """
+        output = RequestFuncOutput()
+        _record_message_channels(
+            output,
+            {
+                "content": "the reply",
+                "tool_calls": [
+                    {
+                        "id": "call_0",
+                        "function": {"name": "read", "arguments": "{}"},
+                    },
+                    {**call, "id": "call_1"},
+                ],
+            },
+        )
+
+        assert output.content_text == "the reply", why
+        assert output.tool_calls == []
 
     def test_records_text_for_completion_chunks(self) -> None:
         """``chat=False`` reads the completions schema's ``text`` field."""

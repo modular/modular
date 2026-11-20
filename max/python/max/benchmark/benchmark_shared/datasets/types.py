@@ -80,11 +80,29 @@ class ImageContentBlock(BaseModel):
     image_url: ImageURLDetail
 
 
+ReasoningField = Literal["reasoning_content", "reasoning"]
+
+
+class ToolCallFunction(BaseModel):
+    """The function a tool call names, with its JSON-encoded arguments."""
+
+    name: str
+    arguments: str
+
+
+class AssistantToolCall(BaseModel):
+    """A tool call an assistant turn made, as the chat API returns it."""
+
+    id: str
+    type: Literal["function"] = "function"
+    function: ToolCallFunction
+
+
 class ChatMessage(BaseModel):
     """One message in an OpenAI chat request."""
 
-    # role is "user", "assistant", or "system" in practice. "system" is
-    # used by chat-judge today.
+    # role is "user", "assistant", "tool", or "system" in practice. "system"
+    # is used by chat-judge today; "tool" answers a replayed tool call.
     # TODO: wire sys_prompt_ratio support with "system" role through the
     # multi-turn path.
     role: str
@@ -92,6 +110,14 @@ class ChatMessage(BaseModel):
     # plain-string content straight through from its dataset. Consumers that
     # index or append to content must handle both shapes.
     content: str | list[TextContentBlock | ImageContentBlock]
+    # A replayed assistant turn carries its reasoning and tool calls in their
+    # own fields, as the server returned them, so the chat template renders the
+    # turn the way the model generated it. Reasoning goes under the key the
+    # server used; unset fields stay out of the payload.
+    reasoning_content: str | None = None
+    reasoning: str | None = None
+    tool_calls: list[AssistantToolCall] | None = None
+    tool_call_id: str | None = None
 
 
 @dataclass

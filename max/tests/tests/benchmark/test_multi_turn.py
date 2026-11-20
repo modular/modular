@@ -20,20 +20,24 @@ import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import msgspec
 import pytest
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
+    AssistantToolCall,
     ChatMessage,
     ChatSamples,
     ChatSession,
     ImageContentBlock,
     OpenAIImage,
+    ReasoningField,
     RequestSamples,
     ResponseFormat,
     SampledRequest,
     SessionMessage,
     SharedContext,
     TextContentBlock,
+    ToolCallFunction,
 )
 from max.benchmark.benchmark_shared.multi_turn import (
     ConcurrentTurnsRequestDriver,
@@ -44,6 +48,7 @@ from max.benchmark.benchmark_shared.multi_turn import (
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
+    ChatWireHistory,
     OpenAIChatCompletionsRequestDriver,
     RequestCounter,
     RequestDriver,
@@ -163,6 +168,268 @@ def test_chat_session_driver_constrains_only_the_marked_turns() -> None:
         (response_format, False),
         (None, True),
     ]
+
+
+def _replayed_history(
+    reply: RequestFuncOutput,
+    strip_harmony_wire_tags: bool = False,
+    second_turn_images: list[OpenAIImage] | None = None,
+) -> list[dict[str, object]]:
+    """The second turn's messages after a first turn returns ``reply``."""
+    payloads: list[list[dict[str, object]]] = []
+
+    class ReplyDriver(FakeDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            assert isinstance(request_func_input.prompt, list)
+            payloads.append(
+                [
+                    m.model_dump(exclude_none=True)
+                    for m in request_func_input.prompt
+                ]
+            )
+            return dataclasses.replace(reply)
+
+    messages = [
+        SessionMessage(source="user", content="one", num_tokens=5),
+        SessionMessage(source="assistant", content="", num_tokens=5),
+        SessionMessage(
+            source="user",
+            content="two",
+            num_tokens=5,
+            images=second_turn_images or [],
+        ),
+        SessionMessage(source="assistant", content="", num_tokens=5),
+    ]
+    asyncio.run(
+        chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=ReplyDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=ChatSession(id=0, messages=messages),
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            strip_harmony_wire_tags=strip_harmony_wire_tags,
+        )
+    )
+    assert len(payloads) == 2
+    return payloads[1][1:]
+
+
+def _reply(
+    generated_text: str,
+    *,
+    content_text: str = "",
+    reasoning_text: str = "",
+    reasoning_field: ReasoningField = "reasoning_content",
+    tool_calls: list[AssistantToolCall] | None = None,
+) -> RequestFuncOutput:
+    return RequestFuncOutput(
+        success=True,
+        latency=0.1,
+        ttft=0.05,
+        generated_text=generated_text,
+        content_text=content_text,
+        reasoning_text=reasoning_text,
+        reasoning_field=reasoning_field,
+        tool_calls=tool_calls or [],
+    )
+
+
+_USER_TWO = {"role": "user", "content": [{"type": "text", "text": "two"}]}
+
+
+def test_replays_a_content_only_reply_as_content() -> None:
+    history = _replayed_history(_reply("answer.", content_text="answer."))
+    assert history == [
+        {"role": "assistant", "content": "answer."},
+        _USER_TWO,
+    ]
+
+
+@pytest.mark.parametrize("field", ["reasoning_content", "reasoning"])
+def test_replays_reasoning_under_the_key_the_server_used(
+    field: ReasoningField,
+) -> None:
+    """Reasoning is never merged into content; it goes back under the key it
+    arrived in, so a server that reads either one gets it."""
+    history = _replayed_history(
+        _reply(
+            generated_text="think.answer.",
+            reasoning_text="think.",
+            reasoning_field=field,
+            content_text="answer.",
+        )
+    )
+    assert history == [
+        {"role": "assistant", "content": "answer.", field: "think."},
+        _USER_TWO,
+    ]
+
+
+def test_replays_tool_calls_and_answers_each_by_id() -> None:
+    """A reply that called tools goes back with its calls, and the next turn is
+    the calls' results, answered by id: the drawn turn answers the first call
+    and the second gets an empty result.
+
+    A tool result stands in for the user turn and its content is plain text,
+    not content parts.
+    """
+    calls = [
+        AssistantToolCall(
+            id=f"call_{i}",
+            function=ToolCallFunction(name="run_shell", arguments=args),
+        )
+        for i, args in enumerate(('{"cmd":"ls"}', '{"cmd":"pwd"}'))
+    ]
+    history = _replayed_history(
+        _reply(
+            generated_text="think.",
+            reasoning_text="think.",
+            tool_calls=calls,
+        )
+    )
+    assert history == [
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "think.",
+            "tool_calls": [c.model_dump() for c in calls],
+        },
+        {"role": "tool", "content": "two", "tool_call_id": "call_0"},
+        {"role": "tool", "content": "", "tool_call_id": "call_1"},
+    ]
+
+
+def test_sends_a_tool_turns_images_after_the_results() -> None:
+    """MAX rejects image parts in a tool message, so they follow it."""
+    call = AssistantToolCall(
+        id="call_0",
+        function=ToolCallFunction(name="run_shell", arguments="{}"),
+    )
+    history = _replayed_history(
+        _reply(generated_text="", tool_calls=[call]),
+        second_turn_images=[
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://example.test/cat.png"},
+            }
+        ],
+    )
+    image = {
+        "type": "image_url",
+        "image_url": {"url": "https://example.test/cat.png"},
+    }
+    assert history == [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [call.model_dump()],
+        },
+        {"role": "tool", "content": "two", "tool_call_id": "call_0"},
+        {"role": "user", "content": [image]},
+    ]
+
+
+def test_a_truncated_tool_call_replays_the_text_instead() -> None:
+    """Arguments cut off by the output budget are not valid JSON to replay."""
+    call = AssistantToolCall(
+        id="call_0",
+        function=ToolCallFunction(name="run_shell", arguments='{"cmd": "l'),
+    )
+    history = _replayed_history(_reply("answer.", tool_calls=[call]))
+    assert history == [
+        {"role": "assistant", "content": [{"type": "text", "text": "answer."}]},
+        _USER_TWO,
+    ]
+
+
+def test_replay_falls_back_to_generated_text_without_chat_fields() -> None:
+    """A driver that records only the merged text still gets a history."""
+    history = _replayed_history(_reply("ok"))
+    assert history == [
+        {"role": "assistant", "content": [{"type": "text", "text": "ok"}]},
+        _USER_TWO,
+    ]
+
+
+def test_replayed_turns_carry_only_the_fields_that_are_set() -> None:
+    """Unset message fields stay off the wire, not sent as nulls."""
+    call = AssistantToolCall(
+        id="call_0",
+        function=ToolCallFunction(name="run_shell", arguments="{}"),
+    )
+    encoded = ChatWireHistory().encode(
+        [
+            ChatMessage(role="assistant", content="", tool_calls=[call]),
+            ChatMessage(role="tool", content="two", tool_call_id="call_0"),
+            ChatMessage(role="user", content=[TextContentBlock(text="next")]),
+        ]
+    )
+
+    assert msgspec.json.decode(encoded) == [
+        {"role": "assistant", "content": "", "tool_calls": [call.model_dump()]},
+        {"role": "tool", "content": "two", "tool_call_id": "call_0"},
+        {"role": "user", "content": [{"type": "text", "text": "next"}]},
+    ]
+
+
+def test_parallel_tool_calls_count_their_framing_before_the_length_check() -> (
+    None
+):
+    """A replayed turn's extra messages are charged before it is sent.
+
+    The drawn turn's text is in the length already; what three tool results add
+    is the framing of every message past the first. Charging it after the check
+    would send a prompt past the limit the check exists to respect.
+    """
+    calls = [
+        AssistantToolCall(
+            id=f"call_{i}",
+            function=ToolCallFunction(name="run_shell", arguments="{}"),
+        )
+        for i in range(3)
+    ]
+    prompt_lens: list[int] = []
+
+    class ReplyDriver(FakeDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            prompt_lens.append(request_func_input.prompt_len)
+            return _reply("", tool_calls=calls)
+
+    messages = [
+        SessionMessage(source="user", content="one", num_tokens=5),
+        SessionMessage(source="assistant", content="", num_tokens=5),
+        SessionMessage(source="user", content="two", num_tokens=5),
+        SessionMessage(source="assistant", content="", num_tokens=5),
+    ]
+    asyncio.run(
+        chat_session_driver(
+            model_id="test-model",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=ReplyDriver(),
+            request_counter=RequestCounter(
+                max_requests=10, total_sent_requests=0
+            ),
+            chat_session=ChatSession(id=0, messages=messages),
+            max_chat_len=25,
+            sampling=SamplingConfig(),
+        )
+    )
+
+    # 15 tokens of drawn text -- two user messages, plus the first turn's
+    # reply charged back at its drawn length -- and 16 of tool-result framing,
+    # plus the drawn 5-token reply, is 36 against a 25-token limit. The check
+    # before the framing was counted saw 20 and sent it.
+    assert prompt_lens == [5]
 
 
 def test_chat_session_driver_tags_every_turn_with_its_adapter() -> None:
@@ -299,6 +566,47 @@ def test_chat_session_driver_strips_harmony_wire_tags_from_history(
 
     assert histories[1] == ["one", replayed, "two"]
     assert prompt_lens == [10, second_prompt_len]
+
+
+@pytest.mark.parametrize(
+    "strip", [True, False], ids=["stripped", "kept_by_default"]
+)
+def test_strips_harmony_wire_tags_from_a_structured_reply(strip: bool) -> None:
+    """A structured reply replays content, reasoning and tool-call arguments in
+    their own fields, so the strip has to reach those fields too.
+
+    A Harmony chat template rejects wire tags in message text, and the default
+    replay no longer puts the reply in ``generated_text``.
+    """
+    call = AssistantToolCall(
+        id="call_0",
+        function=ToolCallFunction(
+            name="run_shell", arguments='{"note":"<|call|>"}'
+        ),
+    )
+    assistant = _replayed_history(
+        _reply(
+            "<|channel|>think<|message|>answer<|end|>",
+            content_text="<|message|>answer<|end|>",
+            reasoning_text="<|channel|>think",
+            tool_calls=[call],
+        ),
+        strip_harmony_wire_tags=strip,
+    )[0]
+
+    assert assistant["content"] == (
+        "answer" if strip else "<|message|>answer<|end|>"
+    )
+    assert assistant["reasoning_content"] == (
+        "think" if strip else "<|channel|>think"
+    )
+    tool_calls = assistant["tool_calls"]
+    assert isinstance(tool_calls, list)
+    # The call survives either way: the tag sits inside its JSON arguments, so
+    # stripping them leaves valid JSON rather than a call to drop.
+    assert tool_calls[0]["function"]["arguments"] == (
+        '{"note":""}' if strip else '{"note":"<|call|>"}'
+    )
 
 
 @pytest.mark.parametrize(
@@ -1355,7 +1663,10 @@ class _RecordingChatDriver(OpenAIChatCompletionsRequestDriver):
         assert isinstance(request_func_input.prompt, list)
         payload: dict[str, Any] = {
             "model": request_func_input.model,
-            "messages": [m.model_dump() for m in request_func_input.prompt],
+            "messages": [
+                m.model_dump(exclude_none=True)
+                for m in request_func_input.prompt
+            ],
             "stream": True,
             "stream_options": {"include_usage": True},
             "ignore_eos": request_func_input.ignore_eos,

@@ -47,6 +47,7 @@ from max.serve._tool_call_validation import (
     response_format_schema_is_checkable,
 )
 from openai.types.chat.completion_create_params import ResponseFormat
+from pydantic import ValidationError
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import NotRequired, TypedDict
@@ -59,10 +60,13 @@ from .config import (
     get_video_request_schema,
 )
 from .datasets.types import (
+    AssistantToolCall,
     ChatMessage,
     ImageContentBlock,
     OpenAIImage,
     PixelGenerationImageOptions,
+    ReasoningField,
+    ToolCallFunction,
 )
 from .sse import SSEDecoder
 from .utils import deadline_passed, openai_bearer_auth_headers
@@ -243,7 +247,9 @@ class ChatWireHistory:
         for message in messages[self._count :]:
             if self._count:
                 self._encoded += b", "
-            self._encoded += msgspec.json.encode(message.model_dump())
+            self._encoded += msgspec.json.encode(
+                message.model_dump(exclude_none=True)
+            )
             self._count += 1
         return msgspec.Raw(self._encoded + b"]")
 
@@ -315,7 +321,7 @@ def _chat_messages_json(
             {"role": "user", "content": [{"type": "text", "text": prompt}]}
         ]
     else:
-        messages = [msg.model_dump() for msg in prompt]
+        messages = [msg.model_dump(exclude_none=True) for msg in prompt]
     attached = bool(images) and _attach_images_to_first_user_message(
         messages, images
     )
@@ -562,6 +568,14 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     # client fell behind and read them together.
     stream_events_per_read: dict[int, int] = field(default_factory=dict)
     generated_text: str = ""
+    # ``generated_text`` split into the chat response's own fields, so a session
+    # can send the turn back the way the API returned it. ``reasoning_field`` is
+    # the key the reasoning arrived under. A driver that sees no chat fields
+    # leaves these empty and the session replays ``generated_text``.
+    content_text: str = ""
+    reasoning_text: str = ""
+    reasoning_field: ReasoningField = "reasoning_content"
+    tool_calls: list[AssistantToolCall] = field(default_factory=list)
     ttft: float = 0.0  # Time to first token
     prompt_len: int = 0
     server_token_stats: ServerTokenStats = field(
@@ -1220,6 +1234,17 @@ class OpenAIStreamRecorder:
         self._tokenizer = tokenizer
         self._generated_text: list[str] = []
         self._generated_chars = 0
+        # The reply's own fields, kept apart for replay. Streamed tool calls
+        # arrive in fragments (id, then name, then arguments), so each index
+        # collects its fragments and joins them once.
+        self._content: list[str] = []
+        self._reasoning: list[str] = []
+        self._tool_calls: dict[int, tuple[list[str], list[str], list[str]]] = {}
+        # Which call each streamed id names, and the call the last fragment
+        # belonged to: a server that omits ``index`` gives a fragment nothing
+        # else to attach to.
+        self._tool_call_ids: dict[str, int] = {}
+        self._last_tool_call_index: int | None = None
         self._ttft = 0.0
         self._st = time.perf_counter() if start is None else start
         self.output.request_submit_time = self._st
@@ -1394,6 +1419,75 @@ class OpenAIStreamRecorder:
             )
         return _delta_text(delta, data)
 
+    def _record_channels(self, delta: Mapping[str, Any]) -> None:
+        """Records a chat delta's channels, for replay as a chat turn.
+
+        Called from the event recording, on the chunk the merged text came
+        from, so the channels and that text cannot desync.
+
+        ``reasoning`` and ``reasoning_content`` are not official OpenAI fields:
+        providers stream chain-of-thought under one or both. Their fragments are
+        concatenated as they arrive and replayed under the first key the server
+        used, since a chat template renders one reasoning field. Tool calls
+        stream in fragments (id, then name, then arguments), so each call
+        collects its fragments and joins them once.
+
+        A call with neither an index nor an id continues the previous call, so
+        two such calls in one delta merge into a single replayed call. That can
+        only lose a call, never fail the request: the merged arguments are not
+        valid JSON, so the replay falls back to the turn's text.
+        """
+        content = delta.get("content")
+        if content:
+            self._content.append(content)
+        reasoning = delta.get("reasoning")
+        reasoning_content = delta.get("reasoning_content")
+        if reasoning or reasoning_content:
+            if not self._reasoning:
+                # The server's key comes with the first fragment and repeats
+                # after that.
+                self.output.reasoning_field = (
+                    "reasoning_content" if reasoning_content else "reasoning"
+                )
+            self._reasoning.append(reasoning or "")
+            self._reasoning.append(reasoning_content or "")
+        for call in delta.get("tool_calls") or ():
+            index = call.get("index")
+            call_id = call.get("id")
+            if index is None:
+                # A server that omits the index sends one call per fragment,
+                # so the position inside this delta cannot key them. An id the
+                # stream has not seen starts a new call, and a fragment with
+                # no id continues the last one.
+                index = self._tool_call_ids.get(call_id) if call_id else None
+                if index is None:
+                    if call_id:
+                        index = max(self._tool_calls, default=-1) + 1
+                    else:
+                        last = self._last_tool_call_index
+                        index = 0 if last is None else last
+            if call_id:
+                self._tool_call_ids.setdefault(call_id, index)
+            self._last_tool_call_index = index
+            fragments = self._tool_calls.get(index)
+            if fragments is None:
+                fragments = self._tool_calls[index] = ([], [], [])
+            ids, names, arguments = fragments
+            if call_id and not ids:
+                # The first fragment carries the id; later ones repeat it.
+                ids.append(call_id)
+            function = call.get("function")
+            if not isinstance(function, Mapping):
+                # Same tolerance as the text path: a fragment the client
+                # cannot read adds nothing, rather than failing the request.
+                continue
+            name = function.get("name")
+            argument = function.get("arguments")
+            if name:
+                names.append(name)
+            if argument:
+                arguments.append(argument)
+
     def _record_event(
         self,
         chunk: Mapping[str, Any],
@@ -1446,6 +1540,11 @@ class OpenAIStreamRecorder:
             # Read off the chunk the text came from, so a pure text extraction
             # cannot report a call this event never recorded.
             self.output.tool_call_returned = True
+        delta = choices[0].get("delta")
+        if self._chat and delta is not None:
+            # The channels a replayed turn is built from are recorded here,
+            # with the event, not while the read is being decoded.
+            self._record_channels(delta)
         if not text_content:
             return
 
@@ -1527,6 +1626,21 @@ class OpenAIStreamRecorder:
             self.output.success = False
         else:
             self.output.generated_text = "".join(self._generated_text)
+            self.output.content_text = "".join(self._content)
+            self.output.reasoning_text = "".join(self._reasoning)
+            self.output.tool_calls = [
+                AssistantToolCall(
+                    # A server that sends no id gets one the tool result can
+                    # answer.
+                    id=ids[0] if ids else f"call_{index}",
+                    function=ToolCallFunction(
+                        name="".join(names), arguments="".join(arguments)
+                    ),
+                )
+                for index, (ids, names, arguments) in sorted(
+                    self._tool_calls.items()
+                )
+            ]
             self.output.success = True
             self.output.latency = self._latency
         return self.output
@@ -1705,6 +1819,43 @@ class OpenAICompletionsRequestDriver(RequestDriver):
         )
 
 
+def _record_message_channels(
+    output: RequestFuncOutput, message: Mapping[str, object]
+) -> None:
+    """Keeps a non-streamed chat message's fields apart for replay."""
+    reasoning_content = message.get("reasoning_content")
+    reasoning = message.get("reasoning")
+    if isinstance(reasoning_content, str) and reasoning_content:
+        output.reasoning_text = reasoning_content
+        output.reasoning_field = "reasoning_content"
+    elif isinstance(reasoning, str) and reasoning:
+        output.reasoning_text = reasoning
+        output.reasoning_field = "reasoning"
+    content = message.get("content")
+    output.content_text = content if isinstance(content, str) else ""
+    tool_calls = message.get("tool_calls")
+    calls = (
+        [call for call in tool_calls if isinstance(call, dict)]
+        if isinstance(tool_calls, list)
+        else []
+    )
+    try:
+        output.tool_calls = [
+            AssistantToolCall.model_validate(
+                # A call the server sent without an id still needs one its tool
+                # result can answer, as the streamed path synthesizes.
+                {**call, "id": call.get("id") or f"call_{index}"}
+            )
+            for index, call in enumerate(calls)
+        ]
+    except ValidationError:
+        # A shape the chat API does not define -- arguments as an object, type
+        # ``custom``, no function, a name that is not a string -- is not a call
+        # this client can answer. Raising here would take the whole run down
+        # with it, so the turn replays as text instead.
+        output.tool_calls = []
+
+
 async def _run_atom_nonstream_chat_request(
     *,
     api_url: str,
@@ -1754,6 +1905,7 @@ async def _run_atom_nonstream_chat_request(
     # pure tool-call response has no content by design.
     tool_calls = message.get("tool_calls") or []
     output.tool_call_returned = bool(tool_calls)
+    _record_message_channels(output, message)
     generated_text = (
         (message.get("reasoning") or "")
         + (message.get("reasoning_content") or "")

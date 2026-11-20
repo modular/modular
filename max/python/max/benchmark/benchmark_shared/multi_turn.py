@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import random
 import re
@@ -32,10 +33,12 @@ import numpy as np
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets import ChatSession
 from max.benchmark.benchmark_shared.datasets.types import (
+    AssistantToolCall,
     ImageContentBlock,
     ImageURLDetail,
     OpenAIImage,
     TextContentBlock,
+    ToolCallFunction,
 )
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
@@ -63,6 +66,11 @@ from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
 
+# Roughly what a chat template spends on one message's role, delimiters and
+# tool_call_id. A replayed turn's extra messages carry no drawn text, so their
+# framing is all chat_len can charge for them.
+_MESSAGE_FRAMING_TOKENS = 8
+
 # The special tokens of OpenAI's Harmony format. A model can echo them into
 # its message text, where a Harmony chat template rejects them.
 _HARMONY_WIRE_TAG = re.compile(
@@ -89,6 +97,117 @@ def _cap_output_len(output_len: int, max_output_len: int | None) -> int:
     if max_output_len is None:
         return output_len
     return min(output_len, max_output_len)
+
+
+def _replayable_tool_calls(
+    calls: Sequence[AssistantToolCall],
+) -> list[AssistantToolCall] | None:
+    """Returns the calls a session can replay, or ``None`` for none of them.
+
+    A turn cut off by its output budget leaves a tool call whose arguments are
+    not valid JSON. The server would reject the replayed turn, so a session
+    with such a call replays its text instead.
+    """
+    if not calls:
+        return None
+    for call in calls:
+        try:
+            json.loads(call.function.arguments)
+        except ValueError:
+            return None
+    return list(calls)
+
+
+def _assistant_turn(
+    response: RequestFuncOutput,
+    plain_text: str,
+    strip_wire_tags: bool = False,
+) -> ChatMessage:
+    """The assistant message a session sends back for a finished turn.
+
+    The turn goes back the way the API returned it, as an OpenAI-compatible
+    agent harness sends it: ``content``, ``tool_calls``, and the reasoning
+    under the key the server used. Each model's chat template then decides
+    whether to keep or drop past reasoning; one that keeps it renders the turn
+    as generated, so the next prompt extends this one's prompt and reply.
+
+    A driver that records no chat fields replays ``plain_text`` instead, and so
+    does a turn whose tool calls were left with unusable arguments.
+    ``strip_wire_tags`` removes Harmony wire tags from every field replayed as
+    free text, so the option covers this path as well as the plain-text one.
+    """
+
+    def _strip(text: str) -> str:
+        return _HARMONY_WIRE_TAG.sub("", text) if strip_wire_tags else text
+
+    tool_calls = _replayable_tool_calls(
+        [
+            AssistantToolCall(
+                id=call.id,
+                function=ToolCallFunction(
+                    name=call.function.name,
+                    arguments=_strip(call.function.arguments),
+                ),
+            )
+            for call in response.tool_calls
+        ]
+    )
+    if not (response.content_text or response.reasoning_text or tool_calls):
+        return ChatMessage(
+            role="assistant",
+            content=[TextContentBlock(text=_strip(plain_text))],
+        )
+    message = ChatMessage(
+        role="assistant",
+        content=_strip(response.content_text),
+        tool_calls=tool_calls,
+    )
+    reasoning = _strip(response.reasoning_text)
+    if response.reasoning_field == "reasoning":
+        message.reasoning = reasoning or None
+    else:
+        message.reasoning_content = reasoning or None
+    return message
+
+
+def _next_turn_messages(
+    content: list[TextContentBlock | ImageContentBlock],
+    previous_turn: ChatMessage | None,
+) -> list[ChatMessage]:
+    """The messages that carry a session's next turn.
+
+    After a reply that called tools, the turn is the calls' result: the API
+    expects a ``tool`` message answering each call by id before the
+    conversation goes on. A tool result stands in for the user turn, which is
+    how an agent loop works, so no extra ``user`` message is added. The turn's
+    text answers the first call, and any further calls get an empty result.
+
+    A tool message's content is always plain text. MAX rejects image parts in a
+    tool message, so a turn that drew images sends them in a ``user`` message
+    after the results.
+    """
+    calls = previous_turn.tool_calls if previous_turn is not None else None
+    if not calls:
+        return [ChatMessage(role="user", content=content)]
+    text = "".join(
+        block.text for block in content if isinstance(block, TextContentBlock)
+    )
+    messages = [
+        ChatMessage(
+            role="tool",
+            content=text if index == 0 else "",
+            tool_call_id=call.id,
+        )
+        for index, call in enumerate(calls)
+    ]
+    # Widened to the union ``ChatMessage`` accepts: a list is invariant, so the
+    # narrower ``list[ImageContentBlock]`` inference would not fit its content.
+    images: list[TextContentBlock | ImageContentBlock] = [
+        block for block in content if isinstance(block, ImageContentBlock)
+    ]
+    if images:
+        messages.append(ChatMessage(role="user", content=images))
+    return messages
 
 
 async def chat_session_driver(
@@ -191,7 +310,23 @@ async def chat_session_driver(
         output_len = _cap_output_len(
             messages[content_idx + 1].num_tokens, max_output_len
         )
-        if chat_len + output_len > max_chat_len:
+        user_prompt = messages[content_idx].content
+        if content_idx == 0 and run_prefix:
+            user_prompt = run_prefix + user_prompt
+        turn_messages = _next_turn_messages(
+            [
+                TextContentBlock(text=user_prompt),
+                *_image_content_blocks(messages[content_idx].images),
+            ],
+            message_history[-1] if message_history else None,
+        )
+        # The drawn turn's text is already in chat_len above; what a replayed
+        # turn adds is the framing of every message past the first, which is a
+        # tool result answering a call, or the images' own message. Charged
+        # before the check, so a replayed turn cannot send a prompt past the
+        # limit.
+        added_framing = _MESSAGE_FRAMING_TOKENS * (len(turn_messages) - 1)
+        if chat_len + added_framing + output_len > max_chat_len:
             logger.warning(
                 f"Ending conversation: hitting max chat length {max_chat_len}"
             )
@@ -201,18 +336,8 @@ async def chat_session_driver(
         if not advance_request:  # reached max_requests
             break
 
-        user_prompt = messages[content_idx].content
-        if content_idx == 0 and run_prefix:
-            user_prompt = run_prefix + user_prompt
-        message_history.append(
-            ChatMessage(
-                role="user",
-                content=[
-                    TextContentBlock(text=user_prompt),
-                    *_image_content_blocks(messages[content_idx].images),
-                ],
-            )
-        )
+        message_history.extend(turn_messages)
+        chat_len += added_framing
         if messages[content_idx].images:
             request_func_input.prompt_carries_image = True
         request_func_input.prompt = message_history
@@ -306,9 +431,10 @@ async def chat_session_driver(
                 "", assistant_text
             )
         message_history.append(
-            ChatMessage(
-                role="assistant",
-                content=[TextContentBlock(text=assistant_text)],
+            _assistant_turn(
+                response,
+                assistant_text,
+                strip_wire_tags=strip_harmony_wire_tags,
             )
         )
         # What the turn actually produced, not what it drew: a constrained turn
