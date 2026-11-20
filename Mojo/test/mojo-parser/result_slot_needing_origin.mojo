@@ -45,9 +45,7 @@ struct Dynamic:
 # CHECK-NEXT: %[[TMP:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!CopyType
 # CHECK-NEXT: lit.call {{.*}}CopyType::@"__init__
 # CHECK-SAME: <:!AddressSpace {_value: !SIMDLength = {0}}, :origin<true> *"anonymous*{{.*}}">(%[[TMP]])
-# CHECK-NEXT: %[[COPY:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!CopyType
-# CHECK-NEXT: lit.memcpy %[[TMP]], %[[COPY]]
-# CHECK-NEXT: lit.call {{.*}}@"take_owned{{.*}}(%[[COPY]])
+# CHECK-NEXT: lit.call {{.*}}@"take_owned{{.*}}(%[[TMP]])
 def pass_temporary_with_parametric_address_space():
     take_owned(CopyType())
 
@@ -57,9 +55,7 @@ def pass_temporary_with_parametric_address_space():
 # CHECK-NEXT: kgen.param.constant
 # CHECK-NEXT: lit.call {{.*}}CopyType::@"__init__
 # CHECK-SAME: <:origin<true> *"anonymous*{{.*}}">({{.*}}, %[[TMP]])
-# CHECK-NEXT: %[[COPY:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!CopyType
-# CHECK-NEXT: lit.memcpy %[[TMP]], %[[COPY]]
-# CHECK-NEXT: lit.call {{.*}}@"take_owned{{.*}}(%[[COPY]])
+# CHECK-NEXT: lit.call {{.*}}@"take_owned{{.*}}(%[[TMP]])
 def pass_temporary_with_parametric_origin():
     take_owned(CopyType(0))
 
@@ -68,8 +64,8 @@ def pass_temporary_with_parametric_origin():
 # CHECK-NEXT: %[[TMP:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!CopyType
 # CHECK-NEXT: lit.call {{.*}}CopyType::@"__init__
 # CHECK-SAME: <:!AddressSpace {_value: !SIMDLength = {0}}, :origin<true> *"anonymous*{{.*}}">(%[[TMP]])
-# CHECK-NEXT: kgen.param.constant: none
-# CHECK-NEXT: lit.return
+# CHECK-NEXT: kgen.param.constant
+# CHECK-NEXT: lit.call {{.*}}Dynamic::@"__setattr__{{.*}}<:string "value">(%d, {{.*}}, %[[TMP]])
 def assign_temporary_with_parametric_address_space(d: Dynamic):
     d.value = CopyType()
 
@@ -79,7 +75,7 @@ def assign_temporary_with_parametric_address_space(d: Dynamic):
 # CHECK-NEXT: kgen.param.constant
 # CHECK-NEXT: lit.call {{.*}}CopyType::@"__init__
 # CHECK-SAME: <:origin<true> *"anonymous*{{.*}}">({{.*}}, %[[TMP]])
-# CHECK-NEXT: kgen.param.constant: none
-# CHECK-NEXT: lit.return
+# CHECK-NEXT: kgen.param.constant
+# CHECK-NEXT: lit.call {{.*}}Dynamic::@"__setattr__{{.*}}<:string "value">(%d, {{.*}}, %[[TMP]])
 def assign_temporary_with_parametric_origin(d: Dynamic):
     d.value = CopyType(0)
