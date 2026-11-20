@@ -435,7 +435,7 @@ trait MaxPluginHooks:
         ctx_target: CompilationTarget,
         //,
         ClosureType: RegisterPassable & def() -> None,
-    ](ctx: LegacyDeviceContext[ctx_target]) raises -> Self.ClosureKernel[
+    ](ctx: DeviceContext[ctx_target]) raises -> Self.ClosureKernel[
         ClosureType, ctx_target
     ]:
         """Per-target plugin hook for `DeviceContext.compile_closure`.
@@ -461,7 +461,7 @@ trait MaxPluginHooks:
         //,
         ClosureType: RegisterPassable & def() -> None,
     ](
-        ctx: LegacyDeviceContext[ctx_target],
+        ctx: DeviceContext[ctx_target],
         kernel: Self.ClosureKernel[ClosureType, ctx_target],
         closure: ClosureType,
         grid_dim: Dim,

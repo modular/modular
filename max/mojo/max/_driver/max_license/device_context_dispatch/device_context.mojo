@@ -2403,14 +2403,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If compilation or loading fails.
         """
-        comptime assert (
-            use_legacy_backend()
-        ), "closure kernels are only available on the legacy DeviceContext"
         comptime plugin = MaxPluginForTarget[Self.target]
         comptime assert (
             plugin._handles_closure_kernels
         ), "compile_closure is not supported on this target"
-        return plugin.compile_closure_fn[ClosureType](self._impl)
+        return plugin.compile_closure_fn[ClosureType](self)
 
     def load_function[
         ret_type: AnyType,
@@ -3104,11 +3101,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime assert (
-            use_legacy_backend()
-        ), "closure kernels are only available on the legacy DeviceContext"
         MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
-            self._impl,
+            self,
             f,
             closure,
             grid_dim=grid_dim,
