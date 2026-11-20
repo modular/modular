@@ -256,17 +256,16 @@ static ErrorOr<StringAttr> compileStandaloneKernel(
   if (!targetDataLayout.empty())
     compilationOptions.targetDataLayout = targetDataLayout;
 
-  // Pull `target-abi` out of the emission options and apply it directly to
-  // `compilationOptions` before the target machine is created: `createTarget-
-  // Machine` reads `targetABI` as a struct field, not by re-querying LLVM's
-  // registered `-target-abi` cl option, so letting it flow through the
-  // generic cl-parsed list below would only mutate global state unseen here.
-  compilationOptions.targetABI.clear();
-  applyTargetABIEmissionOptions(emissionOptions, compilationOptions.targetABI);
+  // The target machine and the pass pipeline read the intercepted options as
+  // `compilationOptions` fields, so set the fields before creating them.
+  if (ErrorOrSuccess applied =
+          applyInterceptedEmissionOptions(emissionOptions, compilationOptions);
+      applied.isError())
+    return applied.takeError();
   SmallVector<StringRef> clEmissionOptions;
   llvm::copy_if(
       emissionOptions, std::back_inserter(clEmissionOptions),
-      [](StringRef item) { return !isTargetABIEmissionOption(item); });
+      [](StringRef item) { return !isInterceptedEmissionOption(item); });
 
   // Initialize the object compiler.
   PassManagerConfigOptions pmOptions;
@@ -571,13 +570,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if (!targetDataLayout.empty())
         compilationOptions.targetDataLayout = targetDataLayout;
       // Every offload compile below -- bundled or per-kernel -- needs the same
-      // fp-mode, target-abi and link options derived from this group.
-      if (std::optional<std::string> badItem = applyOffloadEmissionOptions(
+      // options derived from this group.
+      if (ErrorOrSuccess applied = applyOffloadEmissionOptions(
               offloadInfo.emissionOptions, offloadInfo.emissionLinkOptions,
-              hostFpMode, compilationOptions))
-        return Error(llvm::formatv("invalid fp-mode emission option '{0}', "
-                                   "expected 'contract=fast' or 'contract=off'",
-                                   *badItem));
+              hostFpMode, compilationOptions);
+          applied.isError())
+        return applied.takeError();
       offloadInfo.emissionOptions = compilationOptions.emissionOptions;
 
       // A backend that owns offload lowering emits one artifact per entry
@@ -626,12 +624,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         // `compileStandaloneKernel` parses these into LLVM's registered cl
         // options per kernel and does not reset them, so restore this loop's
         // per-target invariant here instead of leaking one target's
-        // configuration into the next. `target-abi` is excluded because that
-        // path deliberately never parses it as a cl option.
+        // configuration into the next. The intercepted options are excluded
+        // because that path deliberately never parses them as cl options.
         SmallVector<StringRef> clPerKernelOptions;
         llvm::copy_if(
             perKernelOptions, std::back_inserter(clPerKernelOptions),
-            [](StringRef item) { return !isTargetABIEmissionOption(item); });
+            [](StringRef item) { return !isInterceptedEmissionOption(item); });
         if (ErrorOrSuccess resetOr = resetEmissionOptions(clPerKernelOptions);
             resetOr.isError())
           return resetOr.takeError();
@@ -839,10 +837,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       StringRef(offloadInfo.emissionOptions)
           .split(emissionOptions, /*Separator=*/",",
                  /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-      // `target-abi` was already applied to `compilationOptions.targetABI`
-      // above; keep it out of the parse/reset lists so it doesn't also mutate
-      // LLVM's shared, registered `-target-abi` cl option as a side effect.
-      llvm::erase_if(emissionOptions, isTargetABIEmissionOption);
+      // `applyOffloadEmissionOptions` already set the intercepted options in
+      // `compilationOptions`.
+      llvm::erase_if(emissionOptions, isInterceptedEmissionOption);
 
       KGEN_DEBUG(0, {
         llvm::dbgs() << "Emit offloads with options: "

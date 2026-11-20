@@ -489,6 +489,11 @@ Most code that no longer compiles matches one of these patterns:
   detected automatically, so you no longer need to pass
   `--target-accelerator=apple-m5` on M6 hardware.
 
+- `compile_options` now reports an error for LLVM codegen flags such as
+  `frame-pointer=all`, which it accepted before without effect. The only
+  codegen flag that had an effect, `denormal-fp-math-f32=<mode>`, still sets
+  the f32 denormal mode of NVIDIA GPU kernels, and other targets now reject it.
+
 - `Bool`, `Scalar` (including `Int`), `String`, `StringSpan`, and
   `StringLiteral` now conform to `ConvertibleToPython`, so they can be passed
   to generic code bounded on that trait. The dedicated `PythonObject`

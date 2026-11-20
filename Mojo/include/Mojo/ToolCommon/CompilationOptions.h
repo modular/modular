@@ -25,6 +25,7 @@
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/CodeGen.h"
@@ -78,24 +79,6 @@ splitFpModeEmissionOptions(llvm::StringRef options, FpMode &mode,
   }
   rest = llvm::join(kept, ",");
   return std::nullopt;
-}
-
-/// Returns true if `item` is a `target-abi=...` emission option. KGEN
-/// intercepts this itself, rather than registering a global cl option, since
-/// it must be applied before the TargetMachine is created.
-inline bool isTargetABIEmissionOption(llvm::StringRef item) {
-  return item.split('=').first == "target-abi";
-}
-
-/// Applies a `target-abi=<value>` item in `items` to `targetABI`, forwarding
-/// the value verbatim, matching LLVM's own `-target-abi` flag semantics.
-inline void applyTargetABIEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
-                                          std::string &targetABI) {
-  for (llvm::StringRef item : items) {
-    auto [key, value] = item.split('=');
-    if (key == "target-abi")
-      targetABI = value.str();
-  }
 }
 
 /// This class provides a set of options used to control the compilation of
@@ -195,6 +178,8 @@ public:
   /// ABI) sourced from a `target-abi` emission option, reset before each
   /// compile rather than carried on the target's identity.
   std::string targetABI;
+  /// This mode is only applicable to NVIDIA GPU kernels.
+  std::optional<llvm::DenormalMode::DenormalModeKind> denormalFP32Mode;
   std::optional<llvm::CodeModel::Model> mcmodel;
   std::optional<uint64_t> largeDataThreshold;
   int64_t loopUnrollingWarnThreshold = 65536;
@@ -288,33 +273,25 @@ MODULAR_CXX_EXPORT bool isMetalTriple(const llvm::Triple &triple);
 bool overrideExported(const llvm::Triple &triple);
 bool overrideExported(const CompilationOptions &options);
 
-/// Applies one offload group's emission options to `options`, the way every
-/// offload compile needs them regardless of how its artifact is produced: the
-/// `contract=fast|off` fp-mode item is pulled out of `emissionOptions` and
-/// applied on top of `hostFpMode`; `target-abi` is pulled into `targetABI`
-/// while staying in the option string, which identifies the offload in debug
-/// output and cache keys; and the filtered options plus `linkOptions` are
-/// recorded. Returns the offending item if an fp-mode item is malformed.
-inline std::optional<std::string>
-applyOffloadEmissionOptions(llvm::StringRef emissionOptions,
-                            llvm::StringRef linkOptions, FpMode hostFpMode,
-                            CompilationOptions &options) {
-  options.fpMode = hostFpMode;
-  std::string filtered;
-  if (std::optional<std::string> badItem =
-          splitFpModeEmissionOptions(emissionOptions, options.fpMode, filtered))
-    return badItem;
+/// Returns true if `item` is an emission option that KGEN reads into a
+/// `CompilationOptions` field instead of an LLVM cl option, so the item must
+/// not reach `parseEmissionOptions`.
+bool isInterceptedEmissionOption(llvm::StringRef item);
 
-  options.targetABI.clear();
-  llvm::SmallVector<llvm::StringRef> items;
-  llvm::StringRef(filtered).split(items, ',', /*MaxSplit=*/-1,
-                                  /*KeepEmpty=*/false);
-  applyTargetABIEmissionOptions(items, options.targetABI);
+/// Sets the `options` fields of the intercepted items in `items`, and clears
+/// the fields whose item is absent.
+ErrorOrSuccess
+applyInterceptedEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
+                                CompilationOptions &options);
 
-  options.emissionOptions = filtered;
-  options.emissionLinkOptions = linkOptions.str();
-  return std::nullopt;
-}
+/// Applies the emission options of one offload group to `options`. The fp-mode
+/// items are applied on top of `hostFpMode` and removed from the option string.
+/// The intercepted items stay in the string, because the string identifies the
+/// offload in debug output and cache keys.
+ErrorOrSuccess applyOffloadEmissionOptions(llvm::StringRef emissionOptions,
+                                           llvm::StringRef linkOptions,
+                                           FpMode hostFpMode,
+                                           CompilationOptions &options);
 
 } // namespace M::KGEN
 
