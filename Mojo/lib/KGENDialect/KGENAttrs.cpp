@@ -5995,6 +5995,9 @@ SIMDAttr SIMDAttr::getZeroValue(SIMDType type) {
   } else if (dtype.isInt()) {
     APSInt aps(dtype.getIntegerWidthInBits(), /*isUnsigned=*/dtype.isUInt());
     zeroValue = DTypeValue(aps, dtype);
+  } else if (dtype.isIndex() || dtype.isUIndex() || dtype.isAddress()) {
+    // Zero doesn't depend on the target's index bit width.
+    zeroValue = DTypeValue(int64_t{0}, dtype);
   } else if (auto *sem = dtype.getFloatSemantics()) {
     zeroValue = DTypeValue(APFloat::getZero(*sem), dtype);
   }
