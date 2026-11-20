@@ -366,6 +366,16 @@ class QuantConfig:
     source, named after the weight.
     """
 
+    mse_sweep_scales: bool = False
+    """Whether an on-the-fly NVFP4 quantizer searches a per-block scale.
+
+    Only :class:`~max.nn.common_layers.quant_tensor.NVFP4TensorQuantizer`
+    reads it. When set, each block's scale is the multiplier of its abs-max,
+    from 0.25 to 4.0 in steps of 0.1 and always including 1.0, with the
+    smallest quantization MSE. When unset (the default), the scale is the
+    block's own abs-max. Other formats ignore it.
+    """
+
     @classmethod
     def blockscaled_fp8(
         cls,

@@ -62,6 +62,7 @@ from linalg.block_scaled_quantization import (
     moe_source_scatter_quantize_mx_amd,
     moe_source_scatter_quantize_supported,
     quantize_dynamic_block_scaled,
+    quantize_block_scaled_with_amax,
     grouped_quantize_dynamic_scaled_fp4_async,
     grouped_quantize_nvfp4_row_amax,
     block_scales_interleave,
@@ -1245,6 +1246,58 @@ struct Struct_quantize_dynamic_block_scaled:
             output.to_tile_tensor(),
             scales.to_tile_tensor(),
             input.to_tile_tensor(),
+            tensor_sf,
+            context,
+        )
+
+
+@extensibility.register("quantization.quantize.block.scaled.with.amax")
+struct Struct_quantize_block_scaled_with_amax:
+    """Registers the `quantization.quantize.block.scaled.with.amax` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        SF_VECTOR_SIZE: Int,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        block_amax: Some[Input & Tensor],
+        tensor_sf: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Quantizes to NVFP4 with each block's scale taken from `block_amax`.
+
+        Parameters:
+            SF_VECTOR_SIZE: Elements per block scale.
+
+        Args:
+            output: The packed FP4 input of shape `[M, N // 2]`.
+            scales: The block scales in the 5D TCGEN interleaved layout.
+            input: The input of shape `[M, N]`.
+            block_amax: `[M, N // SF_VECTOR_SIZE]` amax of each block.
+            tensor_sf: The tensor-wise scale factor.
+            context: The device context.
+        """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(block_amax), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 5
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(block_amax).rank == 2
+        comptime assert context.target.is_gpu(), (
+            "block-scaled quantization with given amax only supports GPUs"
+            " with native block scaled support"
+        )
+        quantize_block_scaled_with_amax[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
+            block_amax.to_tile_tensor[DType.float32](),
             tensor_sf,
             context,
         )

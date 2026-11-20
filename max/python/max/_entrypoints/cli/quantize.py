@@ -78,6 +78,7 @@ from max.pipelines.weights.fp4_quantization import (
 )
 from max.profiler import OneShotCapture, Tracer
 from max.tensor import Tensor, compilation
+from max.tensor.support import _session
 
 from .generate import stream_text_to_console
 from .metrics import TextGenerationMetrics
@@ -646,11 +647,15 @@ def quant_formats() -> tuple[str, ...]:
     return tuple(sorted(_ON_THE_FLY))
 
 
-def on_the_fly_config(name: str, *, report_error: bool = False) -> QuantConfig:
+def on_the_fly_config(
+    name: str, *, report_error: bool = False, mse_sweep_scales: bool = False
+) -> QuantConfig:
     """The config ``--quantization-format`` selects.
 
     With ``report_error``, the quantizers built from it print their
-    quantization error from inside the graph.
+    quantization error from inside the graph. ``mse_sweep_scales`` is read
+    by NVFP4 quantizers: each block's scale is the multiplier of its abs-max
+    with the smallest quantization MSE.
 
     Raises:
         ValueError: if ``name`` is not a format this command can produce.
@@ -663,7 +668,9 @@ def on_the_fly_config(name: str, *, report_error: bool = False) -> QuantConfig:
             f"produce {', '.join(quant_formats())}"
         ) from None
     # A copy, because QuantConfig is mutable and the table is shared.
-    return dataclasses.replace(config, report_error=report_error)
+    return dataclasses.replace(
+        config, report_error=report_error, mse_sweep_scales=mse_sweep_scales
+    )
 
 
 def _enable_error_prints(
@@ -877,6 +884,7 @@ def quantize_pipeline(
     profile_top_n: int = 15,
     error_report_dir: Path | None = None,
     export_path: Path | None = None,
+    mse_sweep_scales: bool = False,
 ) -> None:
     """Quantizes the targeted layers on load, then generates text.
 
@@ -886,7 +894,9 @@ def quantize_pipeline(
     compiled graph and printed as the graph runs.
     """
     quant_config = on_the_fly_config(
-        quantization_format, report_error=error_report_dir is not None
+        quantization_format,
+        report_error=error_report_dir is not None,
+        mse_sweep_scales=mse_sweep_scales,
     )
     pipeline_config = PipelineConfig.from_args(pipeline_args)
     if export_path is not None:
@@ -911,6 +921,11 @@ def quantize_pipeline(
             "Exporting quantized weights without generation to %s",
             export_path,
         )
+        # Export compiles shard graphs on the process-wide session and
+        # returns from load_graphs before that session's prints are armed.
+        # Arm them here, before those graphs compile, so write_report reads
+        # this run.
+        _enable_error_prints(_session(), error_report_dir)
         export_quantized_checkpoint(
             pipeline._pipeline_model, export_path, quantization_format
         )

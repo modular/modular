@@ -16309,6 +16309,82 @@ def rope_quantize_dynamic_block_scaled(
     return result[0].tensor, result[1].tensor
 
 
+def quantize_block_scaled_with_amax(
+    input: TensorValue,
+    block_amax: TensorValue,
+    tensor_sf: TensorValue | float = 1.0,
+    sf_vector_size: int = 16,
+) -> tuple[TensorValue, TensorValue]:
+    """Quantizes a bf16 tensor to NVFP4 with each block's amax given.
+
+    Matches :func:`quantize_dynamic_block_scaled` for NVFP4, except that
+    each 16-element block's scale comes from ``block_amax`` instead of the
+    block's own abs-max. Values past a block's amax saturate, as clipping
+    the input to it first would. Runs on NVIDIA SM100 and SM120.
+
+    Args:
+        input: The bfloat16 input. Shape: ``[M, N]`` with a static ``N``.
+        block_amax: The float32 amax of each block. Shape:
+            ``[M, N // sf_vector_size]``.
+        tensor_sf: The tensor-wise scale factor, inverted as for
+            :func:`quantize_dynamic_block_scaled`.
+        sf_vector_size: The block size for the scaling factors. Must be 16.
+
+    Returns:
+        The packed ``[M, N // 2]`` FP4 input and its rank-5 interleaved
+        ``float8_e4m3fn`` scales.
+
+    Raises:
+        ValueError: If the GPU is not SM100 or SM120, ``input`` is not a
+            rank-2 bfloat16 tensor with a static width of whole blocks,
+            ``block_amax`` is not a float32 ``[M, N // sf_vector_size]``
+            tensor, or ``sf_vector_size`` is not 16.
+    """
+    if not (_is_sm10x_gpu() or _is_sm12x_gpu()):
+        raise ValueError(
+            "quantize_block_scaled_with_amax requires an NVIDIA SM100 or"
+            " SM120 GPU"
+        )
+    if sf_vector_size != 16:
+        raise ValueError(
+            f"quantize_block_scaled_with_amax only supports NVFP4's 16-element"
+            f" blocks, got sf_vector_size={sf_vector_size}"
+        )
+    if input.rank != 2 or input.dtype != DType.bfloat16:
+        raise ValueError("input must be a rank 2 bfloat16 tensor")
+    width = input.shape[1]
+    if not isinstance(width, StaticDim) or int(width) % sf_vector_size:
+        raise ValueError(
+            f"input.shape[1] must be a static multiple of {sf_vector_size},"
+            f" got {width}"
+        )
+    if block_amax.rank != 2 or block_amax.dtype != DType.float32:
+        raise ValueError("block_amax must be a rank 2 float32 tensor")
+    block_amax = block_amax.rebind(
+        [input.shape[0], int(width) // sf_vector_size]
+    )
+
+    result = ops.custom(
+        "quantization.quantize.block.scaled.with.amax",
+        device=input.device,
+        values=[input, block_amax, _tensor_sf_value(tensor_sf)],
+        out_types=_block_scaled_quantize_out_types(
+            input.shape[0],
+            width,
+            "input.shape[1]",
+            sf_vector_size,
+            DType.float8_e4m3fn,
+            DType.uint8,
+            input.device,
+        ),
+        parameters={
+            "SF_VECTOR_SIZE": sf_vector_size,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
 def rms_norm_quantize_mxfp8_q_kv(
     x: TensorValue,
     q_weight: TensorValue,

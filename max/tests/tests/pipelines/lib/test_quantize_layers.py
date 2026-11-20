@@ -22,6 +22,7 @@ import pytest
 from max import functional as F
 from max import tree
 from max._entrypoints.cli.quantize import (
+    _enable_error_prints,
     _graphs_without_compile,
     _ignore_pattern,
     checkpoint_quantization_config,
@@ -367,6 +368,12 @@ def _reports_error(layer: Any) -> bool:
     return layer.weight.reports_error
 
 
+def _sweeps(layer: Any) -> bool:
+    """Whether ``layer``'s weight is an NVFP4 quantizer that sweeps the clip."""
+    assert isinstance(layer.weight, NVFP4TensorQuantizer)
+    return layer.weight._mse_sweep_scales
+
+
 def test_report_error_builds_reporting_quantizers() -> None:
     """With ``report_error`` every inserted quantizer reports; others do not."""
     with F.lazy():
@@ -380,6 +387,45 @@ def test_report_error_builds_reporting_quantizers() -> None:
         assert _reports_error(block.q_proj)
         assert _reports_error(block.k_proj)
         assert isinstance(block.mlp, Linear)
+
+
+def test_mse_sweep_scales_reaches_the_quantizer() -> None:
+    """The CLI flag is the quantizer's sweep, and a rebuild keeps it."""
+    with F.lazy():
+        default_block = _Block()
+        insert_quantized_linears(
+            default_block, [r"q_proj"], on_the_fly_config("nvfp4")
+        )
+        on_block = _Block()
+        insert_quantized_linears(
+            on_block,
+            [r"q_proj"],
+            on_the_fly_config("nvfp4", mse_sweep_scales=True),
+        )
+        rebuilt = tree.map(lambda tensor: tensor, on_block, leaf=Tensor)
+
+        assert not _sweeps(default_block.q_proj)
+        assert _sweeps(on_block.q_proj)
+        assert _sweeps(rebuilt.q_proj)
+
+
+def test_error_prints_drop_stale_dumps(tmp_path: Path) -> None:
+    """Arming the print directory clears the previous run's dumps."""
+    stale = tmp_path / "quant_error.old.weight.max"
+    stale.write_bytes(b"stale")
+    calls: dict[str, Any] = {}
+
+    class _Session:
+        def set_debug_print_options(self, **kwargs: Any) -> None:
+            calls.update(kwargs)
+
+    session = cast(Any, _Session())
+    _enable_error_prints(session, tmp_path)
+
+    assert not stale.exists()
+    assert calls["output_directory"] == tmp_path
+    _enable_error_prints(session, None)
+    assert calls["output_directory"] == tmp_path
 
 
 def test_report_error_is_off_by_default() -> None:

@@ -375,6 +375,7 @@ class _QuantizerFactory(Protocol):
         block_size: tuple[int, int],
         *,
         report_error: bool = False,
+        mse_sweep_scales: bool = False,
     ) -> QuantAwareTensor: ...
 
 
@@ -470,6 +471,7 @@ def quantized_weight(
             Tensor.zeros(shape, dtype=routed_weight_dtype(quant_config)),
             block_size=block_size,
             report_error=quant_config.report_error,
+            mse_sweep_scales=quant_config.mse_sweep_scales,
         )
     # The same format, stored with compressed-tensors' global scales.
     container: _ContainerFactory = (

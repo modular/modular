@@ -927,6 +927,17 @@ def cli_pipeline(
     ),
 )
 @click.option(
+    "--mse-sweep-scales/--no-mse-sweep-scales",
+    default=False,
+    show_default=True,
+    help=(
+        "For NVFP4, search multipliers of each block's abs-max, from 0.25 to"
+        " 4.0 in steps of 0.1 and always including 1.0, and keep the scale"
+        " with the smallest quantization MSE. Off by default, which uses the"
+        " block's own abs-max. Other formats ignore this."
+    ),
+)
+@click.option(
     "--verbose",
     is_flag=True,
     default=False,
@@ -998,6 +1009,7 @@ def quantize(
     targets: list[str],
     quantization_format: str,
     error_report_dir: Path | None,
+    mse_sweep_scales: bool,
     verbose: bool,
     export_path: Path | None,
     prompt: str,
@@ -1079,6 +1091,7 @@ def quantize(
         quantization_format=quantization_format,
         verbose=verbose,
         error_report_dir=error_report_dir,
+        mse_sweep_scales=mse_sweep_scales,
         image_urls=image_url,
         num_warmups=num_warmups,
         profile=profile,

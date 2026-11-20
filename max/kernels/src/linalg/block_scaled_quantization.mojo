@@ -173,6 +173,10 @@ def quantize_dynamic_scaled_fp4fp8[
         *Coord[Int64, Int64].element_types
     ],
     grid_by_occupancy: Bool = False,
+    given_block_amax: Bool = False,
+    block_amax_layout: TensorLayout = RowMajorLayout[
+        *Coord[Int64, Int64].element_types
+    ],
 ](
     ctx: DeviceContext,
     output_tile: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
@@ -185,6 +189,9 @@ def quantize_dynamic_scaled_fp4fp8[
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
     rope_freqs: OptionalReg[
         TileTensor[.float32, rope_layout, ImmUnsafeAnyOrigin]
+    ] = None,
+    block_amax: OptionalReg[
+        TileTensor[.float32, block_amax_layout, ImmUnsafeAnyOrigin]
     ] = None,
 ) raises:
     """Launches the SM100 kernel that quantizes BF16 input to NVFP4, MXFP4, or MXFP8 with per-block scale factors.
@@ -218,6 +225,9 @@ def quantize_dynamic_scaled_fp4fp8[
         rope_layout: Layout of `rope_freqs` (inferred).
         grid_by_occupancy: Whether to size the grid by the blocks an SM
             holds at the kernel's register use, instead of by threads.
+        given_block_amax: Whether each block's scale comes from
+            `block_amax` instead of the block's own abs-max.
+        block_amax_layout: Layout of `block_amax` (inferred).
     Args:
         ctx: Device context used to enqueue the kernel.
         output_tile: Output tile for the quantized elements of shape
@@ -238,6 +248,9 @@ def quantize_dynamic_scaled_fp4fp8[
             `(cos, sin)` pairs, one row per input row; required when
             `rope_dim > 0`. Each head's rotated columns are rounded to
             `in_dtype` before they are quantized.
+        block_amax: `[num_rows, num_cols // SF_VECTOR_SIZE]` `float32`
+            amax of each block; required when `given_block_amax`. Values
+            past a block's amax saturate.
     """
     comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
         ctx.default_device_info
@@ -297,6 +310,8 @@ def quantize_dynamic_scaled_fp4fp8[
         rope_head_dim=rope_head_dim,
         rope_inverse=rope_inverse,
         rope_layout=rope_layout,
+        given_block_amax=given_block_amax,
+        block_amax_layout=block_amax_layout,
     ]
 
     var block_dim = (
@@ -344,6 +359,7 @@ def quantize_dynamic_scaled_fp4fp8[
         Int32(num_cols_padded),
         tensor_sf,
         rope_freqs,
+        block_amax,
         block_dim=block_dim,
         grid_dim=grid_dim,
         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -354,7 +370,7 @@ def quantize_dynamic_scaled_fp4fp8[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
 @__name(
-    t"quantize_dynamic_scaled_fp4fp8_{out_dtype}_{scales_dtype}_{in_dtype}_sf{SF_VECTOR_SIZE}{"_gated" if gated else ""}{"_rope" if rope_dim > 0 else ""}",
+    t"quantize_dynamic_scaled_fp4fp8_{out_dtype}_{scales_dtype}_{in_dtype}_sf{SF_VECTOR_SIZE}{"_gated" if gated else ""}{"_rope" if rope_dim > 0 else ""}{"_amax" if given_block_amax else ""}",
 )
 def quantize_dynamic_scaled_fp4fp8_kernel[
     out_dtype: DType,
@@ -375,6 +391,10 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     rope_layout: TensorLayout = RowMajorLayout[
         *Coord[Int64, Int64].element_types
     ],
+    given_block_amax: Bool = False,
+    block_amax_layout: TensorLayout = RowMajorLayout[
+        *Coord[Int64, Int64].element_types
+    ],
 ](
     output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
     scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
@@ -384,6 +404,9 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
     tensor_sf: Float32,
     rope_freqs: OptionalReg[
         TileTensor[.float32, rope_layout, ImmUnsafeAnyOrigin]
+    ] = None,
+    block_amax: OptionalReg[
+        TileTensor[.float32, block_amax_layout, ImmUnsafeAnyOrigin]
     ] = None,
 ):
     comptime assert SF_VECTOR_SIZE in (16, 32) and ELEMENTS_PER_THREAD == 8, (
@@ -505,15 +528,23 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
                                     ]((Int(row), Int(head_col - rope_start))),
                                 )
 
-                    # each thread finds maximum value in its local 8 elements
-                    var thread_max = abs(input_vector).reduce_max()
-                    # find the maximum value among all 16 elements (two threads for 16)
-                    thread_max = max(shuffle_xor(thread_max, 1), thread_max)
+                    var group_max: Float32
+                    comptime if given_block_amax:
+                        group_max = block_amax.value().load[width=1](
+                            (Int(row), Int(col // UInt32(SF_VECTOR_SIZE)))
+                        )
+                    else:
+                        # each thread finds maximum value in its local 8 elements
+                        var thread_max = abs(input_vector).reduce_max()
+                        # find the maximum value among all 16 elements (two threads for 16)
+                        thread_max = max(shuffle_xor(thread_max, 1), thread_max)
 
-                    comptime if NUM_THREADS_PER_SF == 4:
-                        thread_max = max(shuffle_xor(thread_max, 2), thread_max)
+                        comptime if NUM_THREADS_PER_SF == 4:
+                            thread_max = max(
+                                shuffle_xor(thread_max, 2), thread_max
+                            )
 
-                    var group_max = thread_max.cast[.float32]()
+                        group_max = thread_max.cast[.float32]()
 
                     var fp8_scale_factor: Scalar[scales_dtype]
                     var output_scale = Float32(0.0)
@@ -3848,6 +3879,111 @@ def rope_quantize_dynamic_block_scaled[
             launch[1024, False]()
     else:
         launch[512, False]()
+
+
+def quantize_block_scaled_with_amax[
+    out_dtype: DType,
+    scales_dtype: DType,
+    in_dtype: DType,
+    //,
+    *,
+    SF_VECTOR_SIZE: Int,
+](
+    output_device: TileTensor[mut=True, out_dtype, address_space=.GENERIC, ...],
+    scales_device: TileTensor[
+        mut=True, scales_dtype, address_space=.GENERIC, ...
+    ],
+    input_device: TileTensor[mut=False, in_dtype, address_space=.GENERIC, ...],
+    block_amax_device: TileTensor[
+        mut=False, DType.float32, address_space=.GENERIC, ...
+    ],
+    tensor_sf: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Quantizes BF16 input to NVFP4, taking each block's amax as an input.
+
+    Matches `quantize_dynamic_block_scaled` except that the scale of each
+    16-element block comes from `block_amax_device` instead of the block's
+    own abs-max. Values past a block's amax saturate to the largest E2M1
+    value, as clipping the input to that amax first would. SM100 and SM120
+    only.
+
+    Parameters:
+        out_dtype: Element type of the quantized output (inferred). Must be
+            `uint8`.
+        scales_dtype: Element type of the block scales (inferred). Must be
+            `float8_e4m3fn`.
+        in_dtype: Element type of the input (inferred). Must be `bfloat16`.
+        SF_VECTOR_SIZE: Elements per block scale. Must be 16.
+
+    Args:
+        output_device: Packed FP4 output of shape `[M, N // 2]`.
+        scales_device: Block scales in the 5D TCGEN interleaved layout.
+        input_device: Input of shape `[M, N]`.
+        block_amax_device: `[M, N // SF_VECTOR_SIZE]` amax of each block.
+        tensor_sf: Tensor-wise scale factor multiplied into each block
+            scale.
+        ctx: Device context used to enqueue the kernel.
+
+    Raises:
+        Error: If `output_device` is not `[M, N // 2]` or
+            `block_amax_device` is not `[M, N // SF_VECTOR_SIZE]`.
+    """
+    comptime assert _is_sm10x_gpu(ctx.default_device_info) or _is_sm12x_gpu(
+        ctx.default_device_info
+    ), "block-scaled quantization with given amax only runs on SM100 or SM120"
+    comptime assert (
+        out_dtype == .uint8
+        and scales_dtype == NVFP4_SF_DTYPE
+        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    ), "block-scaled quantization with given amax only supports NVFP4"
+    comptime assert (
+        output_device.rank == 2
+        and input_device.rank == 2
+        and block_amax_device.rank == 2
+    ), "output, input and block_amax must be rank 2"
+    comptime assert (
+        scales_device.rank == 5 and scales_device.flat_rank == 5
+    ), "scales must be rank 5"
+
+    var num_rows = Int(input_device.dim(0))
+    var num_cols = Int(input_device.dim(1))
+    if (
+        Int(output_device.dim(0)) != num_rows
+        or Int(output_device.dim(1)) != num_cols // 2
+    ):
+        raise Error("output must be [M, N // 2], where input is [M, N]")
+    if num_rows == 0 or num_cols == 0:
+        return
+    if (
+        Int(block_amax_device.dim(0)) != num_rows
+        or Int(block_amax_device.dim(1)) != num_cols // SF_VECTOR_SIZE
+    ):
+        raise Error(
+            "block_amax must be [M, N // SF_VECTOR_SIZE], where input is [M, N]"
+        )
+
+    comptime AmaxTensor = TileTensor[
+        DType.float32, block_amax_device.LayoutType, ImmUnsafeAnyOrigin
+    ]
+    var block_amax = rebind[AmaxTensor](
+        block_amax_device.as_unsafe_any_origin()
+    )
+    quantize_dynamic_scaled_fp4fp8[
+        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        num_max_threads=512,
+        given_block_amax=True,
+        block_amax_layout=block_amax_device.LayoutType,
+    ](
+        ctx,
+        output_device.as_unsafe_any_origin(),
+        scales_device.as_unsafe_any_origin(),
+        input_device.as_unsafe_any_origin(),
+        num_cols=num_cols,
+        num_cols_padded=num_cols,
+        tensor_sf=tensor_sf,
+        block_amax=block_amax,
+    )
 
 
 @inline(.always)
