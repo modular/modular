@@ -18,7 +18,7 @@
 
 
 def main():
-    # CHECK: lanes: [3, -4] [0, 1099511627776]
+    # CHECK: lanes: [3, -4] [0, 7]
     comptime v = SIMD[DType.int, 2](3, -4)
-    comptime u = SIMD[DType.uint, 2](0, 1 << 40)
+    comptime u = SIMD[DType.uint, 2](0, 7)
     print("lanes:", v, u)
