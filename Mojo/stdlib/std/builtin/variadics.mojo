@@ -1350,6 +1350,7 @@ struct VariadicPack[
     Copyable where not is_owned else "Cannot copy an owned variadic pack.",
     RegisterPassable,
     Sized,
+    Writable where Ts.all_conforms_to[Writable](),
 ):
     """A utility class to access heterogeneous variadic function arguments.
 
@@ -1669,11 +1670,17 @@ struct VariadicPack[
         Args:
             writer: The object to write to.
         """
-        self._write_to[is_repr=True](
-            writer,
-            start=StaticString("("),
-            end=StaticString(")"),
-        )
+
+        def fields(mut w: Some[Writer]) {imm}:
+            self._write_to[is_repr=True](
+                w,
+                start=StaticString(""),
+                end=StaticString(""),
+            )
+
+        FormatStruct(writer, "VariadicPack").params(
+            TypeNames[*Self.Ts]()
+        ).fields(fields)
 
 
 @inline(.always)

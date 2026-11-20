@@ -618,6 +618,9 @@ Most code that no longer compiles matches one of these patterns:
 
 ## Fixed
 
+- `VariadicPack` now conforms to `Writable` when all of its element types do,
+  so a pack can be passed to `print()`, `String()` and `repr()`.
+
 - `find()` and `rfind()` on `String`, `StringSpan` and `StringLiteral` now
   honor `start` when the substring is empty. `"abc".find("", 2)` returns `2`
   instead of `0`, and both methods return `None` when `start` is past the end
