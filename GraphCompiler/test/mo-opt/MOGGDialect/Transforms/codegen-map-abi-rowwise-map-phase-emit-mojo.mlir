@@ -242,3 +242,30 @@ mo.graph @residual(%x: !mo.tensor<[8, 128], bf16>, %res: !mo.tensor<[8, 128], bf
   }
   mo.output %r#0, %r#1 : !mo.tensor<[8, 128], bf16>, !mo.tensor<[8, 128], bf16>
 }
+
+// A per-row output next to a map phase: the emit writes the row's sum once,
+// before `row.elementwise`, and the row stays whole (`dtype_size = 0`).
+// CHECK-LABEL: def __iter_opaque_4(
+// CHECK:       var [[ROW5:.*]] = algorithm.rowwise.Row[
+// CHECK:       var [[ACC5:.*]] = [[ROW5]].reduce[
+// CHECK:       [[ROW5]].emit([[WRITE5:.*]])
+// CHECK:       [[ROW5]].elementwise(
+// CHECK:       _rowwise[{{.*}}num_phases = 2, computationally_expensive = True, dtype_size = 0]
+mo.graph @sumAndScale(%x: !mo.tensor<[8, 128], f32>) -> (!mo.tensor<[8, 1], f32>, !mo.tensor<[8, 128], f32>) {
+  %r:2 = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%s: !mo.tensor<[8, 1], f32>, %out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> (!mo.tensor<[8, 1], f32>, !mo.tensor<[8, 128], f32>) {
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      map.yield %v : f32
+    }
+    map.store %s[%row] = %acc : !mo.tensor<[8, 1], f32>
+    map.iter.map index (%j: !map.index<2>) {
+      %xv = map.load %x[%j] : !mo.tensor<[8, 128], f32>
+      %y = map.call.elementwise @builtin_kernels.elementwise.Mul(%j, %xv, %acc) : !map.index<2>, f32, f32 -> f32
+      map.store %out[%j] = %y : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r#0, %r#1 : !mo.tensor<[8, 1], f32>, !mo.tensor<[8, 128], f32>
+}

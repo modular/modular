@@ -31,8 +31,8 @@
 //                       {fields = ["acc"], params = {dtype = f32}}
 //
 // 3. `mogg-rowwise-group-row-stores`: the per-row stores, and the row-level
-//    ops only they read, move into one emit; a load at the row index outside
-//    it becomes a `mogg.rowwise.load_lane` spread by a
+//    ops only they read, move into one emit before the map phases; a load at
+//    the row index outside it becomes a `mogg.rowwise.load_lane` spread by a
 //    `mogg.rowwise.splat_lane`:
 //
 //      %b = load %b[%row]               emit {
@@ -44,8 +44,8 @@
 // 4. `mogg-rowwise-set-launch-params`: the Row API's launch parameters,
 //    `num_phases`, `dtype_size` and `computationally_expensive` among them,
 //    set as the hand-written kernels set them. A fold that reads a
-//    `mogg.rowwise.cache` doesn't count as a phase, and a cache keeps the
-//    row whole (`dtype_size = 0`).
+//    `mogg.rowwise.cache` doesn't count as a phase, and a cache or an emit
+//    next to a map phase keeps the row whole (`dtype_size = 0`).
 //
 //===----------------------------------------------------------------------===//
 
@@ -323,9 +323,10 @@ LogicalResult bindMonoids(CallRowwiseOp op) {
 }
 
 // Moves the stores at the row index, and the row-level ops only they read, into
-// one emit at the end of the body, which prints them one lane per output. A
-// load at the row index left in the body feeds a value a phase reads, so it
-// becomes a `mogg.rowwise.load_lane` spread by a `mogg.rowwise.splat_lane`.
+// one emit, which prints them one lane per output. The emit goes before the map
+// phases, which stay last. A load at the row index left in the body feeds a
+// value a phase reads, so it becomes a `mogg.rowwise.load_lane` spread by a
+// `mogg.rowwise.splat_lane`.
 LogicalResult groupRowStores(CallRowwiseOp op) {
   Block &body = op.getBody().front();
   SmallVector<TensorStoreOp> stores;
@@ -333,7 +334,9 @@ LogicalResult groupRowStores(CallRowwiseOp op) {
     if (store.getIndex() == rowArg(op))
       stores.push_back(store);
   if (!stores.empty()) {
-    OpBuilder builder = OpBuilder::atBlockEnd(&body);
+    auto maps = body.getOps<RowwiseMapOp>();
+    OpBuilder builder =
+        maps.empty() ? OpBuilder::atBlockEnd(&body) : OpBuilder(*maps.begin());
     auto emit = RowwiseEmitOp::create(builder, op.getLoc());
     Block *emitBody = builder.createBlock(&emit.getBody());
     for (TensorStoreOp store : stores)
@@ -411,7 +414,8 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
   // back from registers. `dtype_size` > 0 lets a long row split across
   // blocks. rms_norm and softmax, whose folds keep one field, opt in;
   // layer_norm, whose Welford fold keeps three, doesn't, so neither does a
-  // body with a multi-field fold, nor one with a cache, which can't split.
+  // body with a multi-field fold, nor one with a cache or per-row stores,
+  // which can't split.
   // Every hand-written body that writes every element is expensive: it
   // reads the row once per fold and writes it once.
   bool writesEveryElement = !body.getOps<RowwiseMapOp>().empty();
@@ -422,7 +426,8 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
   });
   op.setNumPhases(writesEveryElement ? tileFolds + 1 : 1);
   op.setDtypeSize(0);
-  if (writesEveryElement && oneFieldFolds && !hasCache(op)) {
+  if (writesEveryElement && oneFieldFolds && !hasCache(op) &&
+      body.getOps<RowwiseEmitOp>().empty()) {
     ASSERT_STREAM(op.getTile(), << "the tile is created first");
     op.setDtypeSize(
         (op.getTile().getType().getElementType().getIntOrFloatBitWidth() + 7) /

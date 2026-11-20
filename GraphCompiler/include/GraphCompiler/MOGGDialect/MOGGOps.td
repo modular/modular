@@ -1897,12 +1897,13 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   let summary = "Run a fused reduction body once per row.";
   let description = [{
     Runs its body once per row of `$shape` along `$axis`. The body holds the
-    row's phases in order: folds (`mogg.rowwise.reduce`) and per-element
-    phases (`mogg.rowwise.map`), the row-level ops between them, and the
-    per-row stores. A fold can't follow a map phase, and a body with a map
-    phase has no per-row stores. Its arguments are one per `$capturing`
-    tensor, then the row index, which has the `$axis` coordinate pinned to
-    0. Lowered from a `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
+    row's phases in order: folds (`mogg.rowwise.reduce`) and the row-level
+    ops between and after them, the per-row stores, then per-element phases
+    (`mogg.rowwise.map`). A fold can't follow a map phase, and a body with
+    both a map phase and per-row stores keeps its row whole (`$dtype_size`
+    0). Its arguments are one per `$capturing` tensor, then the row index,
+    which has the `$axis` coordinate pinned to 0. Lowered from a
+    `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
 
     A `mogg.rowwise.cache` computes a value of the row that later phases
     read instead of the tile.

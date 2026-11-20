@@ -321,3 +321,26 @@ func.func @foldOfCache(%ctx: !mogg.context, %x: !mogg.tensor, %h: !mogg.tensor, 
   }
   return
 }
+
+// Per-row stores next to a map phase keep the row whole: `Row.emit` runs once
+// per row.
+// CHECK-LABEL: func.func @emitNextToMap
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  attributes {cols = 128 : i64, computationally_expensive, dtype_size = 0 : i64, num_phases = 2 : i64
+func.func @emitNextToMap(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor, %sum: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor, %cs = %sum : !mogg.tensor} device = "cpu" {
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.emit {
+      mogg.tensor.store %cs[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.tensor.load %cx[%j] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}

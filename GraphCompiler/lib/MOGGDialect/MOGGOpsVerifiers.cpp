@@ -358,10 +358,10 @@ LogicalResult CallRowwiseOp::verify() {
       return emitOpError("has a fold after a map phase");
     afterMap |= isa<RowwiseMapOp>(op);
   }
-  // `Row.emit` isn't phase-aware, so it can't run in a body that writes
-  // every element.
-  if (afterMap && !body.getOps<RowwiseEmitOp>().empty())
-    return emitOpError("has both per-row stores and a map phase");
+  // `Row.emit` runs once per row, so the row can't split across launches.
+  if (afterMap && !body.getOps<RowwiseEmitOp>().empty() && getDtypeSize() &&
+      *getDtypeSize() != 0)
+    return emitOpError("splits its row and has per-row stores");
   // A body without a map phase launches as one phase, whose split-row tiers
   // join one fold per row.
   if (!afterMap && llvm::range_size(body.getOps<RowwiseReduceOp>()) > 1)

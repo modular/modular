@@ -746,6 +746,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/tests/integration/test_common:reduction_graphs",
         requirement("hypothesis"),
         requirement("numpy"),
