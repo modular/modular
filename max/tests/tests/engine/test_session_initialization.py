@@ -47,11 +47,17 @@ def _run(script: str, config_dir: Path, num_threads: int | None = None) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("configured", [0, 2], ids=["unset", "config-file"])
-def test_session_thread_argument(configured: int, tmp_path: Path) -> None:
-    if configured:
+@pytest.mark.parametrize(
+    ("setting", "configured"),
+    [(None, 0), ("2", 2), ("0x2", 2), ("010", 8)],
+    ids=["unset", "decimal", "hexadecimal", "octal"],
+)
+def test_session_thread_argument(
+    setting: str | None, configured: int, tmp_path: Path
+) -> None:
+    if setting is not None:
         (tmp_path / "modular.cfg").write_text(
-            f"[runtime]\nnum_threads = {configured}\n"
+            f"[runtime]\nnum_threads = {setting}\n"
         )
     _run(
         f"""

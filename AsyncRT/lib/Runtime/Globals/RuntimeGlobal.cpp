@@ -14,6 +14,7 @@
 #include "AsyncRT/Runtime/Globals/RuntimeGlobal.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Configuration.h"
+#include "llvm/ADT/StringExtras.h"
 
 #include <mutex>
 
@@ -42,7 +43,7 @@ size_t CPUDeviceOptions::getConfiguredNumThreads() {
   static const size_t count = []() -> size_t {
     if (auto config = Config::open(); !config.isError()) {
       size_t value;
-      if (!config->getValue("runtime.num_threads").getAsInteger(10, value))
+      if (llvm::to_integer(config->getValue("runtime.num_threads"), value))
         return value;
     }
     return 0;
