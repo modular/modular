@@ -23,6 +23,9 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Inkling2BatchProcessor
 from .dspark_config import Inkling2DSparkConfig
+from .dspark_draft import (
+    inkling2_dspark_draft_arch as make_inkling2_dspark_draft_arch,
+)
 from .model_config import Inkling2Config
 from .modules import Inkling2Decoder
 from .reasoning import (
@@ -95,4 +98,9 @@ inkling2_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     checkpoints_recurrent_state=True,
     checkpoint_draft_width=inkling2_dspark_draft_width,
+    checkpoint_drafts={"dspark": "Inkling2DSparkDraftModel_ModuleV3"},
+    # The serving engine boots the fused graph by this name.
+    spec_decode_graph_names={"dspark": "UnifiedDSparkInkling2ModuleV3"},
 )
+
+inkling2_dspark_draft_arch = make_inkling2_dspark_draft_arch(inkling2_arch)

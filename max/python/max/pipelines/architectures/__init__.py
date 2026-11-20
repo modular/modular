@@ -293,6 +293,11 @@ def register_all_models() -> None:
             "inkling2_arch",
         ),
         _LazyArch(
+            "Inkling2DSparkDraftModel_ModuleV3",
+            ".inkling2",
+            "inkling2_dspark_draft_arch",
+        ),
+        _LazyArch(
             "InklingForConditionalGeneration", ".inkling", "inkling_arch"
         ),
         _LazyArch(

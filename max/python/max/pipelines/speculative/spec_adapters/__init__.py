@@ -111,6 +111,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "GraniteForCausalLM": ".llama3.spec_adapters",
     "HYV4ForCausalLM": ".hy_v4.spec_adapters",
     "HYV4ForCausalLM_ModuleV3": ".hy_v4.spec_adapters",
+    "Inkling2ForConditionalGeneration_ModuleV3": ".inkling2.spec_adapters",
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
     "InklingForConditionalGeneration_ModuleV3": (
         ".inkling_modulev3.spec_adapters"

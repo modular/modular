@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -242,33 +242,54 @@ class Inkling2(Module[..., DecoderOutputs]):
                 "Inkling 2 taps must be increasing layer ids up to"
                 f" {num_layers}; got {list(taps)}."
             )
+        kv_tree = self.kv_params.unflatten_kv_inputs(iter(kv_input_values(kv)))
+        return self.run_layers_on(
+            tokens,
+            input_row_offsets,
+            vision,
+            {
+                key: tree.leaves(child, leaf=KVCacheInputsPerDevice)
+                for key, child in kv_tree.items()
+                if key != STATE_CACHE_KEY
+            },
+            tree.leaves(
+                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            ),
+            taps,
+        )
+
+    def run_layers_on(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        vision: VisionInputs[Tensor] | None,
+        attention_kv: Mapping[str, Sequence[Any]],
+        conv_state: Sequence[RecurrentStateInputsPerDevice[TensorValue, Any]],
+        taps: Sequence[int] = (),
+    ) -> LayerOutputs:
+        """Runs the decoder stack on per-device cache leaves.
+
+        :meth:`run_layers` with the cache already split into its attention
+        leaves, per device and keyed by cache name, and the per-device conv
+        state, as a spec-decode verify receives them.
+        """
+        num_layers = self.text_config.num_hidden_layers
         text_config = self.text_config
         mesh = self.norm.weight.mesh
         tokens, input_row_offsets = (
             self._broadcast(t, mesh) for t in (tokens, input_row_offsets)
         )
         replicated = tokens.mapping
-
-        kv_tree = self.kv_params.unflatten_kv_inputs(iter(kv_input_values(kv)))
         kv_collections = {
-            key: PagedCacheValues.from_upstream(
-                tree.leaves(child, leaf=KVCacheInputsPerDevice), replicated
-            )
-            for key, child in kv_tree.items()
-            if key != STATE_CACHE_KEY
+            key: PagedCacheValues.from_upstream(list(leaves), replicated)
+            for key, leaves in attention_kv.items()
         }
         positions = token_positions(
             input_row_offsets,
             next(iter(kv_collections.values())).cache_lengths,
             tokens.shape[0],
         )
-        pools, slot_rows = self._conv_state(
-            tree.leaves(
-                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
-            ),
-            mesh,
-            replicated,
-        )
+        pools, slot_rows = self._conv_state(list(conv_state), mesh, replicated)
         tau = as_replicated(
             log_scaling_tau(
                 positions,
@@ -409,6 +430,34 @@ class Inkling2(Module[..., DecoderOutputs]):
                 self._padded_tail_mask, DType.float32, device=logits.device
             )
         return logits
+
+    def window_logits(
+        self,
+        blocks: list[Tensor],
+        h: Tensor,
+        input_row_offsets: Tensor,
+        return_n_logits: Tensor,
+    ) -> Tensor:
+        """The logits of each sequence's last ``return_n_logits`` rows.
+
+        Flat and sequence-major, as a spec-decode accept reads them.
+        """
+        count = return_n_logits[0]
+        distance = F.range(
+            count,
+            0,
+            -1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=h.mesh,
+        )
+        indices = (input_row_offsets[1:].unsqueeze(-1) - distance).reshape(
+            (-1,)
+        )
+        return self._lm_head(
+            [F.gather(b, indices, axis=0) for b in blocks],
+            F.gather(h, indices, axis=0),
+        )
 
     def _logits(
         self,

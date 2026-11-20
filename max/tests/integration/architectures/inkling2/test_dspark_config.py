@@ -27,6 +27,9 @@ from max.dtype import DType
 from max.pipelines.architectures.inkling2.dspark_config import (
     Inkling2DSparkConfig,
 )
+from max.pipelines.architectures.inkling2.dspark_draft import (
+    Inkling2DSparkDraftConfig,
+)
 from max.pipelines.architectures.inkling2.inkling2 import Inkling2
 from max.pipelines.architectures.inkling2.model_config import (
     Inkling2TextConfig,
@@ -190,3 +193,13 @@ def test_run_layers_refuses_bad_taps(taps: tuple[int, ...]) -> None:
     model = SimpleNamespace(text_config=TEXT_CONFIG)
     with pytest.raises(ValueError, match="taps"):
         Inkling2.run_layers(model, None, None, None, None, taps=taps)  # type: ignore[arg-type]
+
+
+def test_draft_config_answers_the_pairing_checks_fields() -> None:
+    # The spec-decode pairing reads both off the draft's pipeline config, and
+    # a config that does not answer stops the serve at build.
+    draft = Inkling2DSparkDraftConfig(
+        max_seq_len=2048, dspark=Inkling2DSparkConfig.from_hf(_hf_config())
+    )
+    assert draft.hidden_size == TEXT_CONFIG.hidden_size
+    assert 0 <= draft.mask_token_id < TEXT_CONFIG.vocab_size

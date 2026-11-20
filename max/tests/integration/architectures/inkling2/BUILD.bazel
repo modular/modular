@@ -78,6 +78,35 @@ modular_py_test(
     ],
 )
 
+# Guards the drafter's sequential draft loop against a NumPy transcription of
+# vLLM's sampler, eagerly on the host. `manual` because it compiles its host
+# graphs on first use: 800.8s on m7i at size=large after 300.2s at medium, and
+# the eager rule cannot carry it (its CPU warm has no float32 to bfloat16 cast).
+# Run it with `bazel test //max/tests/integration/architectures/inkling2:test_dspark_draft_loop`.
+modular_py_test(
+    name = "test_dspark_draft_loop",
+    size = "large",
+    srcs = ["test_dspark_draft_loop.py"],
+    # The eager interpreter imports its op families lazily, so pydeps cannot
+    # see the dependency: without it the test reaches the host graphs with
+    # max._interpreter_ops missing and every eager op fails to load.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    tags = [
+        "manual",
+        "skip-ci-macos",
+    ],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 modular_py_test(
     name = "test_tool_parser",
     srcs = ["test_tool_parser.py"],

@@ -34,7 +34,7 @@ Parameter names mirror ``mtp.safetensors``, so the checkpoint loads as is.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from max import functional as F
 from max.driver import CPU, Device
@@ -43,6 +43,7 @@ from max.graph import DeviceRef
 from max.nn import Embedding, Linear, Module
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import RowParallelLinear, col_parallel
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kernels import (
@@ -52,12 +53,14 @@ from max.nn.kernels import (
     store_v_cache_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache.cache_params import SpeculativeMethod
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import KVCacheConfig
 from max.tensor import Tensor
 
 from .dspark_config import Inkling2DSparkConfig
 from .layers.norm import Inkling2RMSNorm
+from .layers.placement import as_partial, as_sharded, reduce_partial
 
 DSPARK_GLOBAL_ATTENTION = "dspark_global_attention"
 """The draft cache of the layers that see the whole context."""
@@ -78,6 +81,7 @@ def construct_dspark_kv_params(
     devices: Sequence[DeviceRef],
     cache_dtype: DType,
     data_parallel_degree: int = 1,
+    speculative_method: SpeculativeMethod | None = None,
 ) -> MultiKVCacheParams:
     """The drafter's own caches: one for its full layers, one for its local.
 
@@ -94,6 +98,8 @@ def construct_dspark_kv_params(
             num_layers=num_layers,
             devices=devices,
             data_parallel_degree=data_parallel_degree,
+            # The pool requires every leaf to name the target's method.
+            speculative_method=speculative_method,
             num_draft_tokens=config.block_size,
             window_size=window_size,
         )
@@ -139,12 +145,15 @@ class Inkling2DSparkAttention(Module[..., Tensor]):
         self.window = config.attention_window(layer_idx)
         q_width = self.num_heads * self.head_dim
         kv_width = self.num_kv_heads * self.head_dim
-        self.q_proj = Linear(hidden, q_width, bias=False)
-        self.k_proj = Linear(hidden, kv_width, bias=False)
-        self.v_proj = Linear(hidden, kv_width, bias=False)
-        self.k_proj_ctx = Linear(hidden, kv_width, bias=False)
-        self.v_proj_ctx = Linear(hidden, kv_width, bias=False)
-        self.o_proj = Linear(q_width, hidden, bias=False)
+        # Heads shard over the target's tensor-parallel axis, as the target's
+        # do: the draft's cache shares the target's pool, whose leaves hold
+        # each device's share of the KV heads.
+        self.q_proj = col_parallel(Linear(hidden, q_width, bias=False))
+        self.k_proj = col_parallel(Linear(hidden, kv_width, bias=False))
+        self.v_proj = col_parallel(Linear(hidden, kv_width, bias=False))
+        self.k_proj_ctx = col_parallel(Linear(hidden, kv_width, bias=False))
+        self.v_proj_ctx = col_parallel(Linear(hidden, kv_width, bias=False))
+        self.o_proj = RowParallelLinear(q_width, hidden, bias=False)
         self.q_norm = Inkling2RMSNorm(self.head_dim, eps=config.rms_norm_eps)
         self.k_norm = Inkling2RMSNorm(self.head_dim, eps=config.rms_norm_eps)
         self.k_norm_ctx = Inkling2RMSNorm(
@@ -220,7 +229,11 @@ class Inkling2DSparkAttention(Module[..., Tensor]):
             local_window_size=-1 if self.window is None else self.window,
             output_dtype=x.dtype,
         )
-        return self.o_proj(out.reshape([-1, self.num_heads * self.head_dim]))
+        # Claim the heads axis before the reshape, as the target does, so the
+        # flatten runs on each device's own heads.
+        out = as_sharded(out, x.mesh, axis=1)
+        out = out.reshape([-1, self.num_heads * self.head_dim])
+        return reduce_partial(as_partial(self.o_proj(out), x.mesh))
 
 
 class Inkling2DSparkLayer(Module[..., Tensor]):
@@ -254,7 +267,8 @@ class Inkling2DSparkLayer(Module[..., Tensor]):
         h = h + self.self_attn(
             self.input_layernorm(h), kv_collection, input_row_offsets
         )
-        return h + self.mlp(self.post_attention_layernorm(h))
+        mlp = self.mlp(self.post_attention_layernorm(h))
+        return h + reduce_partial(as_partial(mlp, h.mesh))
 
 
 class Inkling2MarkovHead(Module[..., Tensor]):
@@ -446,8 +460,9 @@ class Inkling2DSpark(Module[..., Tensor]):
         *,
         final_logit_softcapping: float,
         unpadded_vocab_size: int,
+        sampler: Callable[[Tensor, int], Tensor] | None = None,
     ) -> Tensor:
-        """Greedily drafts ``block_size - 1`` tokens per sequence.
+        """Drafts ``block_size - 1`` tokens per sequence.
 
         The Markov head advances one token at a time from a zero state, its
         first step reading the anchor; each step's token is the argmax of the
@@ -461,6 +476,9 @@ class Inkling2DSpark(Module[..., Tensor]):
             final_logit_softcapping: The target's logit softcap.
             unpadded_vocab_size: The trained rows of the vocabulary; the
                 padded tail is never drafted.
+            sampler: Draws step ``i``'s token from its ``[seqs, vocab]``
+                logits. The step takes an argmax when it is ``None``, and a
+                sampled draft keeps every step's draw as it goes.
 
         Returns:
             The draft tokens, ``[seqs, block_size - 1]``.
@@ -470,26 +488,55 @@ class Inkling2DSpark(Module[..., Tensor]):
         num_steps = config.block_size - 1
         rows = block_hidden.reshape([-1, config.block_size, config.hidden_size])
         state = F.broadcast_to(
-            F.constant(0.0, DType.bfloat16, device=block_hidden.device),
+            F.constant(0.0, DType.bfloat16, device=block_hidden.mapping),
             [rows.shape[0], config.markov_rank],
         )
         cap = final_logit_softcapping
         padded = config.vocab_size - unpadded_vocab_size
+        masks = rows[:, 1:, :]
+        flat = masks.reshape([-1, config.hidden_size])
+        # Every step's base logits and ``[hidden, f_rnn]`` term at once; only
+        # the state and the previous token are sequential.
+        base_all = (flat @ lm_head.T).reshape([rows.shape[0], num_steps, -1])
+        f_rnn_rows = F.broadcast_to(
+            f_rnn.reshape([-1, 1, config.hidden_size]),
+            [rows.shape[0], num_steps, config.hidden_size],
+        ).reshape([-1, config.hidden_size])
+        context_all = head.context(flat, f_rnn_rows).reshape(
+            [rows.shape[0], num_steps, -1]
+        )
+        # ``hidden_out`` folded into the LM head, rounded to bfloat16 as the
+        # reference folds it, so a step's bias reads ``rank`` columns per
+        # token instead of the hidden width.
+        out_weight = head.hidden_out.weight
+        out_bias = head.hidden_out.bias
+        assert isinstance(out_bias, Tensor)
+        fold_weight = (out_weight.T @ lm_head.T).cast(DType.float32)
+        fold_bias = (
+            out_bias.reshape([1, config.hidden_size]) @ lm_head.T
+        ).cast(DType.float32)
         tokens: list[Tensor] = []
         previous = anchors
         for step in range(num_steps):
             # Mask row ``step + 1`` predicts the token at its own position.
-            hidden = rows[:, step + 1, :]
-            base = hidden @ lm_head.T
-            state, latent = head.step(
-                state, previous, head.context(hidden, f_rnn)
+            state, latent = head.step(state, previous, context_all[:, step, :])
+            bias = (latent.cast(DType.float32) @ fold_weight + fold_bias).cast(
+                DType.bfloat16
             )
-            bias = head.hidden_out(latent) @ lm_head.T
             # bf16(base + bias), softcapped in float32, rounded once more.
-            summed = (base + bias).cast(DType.float32)
+            summed = (base_all[:, step, :] + bias).cast(DType.float32)
+            # The head's vocabulary shards over the mesh, as the target's
+            # does; gather it before the softcap and the tail slice.
+            if summed.is_distributed:
+                summed = F.allgather(summed, tensor_axis=-1)
             logits = (cap * F.tanh(summed / cap)).cast(DType.bfloat16)
             if padded:
                 logits = logits[:, :unpadded_vocab_size]
-            previous = F.argmax(logits, axis=-1).reshape([-1])
+            picked = (
+                F.argmax(logits, axis=-1)
+                if sampler is None
+                else sampler(logits, step)
+            )
+            previous = picked.reshape([-1])
             tokens.append(previous.reshape([-1, 1]))
         return F.concat(tokens, axis=1)
